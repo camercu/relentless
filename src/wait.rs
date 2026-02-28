@@ -47,6 +47,40 @@ pub trait Wait {
 ///
 /// This trait enables fluent composition for custom wait strategies that
 /// implement [`Wait`], not only the built-in wait types in this module.
+///
+/// # Examples
+///
+/// ```
+/// use core::time::Duration;
+/// use tenacious::{RetryState, Wait, WaitExt, wait};
+///
+/// #[derive(Clone, Copy)]
+/// struct StepWait {
+///     base: Duration,
+/// }
+///
+/// impl Wait for StepWait {
+///     fn next_wait(&mut self, state: &RetryState) -> Duration {
+///         self.base
+///             .checked_mul(state.attempt)
+///             .unwrap_or(Duration::MAX)
+///     }
+/// }
+///
+/// let mut strategy = StepWait {
+///     base: Duration::from_millis(10),
+/// }
+/// .cap(Duration::from_millis(25))
+/// .chain(wait::fixed(Duration::from_millis(30)), 2);
+///
+/// let state = RetryState {
+///     attempt: 3,
+///     elapsed: None,
+///     next_delay: Duration::ZERO,
+///     total_wait: Duration::ZERO,
+/// };
+/// assert_eq!(strategy.next_wait(&state), Duration::from_millis(30));
+/// ```
 pub trait WaitExt: Wait + Sized {
     /// Clamps the computed wait to at most `max`.
     #[must_use]

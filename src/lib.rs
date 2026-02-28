@@ -2,6 +2,33 @@
 //!
 //! This crate provides composable retry strategies with support for `std`, `alloc`,
 //! and `no_std` environments.
+//!
+//! # Custom wait strategies
+//!
+//! ```
+//! use core::time::Duration;
+//! use tenacious::{RetryState, Wait, WaitExt, wait};
+//!
+//! struct CustomWait(Duration);
+//!
+//! impl Wait for CustomWait {
+//!     fn next_wait(&mut self, _state: &RetryState) -> Duration {
+//!         self.0
+//!     }
+//! }
+//!
+//! let mut strategy = CustomWait(Duration::from_millis(20))
+//!     .cap(Duration::from_millis(15))
+//!     .chain(wait::fixed(Duration::from_millis(50)), 2);
+//!
+//! let state = RetryState {
+//!     attempt: 3,
+//!     elapsed: None,
+//!     next_delay: Duration::ZERO,
+//!     total_wait: Duration::ZERO,
+//! };
+//! assert_eq!(strategy.next_wait(&state), Duration::from_millis(50));
+//! ```
 
 #![no_std]
 #![forbid(unsafe_code)]
