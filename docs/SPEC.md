@@ -305,6 +305,10 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 ## Iteration 3: Wait Strategies
 
+Fluent wait builders are provided by the `WaitExt` extension trait (re-exported
+at the crate root and via `prelude`). Any type implementing `Wait` gets these
+builder methods when `WaitExt` is in scope.
+
 **3.1** `wait::fixed(dur: Duration)` produces a strategy that always returns `dur` regardless of attempt number or outcome.
 
 **3.2** `wait::linear(initial: Duration, increment: Duration)` produces a strategy where the wait after attempt `n` is `initial + (n - 1) * increment`. Overflow saturates at `Duration::MAX`.
@@ -313,13 +317,19 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 **3.4** `wait::exponential` accepts a builder method `.base(f: f64)` to change the multiplier from 2. Valid range is `[1.0, ∞)`. Values below 1.0 are clamped to 1.0 without panicking.
 
-**3.5** All backoff strategies accept a `.cap(max: Duration)` builder method that clamps the computed wait to `max`. This is applied after jitter if jitter is also configured.
+**3.5** All wait strategies expose `.cap(max: Duration)` via `WaitExt`. This
+builder method clamps the computed wait to `max`. This is applied after jitter
+if jitter is also configured.
 
-**3.6** When the `jitter` feature is enabled, all wait strategies accept a `.jitter(max_jitter: Duration)` builder method. Jitter is a uniformly random value in `[0, max_jitter]` added to the computed wait before capping.
+**3.6** When the `jitter` feature is enabled, all wait strategies expose
+`.jitter(max_jitter: Duration)` via `WaitExt`. Jitter is a uniformly random
+value in `[0, max_jitter]` added to the computed wait before capping.
 
 **3.7** Two wait strategies combine with `+` to produce `WaitCombine`, which returns the sum of both strategies' outputs. The `Add<Rhs> for W where W: Wait, Rhs: Wait` trait is implemented for all `Wait` types.
 
-**3.8** A wait strategy can be chained to a fallback via `.chain(other: W2, after: u32)`. The resulting `WaitChain` uses `self` for the first `after` attempts and `other` for all subsequent attempts.
+**3.8** A wait strategy can be chained to a fallback via
+`WaitExt::chain(other: W2, after: u32)`. The resulting `WaitChain` uses `self`
+for the first `after` attempts and `other` for all subsequent attempts.
 
 **3.9** `Wait::reset` on `WaitCombine` calls reset on both constituents. `Wait::reset` on `WaitChain` resets both strategies and the internal attempt counter.
 
