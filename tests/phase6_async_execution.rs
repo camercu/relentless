@@ -370,3 +370,19 @@ fn tokio_sleep_reexport_is_available() {
 fn embassy_sleep_adapter_is_available() {
     let _future = Sleeper::sleep(&tenacious::sleep::embassy_sleep, Duration::ZERO);
 }
+
+// ---------------------------------------------------------------------------
+// Additional runtime sleep adapters (feature-gated)
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+#[test]
+fn gloo_sleep_reexport_is_available() {
+    let _future = tenacious::sleep::gloo_sleep(Duration::ZERO);
+}
+
+#[cfg(feature = "futures-timer-sleep")]
+#[test]
+fn futures_timer_sleep_adapter_is_available() {
+    let _future = tenacious::sleep::futures_timer_sleep(Duration::ZERO);
+}
