@@ -1,7 +1,7 @@
 //! Predicate trait — determines which outcomes should trigger a retry.
 
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
+use crate::compat::Box;
 
 /// Examines the outcome of an operation and decides whether to retry.
 ///

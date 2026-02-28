@@ -34,4 +34,6 @@ pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, RetryState};
 pub use stats::{RetryStats, StopReason};
 pub use stop::{Stop, StopAll, StopAny};
+#[cfg(feature = "jitter")]
+pub use wait::WaitJitter;
 pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine};

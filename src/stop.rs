@@ -3,10 +3,10 @@
 //! Stop strategies determine when the retry loop should give up. They compose
 //! with `|` ([`StopAny`]) and `&` ([`StopAll`]).
 
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use crate::compat::Duration;
 use crate::state::RetryState;
-#[cfg(feature = "alloc")]
-use alloc::boxed::Box;
 use core::ops::{BitAnd, BitOr};
 
 /// Determines when the retry loop should stop.
@@ -77,6 +77,7 @@ where
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAfterAttempts {
     max: u32,
 }
@@ -114,6 +115,7 @@ impl Stop for StopAfterAttempts {
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAfterElapsed {
     deadline: Duration,
 }
@@ -157,6 +159,7 @@ impl Stop for StopAfterElapsed {
 /// assert!(s.should_stop(&state)); // 9s + 2s >= 10s
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopBeforeElapsed {
     deadline: Duration,
 }
@@ -197,6 +200,7 @@ impl Stop for StopBeforeElapsed {
 /// assert!(!s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopNever;
 
 /// Produces a strategy that always returns `false` — never stops.
@@ -233,6 +237,7 @@ impl Stop for StopNever {
 /// let mut s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAny<A, B> {
     left: A,
     right: B,
@@ -300,6 +305,7 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 /// let mut s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAll<A, B> {
     left: A,
     right: B,

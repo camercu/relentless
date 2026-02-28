@@ -65,6 +65,22 @@ where
 #[cfg(feature = "tokio-sleep")]
 pub use tokio::time::sleep as tokio_sleep;
 
+/// Gloo timers sleep re-export convenience.
+///
+/// Enabled with the `gloo-timers-sleep` feature. Equivalent to
+/// `gloo_timers::future::sleep`.
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+pub use gloo_timers::future::sleep as gloo_sleep;
+
+/// Futures timer sleep convenience.
+///
+/// Enabled with the `futures-timer-sleep` feature. Equivalent to
+/// `futures_timer::Delay::new`.
+#[cfg(feature = "futures-timer-sleep")]
+pub fn futures_timer_sleep(dur: Duration) -> futures_timer::Delay {
+    futures_timer::Delay::new(dur)
+}
+
 /// Zero-sized embassy sleeper implementation.
 ///
 /// Enabled with the `embassy-sleep` feature.

@@ -9,11 +9,13 @@ use crate::stats::{RetryStats, StopReason};
 use crate::stop::{self, Stop};
 use crate::wait::{self, Wait};
 use core::marker::PhantomData;
+#[cfg(feature = "serde")]
+use serde::ser::SerializeStruct;
 
 #[cfg(feature = "alloc")]
-use crate::sleep::Sleeper;
+use crate::compat::Box;
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
+use crate::sleep::Sleeper;
 #[cfg(feature = "alloc")]
 use core::future::Future;
 #[cfg(feature = "alloc")]
@@ -118,6 +120,61 @@ pub struct RetryPolicy<
     before_sleep: BS,
     on_exhausted: OE,
     predicate_is_default: bool,
+}
+
+#[cfg(feature = "serde")]
+impl<S, W, P, BA, AA, BS, OE> serde::Serialize for RetryPolicy<S, W, P, BA, AA, BS, OE>
+where
+    S: serde::Serialize,
+    W: serde::Serialize,
+    P: serde::Serialize,
+{
+    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
+    where
+        Ser: serde::Serializer,
+    {
+        // Hooks are intentionally omitted from serialized output.
+        let mut state = serializer.serialize_struct("RetryPolicy", 4)?;
+        state.serialize_field("stop", &self.stop)?;
+        state.serialize_field("wait", &self.wait)?;
+        state.serialize_field("predicate", &self.predicate)?;
+        state.serialize_field("predicate_is_default", &self.predicate_is_default)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P, (), (), (), ()>
+where
+    S: serde::Deserialize<'de>,
+    W: serde::Deserialize<'de>,
+    P: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct SerializedRetryPolicy<S, W, P> {
+            stop: S,
+            wait: W,
+            predicate: P,
+            #[serde(default)]
+            predicate_is_default: bool,
+        }
+
+        let serialized = SerializedRetryPolicy::deserialize(deserializer)?;
+        Ok(Self {
+            stop: serialized.stop,
+            wait: serialized.wait,
+            predicate: serialized.predicate,
+            before_attempt: (),
+            after_attempt: (),
+            before_sleep: (),
+            on_exhausted: (),
+            predicate_is_default: serialized.predicate_is_default,
+        })
+    }
 }
 
 /// Type-erased retry policy for runtime-configured storage.

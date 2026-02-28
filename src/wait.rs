@@ -3,11 +3,15 @@
 //! Wait strategies determine the delay between retry attempts. They compose
 //! with `+` ([`WaitCombine`]) and chain via [`.chain()`](WaitChain).
 
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use crate::compat::Duration;
 use crate::state::RetryState;
-#[cfg(feature = "alloc")]
-use alloc::boxed::Box;
 use core::ops::Add;
+#[cfg(all(feature = "jitter", target_has_atomic = "ptr"))]
+use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "jitter")]
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 /// Computes the delay duration between retry attempts.
 ///
@@ -76,6 +80,7 @@ where
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitFixed {
     duration: Duration,
 }
@@ -112,6 +117,7 @@ impl Wait for WaitFixed {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitLinear {
     initial: Duration,
     increment: Duration,
@@ -157,6 +163,7 @@ impl Wait for WaitLinear {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitExponential {
     initial: Duration,
     base: f64,
@@ -167,6 +174,14 @@ const DEFAULT_EXPONENTIAL_BASE: f64 = 2.0;
 
 /// The minimum allowed exponential base (values below this are clamped).
 const MIN_EXPONENTIAL_BASE: f64 = 1.0;
+
+/// Fixed seed used by jitter-enabled wait strategies.
+#[cfg(feature = "jitter")]
+const DEFAULT_JITTER_SEED: [u8; 32] = [0x5A; 32];
+
+/// Monotonic jitter nonce counter used to decorrelate independent policies.
+#[cfg(all(feature = "jitter", target_has_atomic = "ptr"))]
+static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Produces an exponentially increasing strategy: `initial * 2^(n-1)`.
 ///
@@ -202,6 +217,94 @@ impl Wait for WaitExponential {
 }
 
 // ---------------------------------------------------------------------------
+// Jitter wrapper (feature-gated)
+// ---------------------------------------------------------------------------
+
+/// A wrapper that adds uniformly distributed jitter in `[0, max_jitter]` to
+/// the inner strategy output.
+///
+/// Enabled with the `jitter` feature and created by calling `.jitter(max)` on
+/// any wait strategy.
+#[cfg(feature = "jitter")]
+#[derive(Debug, Clone)]
+pub struct WaitJitter<W> {
+    inner: W,
+    max_jitter: Duration,
+    nonce: u64,
+    rng: SmallRng,
+}
+
+#[cfg(feature = "jitter")]
+impl<W> WaitJitter<W> {
+    fn new(inner: W, max_jitter: Duration) -> Self {
+        Self {
+            inner,
+            max_jitter,
+            nonce: next_jitter_nonce(),
+            rng: SmallRng::from_seed(DEFAULT_JITTER_SEED),
+        }
+    }
+}
+
+#[cfg(feature = "jitter")]
+impl<W: Wait> Wait for WaitJitter<W> {
+    fn next_wait(&mut self, state: &RetryState) -> Duration {
+        let base = self.inner.next_wait(state);
+        let jitter = random_jitter_duration(self.max_jitter, &mut self.rng, self.nonce);
+        base.saturating_add(jitter)
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset();
+        self.nonce = self.nonce.wrapping_add(1);
+        self.rng = SmallRng::from_seed(DEFAULT_JITTER_SEED);
+    }
+}
+
+#[cfg(all(feature = "jitter", feature = "serde"))]
+impl<W> serde::Serialize for WaitJitter<W>
+where
+    W: serde::Serialize,
+{
+    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
+    where
+        Ser: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("WaitJitter", 2)?;
+        state.serialize_field("inner", &self.inner)?;
+        state.serialize_field("max_jitter", &self.max_jitter)?;
+        state.end()
+    }
+}
+
+#[cfg(all(feature = "jitter", feature = "serde"))]
+impl<'de, W> serde::Deserialize<'de> for WaitJitter<W>
+where
+    W: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct SerializedWaitJitter<W> {
+            inner: W,
+            max_jitter: Duration,
+        }
+
+        let serialized = SerializedWaitJitter::deserialize(deserializer)?;
+        Ok(Self {
+            inner: serialized.inner,
+            max_jitter: serialized.max_jitter,
+            nonce: next_jitter_nonce(),
+            rng: SmallRng::from_seed(DEFAULT_JITTER_SEED),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Cap wrapper
 // ---------------------------------------------------------------------------
 
@@ -225,6 +328,7 @@ impl Wait for WaitExponential {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCapped<W> {
     inner: W,
     max: Duration,
@@ -265,6 +369,7 @@ impl<W: Wait> Wait for WaitCapped<W> {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCombine<A, B> {
     left: A,
     right: B,
@@ -312,6 +417,7 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitChain<A, B> {
     first: A,
     second: B,
@@ -362,6 +468,12 @@ macro_rules! impl_wait_builders {
             pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
                 WaitChain::new(self, other, after)
             }
+
+            /// Adds uniformly distributed jitter in `[0, max_jitter]`.
+            #[cfg(feature = "jitter")]
+            pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
+                WaitJitter::new(self, max_jitter)
+            }
         }
     )+};
 }
@@ -379,6 +491,12 @@ impl<A, B> WaitCombine<A, B> {
     pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
     }
+
+    /// Adds uniformly distributed jitter in `[0, max_jitter]`.
+    #[cfg(feature = "jitter")]
+    pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
+        WaitJitter::new(self, max_jitter)
+    }
 }
 
 impl<A, B> WaitChain<A, B> {
@@ -386,12 +504,30 @@ impl<A, B> WaitChain<A, B> {
     pub fn cap(self, max: Duration) -> WaitCapped<Self> {
         WaitCapped { inner: self, max }
     }
+
+    /// Adds uniformly distributed jitter in `[0, max_jitter]`.
+    #[cfg(feature = "jitter")]
+    pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
+        WaitJitter::new(self, max_jitter)
+    }
 }
 
 impl<W> WaitCapped<W> {
     /// Switches to `other` after `after` attempts.
     pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
+    }
+
+    /// Adds jitter while preserving cap-after-jitter semantics.
+    ///
+    /// Even when called after `.cap(max)`, the cap remains the final operation.
+    #[cfg(feature = "jitter")]
+    pub fn jitter(self, max_jitter: Duration) -> WaitCapped<WaitJitter<W>> {
+        let WaitCapped { inner, max } = self;
+        WaitCapped {
+            inner: WaitJitter::new(inner, max_jitter),
+            max,
+        }
     }
 }
 
@@ -429,6 +565,28 @@ impl<A: Wait, B: Wait, Rhs: Wait> Add<Rhs> for WaitChain<A, B> {
 }
 
 impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
+    type Output = WaitCombine<Self, Rhs>;
+
+    fn add(self, rhs: Rhs) -> Self::Output {
+        WaitCombine::new(self, rhs)
+    }
+}
+
+#[cfg(feature = "jitter")]
+impl<W> WaitJitter<W> {
+    /// Clamps the jittered output to at most `max`.
+    pub fn cap(self, max: Duration) -> WaitCapped<Self> {
+        WaitCapped { inner: self, max }
+    }
+
+    /// Switches to `other` after `after` attempts.
+    pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
+        WaitChain::new(self, other, after)
+    }
+}
+
+#[cfg(feature = "jitter")]
+impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitJitter<W> {
     type Output = WaitCombine<Self, Rhs>;
 
     fn add(self, rhs: Rhs) -> Self::Output {
@@ -503,4 +661,50 @@ fn pow_nonnegative_f64(base: f64, exponent: u32) -> f64 {
     }
 
     result
+}
+
+/// Generates a random jitter duration in `[0, max_jitter]`.
+#[cfg(feature = "jitter")]
+fn random_jitter_duration(max_jitter: Duration, rng: &mut SmallRng, nonce: u64) -> Duration {
+    if max_jitter.is_zero() {
+        return Duration::ZERO;
+    }
+
+    const MAX_JITTER_NANOS: u128 = u64::MAX as u128;
+    let upper = max_jitter.as_nanos().min(MAX_JITTER_NANOS) as u64;
+    let random = rng.gen_range(0..=upper);
+    let offset = nonce;
+    let adjusted = if upper == u64::MAX {
+        random.wrapping_add(offset)
+    } else {
+        let modulus = upper + 1;
+        (random + (offset % modulus)) % modulus
+    };
+
+    Duration::from_nanos(adjusted)
+}
+
+#[cfg(all(feature = "jitter", target_has_atomic = "ptr"))]
+fn next_jitter_nonce() -> u64 {
+    let counter = JITTER_NONCE_COUNTER.fetch_add(1, Ordering::Relaxed) as u64;
+
+    #[cfg(feature = "std")]
+    {
+        use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(StdDuration::ZERO);
+        counter ^ (now.as_nanos() as u64)
+    }
+
+    #[cfg(not(feature = "std"))]
+    {
+        counter
+    }
+}
+
+#[cfg(all(feature = "jitter", not(target_has_atomic = "ptr")))]
+fn next_jitter_nonce() -> u64 {
+    1
 }

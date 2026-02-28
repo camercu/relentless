@@ -15,6 +15,7 @@ use core::ops::{BitAnd, BitOr};
 ///
 /// Created by [`any_error`].
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AnyError;
 
 /// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
@@ -32,6 +33,7 @@ impl<T, E> Predicate<T, E> for AnyError {
 ///
 /// Created by [`error`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ErrorPredicate<F> {
     matcher: F,
 }
@@ -58,6 +60,7 @@ where
 ///
 /// Created by [`result`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResultPredicate<F> {
     matcher: F,
 }
@@ -80,6 +83,7 @@ where
 ///
 /// Created by [`ok`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OkPredicate<F> {
     matcher: F,
 }
@@ -106,6 +110,7 @@ where
 ///
 /// Created by combining predicates with `|`, or via [`PredicateAny::new`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAny<A, B> {
     left: A,
     right: B,
@@ -132,6 +137,7 @@ where
 ///
 /// Created by combining predicates with `&`, or via [`PredicateAll::new`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAll<A, B> {
     left: A,
     right: B,
