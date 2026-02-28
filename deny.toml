@@ -17,9 +17,12 @@ confidence-threshold = 0.8
 ignore = true
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
+skip = [
+    { crate = "embedded-hal@0.2.7", reason = "Required transitively by embassy-time during embedded-hal 0.2/1.0 ecosystem transition" },
+]
 
 [sources]
 unknown-registry = "deny"

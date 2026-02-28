@@ -78,8 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: install cargo-deny
-        run: cargo install --locked cargo-deny
+      - uses: taiki-e/install-action@cargo-deny
       - name: cargo deny
         run: cargo deny check advisories licenses bans sources
 
