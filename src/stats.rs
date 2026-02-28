@@ -3,6 +3,21 @@
 use crate::compat::Duration;
 
 /// Why a retry loop terminated.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, StopReason, stop};
+///
+/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let (_result, stats) = policy
+///     .retry(|| Err::<(), _>("fail"))
+///     .sleep(|_dur| {})
+///     .with_stats()
+///     .call();
+///
+/// assert_eq!(stats.stop_reason, StopReason::StopCondition);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StopReason {
@@ -15,6 +30,25 @@ pub enum StopReason {
 }
 
 /// Aggregate statistics for a completed retry execution.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, RetryStats, stop, wait};
+/// use core::time::Duration;
+///
+/// let mut policy = RetryPolicy::new()
+///     .stop(stop::attempts(3))
+///     .wait(wait::fixed(Duration::from_millis(5)));
+/// let (_result, stats): (Result<(), _>, RetryStats) = policy
+///     .retry(|| Err::<(), _>("fail"))
+///     .sleep(|_dur| {})
+///     .with_stats()
+///     .call();
+///
+/// assert_eq!(stats.attempts, 3);
+/// assert_eq!(stats.total_wait, Duration::from_millis(10));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RetryStats {

@@ -65,6 +65,7 @@ where
     }
 }
 
+/// Internal hook-chain wrapper used when multiple hooks are appended.
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct HookChain<First, Second> {
@@ -102,6 +103,22 @@ where
 }
 
 /// Reusable retry configuration.
+///
+/// `RetryPolicy` stores retry strategies and hooks, and can be reused across
+/// multiple operations.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, stop, wait};
+/// use core::time::Duration;
+///
+/// let mut policy = RetryPolicy::new()
+///     .stop(stop::attempts(3))
+///     .wait(wait::fixed(Duration::from_millis(5)));
+///
+/// let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
+/// ```
 #[derive(Clone)]
 pub struct RetryPolicy<
     S = stop::StopNever,
@@ -181,6 +198,15 @@ where
 ///
 /// This alias is available when `alloc` is enabled and erases stop/wait/predicate
 /// concrete types into trait objects while preserving hook types.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, BoxedRetryPolicy, stop};
+///
+/// let _policy: BoxedRetryPolicy<i32, &'static str> =
+///     RetryPolicy::new().stop(stop::attempts(3)).boxed();
+/// ```
 #[cfg(feature = "alloc")]
 pub type BoxedRetryPolicy<T, E, BA = (), AA = (), BS = (), OE = ()> =
     RetryPolicy<Box<dyn Stop>, Box<dyn Wait>, Box<dyn Predicate<T, E>>, BA, AA, BS, OE>;
@@ -466,6 +492,19 @@ fn attempt_state_from<'a, T, E>(
 }
 
 /// Sync retry execution object.
+///
+/// Created by [`RetryPolicy::retry`]. Call `.sleep(...)` to provide a sleep
+/// implementation and `.call()` to execute.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let mut policy = RetryPolicy::new().stop(stop::attempts(2));
+/// let retry = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {});
+/// let _ = retry.call();
+/// ```
 pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, SleepFn, T, E> {
     policy: &'policy mut RetryPolicy<S, W, P, BA, AA, BS, OE>,
     op: F,
@@ -474,6 +513,21 @@ pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, SleepFn, T, E> {
 }
 
 /// Sync retry execution wrapper that returns statistics.
+///
+/// Created by calling `.with_stats()` on [`SyncRetry`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let (_result, _stats) = policy
+///     .retry(|| Ok::<u32, &str>(1))
+///     .sleep(|_dur| {})
+///     .with_stats()
+///     .call();
+/// ```
 pub struct SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, SleepFn, T, E> {
     inner: SyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, SleepFn, T, E>,
 }
@@ -698,6 +752,22 @@ enum AsyncPhase<'policy, Fut> {
 }
 
 /// Async retry execution object.
+///
+/// Created by [`RetryPolicy::retry_async`]. Set a sleeper with `.sleep(...)`
+/// and then `.await` the returned future.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::RetryPolicy;
+/// use core::time::Duration;
+///
+/// let mut policy = RetryPolicy::new();
+/// let retry = policy
+///     .retry_async(|| async { Ok::<u32, &str>(1) })
+///     .sleep(|_dur: Duration| async {});
+/// let _ = retry;
+/// ```
 #[cfg(feature = "alloc")]
 pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
 where
@@ -718,6 +788,22 @@ where
 }
 
 /// Async retry execution wrapper that returns statistics.
+///
+/// Created by calling `.with_stats()` on [`AsyncRetry`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::RetryPolicy;
+/// use core::time::Duration;
+///
+/// let mut policy = RetryPolicy::new();
+/// let retry = policy
+///     .retry_async(|| async { Ok::<u32, &str>(1) })
+///     .sleep(|_dur: Duration| async {})
+///     .with_stats();
+/// let _ = retry;
+/// ```
 #[cfg(feature = "alloc")]
 pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
 where

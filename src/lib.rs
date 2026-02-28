@@ -37,3 +37,27 @@ pub use stop::{Stop, StopAll, StopAny};
 #[cfg(feature = "jitter")]
 pub use wait::WaitJitter;
 pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine};
+
+/// Common traits and constructors for ergonomic imports.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::prelude::*;
+/// use core::time::Duration;
+///
+/// let mut policy = RetryPolicy::new()
+///     .stop(attempts(3) | elapsed(Duration::from_secs(1)))
+///     .wait(exponential(Duration::from_millis(10)))
+///     .when(any_error());
+///
+/// let result = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
+/// assert!(matches!(result, Err(RetryError::Exhausted { attempts: 3, .. })));
+/// ```
+pub mod prelude {
+    pub use crate::on::{any_error, error, ok};
+    pub use crate::sleep::Sleeper;
+    pub use crate::stop::{attempts, elapsed};
+    pub use crate::wait::{exponential, fixed};
+    pub use crate::{Predicate, RetryError, RetryPolicy, RetryStats, Stop, StopReason, Wait};
+}

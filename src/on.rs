@@ -14,6 +14,16 @@ use core::ops::{BitAnd, BitOr};
 /// Predicate that retries on any error.
 ///
 /// Created by [`any_error`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::any_error();
+/// let outcome: Result<u32, &str> = Err("boom");
+/// assert!(predicate.should_retry(&outcome));
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AnyError;
@@ -32,6 +42,19 @@ impl<T, E> Predicate<T, E> for AnyError {
 /// Predicate that retries when an `Err(e)` matches `matcher`.
 ///
 /// Created by [`error`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::error(|err: &&str| *err == "retryable");
+/// let retryable: Result<u32, &str> = Err("retryable");
+/// let fatal: Result<u32, &str> = Err("fatal");
+///
+/// assert!(predicate.should_retry(&retryable));
+/// assert!(!predicate.should_retry(&fatal));
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ErrorPredicate<F> {
@@ -59,6 +82,19 @@ where
 /// Predicate that retries based on the full `Result<T, E>`.
 ///
 /// Created by [`result`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::result(|outcome: &Result<u32, &str>| {
+///     matches!(outcome, Ok(value) if *value < 10)
+/// });
+///
+/// assert!(predicate.should_retry(&Ok(3)));
+/// assert!(!predicate.should_retry(&Ok(10)));
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResultPredicate<F> {
@@ -82,6 +118,17 @@ where
 /// Predicate that retries when an `Ok(value)` matches `matcher`.
 ///
 /// Created by [`ok`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::ok(|value: &u32| *value < 3);
+///
+/// assert!(predicate.should_retry(&Ok::<u32, &str>(2)));
+/// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OkPredicate<F> {
@@ -109,6 +156,17 @@ where
 /// Composite predicate that retries when **either** predicate retries.
 ///
 /// Created by combining predicates with `|`, or via [`PredicateAny::new`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
+/// assert!(predicate.should_retry(&Err("retryable")));
+/// assert!(predicate.should_retry(&Ok(1)));
+/// assert!(!predicate.should_retry(&Ok(5)));
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAny<A, B> {
@@ -136,6 +194,18 @@ where
 /// Composite predicate that retries only when **both** predicates retry.
 ///
 /// Created by combining predicates with `&`, or via [`PredicateAll::new`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::result(|outcome: &Result<u32, &str>| outcome.is_err())
+///     & on::error(|err: &&str| *err == "retryable");
+///
+/// assert!(predicate.should_retry(&Err("retryable")));
+/// assert!(!predicate.should_retry(&Err("fatal")));
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAll<A, B> {

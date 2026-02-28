@@ -225,6 +225,29 @@ impl Wait for WaitExponential {
 ///
 /// Enabled with the `jitter` feature and created by calling `.jitter(max)` on
 /// any wait strategy.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "jitter")]
+/// # {
+/// use tenacious::{Wait, RetryState, wait};
+/// use core::time::Duration;
+///
+/// let mut strategy = wait::fixed(Duration::from_millis(50))
+///     .jitter(Duration::from_millis(10));
+/// let state = RetryState {
+///     attempt: 1,
+///     elapsed: None,
+///     next_delay: Duration::ZERO,
+///     total_wait: Duration::ZERO,
+/// };
+///
+/// let next = strategy.next_wait(&state);
+/// assert!(next >= Duration::from_millis(50));
+/// assert!(next <= Duration::from_millis(60));
+/// # }
+/// ```
 #[cfg(feature = "jitter")]
 #[derive(Debug, Clone)]
 pub struct WaitJitter<W> {

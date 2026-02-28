@@ -84,6 +84,19 @@ pub fn futures_timer_sleep(dur: Duration) -> futures_timer::Delay {
 /// Zero-sized embassy sleeper implementation.
 ///
 /// Enabled with the `embassy-sleep` feature.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "embassy-sleep")]
+/// # {
+/// use tenacious::sleep::embassy_sleep;
+/// use tenacious::Sleeper;
+/// use core::time::Duration;
+///
+/// let _future = embassy_sleep.sleep(Duration::from_millis(1));
+/// # }
+/// ```
 #[cfg(feature = "embassy-sleep")]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EmbassySleep;
