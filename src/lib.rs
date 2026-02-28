@@ -36,7 +36,7 @@ pub use stats::{RetryStats, StopReason};
 pub use stop::{Stop, StopAll, StopAny};
 #[cfg(feature = "jitter")]
 pub use wait::WaitJitter;
-pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine};
+pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 
 /// Common traits and constructors for ergonomic imports.
 ///
@@ -59,5 +59,7 @@ pub mod prelude {
     pub use crate::sleep::Sleeper;
     pub use crate::stop::{attempts, elapsed};
     pub use crate::wait::{exponential, fixed};
-    pub use crate::{Predicate, RetryError, RetryPolicy, RetryStats, Stop, StopReason, Wait};
+    pub use crate::{
+        Predicate, RetryError, RetryPolicy, RetryStats, Stop, StopReason, Wait, WaitExt,
+    };
 }

@@ -43,6 +43,33 @@ pub trait Wait {
     fn reset(&mut self) {}
 }
 
+/// Extension methods for any [`Wait`] strategy.
+///
+/// This trait enables fluent composition for custom wait strategies that
+/// implement [`Wait`], not only the built-in wait types in this module.
+pub trait WaitExt: Wait + Sized {
+    /// Clamps the computed wait to at most `max`.
+    #[must_use]
+    fn cap(self, max: Duration) -> WaitCapped<Self> {
+        WaitCapped { inner: self, max }
+    }
+
+    /// Switches to `other` after `after` attempts.
+    #[must_use]
+    fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
+        WaitChain::new(self, other, after)
+    }
+
+    /// Adds uniformly distributed jitter in `[0, max_jitter]`.
+    #[cfg(feature = "jitter")]
+    #[must_use]
+    fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
+        WaitJitter::new(self, max_jitter)
+    }
+}
+
+impl<W> WaitExt for W where W: Wait + Sized {}
+
 #[cfg(feature = "alloc")]
 impl<W> Wait for Box<W>
 where
@@ -86,6 +113,7 @@ pub struct WaitFixed {
 }
 
 /// Produces a strategy that always returns `dur` regardless of attempt number.
+#[must_use]
 pub fn fixed(dur: Duration) -> WaitFixed {
     WaitFixed { duration: dur }
 }
@@ -126,6 +154,7 @@ pub struct WaitLinear {
 /// Produces a linearly increasing strategy: `initial + (n - 1) * increment`.
 ///
 /// Overflow saturates at [`Duration::MAX`].
+#[must_use]
 pub fn linear(initial: Duration, increment: Duration) -> WaitLinear {
     WaitLinear { initial, increment }
 }
@@ -187,6 +216,7 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 ///
 /// Use [`.base(f)`](WaitExponential::base) to change the multiplier from `2`.
 /// Overflow saturates at [`Duration::MAX`].
+#[must_use]
 pub fn exponential(initial: Duration) -> WaitExponential {
     WaitExponential {
         initial,
@@ -199,6 +229,7 @@ impl WaitExponential {
     ///
     /// Values below `1.0` are clamped to `1.0` without panicking. A base of
     /// `1.0` produces a constant delay equal to `initial` on every attempt.
+    #[must_use]
     pub fn base(mut self, base: f64) -> Self {
         self.base = f64::max(base, MIN_EXPONENTIAL_BASE);
         self
@@ -400,6 +431,7 @@ pub struct WaitCombine<A, B> {
 
 impl<A, B> WaitCombine<A, B> {
     /// Creates a composite that returns the sum of `left` and `right`.
+    #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
@@ -450,6 +482,7 @@ pub struct WaitChain<A, B> {
 impl<A, B> WaitChain<A, B> {
     /// Creates a chain that uses `first` for the first `after` attempts,
     /// then switches to `second`.
+    #[must_use]
     pub fn new(first: A, second: B, after: u32) -> Self {
         Self {
             first,
@@ -483,17 +516,20 @@ macro_rules! impl_wait_builders {
     ($($ty:ty),+ $(,)?) => {$(
         impl $ty {
             /// Clamps the computed wait to at most `max`.
+            #[must_use]
             pub fn cap(self, max: Duration) -> WaitCapped<Self> {
                 WaitCapped { inner: self, max }
             }
 
             /// Switches to `other` after `after` attempts.
+            #[must_use]
             pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
                 WaitChain::new(self, other, after)
             }
 
             /// Adds uniformly distributed jitter in `[0, max_jitter]`.
             #[cfg(feature = "jitter")]
+            #[must_use]
             pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
                 WaitJitter::new(self, max_jitter)
             }
@@ -506,17 +542,20 @@ impl_wait_builders!(WaitFixed, WaitLinear, WaitExponential);
 // Cap and chain on composite types (generic impls).
 impl<A, B> WaitCombine<A, B> {
     /// Clamps the combined output to at most `max`.
+    #[must_use]
     pub fn cap(self, max: Duration) -> WaitCapped<Self> {
         WaitCapped { inner: self, max }
     }
 
     /// Switches to `other` after `after` attempts.
+    #[must_use]
     pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
     }
 
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.
     #[cfg(feature = "jitter")]
+    #[must_use]
     pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
         WaitJitter::new(self, max_jitter)
     }
@@ -524,12 +563,14 @@ impl<A, B> WaitCombine<A, B> {
 
 impl<A, B> WaitChain<A, B> {
     /// Clamps the chain's output to at most `max`.
+    #[must_use]
     pub fn cap(self, max: Duration) -> WaitCapped<Self> {
         WaitCapped { inner: self, max }
     }
 
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.
     #[cfg(feature = "jitter")]
+    #[must_use]
     pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
         WaitJitter::new(self, max_jitter)
     }
@@ -537,6 +578,7 @@ impl<A, B> WaitChain<A, B> {
 
 impl<W> WaitCapped<W> {
     /// Switches to `other` after `after` attempts.
+    #[must_use]
     pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
     }
@@ -545,6 +587,7 @@ impl<W> WaitCapped<W> {
     ///
     /// Even when called after `.cap(max)`, the cap remains the final operation.
     #[cfg(feature = "jitter")]
+    #[must_use]
     pub fn jitter(self, max_jitter: Duration) -> WaitCapped<WaitJitter<W>> {
         let WaitCapped { inner, max } = self;
         WaitCapped {
@@ -598,11 +641,13 @@ impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
 #[cfg(feature = "jitter")]
 impl<W> WaitJitter<W> {
     /// Clamps the jittered output to at most `max`.
+    #[must_use]
     pub fn cap(self, max: Duration) -> WaitCapped<Self> {
         WaitCapped { inner: self, max }
     }
 
     /// Switches to `other` after `after` attempts.
+    #[must_use]
     pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
     }
