@@ -211,12 +211,38 @@ where
 pub type BoxedRetryPolicy<T, E, BA = (), AA = (), BS = (), OE = ()> =
     RetryPolicy<Box<dyn Stop>, Box<dyn Wait>, Box<dyn Predicate<T, E>>, BA, AA, BS, OE>;
 
+struct PolicyParts<S, W, P, BA, AA, BS, OE> {
+    stop: S,
+    wait: W,
+    predicate: P,
+    before_attempt: BA,
+    after_attempt: AA,
+    before_sleep: BS,
+    on_exhausted: OE,
+    predicate_is_default: bool,
+}
+
+fn build_policy<S, W, P, BA, AA, BS, OE>(
+    parts: PolicyParts<S, W, P, BA, AA, BS, OE>,
+) -> RetryPolicy<S, W, P, BA, AA, BS, OE> {
+    RetryPolicy {
+        stop: parts.stop,
+        wait: parts.wait,
+        predicate: parts.predicate,
+        before_attempt: parts.before_attempt,
+        after_attempt: parts.after_attempt,
+        before_sleep: parts.before_sleep,
+        on_exhausted: parts.on_exhausted,
+        predicate_is_default: parts.predicate_is_default,
+    }
+}
+
 impl RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()> {
     /// Creates a policy with `stop::never()`, `wait::fixed(Duration::ZERO)`,
     /// and `on::any_error()`.
     #[must_use]
     pub fn new() -> Self {
-        Self {
+        build_policy(PolicyParts {
             stop: stop::never(),
             wait: wait::fixed(Duration::ZERO),
             predicate: on::any_error(),
@@ -225,7 +251,7 @@ impl RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()>
             before_sleep: (),
             on_exhausted: (),
             predicate_is_default: true,
-        }
+        })
     }
 }
 
@@ -239,7 +265,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P, BA, AA, BS, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -248,13 +274,13 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 
     /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P, BA, AA, BS, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait,
             predicate: self.predicate,
@@ -263,7 +289,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 
     /// Replaces the retry predicate.
@@ -272,7 +298,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         predicate: NewPredicate,
     ) -> RetryPolicy<S, W, NewPredicate, BA, AA, BS, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate,
@@ -281,7 +307,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: false,
-        }
+        })
     }
 
     /// Converts this policy into a type-erased boxed variant.
@@ -293,7 +319,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         W: Wait + 'static,
         P: Predicate<T, E> + 'static,
     {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
             predicate: Box::new(self.predicate),
@@ -302,7 +328,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
@@ -317,7 +343,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -326,7 +352,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 
     /// Appends an after-attempt hook.
@@ -335,7 +361,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, HookChain<AA, Hook>, BS, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -344,7 +370,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 
     /// Appends a before-sleep hook.
@@ -353,7 +379,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, AA, HookChain<BS, Hook>, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -362,7 +388,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: HookChain::new(self.before_sleep, hook),
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 
     /// Appends an on-exhausted hook.
@@ -371,7 +397,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, AA, BS, HookChain<OE, Hook>> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -380,7 +406,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: HookChain::new(self.on_exhausted, hook),
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
@@ -392,7 +418,7 @@ impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -401,7 +427,7 @@ impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
@@ -410,7 +436,7 @@ impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
     /// Sets the sole after-attempt hook (no-alloc mode).
     #[must_use]
     pub fn after_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, Hook, BS, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -419,7 +445,7 @@ impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
@@ -428,7 +454,7 @@ impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
     /// Sets the sole before-sleep hook (no-alloc mode).
     #[must_use]
     pub fn before_sleep<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, Hook, OE> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -437,7 +463,7 @@ impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
             before_sleep: hook,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
@@ -446,7 +472,7 @@ impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
     /// Sets the sole on-exhausted hook (no-alloc mode).
     #[must_use]
     pub fn on_exhausted<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, BS, Hook> {
-        RetryPolicy {
+        build_policy(PolicyParts {
             stop: self.stop,
             wait: self.wait,
             predicate: self.predicate,
@@ -455,7 +481,7 @@ impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
             before_sleep: self.before_sleep,
             on_exhausted: hook,
             predicate_is_default: self.predicate_is_default,
-        }
+        })
     }
 }
 
