@@ -1,0 +1,24 @@
+[package]
+name = "tenacious"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[features]
+default = ["std"]
+
+# std: enables std::thread::sleep for sync execution, Instant for elapsed tracking,
+#      std::error::Error impl on RetryError, and std-gated sleep impls.
+std = ["alloc"]
+
+# alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
+#        Box<dyn Predicate>, and type-erased policy storage.
+alloc = []
+
+# Runtime-specific async sleep implementations.
+tokio-sleep = ["dep:tokio", "std"]
+embassy-sleep = ["dep:embassy-time"]
+
+[dependencies]
+tokio = { version = "1", default-features = false, features = ["time"], optional = true }
+embassy-time = { version = "0.3", optional = true }
