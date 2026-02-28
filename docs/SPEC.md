@@ -365,7 +365,11 @@ for the first `after` attempts and `other` for all subsequent attempts.
 
 ## Iteration 5: Policy Builder and Sync Execution
 
-**5.1** `RetryPolicy::new()` creates a policy with no stop condition (equivalent to `stop::never()`), no wait (zero delay), and the default `on::any_error()` predicate.
+**5.1** `RetryPolicy::new()` creates an unconfigured policy whose stop type is
+`NeedsStop` (a marker that does not implement `Stop`). Retry execution methods
+are unavailable until `.stop(...)` is called. `RetryPolicy::default()` returns
+a safe, ready-to-run policy configured with `stop::attempts(3)`,
+`wait::exponential(Duration::from_millis(100))`, and `on::any_error()`.
 
 **5.2** `RetryPolicy` provides builder methods: `.stop(s: impl Stop)`, `.wait(w: impl Wait)`, `.when(p: impl Predicate)`, `.before_attempt(f)`, `.after_attempt(f)`, `.before_sleep(f)`, `.on_exhausted(f)`. Each method consumes and returns `Self`.
 

@@ -1,7 +1,7 @@
 //! Acceptance tests for Phase 5: Policy Builder and Sync Execution (Spec items 5.1–5.10)
 //!
 //! These tests verify:
-//! - RetryPolicy::new() defaults (5.1)
+//! - RetryPolicy::new() type-state and RetryPolicy::default() safe defaults (5.1)
 //! - Builder methods: .stop(), .wait(), .when() (5.2, 5.3)
 //! - SyncRetry via .retry(op).call() (5.5, 5.6)
 //! - RetryPolicy is Clone when constituents are Clone (5.7)
@@ -22,8 +22,14 @@ use tenacious::{on, stop, wait};
 /// Maximum attempts for most retry tests.
 const MAX_ATTEMPTS: u32 = 3;
 
+/// Safe default maximum attempts.
+const DEFAULT_POLICY_MAX_ATTEMPTS: u32 = 3;
+
 /// Fixed wait duration used in tests requiring sleep.
 const WAIT_DURATION: Duration = Duration::from_millis(10);
+
+/// Safe default initial backoff duration.
+const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Arbitrary success value.
 const SUCCESS_VALUE: i32 = 42;
@@ -53,7 +59,7 @@ fn recording_sleep(recorder: &RefCell<Vec<Duration>>) -> impl FnMut(Duration) + 
 }
 
 // ---------------------------------------------------------------------------
-// 5.1: RetryPolicy::new() defaults
+// 5.1: RetryPolicy::new() type-state + RetryPolicy::default() safe policy
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -244,7 +250,7 @@ fn retry_predicate_evaluated_before_stop() {
 #[test]
 fn retry_with_never_stop_still_returns_on_ok() {
     // stop::never() means never stop, but predicate still accepts Ok.
-    let mut policy = RetryPolicy::new(); // default stop is never()
+    let mut policy = RetryPolicy::new().stop(stop::never());
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -262,6 +268,39 @@ fn retry_with_never_stop_still_returns_on_ok() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), 3);
+}
+
+#[test]
+fn default_policy_retries_three_times() {
+    let mut policy = RetryPolicy::default();
+
+    let call_count = Cell::new(0_u32);
+    let result = policy
+        .retry(|| {
+            call_count.set(call_count.get().saturating_add(1));
+            Err::<i32, _>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(call_count.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
+}
+
+#[test]
+fn default_policy_uses_exponential_backoff() {
+    let mut policy = RetryPolicy::default();
+    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+
+    let _ = policy
+        .retry(|| Err::<i32, _>("fail"))
+        .sleep(recording_sleep(&sleeps))
+        .call();
+
+    let durations = sleeps.borrow();
+    assert_eq!(durations.len(), (DEFAULT_POLICY_MAX_ATTEMPTS - 1) as usize);
+    assert_eq!(durations[0], DEFAULT_POLICY_INITIAL_WAIT);
+    assert_eq!(durations[1], DEFAULT_POLICY_INITIAL_WAIT.saturating_mul(2),);
 }
 
 // ---------------------------------------------------------------------------

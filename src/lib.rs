@@ -60,7 +60,7 @@ pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, RetryState};
 pub use stats::{RetryStats, StopReason};
-pub use stop::{Stop, StopAll, StopAny};
+pub use stop::{NeedsStop, Stop, StopAll, StopAny};
 #[cfg(feature = "jitter")]
 pub use wait::WaitJitter;
 pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};

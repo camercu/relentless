@@ -214,6 +214,13 @@ impl Stop for StopNever {
     }
 }
 
+/// Marker indicating no stop strategy has been configured.
+///
+/// This type intentionally does **not** implement [`Stop`], so retry
+/// execution methods are unavailable until a concrete stop strategy is set.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NeedsStop;
+
 // ---------------------------------------------------------------------------
 // Composition: StopAny (BitOr) and StopAll (BitAnd)
 // ---------------------------------------------------------------------------

@@ -25,6 +25,12 @@ use core::task::{Context, Poll};
 #[cfg(feature = "std")]
 use std::time::Instant;
 
+/// Default maximum attempts used by the safe policy constructor.
+const DEFAULT_MAX_ATTEMPTS: u32 = 3;
+
+/// Default initial backoff used by the safe policy constructor.
+const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
+
 /// Hook callback shape for the `before_attempt` hook.
 #[doc(hidden)]
 pub trait BeforeAttemptHook {
@@ -124,7 +130,7 @@ where
 /// ```
 #[derive(Clone)]
 pub struct RetryPolicy<
-    S = stop::StopNever,
+    S = stop::NeedsStop,
     W = wait::WaitFixed,
     P = on::AnyError,
     BA = (),
@@ -240,13 +246,30 @@ fn build_policy<S, W, P, BA, AA, BS, OE>(
     }
 }
 
-impl RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()> {
-    /// Creates a policy with `stop::never()`, `wait::fixed(Duration::ZERO)`,
-    /// and `on::any_error()`.
+impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()> {
+    /// Creates an unconfigured policy with no stop strategy selected yet.
+    ///
+    /// This constructor sets zero wait and the default retry predicate
+    /// (`on::any_error()`), but requires calling `.stop(...)` before retry
+    /// execution methods are available.
+    ///
+    /// ```compile_fail
+    /// use tenacious::RetryPolicy;
+    ///
+    /// let mut policy = RetryPolicy::new();
+    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// ```
+    ///
+    /// ```
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let mut policy = RetryPolicy::new().stop(stop::attempts(3));
+    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// ```
     #[must_use]
     pub fn new() -> Self {
         build_policy(PolicyParts {
-            stop: stop::never(),
+            stop: stop::NeedsStop,
             wait: wait::fixed(Duration::ZERO),
             predicate: on::any_error(),
             before_attempt: (),
@@ -256,11 +279,45 @@ impl RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()>
             predicate_is_default: true,
         })
     }
+
+    /// Creates a safe, ready-to-run policy.
+    ///
+    /// Defaults:
+    /// - stop after 3 attempts
+    /// - exponential backoff starting at 100ms
+    /// - retry on any error (`on::any_error()`)
+    ///
+    /// ```
+    /// use tenacious::RetryPolicy;
+    ///
+    /// let mut policy = RetryPolicy::default();
+    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// ```
+    #[allow(clippy::should_implement_trait)]
+    #[must_use]
+    pub fn default()
+    -> RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError, (), (), (), ()>
+    {
+        RetryPolicy::new()
+            .stop(stop::attempts(DEFAULT_MAX_ATTEMPTS))
+            .wait(wait::exponential(DEFAULT_INITIAL_WAIT))
+    }
 }
 
-impl Default for RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()> {
+impl Default
+    for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError, (), (), (), ()>
+{
     fn default() -> Self {
-        Self::new()
+        build_policy(PolicyParts {
+            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            predicate: on::any_error(),
+            before_attempt: (),
+            after_attempt: (),
+            before_sleep: (),
+            on_exhausted: (),
+            predicate_is_default: true,
+        })
     }
 }
 
@@ -847,7 +904,7 @@ enum AsyncPhase<'policy, Fut> {
 /// use tenacious::RetryPolicy;
 /// use core::time::Duration;
 ///
-/// let mut policy = RetryPolicy::new();
+/// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
 /// let retry = policy
 ///     .retry_async(|| async { Ok::<u32, &str>(1) })
 ///     .sleep(|_dur: Duration| async {});
@@ -882,7 +939,7 @@ where
 /// use tenacious::RetryPolicy;
 /// use core::time::Duration;
 ///
-/// let mut policy = RetryPolicy::new();
+/// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
 /// let retry = policy
 ///     .retry_async(|| async { Ok::<u32, &str>(1) })
 ///     .sleep(|_dur: Duration| async {})
