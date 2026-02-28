@@ -182,7 +182,7 @@ impl Stop for StopBeforeElapsed {
 
 /// A strategy that never stops — the retry loop continues indefinitely.
 ///
-/// Created by [`never`]. This is the correct explicit spelling of
+/// Created by [`never()`]. This is the correct explicit spelling of
 /// "retry indefinitely."
 ///
 /// # Examples

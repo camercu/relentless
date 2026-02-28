@@ -41,13 +41,13 @@ extern crate std;
 
 mod compat;
 
-pub mod error;
+mod error;
 pub mod on;
-pub mod policy;
-pub mod predicate;
+mod policy;
+mod predicate;
 pub mod sleep;
-pub mod state;
-pub mod stats;
+mod state;
+mod stats;
 pub mod stop;
 pub mod wait;
 

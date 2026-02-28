@@ -15,8 +15,7 @@ use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use std::rc::Rc;
 use std::sync::Arc;
-use tenacious::error::RetryError;
-use tenacious::policy::RetryPolicy;
+use tenacious::{RetryError, RetryPolicy};
 use tenacious::{RetryStats, StopReason, on, stop, wait};
 
 // ---------------------------------------------------------------------------

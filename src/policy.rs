@@ -68,6 +68,7 @@ where
 /// Internal hook-chain wrapper used when multiple hooks are appended.
 #[doc(hidden)]
 #[derive(Clone)]
+#[cfg(feature = "alloc")]
 pub struct HookChain<First, Second> {
     first: First,
     second: Second,
@@ -80,6 +81,7 @@ impl<First, Second> HookChain<First, Second> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<First, Second> BeforeAttemptHook for HookChain<First, Second>
 where
     First: BeforeAttemptHook,
@@ -91,6 +93,7 @@ where
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, E, First, Second> AttemptHook<T, E> for HookChain<First, Second>
 where
     First: AttemptHook<T, E>,

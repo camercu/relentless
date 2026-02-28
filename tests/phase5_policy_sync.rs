@@ -12,8 +12,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use std::cell::RefCell;
-use tenacious::error::RetryError;
-use tenacious::policy::RetryPolicy;
+use tenacious::{RetryError, RetryPolicy};
 use tenacious::{on, stop, wait};
 
 // ---------------------------------------------------------------------------

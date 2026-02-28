@@ -3,7 +3,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use std::cell::RefCell;
-use tenacious::policy::RetryPolicy;
+use tenacious::RetryPolicy;
 use tenacious::{on, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
