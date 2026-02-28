@@ -50,6 +50,15 @@ jobs:
       - name: cargo test phase9_feature_compat
         run: cargo test --test phase9_feature_compat --features ${{ matrix.features }}
 
+  allocation-profile:
+    name: Allocation profile (single-thread)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test allocation_hot_paths
+        run: cargo test --test allocation_hot_paths -- --test-threads=1
+
   docs:
     name: Docs lint
     runs-on: ubuntu-latest
