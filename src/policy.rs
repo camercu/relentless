@@ -214,6 +214,7 @@ pub type BoxedRetryPolicy<T, E, BA = (), AA = (), BS = (), OE = ()> =
 impl RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (), (), (), ()> {
     /// Creates a policy with `stop::never()`, `wait::fixed(Duration::ZERO)`,
     /// and `on::any_error()`.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             stop: stop::never(),
@@ -236,6 +237,7 @@ impl Default for RetryPolicy<stop::StopNever, wait::WaitFixed, on::AnyError, (),
 
 impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     /// Replaces the stop strategy.
+    #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P, BA, AA, BS, OE> {
         RetryPolicy {
             stop,
@@ -250,6 +252,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     }
 
     /// Replaces the wait strategy.
+    #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P, BA, AA, BS, OE> {
         RetryPolicy {
             stop: self.stop,
@@ -264,6 +267,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     }
 
     /// Replaces the retry predicate.
+    #[must_use]
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
@@ -282,6 +286,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
 
     /// Converts this policy into a type-erased boxed variant.
     #[cfg(feature = "alloc")]
+    #[must_use]
     pub fn boxed<T, E>(self) -> BoxedRetryPolicy<T, E, BA, AA, BS, OE>
     where
         S: Stop + 'static,
@@ -304,6 +309,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
 #[cfg(feature = "alloc")]
 impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     /// Appends a before-attempt hook.
+    #[must_use]
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
@@ -324,6 +330,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     }
 
     /// Appends an after-attempt hook.
+    #[must_use]
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
@@ -341,6 +348,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     }
 
     /// Appends a before-sleep hook.
+    #[must_use]
     pub fn before_sleep<Hook>(
         self,
         hook: Hook,
@@ -358,6 +366,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     }
 
     /// Appends an on-exhausted hook.
+    #[must_use]
     pub fn on_exhausted<Hook>(
         self,
         hook: Hook,
@@ -378,6 +387,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
     /// Sets the sole before-attempt hook (no-alloc mode).
+    #[must_use]
     pub fn before_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, Hook, AA, BS, OE>
     where
         Hook: FnMut(&BeforeAttemptState),
@@ -398,6 +408,7 @@ impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
     /// Sets the sole after-attempt hook (no-alloc mode).
+    #[must_use]
     pub fn after_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, Hook, BS, OE> {
         RetryPolicy {
             stop: self.stop,
@@ -415,6 +426,7 @@ impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
     /// Sets the sole before-sleep hook (no-alloc mode).
+    #[must_use]
     pub fn before_sleep<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, Hook, OE> {
         RetryPolicy {
             stop: self.stop,
@@ -432,6 +444,7 @@ impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
     /// Sets the sole on-exhausted hook (no-alloc mode).
+    #[must_use]
     pub fn on_exhausted<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, BS, Hook> {
         RetryPolicy {
             stop: self.stop,
@@ -491,6 +504,107 @@ fn attempt_state_from<'a, T, E>(
     }
 }
 
+enum AttemptTransition<T, E> {
+    Finished {
+        result: Result<T, RetryError<E, T>>,
+        stats: Option<RetryStats>,
+    },
+    Sleep {
+        next_delay: Duration,
+    },
+}
+
+fn process_attempt_transition<S, W, P, BA, AA, BS, OE, T, E>(
+    policy: &mut RetryPolicy<S, W, P, BA, AA, BS, OE>,
+    outcome: Result<T, E>,
+    mut retry_state: RetryState,
+    collect_stats: bool,
+    total_wait: Duration,
+) -> AttemptTransition<T, E>
+where
+    S: Stop,
+    W: Wait,
+    P: Predicate<T, E>,
+    AA: AttemptHook<T, E>,
+    BS: AttemptHook<T, E>,
+    OE: AttemptHook<T, E>,
+{
+    let should_retry = policy.predicate.should_retry(&outcome);
+    {
+        let attempt_state = attempt_state_from(&retry_state, &outcome);
+        policy.after_attempt.call(&attempt_state);
+    }
+    if !should_retry {
+        let stats = if collect_stats {
+            Some(RetryStats {
+                attempts: retry_state.attempt,
+                total_elapsed: retry_state.elapsed,
+                total_wait,
+                stop_reason: stop_reason_for_predicate_accept(
+                    &outcome,
+                    policy.predicate_is_default,
+                ),
+            })
+        } else {
+            None
+        };
+
+        return AttemptTransition::Finished {
+            result: match outcome {
+                Ok(value) => Ok(value),
+                Err(error) => Err(RetryError::Exhausted {
+                    error,
+                    attempts: retry_state.attempt,
+                    total_elapsed: retry_state.elapsed,
+                }),
+            },
+            stats,
+        };
+    }
+
+    let next_delay = policy.wait.next_wait(&retry_state);
+    retry_state.next_delay = next_delay;
+
+    if policy.stop.should_stop(&retry_state) {
+        {
+            let attempt_state = attempt_state_from(&retry_state, &outcome);
+            policy.on_exhausted.call(&attempt_state);
+        }
+        let stats = if collect_stats {
+            Some(RetryStats {
+                attempts: retry_state.attempt,
+                total_elapsed: retry_state.elapsed,
+                total_wait,
+                stop_reason: StopReason::StopCondition,
+            })
+        } else {
+            None
+        };
+        return AttemptTransition::Finished {
+            result: match outcome {
+                Err(error) => Err(RetryError::Exhausted {
+                    error,
+                    attempts: retry_state.attempt,
+                    total_elapsed: retry_state.elapsed,
+                }),
+                Ok(last) => Err(RetryError::ConditionNotMet {
+                    last,
+                    attempts: retry_state.attempt,
+                    total_elapsed: retry_state.elapsed,
+                }),
+            },
+            stats,
+        };
+    }
+
+    {
+        let attempt_state = attempt_state_from(&retry_state, &outcome);
+        policy.before_sleep.call(&attempt_state);
+    }
+
+    AttemptTransition::Sleep { next_delay }
+}
+
 /// Sync retry execution object.
 ///
 /// Created by [`RetryPolicy::retry`]. Call `.sleep(...)` to provide a sleep
@@ -541,6 +655,7 @@ where
     F: FnMut() -> Result<T, E>,
 {
     /// Sets a custom blocking sleep function.
+    #[must_use]
     pub fn sleep<SleepFn>(
         self,
         sleeper: SleepFn,
@@ -573,6 +688,7 @@ where
     }
 
     /// Executes the retry loop and returns aggregate statistics.
+    #[must_use]
     pub fn with_stats(
         self,
     ) -> SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, SleepFn, T, E> {
@@ -604,88 +720,27 @@ where
                 #[cfg(feature = "std")]
                 &start,
             );
-            let mut retry_state = RetryState {
+            let retry_state = RetryState {
                 attempt,
                 elapsed: elapsed_after_attempt,
                 next_delay: Duration::ZERO,
                 total_wait,
             };
 
-            let should_retry = self.policy.predicate.should_retry(&outcome);
-            {
-                let attempt_state = attempt_state_from(&retry_state, &outcome);
-                self.policy.after_attempt.call(&attempt_state);
-            }
-            if !should_retry {
-                let stats = if COLLECT_STATS {
-                    Some(RetryStats {
-                        attempts: attempt,
-                        total_elapsed: retry_state.elapsed,
-                        total_wait,
-                        stop_reason: stop_reason_for_predicate_accept(
-                            &outcome,
-                            self.policy.predicate_is_default,
-                        ),
-                    })
-                } else {
-                    None
-                };
-
-                return (
-                    match outcome {
-                        Ok(value) => Ok(value),
-                        Err(error) => Err(RetryError::Exhausted {
-                            error,
-                            attempts: attempt,
-                            total_elapsed: retry_state.elapsed,
-                        }),
-                    },
-                    stats,
-                );
-            }
-
-            let next_delay = self.policy.wait.next_wait(&retry_state);
-            retry_state.next_delay = next_delay;
-
-            if self.policy.stop.should_stop(&retry_state) {
-                {
-                    let attempt_state = attempt_state_from(&retry_state, &outcome);
-                    self.policy.on_exhausted.call(&attempt_state);
+            match process_attempt_transition(
+                self.policy,
+                outcome,
+                retry_state,
+                COLLECT_STATS,
+                total_wait,
+            ) {
+                AttemptTransition::Finished { result, stats } => return (result, stats),
+                AttemptTransition::Sleep { next_delay } => {
+                    self.sleeper.sleep(next_delay);
+                    total_wait = total_wait.saturating_add(next_delay);
+                    attempt = attempt.saturating_add(1);
                 }
-                let stats = if COLLECT_STATS {
-                    Some(RetryStats {
-                        attempts: attempt,
-                        total_elapsed: retry_state.elapsed,
-                        total_wait,
-                        stop_reason: StopReason::StopCondition,
-                    })
-                } else {
-                    None
-                };
-                return (
-                    match outcome {
-                        Err(error) => Err(RetryError::Exhausted {
-                            error,
-                            attempts: attempt,
-                            total_elapsed: retry_state.elapsed,
-                        }),
-                        Ok(last) => Err(RetryError::ConditionNotMet {
-                            last,
-                            attempts: attempt,
-                            total_elapsed: retry_state.elapsed,
-                        }),
-                    },
-                    stats,
-                );
             }
-            {
-                let attempt_state = attempt_state_from(&retry_state, &outcome);
-                self.policy.before_sleep.call(&attempt_state);
-            }
-
-            self.sleeper.sleep(next_delay);
-            total_wait = total_wait.saturating_add(next_delay);
-            attempt = attempt.saturating_add(1);
         }
     }
 }
@@ -717,6 +772,7 @@ where
     BA: BeforeAttemptHook,
 {
     /// Begins configuring sync retry execution.
+    #[must_use]
     pub fn retry<T, E, F>(
         &mut self,
         op: F,
@@ -821,6 +877,7 @@ where
     Fut: Future<Output = Result<T, E>>,
 {
     /// Sets the async sleep implementation.
+    #[must_use]
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
@@ -841,6 +898,7 @@ where
     }
 
     /// Wraps this async retry with statistics collection.
+    #[must_use]
     pub fn with_stats(
         self,
     ) -> AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> {
@@ -895,79 +953,31 @@ where
                             #[cfg(feature = "std")]
                             &this.start,
                         );
-                        let mut retry_state = RetryState {
+                        let retry_state = RetryState {
                             attempt: this.attempt,
                             elapsed: elapsed_after_attempt,
                             next_delay: Duration::ZERO,
                             total_wait: this.total_wait,
                         };
 
-                        let should_retry = this.policy.predicate.should_retry(&outcome);
-                        {
-                            let attempt_state = attempt_state_from(&retry_state, &outcome);
-                            this.policy.after_attempt.call(&attempt_state);
-                        }
-                        if !should_retry {
-                            if this.collect_stats {
-                                let stop_reason = stop_reason_for_predicate_accept(
-                                    &outcome,
-                                    this.policy.predicate_is_default,
-                                );
-                                this.final_stats = Some(RetryStats {
-                                    attempts: this.attempt,
-                                    total_elapsed: retry_state.elapsed,
-                                    total_wait: this.total_wait,
-                                    stop_reason,
-                                });
+                        match process_attempt_transition(
+                            this.policy,
+                            outcome,
+                            retry_state,
+                            this.collect_stats,
+                            this.total_wait,
+                        ) {
+                            AttemptTransition::Finished { result, stats } => {
+                                this.final_stats = stats;
+                                this.phase = AsyncPhase::Finished;
+                                return Poll::Ready(result);
                             }
-                            this.phase = AsyncPhase::Finished;
-                            return Poll::Ready(match outcome {
-                                Ok(value) => Ok(value),
-                                Err(error) => Err(RetryError::Exhausted {
-                                    error,
-                                    attempts: this.attempt,
-                                    total_elapsed: retry_state.elapsed,
-                                }),
-                            });
-                        }
-
-                        let next_delay = this.policy.wait.next_wait(&retry_state);
-                        retry_state.next_delay = next_delay;
-
-                        if this.policy.stop.should_stop(&retry_state) {
-                            {
-                                let attempt_state = attempt_state_from(&retry_state, &outcome);
-                                this.policy.on_exhausted.call(&attempt_state);
+                            AttemptTransition::Sleep { next_delay } => {
+                                this.total_wait = this.total_wait.saturating_add(next_delay);
+                                this.phase =
+                                    AsyncPhase::Sleeping(Box::pin(this.sleeper.sleep(next_delay)));
                             }
-                            if this.collect_stats {
-                                this.final_stats = Some(RetryStats {
-                                    attempts: this.attempt,
-                                    total_elapsed: retry_state.elapsed,
-                                    total_wait: this.total_wait,
-                                    stop_reason: StopReason::StopCondition,
-                                });
-                            }
-                            this.phase = AsyncPhase::Finished;
-                            return Poll::Ready(match outcome {
-                                Err(error) => Err(RetryError::Exhausted {
-                                    error,
-                                    attempts: this.attempt,
-                                    total_elapsed: retry_state.elapsed,
-                                }),
-                                Ok(last) => Err(RetryError::ConditionNotMet {
-                                    last,
-                                    attempts: this.attempt,
-                                    total_elapsed: retry_state.elapsed,
-                                }),
-                            });
                         }
-
-                        {
-                            let attempt_state = attempt_state_from(&retry_state, &outcome);
-                            this.policy.before_sleep.call(&attempt_state);
-                        }
-                        this.total_wait = this.total_wait.saturating_add(next_delay);
-                        this.phase = AsyncPhase::Sleeping(Box::pin(this.sleeper.sleep(next_delay)));
                     }
                 },
                 AsyncPhase::Sleeping(sleep_future) => match sleep_future.as_mut().poll(cx) {
@@ -1027,6 +1037,7 @@ where
     BA: BeforeAttemptHook,
 {
     /// Begins configuring async retry execution.
+    #[must_use]
     pub fn retry_async<T, E, F, Fut>(
         &mut self,
         op: F,
