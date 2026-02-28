@@ -72,6 +72,17 @@ jobs:
       - name: cargo doc
         run: cargo doc --all-features --no-deps
 
+  cargo-deny:
+    name: Supply chain (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: cargo deny
+        run: cargo deny check advisories licenses bans sources
+
   msrv:
     name: MSRV 1.85
     runs-on: ubuntu-latest
