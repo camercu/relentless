@@ -471,3 +471,42 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 **10.6** The minimum supported Rust version (MSRV) is 1.85. This is required by edition 2024 and also covers the stabilization of `async fn in trait` (via RPITIT), which is required for the `Sleeper` associated type. The MSRV is declared in `Cargo.toml` via `rust-version = "1.85"`.
 
 **10.7** The crate is `#![forbid(unsafe_code)]`. No unsafe is required for any feature. If a dependency requires unsafe, it is isolated and documented.
+
+---
+
+## Iteration 11: Release hardening, quality properties, and performance
+
+This iteration adds release confidence guardrails in CI, seeded property-style
+tests for composition logic, and lightweight benchmark and allocation
+instrumentation for hot retry paths.
+
+**11.1** CI enforces formatting (`cargo fmt --all --check`), tests
+(`cargo test --all-targets`), and strict linting
+(`cargo clippy --all-targets --all-features -- -D warnings`) on every push
+and pull request.
+
+**11.2** CI enforces documentation quality with doc tests (`cargo test --doc`)
+and rustdoc warnings promoted to errors
+(`RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`).
+
+**11.3** CI enforces MSRV compatibility at Rust 1.85 with
+`cargo check --all-targets` and `cargo test --all-targets`.
+
+**11.4** CI enforces no_std target compatibility by building
+`thumbv7m-none-eabi` with `--no-default-features` and checking
+`wasm32-unknown-unknown` with
+`--no-default-features --features alloc,gloo-timers-sleep`.
+
+**11.5** Seeded property-style tests validate composition invariants for
+`Stop`, `Wait`, and `Predicate` over generated input sets. By default, tests
+use a random run seed. Setting `TENACIOUS_PROPTEST_SEED` pins the run seed for
+deterministic reproduction, and assertion failures must print the effective
+seed and sample index.
+
+**11.6** Allocation profile tests verify that concrete, non-boxed sync retry
+execution paths are allocation-free during execution, and that boxed policy
+paths allocate as expected.
+
+**11.7** The crate provides a micro-benchmark target for hot sync execution
+paths, runnable with `cargo bench --bench retry_hot_paths`, and CI verifies the
+benchmark target compiles (`cargo bench --bench retry_hot_paths --no-run`).
