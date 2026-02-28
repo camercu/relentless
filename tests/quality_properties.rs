@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 use std::env;
-use tenacious::{Predicate, Stop, Wait, on, stop, wait};
+use tenacious::{Predicate, Stop, Wait, WaitExt, on, stop, wait};
 
 #[path = "support/property_seed.rs"]
 mod property_seed;

@@ -13,8 +13,8 @@
 //! - Wait strategies return Duration, don't interact with sleep (3.11)
 
 use core::time::Duration;
-use tenacious::Wait;
 use tenacious::wait;
+use tenacious::{Wait, WaitExt};
 
 // ---------------------------------------------------------------------------
 // Test constants

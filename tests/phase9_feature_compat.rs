@@ -7,7 +7,7 @@ use std::cell::RefCell;
 #[cfg(any(feature = "jitter", feature = "serde"))]
 use tenacious::RetryPolicy;
 #[cfg(feature = "jitter")]
-use tenacious::Wait;
+use tenacious::{Wait, WaitExt};
 #[cfg(any(feature = "jitter", feature = "serde"))]
 use tenacious::{stop, wait};
 

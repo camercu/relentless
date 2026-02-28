@@ -96,7 +96,7 @@ where
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100));
@@ -133,7 +133,7 @@ impl Wait for WaitFixed {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
@@ -174,13 +174,13 @@ impl Wait for WaitLinear {
 /// at [`Duration::MAX`].
 ///
 /// Use [`.base(f)`](WaitExponential::base) to change the multiplier and
-/// [`.cap(max)`](WaitExponential::cap) to clamp the result.
+/// [`.cap(max)`](WaitExt::cap) to clamp the result.
 ///
 /// # Examples
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100));
@@ -262,7 +262,7 @@ impl Wait for WaitExponential {
 /// ```
 /// # #[cfg(feature = "jitter")]
 /// # {
-/// use tenacious::{Wait, RetryState, wait};
+/// use tenacious::{Wait, WaitExt, RetryState, wait};
 /// use core::time::Duration;
 ///
 /// let mut strategy = wait::fixed(Duration::from_millis(50))
@@ -370,7 +370,7 @@ where
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
@@ -411,7 +411,7 @@ impl<W: Wait> Wait for WaitCapped<W> {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100))
@@ -459,7 +459,7 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::Wait;
+/// use tenacious::{Wait, WaitExt};
 /// use core::time::Duration;
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
@@ -507,82 +507,7 @@ impl<A: Wait, B: Wait> Wait for WaitChain<A, B> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Builder methods (.cap, .chain) and Add impls via macros
-// ---------------------------------------------------------------------------
-
-/// Generates `.cap()` and `.chain()` builder methods for a wait strategy type.
-macro_rules! impl_wait_builders {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl $ty {
-            /// Clamps the computed wait to at most `max`.
-            #[must_use]
-            pub fn cap(self, max: Duration) -> WaitCapped<Self> {
-                WaitCapped { inner: self, max }
-            }
-
-            /// Switches to `other` after `after` attempts.
-            #[must_use]
-            pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
-                WaitChain::new(self, other, after)
-            }
-
-            /// Adds uniformly distributed jitter in `[0, max_jitter]`.
-            #[cfg(feature = "jitter")]
-            #[must_use]
-            pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
-                WaitJitter::new(self, max_jitter)
-            }
-        }
-    )+};
-}
-
-impl_wait_builders!(WaitFixed, WaitLinear, WaitExponential);
-
-// Cap and chain on composite types (generic impls).
-impl<A, B> WaitCombine<A, B> {
-    /// Clamps the combined output to at most `max`.
-    #[must_use]
-    pub fn cap(self, max: Duration) -> WaitCapped<Self> {
-        WaitCapped { inner: self, max }
-    }
-
-    /// Switches to `other` after `after` attempts.
-    #[must_use]
-    pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
-        WaitChain::new(self, other, after)
-    }
-
-    /// Adds uniformly distributed jitter in `[0, max_jitter]`.
-    #[cfg(feature = "jitter")]
-    #[must_use]
-    pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
-        WaitJitter::new(self, max_jitter)
-    }
-}
-
-impl<A, B> WaitChain<A, B> {
-    /// Clamps the chain's output to at most `max`.
-    #[must_use]
-    pub fn cap(self, max: Duration) -> WaitCapped<Self> {
-        WaitCapped { inner: self, max }
-    }
-
-    /// Adds uniformly distributed jitter in `[0, max_jitter]`.
-    #[cfg(feature = "jitter")]
-    #[must_use]
-    pub fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
-        WaitJitter::new(self, max_jitter)
-    }
-}
-
 impl<W> WaitCapped<W> {
-    /// Switches to `other` after `after` attempts.
-    #[must_use]
-    pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
-        WaitChain::new(self, other, after)
-    }
-
     /// Adds jitter while preserving cap-after-jitter semantics.
     ///
     /// Even when called after `.cap(max)`, the cap remains the final operation.
@@ -635,21 +560,6 @@ impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
 
     fn add(self, rhs: Rhs) -> Self::Output {
         WaitCombine::new(self, rhs)
-    }
-}
-
-#[cfg(feature = "jitter")]
-impl<W> WaitJitter<W> {
-    /// Clamps the jittered output to at most `max`.
-    #[must_use]
-    pub fn cap(self, max: Duration) -> WaitCapped<Self> {
-        WaitCapped { inner: self, max }
-    }
-
-    /// Switches to `other` after `after` attempts.
-    #[must_use]
-    pub fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
-        WaitChain::new(self, other, after)
     }
 }
 
