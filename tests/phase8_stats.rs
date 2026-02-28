@@ -254,7 +254,7 @@ fn sync_stop_reason_predicate_accepted_when_error_rejected() {
         .call();
 
     // Predicate rejected the error, so we get PredicateAccepted (not StopCondition).
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert!(matches!(result, Err(RetryError::PredicateRejected { .. })));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.stop_reason, StopReason::PredicateAccepted);
 }

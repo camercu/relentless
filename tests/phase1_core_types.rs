@@ -509,6 +509,28 @@ fn retry_error_exhausted_variant() {
 }
 
 #[test]
+fn retry_error_predicate_rejected_variant() {
+    let err: tenacious::RetryError<String> = tenacious::RetryError::PredicateRejected {
+        error: "fatal".to_string(),
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: Some(ARBITRARY_DURATION),
+    };
+
+    match err {
+        tenacious::RetryError::PredicateRejected {
+            ref error,
+            attempts,
+            total_elapsed,
+        } => {
+            assert_eq!(error, "fatal");
+            assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
+            assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
+        }
+        _ => panic!("expected PredicateRejected variant"),
+    }
+}
+
+#[test]
 fn retry_error_condition_not_met_variant_carries_last_value() {
     let err: tenacious::RetryError<String, i32> = tenacious::RetryError::ConditionNotMet {
         last: 42,
@@ -616,6 +638,23 @@ fn retry_error_condition_not_met_source_is_none() {
     assert!(
         dyn_err.source().is_none(),
         "ConditionNotMet has no source error"
+    );
+}
+
+/// source() returns Some(inner) for PredicateRejected.
+#[test]
+fn retry_error_predicate_rejected_source_is_inner_error() {
+    let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
+    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::PredicateRejected {
+        error: inner,
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: None,
+    };
+
+    let dyn_err: &dyn std::error::Error = &err;
+    assert!(
+        dyn_err.source().is_some(),
+        "PredicateRejected should chain to the inner error via source()"
     );
 }
 

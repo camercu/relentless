@@ -130,6 +130,15 @@ fn retry_async_executes_when_sleeper_is_set() {
 }
 
 #[test]
+fn async_retry_type_is_nameable_from_crate_root() {
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let retry = policy
+        .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+        .sleep(|_dur: Duration| async {});
+    let _typed: tenacious::AsyncRetry<'_, _, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
+}
+
+#[test]
 fn async_retry_is_directly_awaitable() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
     let sleeper = RecordingSleeper::new();

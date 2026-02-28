@@ -130,8 +130,8 @@ where
 /// ```
 #[derive(Clone)]
 pub struct RetryPolicy<
-    S = stop::NeedsStop,
-    W = wait::WaitFixed,
+    S = stop::StopAfterAttempts,
+    W = wait::WaitExponential,
     P = on::AnyError,
     BA = (),
     AA = (),
@@ -278,29 +278,6 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()>
             on_exhausted: (),
             predicate_is_default: true,
         })
-    }
-
-    /// Creates a safe, ready-to-run policy.
-    ///
-    /// Defaults:
-    /// - stop after 3 attempts
-    /// - exponential backoff starting at 100ms
-    /// - retry on any error (`on::any_error()`)
-    ///
-    /// ```
-    /// use tenacious::RetryPolicy;
-    ///
-    /// let mut policy = RetryPolicy::default();
-    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
-    /// ```
-    #[allow(clippy::should_implement_trait)]
-    #[must_use]
-    pub fn default()
-    -> RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError, (), (), (), ()>
-    {
-        RetryPolicy::new()
-            .stop(stop::attempts(DEFAULT_MAX_ATTEMPTS))
-            .wait(wait::exponential(DEFAULT_INITIAL_WAIT))
     }
 }
 
@@ -638,7 +615,7 @@ where
         return AttemptTransition::Finished {
             result: match outcome {
                 Ok(value) => Ok(value),
-                Err(error) => Err(RetryError::Exhausted {
+                Err(error) => Err(RetryError::PredicateRejected {
                     error,
                     attempts: retry_state.attempt,
                     total_elapsed: retry_state.elapsed,

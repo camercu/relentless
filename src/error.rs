@@ -39,6 +39,19 @@ pub enum RetryError<E, T = ()> {
         total_elapsed: Option<Duration>,
     },
 
+    /// The predicate rejected an `Err` outcome, so retrying stopped immediately.
+    ///
+    /// This occurs when using a custom predicate (for example `on::error`) that
+    /// classifies some errors as non-retryable.
+    PredicateRejected {
+        /// The error from the rejected attempt.
+        error: E,
+        /// Total number of attempts made.
+        attempts: u32,
+        /// Wall-clock time elapsed, or `None` if no clock was available.
+        total_elapsed: Option<Duration>,
+    },
+
     /// The stop condition fired while the predicate was still rejecting `Ok` values.
     /// This variant is used when `on::ok` or `on::result` predicates cause retries
     /// on `Ok` values and the stop condition fires before the predicate accepts.
@@ -78,6 +91,17 @@ impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
                     attempts, total_elapsed, last
                 )
             }
+            RetryError::PredicateRejected {
+                error,
+                attempts,
+                total_elapsed,
+            } => {
+                write!(
+                    f,
+                    "predicate rejected error after {} attempt(s) (elapsed: {:?}): {}",
+                    attempts, total_elapsed, error
+                )
+            }
         }
     }
 }
@@ -91,6 +115,7 @@ where
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             RetryError::Exhausted { error, .. } => Some(error),
+            RetryError::PredicateRejected { error, .. } => Some(error),
             RetryError::ConditionNotMet { .. } => None,
         }
     }

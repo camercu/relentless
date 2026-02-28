@@ -172,13 +172,16 @@ fn when_builder_configures_predicate() {
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::Exhausted {
+        Err(RetryError::PredicateRejected {
             error, attempts, ..
         }) => {
             assert_eq!(error, "fatal");
             assert_eq!(attempts, 1);
         }
-        other => panic!("expected Exhausted with attempts=1, got {:?}", other),
+        other => panic!(
+            "expected PredicateRejected with attempts=1, got {:?}",
+            other
+        ),
     }
 }
 
@@ -208,6 +211,15 @@ fn retry_succeeds_after_transient_failures() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
+}
+
+#[test]
+fn sync_retry_type_is_nameable_from_crate_root() {
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let retry = policy
+        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep);
+    let _typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
 }
 
 #[test]
@@ -273,6 +285,23 @@ fn retry_with_never_stop_still_returns_on_ok() {
 #[test]
 fn default_policy_retries_three_times() {
     let mut policy = RetryPolicy::default();
+
+    let call_count = Cell::new(0_u32);
+    let result = policy
+        .retry(|| {
+            call_count.set(call_count.get().saturating_add(1));
+            Err::<i32, _>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(call_count.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
+}
+
+#[test]
+fn unparameterized_retry_policy_default_is_safe_policy() {
+    let mut policy: RetryPolicy = RetryPolicy::default();
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -607,7 +636,7 @@ fn condition_not_met_returned_for_ok_predicate_exhaustion() {
 
 #[test]
 fn predicate_rejects_err_means_immediate_return() {
-    // If predicate says "don't retry this error", return wrapped in Exhausted with attempts=1.
+    // If predicate says "don't retry this error", return PredicateRejected with attempts=1.
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(on::error(|e: &&str| *e == "retryable"));
@@ -623,13 +652,16 @@ fn predicate_rejects_err_means_immediate_return() {
 
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::Exhausted {
+        Err(RetryError::PredicateRejected {
             error, attempts, ..
         }) => {
             assert_eq!(error, "fatal");
             assert_eq!(attempts, 1);
         }
-        other => panic!("expected Exhausted with attempts=1, got {:?}", other),
+        other => panic!(
+            "expected PredicateRejected with attempts=1, got {:?}",
+            other
+        ),
     }
 }
 

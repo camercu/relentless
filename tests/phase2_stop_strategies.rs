@@ -96,6 +96,12 @@ fn attempts_with_one_stops_immediately() {
     assert!(s.should_stop(&state));
 }
 
+#[test]
+#[should_panic(expected = "stop::attempts requires max >= 1")]
+fn attempts_with_zero_panics() {
+    let _ = stop::attempts(0);
+}
+
 // ---------------------------------------------------------------------------
 // 2.2: stop::elapsed(dur)
 // ---------------------------------------------------------------------------

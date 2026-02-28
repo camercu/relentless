@@ -82,10 +82,18 @@ pub struct StopAfterAttempts {
     max: u32,
 }
 
+/// Minimum valid attempt count for `stop::attempts`.
+const MIN_STOP_ATTEMPTS: u32 = 1;
+
 /// Produces a strategy that stops after `max` completed attempts.
 ///
 /// The stop fires when `state.attempt >= max`.
+///
+/// # Panics
+///
+/// Panics if `max` is `0`.
 pub fn attempts(max: u32) -> StopAfterAttempts {
+    assert!(max >= MIN_STOP_ATTEMPTS, "stop::attempts requires max >= 1");
     StopAfterAttempts { max }
 }
 

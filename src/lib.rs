@@ -56,6 +56,9 @@ pub use error::RetryError;
 #[cfg(feature = "alloc")]
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
+#[cfg(feature = "alloc")]
+pub use policy::{AsyncRetry, AsyncRetryWithStats};
+pub use policy::{SyncRetry, SyncRetryWithStats};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, RetryState};

@@ -214,13 +214,21 @@ Both types are constructed internally by the execution engine and passed by shar
 pub enum RetryError<E, T = ()> {
     /// All retries exhausted; the operation kept returning Err.
     Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> },
+    /// Predicate rejected an Err as non-retryable.
+    PredicateRejected { error: E, attempts: u32, total_elapsed: Option<Duration> },
     /// The stop condition fired while the predicate was still rejecting Ok values.
     /// The last Ok value is moved here; no clone is required.
     ConditionNotMet { last: T, attempts: u32, total_elapsed: Option<Duration> },
 }
 ```
 
-In the common case (retry-on-error, accept any Ok), `T` defaults to `()` and `ConditionNotMet` is unreachable. When `on::ok` or `on::result` is used to retry on Ok values, the caller's `Result<T, RetryError<E, T>>` carries the last Ok in the error variant if the stop condition fires before the predicate accepts. The execution engine takes ownership of the last value; no clone is required.
+In the common case (retry-on-error, accept any Ok), `T` defaults to `()` and
+`ConditionNotMet` is unreachable. When custom predicates classify some errors
+as non-retryable, `PredicateRejected` returns the current `Err` immediately.
+When `on::ok` or `on::result` is used to retry on Ok values, the caller's
+`Result<T, RetryError<E, T>>` carries the last Ok in the error variant if the
+stop condition fires before the predicate accepts. The execution engine takes
+ownership of the last value; no clone is required.
 
 `RetryError` implements `std::error::Error` when `std` is active, `E: Error + 'static`, and `T: Debug`. `Display` is implemented unconditionally.
 
@@ -273,7 +281,10 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 **1.8** `AttemptState` is constructed internally by the execution engine and passed by shared reference to all hooks, `Stop::should_stop`, `Predicate::should_retry`, and `Wait::next_wait`. It is never constructed by user code.
 
-**1.9** `RetryError<E>` is defined in `error.rs` as an enum with variants `Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> }` and `ConditionNotMet { attempts: u32, total_elapsed: Option<Duration> }`.
+**1.9** `RetryError<E>` is defined in `error.rs` as an enum with variants
+`Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> }`,
+`PredicateRejected { error: E, attempts: u32, total_elapsed: Option<Duration>
+}`, and `ConditionNotMet { last: T, attempts: u32, total_elapsed: Option<Duration> }`.
 
 **1.10** `RetryError<E>` implements `core::fmt::Display` unconditionally and `std::error::Error` when the `std` feature is active and `E: std::error::Error + 'static`.
 
@@ -283,7 +294,9 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 ## Iteration 2: Stop Strategies
 
-**2.1** `stop::attempts(n: u32)` produces a strategy that stops after `n` completed attempts. The stop fires when `state.attempt >= n`.
+**2.1** `stop::attempts(n: u32)` produces a strategy that stops after `n`
+completed attempts. The stop fires when `state.attempt >= n`. `n` must be at
+least `1`; passing `0` panics.
 
 **2.2** `stop::elapsed(dur: Duration)` produces a strategy that stops when `state.elapsed >= Some(dur)`. When `state.elapsed` is `None` (no clock), this strategy never fires.
 
@@ -369,7 +382,8 @@ for the first `after` attempts and `other` for all subsequent attempts.
 `NeedsStop` (a marker that does not implement `Stop`). Retry execution methods
 are unavailable until `.stop(...)` is called. `RetryPolicy::default()` returns
 a safe, ready-to-run policy configured with `stop::attempts(3)`,
-`wait::exponential(Duration::from_millis(100))`, and `on::any_error()`.
+`wait::exponential(Duration::from_millis(100))`, and `on::any_error()`. The
+unparameterized `RetryPolicy` type defaults to this safe configuration.
 
 **5.2** `RetryPolicy` provides builder methods: `.stop(s: impl Stop)`, `.wait(w: impl Wait)`, `.when(p: impl Predicate)`, `.before_attempt(f)`, `.after_attempt(f)`, `.before_sleep(f)`, `.on_exhausted(f)`. Each method consumes and returns `Self`.
 
@@ -381,7 +395,9 @@ a safe, ready-to-run policy configured with `stop::attempts(3)`,
 
 **5.6** `SyncRetry::call() -> Result<T, RetryError<E>>` executes the retry loop synchronously. The loop:
   1. Calls `op()`.
-  2. Evaluates the predicate; if predicate says accept, returns `Ok(result)`.
+  2. Evaluates the predicate; if predicate says do not retry, returns the
+     current outcome immediately (`Ok(value)` or
+     `Err(RetryError::PredicateRejected { ... })`).
   3. Evaluates the stop condition; if stop fires, returns `Err(RetryError::Exhausted {...})`.
   4. Calls `Wait::next_wait` to compute the delay.
   5. Fires `before_sleep` hook with current `AttemptState`.
@@ -442,7 +458,9 @@ a safe, ready-to-run policy configured with `stop::attempts(3)`,
 
 **8.2** `RetryStats` is a struct with fields: `attempts: u32`, `total_elapsed: Option<Duration>`, `total_wait: Duration`, `stop_reason: StopReason`.
 
-**8.3** `StopReason` is an enum with variants: `Success`, `StopCondition`, `PredicateAccepted` (for Ok-but-not-error success where the predicate accepted the value).
+**8.3** `StopReason` is an enum with variants: `Success`, `StopCondition`,
+`PredicateAccepted` (predicate terminated retries before a stop condition,
+including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
 
 **8.4** Statistics are accumulated inside the execution engine only when `.with_stats()` is active. Without it, no timing calls are made solely for statistics purposes.
 
@@ -472,7 +490,11 @@ a safe, ready-to-run policy configured with `stop::attempts(3)`,
 
 ## Iteration 10: Public API Surface and Ergonomics
 
-**10.1** The following items are re-exported from the crate root: `RetryPolicy`, `RetryError`, `RetryStats`, `StopReason`, the `stop` module, the `wait` module, the `on` module, the `Stop` trait, the `Wait` trait, the `Predicate` trait, and the `Sleeper` trait.
+**10.1** The following items are re-exported from the crate root:
+`RetryPolicy`, `RetryError`, `RetryStats`, `StopReason`, `SyncRetry`,
+`SyncRetryWithStats`, `AsyncRetry`, `AsyncRetryWithStats`, the `stop` module,
+the `wait` module, the `on` module, the `Stop` trait, the `Wait` trait, the
+`Predicate` trait, and the `Sleeper` trait.
 
 **10.2** The `sleep` module is re-exported and contains runtime-specific sleeper values (gated by features).
 
