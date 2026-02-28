@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+  test-and-lint:
+    name: Test + clippy (all features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: cargo test
+        run: cargo test --all-targets
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo bench --no-run
+        run: cargo bench --bench retry_hot_paths --no-run
+
+  feature-compat:
+    name: Feature compatibility (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - jitter
+          - serde
+          - jitter,serde
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test phase9_feature_compat
+        run: cargo test --test phase9_feature_compat --features ${{ matrix.features }}
+
+  docs:
+    name: Docs lint
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test --doc
+        run: cargo test --doc
+      - name: cargo doc
+        run: cargo doc --all-features --no-deps
+
+  msrv:
+    name: MSRV 1.85
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85.0"
+      - name: cargo check
+        run: cargo check --all-targets
+      - name: cargo test
+        run: cargo test --all-targets
+
+  no-std-thumb:
+    name: no_std thumbv7m
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7m-none-eabi
+      - name: build no-default-features for thumbv7m
+        run: cargo build --target thumbv7m-none-eabi --no-default-features
+
+  no-std-wasm:
+    name: wasm32 no_std compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: check no-default-features + alloc + gloo
+        run: cargo check --target wasm32-unknown-unknown --no-default-features --features alloc,gloo-timers-sleep
