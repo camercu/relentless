@@ -4,6 +4,7 @@ use crate::compat::Duration;
 
 /// Why a retry loop terminated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StopReason {
     /// The operation produced a successful result under the default predicate.
     Success,
@@ -15,6 +16,7 @@ pub enum StopReason {
 
 /// Aggregate statistics for a completed retry execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RetryStats {
     /// Number of attempts that were executed.
     pub attempts: u32,

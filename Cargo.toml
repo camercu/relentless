@@ -18,7 +18,9 @@ alloc = []
 # Runtime-specific async sleep implementations.
 tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]
+serde = ["dep:serde"]
 
 [dependencies]
 tokio = { version = "1", default-features = false, features = ["time"], optional = true }
 embassy-time = { version = "0.3", optional = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
