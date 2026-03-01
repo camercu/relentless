@@ -6,8 +6,10 @@ use core::time::Duration;
 use std::cell::RefCell;
 #[cfg(any(feature = "jitter", feature = "serde"))]
 use tenacious::RetryPolicy;
+#[cfg(any(feature = "jitter", feature = "serde"))]
+use tenacious::Wait;
 #[cfg(feature = "jitter")]
-use tenacious::{Wait, WaitExt};
+use tenacious::WaitExt;
 #[cfg(any(feature = "jitter", feature = "serde"))]
 use tenacious::{stop, wait};
 
@@ -17,8 +19,22 @@ const BASE_WAIT: Duration = Duration::from_millis(20);
 const MAX_JITTER: Duration = Duration::from_millis(10);
 #[cfg(feature = "jitter")]
 const WAIT_CAP: Duration = Duration::from_millis(25);
-
 #[cfg(feature = "jitter")]
+const SEEDED_NONCE_A: u64 = 7;
+#[cfg(feature = "jitter")]
+const SEEDED_NONCE_B: u64 = 8;
+#[cfg(feature = "jitter")]
+const SEEDED_ATTEMPT_COUNT: u32 = 8;
+#[cfg(feature = "jitter")]
+const SEEDED_JITTER_SEED: [u8; 32] = [0x11; 32];
+#[cfg(feature = "serde")]
+const SERIALIZED_ATTEMPTS_KEY: &str = "max";
+#[cfg(feature = "serde")]
+const INVALID_ATTEMPTS_VALUE: u64 = 0;
+#[cfg(feature = "serde")]
+const SUBUNIT_EXPONENTIAL_BASE: f64 = 0.5;
+
+#[cfg(any(feature = "jitter", feature = "serde"))]
 fn state(attempt: u32) -> tenacious::RetryState {
     tenacious::RetryState {
         attempt,
@@ -92,6 +108,41 @@ fn jitter_sequence_changes_between_policy_invocations() {
     );
 }
 
+#[cfg(feature = "jitter")]
+#[test]
+fn jitter_seed_and_nonce_make_sequence_reproducible() {
+    let template = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED)
+        .with_nonce(SEEDED_NONCE_A);
+    let mut first = template.clone();
+    let mut second = template;
+
+    for attempt in 1..=SEEDED_ATTEMPT_COUNT {
+        assert_eq!(
+            first.next_wait(&state(attempt)),
+            second.next_wait(&state(attempt))
+        );
+    }
+}
+
+#[cfg(feature = "jitter")]
+#[test]
+fn jitter_nonce_changes_sequence_for_same_seed() {
+    let mut first = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED)
+        .with_nonce(SEEDED_NONCE_A);
+    let mut second = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED)
+        .with_nonce(SEEDED_NONCE_B);
+
+    let first_delay = first.next_wait(&state(1));
+    let second_delay = second.next_wait(&state(1));
+    assert_ne!(first_delay, second_delay);
+}
+
 #[cfg(feature = "serde")]
 #[test]
 fn retry_policy_serialization_omits_hooks() {
@@ -138,6 +189,39 @@ fn retry_policy_round_trips_without_hooks() {
         result,
         Err(tenacious::RetryError::Exhausted { attempts: 3, .. })
     ));
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn retry_policy_deserialization_rejects_zero_attempts() {
+    let mut value = serde_json::to_value(
+        RetryPolicy::new()
+            .stop(stop::attempts(3))
+            .wait(wait::fixed(Duration::from_millis(5))),
+    )
+    .expect("policy should serialize");
+    value["stop"][SERIALIZED_ATTEMPTS_KEY] = serde_json::json!(INVALID_ATTEMPTS_VALUE);
+
+    let decoded: Result<
+        RetryPolicy<tenacious::stop::StopAfterAttempts, tenacious::wait::WaitFixed>,
+        _,
+    > = serde_json::from_value(value);
+    assert!(decoded.is_err(), "zero attempts must fail deserialization");
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn wait_exponential_deserialization_clamps_subunit_base() {
+    let value = serde_json::json!({
+        "initial": Duration::from_millis(5),
+        "base": SUBUNIT_EXPONENTIAL_BASE
+    });
+    let mut strategy: tenacious::wait::WaitExponential =
+        serde_json::from_value(value).expect("wait::exponential should deserialize");
+
+    let first = strategy.next_wait(&state(1));
+    let second = strategy.next_wait(&state(2));
+    assert_eq!(first, second, "base below 1.0 must clamp to 1.0");
 }
 
 #[cfg(all(feature = "serde", feature = "jitter"))]
