@@ -79,7 +79,6 @@ where
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAfterAttempts {
     max: u32,
 }
@@ -134,6 +133,36 @@ pub fn attempts_checked(max: u32) -> Result<StopAfterAttempts, StopConfigError> 
 impl Stop for StopAfterAttempts {
     fn should_stop(&mut self, state: &RetryState) -> bool {
         state.attempt >= self.max
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for StopAfterAttempts {
+    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
+    where
+        Ser: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("StopAfterAttempts", 1)?;
+        state.serialize_field("max", &self.max)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for StopAfterAttempts {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct SerializedStopAfterAttempts {
+            max: u32,
+        }
+
+        let serialized = SerializedStopAfterAttempts::deserialize(deserializer)?;
+        attempts_checked(serialized.max).map_err(serde::de::Error::custom)
     }
 }
 

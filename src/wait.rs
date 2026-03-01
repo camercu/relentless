@@ -226,7 +226,6 @@ impl Wait for WaitLinear {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitExponential {
     initial: Duration,
     base: f64,
@@ -241,6 +240,11 @@ const MIN_EXPONENTIAL_BASE: f64 = 1.0;
 /// Fixed seed used by jitter-enabled wait strategies.
 #[cfg(feature = "jitter")]
 const DEFAULT_JITTER_SEED: [u8; 32] = [0x5A; 32];
+
+#[cfg(all(feature = "jitter", feature = "serde"))]
+const fn default_jitter_seed() -> [u8; 32] {
+    DEFAULT_JITTER_SEED
+}
 
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
 #[cfg(all(feature = "jitter", target_has_atomic = "ptr"))]
@@ -258,6 +262,19 @@ pub fn exponential(initial: Duration) -> WaitExponential {
     }
 }
 
+fn clamp_exponential_base(base: f64) -> f64 {
+    f64::max(base, MIN_EXPONENTIAL_BASE)
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_exponential_base(base: f64) -> Result<f64, &'static str> {
+    if !base.is_finite() {
+        return Err("wait::exponential base must be finite");
+    }
+
+    Ok(clamp_exponential_base(base))
+}
+
 impl WaitExponential {
     /// Changes the exponential base from the default of `2.0`.
     ///
@@ -265,7 +282,7 @@ impl WaitExponential {
     /// `1.0` produces a constant delay equal to `initial` on every attempt.
     #[must_use]
     pub fn base(mut self, base: f64) -> Self {
-        self.base = f64::max(base, MIN_EXPONENTIAL_BASE);
+        self.base = clamp_exponential_base(base);
         self
     }
 }
@@ -278,6 +295,40 @@ impl Wait for WaitExponential {
         // to infinity on overflow.
         let multiplier = pow_nonnegative_f64(self.base, exponent);
         saturating_duration_mul_f64(self.initial, multiplier)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for WaitExponential {
+    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
+    where
+        Ser: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("WaitExponential", 2)?;
+        state.serialize_field("initial", &self.initial)?;
+        state.serialize_field("base", &self.base)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for WaitExponential {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct SerializedWaitExponential {
+            initial: Duration,
+            base: f64,
+        }
+
+        let serialized = SerializedWaitExponential::deserialize(deserializer)?;
+        let base =
+            deserialize_exponential_base(serialized.base).map_err(serde::de::Error::custom)?;
+        Ok(exponential(serialized.initial).base(base))
     }
 }
 
@@ -321,6 +372,7 @@ impl Wait for WaitExponential {
 pub struct WaitJitter<W> {
     inner: W,
     max_jitter: Duration,
+    seed: [u8; 32],
     nonce: u64,
     rng: SmallRng,
 }
@@ -328,12 +380,29 @@ pub struct WaitJitter<W> {
 #[cfg(feature = "jitter")]
 impl<W> WaitJitter<W> {
     fn new(inner: W, max_jitter: Duration) -> Self {
+        let seed = DEFAULT_JITTER_SEED;
         Self {
             inner,
             max_jitter,
+            seed,
             nonce: next_jitter_nonce(),
-            rng: SmallRng::from_seed(DEFAULT_JITTER_SEED),
+            rng: SmallRng::from_seed(seed),
         }
+    }
+
+    /// Sets an explicit PRNG seed for deterministic jitter sequences.
+    #[must_use]
+    pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
+        self.seed = seed;
+        self.rng = SmallRng::from_seed(seed);
+        self
+    }
+
+    /// Sets an explicit nonce offset used to decorrelate policy instances.
+    #[must_use]
+    pub fn with_nonce(mut self, nonce: u64) -> Self {
+        self.nonce = nonce;
+        self
     }
 }
 
@@ -348,7 +417,7 @@ impl<W: Wait> Wait for WaitJitter<W> {
     fn reset(&mut self) {
         self.inner.reset();
         self.nonce = self.nonce.wrapping_add(1);
-        self.rng = SmallRng::from_seed(DEFAULT_JITTER_SEED);
+        self.rng = SmallRng::from_seed(self.seed);
     }
 }
 
@@ -363,9 +432,11 @@ where
     {
         use serde::ser::SerializeStruct;
 
-        let mut state = serializer.serialize_struct("WaitJitter", 2)?;
+        let mut state = serializer.serialize_struct("WaitJitter", 4)?;
         state.serialize_field("inner", &self.inner)?;
         state.serialize_field("max_jitter", &self.max_jitter)?;
+        state.serialize_field("seed", &self.seed)?;
+        state.serialize_field("nonce", &self.nonce)?;
         state.end()
     }
 }
@@ -383,14 +454,19 @@ where
         struct SerializedWaitJitter<W> {
             inner: W,
             max_jitter: Duration,
+            #[serde(default = "default_jitter_seed")]
+            seed: [u8; 32],
+            #[serde(default = "next_jitter_nonce")]
+            nonce: u64,
         }
 
         let serialized = SerializedWaitJitter::deserialize(deserializer)?;
         Ok(Self {
             inner: serialized.inner,
             max_jitter: serialized.max_jitter,
-            nonce: next_jitter_nonce(),
-            rng: SmallRng::from_seed(DEFAULT_JITTER_SEED),
+            seed: serialized.seed,
+            nonce: serialized.nonce,
+            rng: SmallRng::from_seed(serialized.seed),
         })
     }
 }
@@ -722,4 +798,38 @@ fn next_jitter_nonce() -> u64 {
 #[cfg(all(feature = "jitter", not(target_has_atomic = "ptr")))]
 fn next_jitter_nonce() -> u64 {
     1
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_validation_tests {
+    use super::*;
+
+    const ARBITRARY_INITIAL_WAIT: Duration = Duration::from_millis(5);
+    const NON_FINITE_BASE: f64 = f64::INFINITY;
+    const SUBUNIT_BASE: f64 = 0.5;
+
+    #[test]
+    fn deserialize_exponential_base_rejects_non_finite() {
+        let result = deserialize_exponential_base(NON_FINITE_BASE);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_exponential_base_clamps_subunit_values() {
+        let mut strategy = exponential(ARBITRARY_INITIAL_WAIT)
+            .base(deserialize_exponential_base(SUBUNIT_BASE).expect("base should parse"));
+        let first = strategy.next_wait(&RetryState {
+            attempt: 1,
+            elapsed: None,
+            next_delay: Duration::ZERO,
+            total_wait: Duration::ZERO,
+        });
+        let second = strategy.next_wait(&RetryState {
+            attempt: 2,
+            elapsed: None,
+            next_delay: Duration::ZERO,
+            total_wait: Duration::ZERO,
+        });
+        assert_eq!(first, second);
+    }
 }
