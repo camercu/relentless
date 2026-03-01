@@ -181,5 +181,5 @@ Minimum supported Rust version: `1.85`.
 
 Licensed under either of:
 
-- MIT license ([LICENSE-MIT](./LICENSE-MIT))
-- Apache License, Version 2.0 ([LICENSE-APACHE](./LICENSE-APACHE))
+- MIT license ([LICENSE-MIT.txt](./LICENSE-MIT.txt))
+- Apache License, Version 2.0 ([LICENSE-APACHE.txt](./LICENSE-APACHE.txt))
