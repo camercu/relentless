@@ -160,6 +160,24 @@ assert_eq!(stats.attempts, 3);
 - `jitter`: randomized jitter for wait strategies
 - `serde`: serialization for strategy/stat types
 
+## Production notes
+
+**Scope.** `tenacious` is a per-call retry library. It does not provide circuit
+breaking, global rate limiting, or retry budgets. In distributed systems where
+many callers may retry simultaneously against a degraded backend, pair this
+library with a circuit breaker or concurrency limiter to avoid thundering-herd
+amplification.
+
+**Hook panics.** Panics in user-supplied hook callbacks (`before_attempt`,
+`after_attempt`, `before_sleep`, `on_exhausted`) propagate through the retry
+loop and will unwind the calling thread. If hooks run fallible or
+user-provided logic, consider catching panics at the call site.
+
+**Thread safety.** `RetryPolicy` is `Send + Sync` when all its constituent
+strategy and hook types are `Send + Sync` (all built-in strategies satisfy
+this). Policies can be shared across threads via `Arc<Mutex<RetryPolicy>>` or
+cloned per-thread since `RetryPolicy` is `Clone`.
+
 ## no_std support
 
 The crate supports `no_std` operation. Build with:
