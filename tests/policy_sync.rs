@@ -35,15 +35,19 @@ const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const SUCCESS_VALUE: i32 = 42;
 
 /// Sleep duration used to simulate operation runtime.
+#[cfg(feature = "std")]
 const OPERATION_RUNTIME: Duration = Duration::from_millis(5);
 
 /// Tight elapsed deadline used to verify operation runtime is counted.
+#[cfg(feature = "std")]
 const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);
 
 /// Deadline for conservative before-elapsed stop tests.
+#[cfg(feature = "std")]
 const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
 
 /// Wait used in conservative before-elapsed stop tests.
+#[cfg(feature = "std")]
 const BEFORE_ELAPSED_WAIT: Duration = Duration::from_millis(50);
 
 // ---------------------------------------------------------------------------
@@ -565,6 +569,7 @@ fn on_exhausted_hook_does_not_fire_on_success() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[cfg(feature = "std")]
 fn std_feature_provides_default_sleep() {
     // When std is active, .call() should work without explicit .sleep().
     let mut policy = RetryPolicy::new()
@@ -666,6 +671,7 @@ fn predicate_rejects_err_means_immediate_return() {
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn elapsed_stop_counts_operation_runtime() {
     let mut policy = RetryPolicy::new().stop(stop::elapsed(ELAPSED_DEADLINE));
     let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
@@ -689,6 +695,7 @@ fn elapsed_stop_counts_operation_runtime() {
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn before_elapsed_uses_computed_next_delay_before_sleeping() {
     let mut policy = RetryPolicy::new()
         .stop(stop::before_elapsed(BEFORE_ELAPSED_DEADLINE))

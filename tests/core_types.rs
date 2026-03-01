@@ -609,6 +609,7 @@ fn retry_error_display_includes_meaningful_content() {
 
 /// 1.10: RetryError implements std::error::Error when std is active and E: Error + 'static.
 #[test]
+#[cfg(feature = "std")]
 fn retry_error_implements_std_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out");
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::Exhausted {
@@ -627,6 +628,7 @@ fn retry_error_implements_std_error() {
 
 /// source() returns None for ConditionNotMet.
 #[test]
+#[cfg(feature = "std")]
 fn retry_error_condition_not_met_source_is_none() {
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::ConditionNotMet {
         last: (),
@@ -643,6 +645,7 @@ fn retry_error_condition_not_met_source_is_none() {
 
 /// source() returns Some(inner) for PredicateRejected.
 #[test]
+#[cfg(feature = "std")]
 fn retry_error_predicate_rejected_source_is_inner_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::PredicateRejected {

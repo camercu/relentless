@@ -1,4 +1,5 @@
 //! Acceptance tests for Async Execution (Spec items 6.1–6.8).
+#![cfg(all(feature = "alloc", feature = "std"))]
 //!
 //! These tests verify:
 //! - `RetryPolicy::retry_async(op)` configures async retry (6.1)

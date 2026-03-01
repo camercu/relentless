@@ -9,11 +9,16 @@
 //! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq (8.6)
 
 use core::cell::Cell;
+#[cfg(all(feature = "alloc", feature = "std"))]
 use core::future::Future;
+#[cfg(all(feature = "alloc", feature = "std"))]
 use core::pin::Pin;
+#[cfg(all(feature = "alloc", feature = "std"))]
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
+#[cfg(all(feature = "alloc", feature = "std"))]
 use std::rc::Rc;
+#[cfg(all(feature = "alloc", feature = "std"))]
 use std::sync::Arc;
 use tenacious::{RetryError, RetryPolicy};
 use tenacious::{RetryStats, StopReason, on, stop, wait};
@@ -40,6 +45,7 @@ const ERROR_VALUE: &str = "fail";
 
 fn instant_sleep(_dur: Duration) {}
 
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn noop_waker() -> Waker {
     struct NoopWake;
     impl std::task::Wake for NoopWake {
@@ -48,6 +54,7 @@ fn noop_waker() -> Waker {
     Waker::from(Arc::new(NoopWake))
 }
 
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
     let waker = noop_waker();
@@ -62,8 +69,10 @@ fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 #[derive(Clone, Copy)]
+#[cfg(all(feature = "alloc", feature = "std"))]
 struct InstantSleeper;
 
+#[cfg(all(feature = "alloc", feature = "std"))]
 impl tenacious::Sleeper for InstantSleeper {
     type Sleep = core::future::Ready<()>;
 
@@ -103,11 +112,15 @@ fn sync_with_stats_returns_result_and_stats() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
+    #[cfg(feature = "std")]
     assert!(stats.total_elapsed.is_some());
+    #[cfg(not(feature = "std"))]
+    assert!(stats.total_elapsed.is_none());
     assert_eq!(stats.stop_reason, StopReason::Success);
 }
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_with_stats_returns_result_and_stats() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -158,7 +171,10 @@ fn sync_first_attempt_success_has_minimal_stats() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
+    #[cfg(feature = "std")]
     assert!(stats.total_elapsed.is_some());
+    #[cfg(not(feature = "std"))]
+    assert!(stats.total_elapsed.is_none());
     assert_eq!(stats.stop_reason, StopReason::Success);
 }
 
@@ -288,6 +304,7 @@ fn sync_stop_reason_stop_condition_on_condition_not_met() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_stop_condition_on_exhaustion() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -309,6 +326,7 @@ fn async_stop_reason_stop_condition_on_exhaustion() {
 }
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_first_attempt_success_has_minimal_stats() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
@@ -326,6 +344,7 @@ fn async_first_attempt_success_has_minimal_stats() {
 }
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_condition_not_met() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -347,6 +366,7 @@ fn async_stop_reason_condition_not_met() {
 }
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_predicate_accepted_for_custom_predicate_on_ok() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -386,6 +406,7 @@ fn sync_call_without_stats_returns_plain_result() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[cfg(feature = "std")]
 fn sync_total_elapsed_is_some_with_std() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
 
@@ -402,6 +423,7 @@ fn sync_total_elapsed_is_some_with_std() {
 }
 
 #[test]
+#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_total_elapsed_is_some_with_std() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
 

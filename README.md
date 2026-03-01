@@ -155,7 +155,8 @@ assert_eq!(stats.attempts, 3);
 - `tokio-sleep`: tokio sleep adapter
 - `futures-timer-sleep`: `futures-timer` adapter
 - `gloo-timers-sleep`: wasm/gloo timers adapter
-- `embassy-sleep`: embassy-time adapter
+- `embassy-sleep`: embassy-time adapter (requires an embassy time driver on
+  your target)
 - `jitter`: randomized jitter for wait strategies
 - `serde`: serialization for strategy/stat types
 
@@ -172,6 +173,16 @@ For wasm `no_std` compatibility:
 ```bash
 cargo check --target wasm32-unknown-unknown --no-default-features --features alloc,gloo-timers-sleep
 ```
+
+When checking `embassy-sleep` on desktop hosts, use compile-only verification:
+
+```bash
+cargo check --features embassy-sleep
+```
+
+Running `cargo test --all-features` on a host target can fail to link because
+`embassy-time` expects a platform time driver symbol provided by embedded
+targets.
 
 ## MSRV
 
