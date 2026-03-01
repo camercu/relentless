@@ -178,7 +178,42 @@ With `jitter` enabled, use `.with_seed([u8; 32])` and `.with_nonce(u64)` on
 breaking, global rate limiting, or retry budgets. In distributed systems where
 many callers may retry simultaneously against a degraded backend, pair this
 library with a circuit breaker or concurrency limiter to avoid thundering-herd
-amplification.
+amplification. Because `Stop` is an open trait, you can integrate an external
+breaker directly:
+
+```rust
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tenacious::{Stop, RetryState, RetryPolicy, stop, wait};
+use core::time::Duration;
+
+/// Stops retrying when a shared circuit breaker trips open.
+#[derive(Clone)]
+struct CircuitBreakerStop<S> {
+    inner: S,
+    open: Arc<AtomicBool>,
+}
+
+impl<S: Stop> Stop for CircuitBreakerStop<S> {
+    fn should_stop(&mut self, state: &RetryState) -> bool {
+        self.open.load(Ordering::Relaxed) || self.inner.should_stop(state)
+    }
+    fn reset(&mut self) { self.inner.reset(); }
+}
+
+let breaker = Arc::new(AtomicBool::new(false));
+
+let mut policy = RetryPolicy::new()
+    .stop(CircuitBreakerStop {
+        inner: stop::attempts(5),
+        open: breaker.clone(),
+    })
+    .wait(wait::exponential(Duration::from_millis(100)));
+
+// When the breaker trips, all in-flight retries stop at the next attempt.
+// breaker.store(true, Ordering::Relaxed);
+let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_| {}).call();
+```
 
 **Hook panics.** Panics in user-supplied hook callbacks (`before_attempt`,
 `after_attempt`, `before_sleep`, `on_exhausted`) propagate through the retry
@@ -204,6 +239,34 @@ fn parse_attempts(
     stop::attempts_checked(raw)
 }
 ```
+
+## Safety-critical usage
+
+**Saturation, not failure.** Arithmetic overflow in wait durations and attempt
+counters saturates silently (`Duration::MAX`, `u32::MAX`) rather than
+panicking or returning an error. If your system depends on precise delay
+values at extreme scales, add assertions in a `before_sleep` hook.
+
+**Floating-point backoff.** `wait::exponential` computes delays using `f64`
+internally. Delays are not bit-for-bit reproducible across CPU architectures.
+Calling `.base()` with a value below `1.0` silently clamps to `1.0`
+(constant delay). If deterministic delays matter, use `wait::fixed` or
+`wait::linear`, which use only integer `Duration` arithmetic.
+
+**Elapsed time on no_std.** Without `std` or a custom `elapsed_clock`,
+`elapsed` is always `None`. This means `stop::elapsed()` and
+`stop::before_elapsed()` silently never fire — the retry loop relies
+entirely on attempt-count stops. Always pair an elapsed stop with an
+attempt stop on `no_std`: `stop::attempts(n) | stop::elapsed(deadline)`.
+
+**Hook state across retries.** Hooks are not reset between `.retry()` calls
+on the same policy instance. If a hook captures mutable state (counters,
+buffers), that state carries over. Clone the policy or reconstruct hooks
+if isolation between retry invocations is required.
+
+**Serde round-trip drops hooks.** Deserializing a `RetryPolicy` restores
+stop, wait, and predicate configuration but resets all hooks to no-ops.
+Re-attach hooks after deserialization if your workflow depends on them.
 
 ## no_std support
 
