@@ -329,6 +329,7 @@ dependencies = [
  "embassy-time",
  "futures-timer",
  "gloo-timers",
+ "pin-project-lite",
  "rand",
  "serde",
  "serde_json",

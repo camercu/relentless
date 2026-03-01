@@ -26,8 +26,10 @@ gloo-timers-sleep = ["dep:gloo-timers"]
 futures-timer-sleep = ["dep:futures-timer", "std"]
 jitter = ["dep:rand"]
 serde = ["dep:serde"]
+strict-futures = []
 
 [dependencies]
+pin-project-lite = "0.2"
 tokio = { version = "1", default-features = false, features = ["time"], optional = true }
 embassy-time = { version = "0.3", optional = true }
 futures-timer = { version = "3", optional = true }

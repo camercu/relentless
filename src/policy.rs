@@ -22,14 +22,24 @@ use core::future::Future;
 use core::pin::Pin;
 #[cfg(feature = "alloc")]
 use core::task::{Context, Poll};
+#[cfg(feature = "alloc")]
+use pin_project_lite::pin_project;
 #[cfg(feature = "std")]
 use std::time::Instant;
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+type RetryStart = Instant;
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+type RetryStart = ();
 
 /// Default maximum attempts used by the safe policy constructor.
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 
 /// Default initial backoff used by the safe policy constructor.
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
+
+/// Function pointer type used to supply elapsed time in no_std or custom runtimes.
+type ElapsedClockFn = fn() -> Duration;
 
 /// Hook callback shape for the `before_attempt` hook.
 #[doc(hidden)]
@@ -152,6 +162,7 @@ pub struct RetryPolicy<
     before_sleep: BS,
     on_exhausted: OE,
     predicate_is_default: bool,
+    elapsed_clock: Option<ElapsedClockFn>,
 }
 
 #[cfg(feature = "serde")]
@@ -205,6 +216,7 @@ where
             before_sleep: (),
             on_exhausted: (),
             predicate_is_default: serialized.predicate_is_default,
+            elapsed_clock: None,
         })
     }
 }
@@ -235,6 +247,7 @@ struct PolicyParts<S, W, P, BA, AA, BS, OE> {
     before_sleep: BS,
     on_exhausted: OE,
     predicate_is_default: bool,
+    elapsed_clock: Option<ElapsedClockFn>,
 }
 
 fn build_policy<S, W, P, BA, AA, BS, OE>(
@@ -249,6 +262,7 @@ fn build_policy<S, W, P, BA, AA, BS, OE>(
         before_sleep: parts.before_sleep,
         on_exhausted: parts.on_exhausted,
         predicate_is_default: parts.predicate_is_default,
+        elapsed_clock: parts.elapsed_clock,
     }
 }
 
@@ -283,6 +297,7 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()>
             before_sleep: (),
             on_exhausted: (),
             predicate_is_default: true,
+            elapsed_clock: None,
         })
     }
 }
@@ -300,6 +315,7 @@ impl Default
             before_sleep: (),
             on_exhausted: (),
             predicate_is_default: true,
+            elapsed_clock: None,
         })
     }
 }
@@ -317,6 +333,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -332,6 +349,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -350,6 +368,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: false,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -371,7 +390,25 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
+    }
+
+    /// Sets a custom elapsed-time clock used for stop strategies and stats.
+    ///
+    /// The provided function should return a monotonically increasing duration.
+    /// Elapsed is computed as `clock() - clock_at_start` with saturating math.
+    #[must_use]
+    pub fn elapsed_clock(mut self, clock: ElapsedClockFn) -> Self {
+        self.elapsed_clock = Some(clock);
+        self
+    }
+
+    /// Clears any custom elapsed-time clock and restores default behavior.
+    #[must_use]
+    pub fn clear_elapsed_clock(mut self) -> Self {
+        self.elapsed_clock = None;
+        self
     }
 }
 
@@ -395,6 +432,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -413,6 +451,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -431,6 +470,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: HookChain::new(self.before_sleep, hook),
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 
@@ -449,6 +489,7 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: HookChain::new(self.on_exhausted, hook),
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 }
@@ -470,6 +511,7 @@ impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 }
@@ -488,6 +530,7 @@ impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
             before_sleep: self.before_sleep,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 }
@@ -506,6 +549,7 @@ impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
             before_sleep: hook,
             on_exhausted: self.on_exhausted,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 }
@@ -524,6 +568,7 @@ impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
             before_sleep: self.before_sleep,
             on_exhausted: hook,
             predicate_is_default: self.predicate_is_default,
+            elapsed_clock: self.elapsed_clock,
         })
     }
 }
@@ -773,11 +818,13 @@ where
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
         let mut attempt: u32 = 1;
         let mut total_wait = Duration::ZERO;
+        let elapsed_start = start_elapsed_clock(self.policy.elapsed_clock);
         #[cfg(feature = "std")]
         let start = Instant::now();
 
         loop {
             let elapsed_before_attempt = current_elapsed(
+                elapsed_start,
                 #[cfg(feature = "std")]
                 &start,
             );
@@ -790,6 +837,7 @@ where
 
             let outcome = (self.op)();
             let elapsed_after_attempt = current_elapsed(
+                elapsed_start,
                 #[cfg(feature = "std")]
                 &start,
             );
@@ -873,81 +921,120 @@ where
 pub struct NoAsyncSleep;
 
 #[cfg(feature = "alloc")]
-enum AsyncPhase<'policy, Fut> {
-    ReadyToStartAttempt,
-    PollingOperation(Pin<Box<Fut>>),
-    Sleeping(Pin<Box<dyn Future<Output = ()> + 'policy>>),
-    Finished,
+pin_project! {
+    #[project = AsyncPhaseProj]
+    enum AsyncPhase<Fut, SleepFut> {
+        ReadyToStartAttempt,
+        PollingOperation {
+            #[pin]
+            op_future: Fut,
+        },
+        Sleeping {
+            #[pin]
+            sleep_future: SleepFut,
+        },
+        Finished,
+    }
 }
 
-/// Async retry execution object.
-///
-/// Created by [`RetryPolicy::retry_async`]. Set a sleeper with `.sleep(...)`
-/// and then `.await` the returned future.
-///
-/// `AsyncRetry` is a single-use future. Polling after completion is considered
-/// misuse: debug builds panic, while release builds return `Poll::Pending`.
-///
-/// # Examples
-///
-/// ```
-/// use tenacious::RetryPolicy;
-/// use core::time::Duration;
-///
-/// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
-/// let retry = policy
-///     .retry_async(|| async { Ok::<u32, &str>(1) })
-///     .sleep(|_dur: Duration| async {});
-/// let _ = retry;
-/// ```
 #[cfg(feature = "alloc")]
-pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-{
-    policy: &'policy mut RetryPolicy<S, W, P, BA, AA, BS, OE>,
-    op: F,
-    sleeper: SleepImpl,
-    phase: AsyncPhase<'policy, Fut>,
-    attempt: u32,
-    total_wait: Duration,
-    collect_stats: bool,
-    final_stats: Option<RetryStats>,
-    #[cfg(feature = "std")]
-    start: Instant,
-    _marker: PhantomData<fn() -> (T, E)>,
+pin_project! {
+    /// Async retry execution object.
+    ///
+    /// Created by [`RetryPolicy::retry_async`]. Set a sleeper with `.sleep(...)`
+    /// and then `.await` the returned future.
+    ///
+    /// `AsyncRetry` is a single-use future. Polling after completion is
+    /// misuse: debug builds panic. Release builds return `Poll::Pending`
+    /// unless the `strict-futures` feature is enabled, in which case they
+    /// also panic.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tenacious::RetryPolicy;
+    /// use core::time::Duration;
+    ///
+    /// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let retry = policy
+    ///     .retry_async(|| async { Ok::<u32, &str>(1) })
+    ///     .sleep(|_dur: Duration| async {});
+    /// let _ = retry;
+    /// ```
+    pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut = ()>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        policy: &'policy mut RetryPolicy<S, W, P, BA, AA, BS, OE>,
+        op: F,
+        sleeper: SleepImpl,
+        #[pin]
+        phase: AsyncPhase<Fut, SleepFut>,
+        attempt: u32,
+        total_wait: Duration,
+        collect_stats: bool,
+        final_stats: Option<RetryStats>,
+        elapsed_start: Option<CustomElapsedStart>,
+        start: RetryStart,
+        _marker: PhantomData<fn() -> (T, E)>,
+    }
 }
 
-/// Async retry execution wrapper that returns statistics.
-///
-/// Created by calling `.with_stats()` on [`AsyncRetry`].
-///
-/// # Examples
-///
-/// ```
-/// use tenacious::RetryPolicy;
-/// use core::time::Duration;
-///
-/// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
-/// let retry = policy
-///     .retry_async(|| async { Ok::<u32, &str>(1) })
-///     .sleep(|_dur: Duration| async {})
-///     .with_stats();
-/// let _ = retry;
-/// ```
 #[cfg(feature = "alloc")]
-pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-{
-    inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>,
+pin_project! {
+    /// Async retry execution wrapper that returns statistics.
+    ///
+    /// Created by calling `.with_stats()` on [`AsyncRetry`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tenacious::RetryPolicy;
+    /// use core::time::Duration;
+    ///
+    /// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let retry = policy
+    ///     .retry_async(|| async { Ok::<u32, &str>(1) })
+    ///     .sleep(|_dur: Duration| async {})
+    ///     .with_stats();
+    /// let _ = retry;
+    /// ```
+    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut = ()>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        #[pin]
+        inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>,
+    }
 }
+
+#[cfg(feature = "alloc")]
+type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> = AsyncRetry<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OE,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    <SleepImpl as Sleeper>::Sleep,
+>;
+
+#[cfg(feature = "alloc")]
+type AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> =
+    AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>;
 
 #[cfg(feature = "alloc")]
 impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, ()>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -957,27 +1044,48 @@ where
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, NewSleep, T, E> {
+    ) -> AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, NewSleep, T, E>
+    where
+        NewSleep: Sleeper,
+    {
         AsyncRetry {
             policy: self.policy,
             op: self.op,
             sleeper,
-            phase: self.phase,
+            phase: match self.phase {
+                AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
+                AsyncPhase::PollingOperation { op_future } => {
+                    AsyncPhase::PollingOperation { op_future }
+                }
+                AsyncPhase::Sleeping { .. } => {
+                    unreachable!("NoAsyncSleep cannot create sleeping futures")
+                }
+                AsyncPhase::Finished => AsyncPhase::Finished,
+            },
             attempt: self.attempt,
             total_wait: self.total_wait,
             collect_stats: self.collect_stats,
             final_stats: self.final_stats,
-            #[cfg(feature = "std")]
+            elapsed_start: self.elapsed_start,
             start: self.start,
             _marker: PhantomData,
         }
     }
+}
 
+#[cfg(feature = "alloc")]
+impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
     /// Wraps this async retry with statistics collection.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn with_stats(
         self,
-    ) -> AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> {
+    ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> {
         let mut inner = self;
         inner.collect_stats = true;
         AsyncRetryWithStats { inner }
@@ -985,8 +1093,8 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> Future
-    for AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
+impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> Future
+    for AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
 where
     S: Stop,
     W: Wait,
@@ -995,79 +1103,81 @@ where
     AA: AttemptHook<T, E>,
     BS: AttemptHook<T, E>,
     OE: AttemptHook<T, E>,
-    F: FnMut() -> Fut + Unpin,
+    F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
-    SleepImpl: Sleeper + Unpin,
-    SleepImpl::Sleep: 'policy,
+    SleepImpl: Sleeper<Sleep = SleepFut>,
+    SleepFut: Future<Output = ()> + 'policy,
 {
     type Output = Result<T, RetryError<E, T>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
-            match &mut this.phase {
-                AsyncPhase::ReadyToStartAttempt => {
+            match this.phase.as_mut().project() {
+                AsyncPhaseProj::ReadyToStartAttempt => {
                     let elapsed_before_attempt = current_elapsed(
+                        *this.elapsed_start,
                         #[cfg(feature = "std")]
-                        &this.start,
+                        this.start,
                     );
                     let before_state = BeforeAttemptState {
-                        attempt: this.attempt,
+                        attempt: *this.attempt,
                         elapsed: elapsed_before_attempt,
-                        total_wait: this.total_wait,
+                        total_wait: *this.total_wait,
                     };
                     this.policy.before_attempt.call(&before_state);
 
                     let op_future = (this.op)();
-                    this.phase = AsyncPhase::PollingOperation(Box::pin(op_future));
+                    this.phase.set(AsyncPhase::PollingOperation { op_future });
                 }
-                AsyncPhase::PollingOperation(op_future) => match op_future.as_mut().poll(cx) {
+                AsyncPhaseProj::PollingOperation { op_future } => match op_future.poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(outcome) => {
                         let elapsed_after_attempt = current_elapsed(
+                            *this.elapsed_start,
                             #[cfg(feature = "std")]
-                            &this.start,
+                            this.start,
                         );
                         let retry_state = RetryState {
-                            attempt: this.attempt,
+                            attempt: *this.attempt,
                             elapsed: elapsed_after_attempt,
                             next_delay: Duration::ZERO,
-                            total_wait: this.total_wait,
+                            total_wait: *this.total_wait,
                         };
 
                         match process_attempt_transition(
-                            this.policy,
+                            &mut **this.policy,
                             outcome,
                             retry_state,
-                            this.collect_stats,
-                            this.total_wait,
+                            *this.collect_stats,
+                            *this.total_wait,
                         ) {
                             AttemptTransition::Finished { result, stats } => {
-                                this.final_stats = stats;
-                                this.phase = AsyncPhase::Finished;
+                                *this.final_stats = stats;
+                                this.phase.set(AsyncPhase::Finished);
                                 return Poll::Ready(result);
                             }
                             AttemptTransition::Sleep { next_delay } => {
-                                this.total_wait = this.total_wait.saturating_add(next_delay);
-                                this.phase =
-                                    AsyncPhase::Sleeping(Box::pin(this.sleeper.sleep(next_delay)));
+                                *this.total_wait = this.total_wait.saturating_add(next_delay);
+                                let sleep_future = this.sleeper.sleep(next_delay);
+                                this.phase.set(AsyncPhase::Sleeping { sleep_future });
                             }
                         }
                     }
                 },
-                AsyncPhase::Sleeping(sleep_future) => match sleep_future.as_mut().poll(cx) {
+                AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(()) => {
-                        this.attempt = this.attempt.saturating_add(1);
-                        this.phase = AsyncPhase::ReadyToStartAttempt;
+                        *this.attempt = this.attempt.saturating_add(1);
+                        this.phase.set(AsyncPhase::ReadyToStartAttempt);
                     }
                 },
-                AsyncPhase::Finished => {
-                    #[cfg(debug_assertions)]
+                AsyncPhaseProj::Finished => {
+                    #[cfg(any(debug_assertions, feature = "strict-futures"))]
                     panic!("AsyncRetry polled after completion");
 
-                    #[cfg(not(debug_assertions))]
+                    #[cfg(all(not(debug_assertions), not(feature = "strict-futures")))]
                     {
                         return Poll::Pending;
                     }
@@ -1078,8 +1188,8 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> Future
-    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
+impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> Future
+    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
 where
     S: Stop,
     W: Wait,
@@ -1088,20 +1198,22 @@ where
     AA: AttemptHook<T, E>,
     BS: AttemptHook<T, E>,
     OE: AttemptHook<T, E>,
-    F: FnMut() -> Fut + Unpin,
+    F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
-    SleepImpl: Sleeper + Unpin,
-    SleepImpl::Sleep: 'policy,
+    SleepImpl: Sleeper<Sleep = SleepFut>,
+    SleepFut: Future<Output = ()> + 'policy,
 {
     type Output = (Result<T, RetryError<E, T>>, RetryStats);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        match Pin::new(&mut this.inner).poll(cx) {
+        let mut this = self.project();
+        match this.inner.as_mut().poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 let stats = this
                     .inner
+                    .as_mut()
+                    .project()
                     .final_stats
                     .take()
                     .expect("async retry completed without final stats");
@@ -1130,6 +1242,7 @@ where
     {
         self.stop.reset();
         self.wait.reset();
+        let elapsed_start = start_elapsed_clock(self.elapsed_clock);
         AsyncRetry {
             policy: self,
             op,
@@ -1139,8 +1252,8 @@ where
             total_wait: Duration::ZERO,
             collect_stats: false,
             final_stats: None,
-            #[cfg(feature = "std")]
-            start: Instant::now(),
+            elapsed_start,
+            start: retry_start_now(),
             _marker: PhantomData,
         }
     }
@@ -1157,12 +1270,36 @@ fn stop_reason_for_predicate_accept<T, E>(
     }
 }
 
+#[derive(Clone, Copy)]
+struct CustomElapsedStart {
+    clock: ElapsedClockFn,
+    origin: Duration,
+}
+
+fn start_elapsed_clock(clock: Option<ElapsedClockFn>) -> Option<CustomElapsedStart> {
+    clock.map(|clock| CustomElapsedStart {
+        clock,
+        origin: clock(),
+    })
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+fn retry_start_now() -> RetryStart {
+    Instant::now()
+}
+
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+fn retry_start_now() -> RetryStart {}
+
 #[cfg(feature = "std")]
-fn current_elapsed(start: &Instant) -> Option<Duration> {
-    Some(start.elapsed())
+fn current_elapsed(start_clock: Option<CustomElapsedStart>, start: &Instant) -> Option<Duration> {
+    start_clock.map_or_else(
+        || Some(start.elapsed()),
+        |start_clock| Some((start_clock.clock)().saturating_sub(start_clock.origin)),
+    )
 }
 
 #[cfg(not(feature = "std"))]
-fn current_elapsed() -> Option<Duration> {
-    None
+fn current_elapsed(start_clock: Option<CustomElapsedStart>) -> Option<Duration> {
+    start_clock.map(|start_clock| (start_clock.clock)().saturating_sub(start_clock.origin))
 }
