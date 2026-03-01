@@ -150,6 +150,46 @@ fn async_retry_is_directly_awaitable() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
+#[cfg(debug_assertions)]
+#[test]
+fn async_retry_repoll_after_completion_panics_in_debug() {
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let mut retry = Box::pin(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(|_dur: Duration| async {}),
+    );
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+
+    let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
+
+    let second_poll = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    }));
+    assert!(second_poll.is_err());
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn async_retry_repoll_after_completion_is_pending_in_release() {
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let mut retry = Box::pin(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(|_dur: Duration| async {}),
+    );
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+
+    let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
+
+    let second_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    assert_eq!(second_poll, Poll::Pending);
+}
+
 // ---------------------------------------------------------------------------
 // 6.4: Async loop behavior matches sync semantics
 // ---------------------------------------------------------------------------

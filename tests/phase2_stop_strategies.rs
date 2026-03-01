@@ -20,6 +20,8 @@ use tenacious::stop;
 
 /// The attempt threshold used across most stop-strategy tests.
 const MAX_ATTEMPTS: u32 = 5;
+/// Small valid attempt count for constructor validation tests.
+const VALID_ATTEMPTS: u32 = 2;
 
 /// Deadline duration for elapsed-based strategies.
 const DEADLINE: Duration = Duration::from_secs(30);
@@ -100,6 +102,20 @@ fn attempts_with_one_stops_immediately() {
 #[should_panic(expected = "stop::attempts requires max >= 1")]
 fn attempts_with_zero_panics() {
     let _ = stop::attempts(0);
+}
+
+#[test]
+fn attempts_checked_rejects_zero() {
+    let result = stop::attempts_checked(0);
+    assert!(matches!(result, Err(stop::StopConfigError::ZeroAttempts)));
+}
+
+#[test]
+fn attempts_checked_accepts_positive_values() {
+    let mut strategy = stop::attempts_checked(VALID_ATTEMPTS)
+        .expect("attempts_checked should accept positive attempt counts");
+    let state = make_state(VALID_ATTEMPTS);
+    assert!(strategy.should_stop(&state));
 }
 
 // ---------------------------------------------------------------------------

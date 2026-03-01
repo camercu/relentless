@@ -12,9 +12,10 @@ jobs:
     name: Format check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
+          toolchain: stable
           components: rustfmt
       - name: cargo fmt
         run: cargo fmt --all --check
@@ -23,9 +24,10 @@ jobs:
     name: Test + clippy (all features)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
+          toolchain: stable
           components: clippy
       - name: cargo test
         run: cargo test --all-targets
@@ -45,8 +47,10 @@ jobs:
           - serde
           - jitter,serde
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
       - name: cargo test phase9_feature_compat
         run: cargo test --test phase9_feature_compat --features ${{ matrix.features }}
 
@@ -54,8 +58,10 @@ jobs:
     name: Allocation profile (single-thread)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
       - name: cargo test allocation_hot_paths
         run: cargo test --test allocation_hot_paths -- --test-threads=1
 
@@ -65,8 +71,10 @@ jobs:
     env:
       RUSTDOCFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
       - name: cargo test --doc
         run: cargo test --doc
       - name: cargo doc
@@ -76,9 +84,11 @@ jobs:
     name: Supply chain (cargo-deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@cargo-deny
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@87026687851535188a2e3e5ac8af4f68b8470b34 # v2.67.22
       - name: cargo deny
         run: cargo deny check advisories licenses bans sources
 
@@ -86,8 +96,8 @@ jobs:
     name: MSRV 1.85
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
           toolchain: "1.85.0"
       - name: cargo check
@@ -99,9 +109,10 @@ jobs:
     name: no_std thumbv7m
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
+          toolchain: stable
           targets: thumbv7m-none-eabi
       - name: build no-default-features for thumbv7m
         run: cargo build --target thumbv7m-none-eabi --no-default-features
@@ -110,9 +121,10 @@ jobs:
     name: wasm32 no_std compatibility
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - name: check no-default-features + alloc + gloo
         run: cargo check --target wasm32-unknown-unknown --no-default-features --features alloc,gloo-timers-sleep

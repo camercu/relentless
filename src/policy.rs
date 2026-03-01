@@ -1051,7 +1051,13 @@ where
                     }
                 },
                 AsyncPhase::Finished => {
+                    #[cfg(debug_assertions)]
                     panic!("AsyncRetry polled after completion");
+
+                    #[cfg(not(debug_assertions))]
+                    {
+                        return Poll::Pending;
+                    }
                 }
             }
         }

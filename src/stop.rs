@@ -7,6 +7,7 @@
 use crate::compat::Box;
 use crate::compat::Duration;
 use crate::state::RetryState;
+use core::fmt;
 use core::ops::{BitAnd, BitOr};
 
 /// Determines when the retry loop should stop.
@@ -60,7 +61,8 @@ where
 
 /// Stops after a fixed number of completed attempts.
 ///
-/// Created by [`attempts`]. Fires when `state.attempt >= max`.
+/// Created by [`attempts`] or [`attempts_checked`]. Fires when
+/// `state.attempt >= max`.
 ///
 /// # Examples
 ///
@@ -85,6 +87,24 @@ pub struct StopAfterAttempts {
 /// Minimum valid attempt count for `stop::attempts`.
 const MIN_STOP_ATTEMPTS: u32 = 1;
 
+/// Error returned when constructing stop strategies from invalid input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopConfigError {
+    /// `stop::attempts_checked` was given `0`, which is invalid.
+    ZeroAttempts,
+}
+
+impl fmt::Display for StopConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StopConfigError::ZeroAttempts => f.write_str("stop::attempts requires max >= 1"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StopConfigError {}
+
 /// Produces a strategy that stops after `max` completed attempts.
 ///
 /// The stop fires when `state.attempt >= max`.
@@ -93,8 +113,22 @@ const MIN_STOP_ATTEMPTS: u32 = 1;
 ///
 /// Panics if `max` is `0`.
 pub fn attempts(max: u32) -> StopAfterAttempts {
-    assert!(max >= MIN_STOP_ATTEMPTS, "stop::attempts requires max >= 1");
-    StopAfterAttempts { max }
+    attempts_checked(max).expect("stop::attempts requires max >= 1")
+}
+
+/// Produces a strategy that stops after `max` completed attempts.
+///
+/// This non-panicking variant is suitable when `max` comes from untrusted or
+/// runtime configuration input.
+///
+/// # Errors
+///
+/// Returns [`StopConfigError::ZeroAttempts`] when `max` is `0`.
+pub fn attempts_checked(max: u32) -> Result<StopAfterAttempts, StopConfigError> {
+    if max < MIN_STOP_ATTEMPTS {
+        return Err(StopConfigError::ZeroAttempts);
+    }
+    Ok(StopAfterAttempts { max })
 }
 
 impl Stop for StopAfterAttempts {
