@@ -22,8 +22,9 @@ use tenacious::sleep::tokio_sleep;
 // One-shot inline retry
 let result = RetryPolicy::new()
     .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)))
-    .wait(wait::exponential(Duration::from_millis(100)).cap(Duration::from_secs(5))
-          + wait::jitter(Duration::from_millis(50)))
+    .wait(wait::exponential(Duration::from_millis(100))
+          .jitter(Duration::from_millis(50))
+          .cap(Duration::from_secs(5)))
     .when(on::error(|e: &HttpError| e.status().is_server_error()))
     .before_sleep(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
     .retry_async(|| client.get("/api/data"))
@@ -31,7 +32,7 @@ let result = RetryPolicy::new()
     .await?;
 
 // Reusable policy stored in a service struct
-let policy = RetryPolicy::new()
+let mut policy = RetryPolicy::new()
     .stop(stop::attempts(3))
     .wait(wait::fixed(Duration::from_millis(500)));
 
@@ -68,26 +69,30 @@ tenacious/
 ├── Cargo.toml
 ├── src/
 │   lib.rs               # crate root; re-exports public API
-│   policy.rs            # RetryPolicy builder and AttemptState
-│   stop.rs              # Stop trait + all built-in stop strategies
-│   wait.rs              # Wait trait + all built-in wait strategies
-│   predicate.rs         # Predicate trait + built-in predicates
-│   sleep.rs             # Sleeper trait + feature-gated implementations
-│   execute.rs           # sync and async execution engines
-│   stats.rs             # RetryStats and WithStats wrapper
+│   compat.rs            # conditional-import facade (core/alloc/std)
 │   error.rs             # RetryError type
-│   backoff/
-│       mod.rs
-│       exponential.rs
-│       linear.rs
-│       fixed.rs
+│   on.rs                # built-in retry predicate factories and composition
+│   policy.rs            # RetryPolicy builder and sync/async execution engines
+│   predicate.rs         # Predicate trait definition
+│   sleep.rs             # Sleeper trait + feature-gated implementations
+│   state.rs             # RetryState, AttemptState, BeforeAttemptState
+│   stats.rs             # RetryStats and StopReason
+│   stop.rs              # Stop trait + built-in stop strategies + NeedsStop
+│   wait.rs              # Wait trait + WaitExt + built-in wait strategies
 ├── tests/
-│   integration/
-│       sync_retry.rs
-│       async_retry.rs
-│       composition.rs
-│       stats.rs
-│       no_std_compat.rs   # compile-only test with no_std target
+│   phase1_core_types.rs
+│   phase2_stop_strategies.rs
+│   phase3_wait_strategies.rs
+│   phase4_retry_predicates.rs
+│   phase5_policy_sync.rs
+│   phase6_async_execution.rs
+│   phase7_callbacks_hooks.rs
+│   phase8_stats.rs
+│   phase9_feature_compat.rs
+│   quality_properties.rs
+│   allocation_hot_paths.rs
+│   wait_ext_ergonomics.rs
+│   support/              # shared test utilities
 ```
 
 ---
@@ -112,7 +117,7 @@ alloc = []
 # Runtime-specific async sleep implementations. Exactly zero or one should be
 # activated per binary. All are no_std-compatible except tokio-sleep and
 # futures-timer-sleep.
-tokio-sleep = ["dep:tokio"]
+tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]
 gloo-timers-sleep = ["dep:gloo-timers"]
 futures-timer-sleep = ["dep:futures-timer", "std"]
@@ -126,7 +131,7 @@ jitter = ["dep:rand"]
 serde = ["dep:serde"]
 ```
 
-`#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/lib_std.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
+`#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/compat.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
 
 ---
 
@@ -136,7 +141,7 @@ serde = ["dep:serde"]
 
 ```rust
 pub trait Stop {
-    fn should_stop(&mut self, state: &AttemptState) -> bool;
+    fn should_stop(&mut self, state: &RetryState) -> bool;
     fn reset(&mut self) {}   // called if policy is reused across independent retry loops
 }
 ```
@@ -147,7 +152,7 @@ Built-in stop strategies compose with `|` (`StopAny`) and `&` (`StopAll`).
 
 ```rust
 pub trait Wait {
-    fn next_wait(&mut self, state: &AttemptState) -> Duration;
+    fn next_wait(&mut self, state: &RetryState) -> Duration;
     fn reset(&mut self) {}
 }
 ```
@@ -177,13 +182,22 @@ pub trait Sleeper {
 
 Blanket-implemented for `Fn(Duration) -> F where F: Future<Output = ()>`, so `tokio::time::sleep` works directly as a sleeper. Feature-gated concrete implementations are provided for each supported runtime. The sync execution path uses `std::thread::sleep` (std feature) or a user-supplied blocking sleep (no_std sync).
 
-#### `AttemptState` — shared read-only context
+#### State types — shared read-only context
 
-Two state types are used to avoid exposing invalid fields at different hook points:
+Three state types avoid exposing invalid fields at different points in the
+retry loop:
 
 ```rust
-// Passed to: Stop::should_stop, Wait::next_wait, Predicate::should_retry,
-//            after_attempt, before_sleep, on_exhausted
+// Passed to: Stop::should_stop, Wait::next_wait
+// Contains only counters and timing — no outcome reference.
+pub struct RetryState {
+    pub attempt: u32,             // 1-indexed; the attempt that just completed
+    pub elapsed: Option<Duration>,
+    pub next_delay: Duration,     // populated after Wait::next_wait; zero before
+    pub total_wait: Duration,
+}
+
+// Passed to: after_attempt, before_sleep, on_exhausted hooks
 pub struct AttemptState<'a, T, E> {
     pub attempt: u32,             // 1-indexed; the attempt that just completed
     pub outcome: &'a Result<T, E>,
@@ -192,7 +206,7 @@ pub struct AttemptState<'a, T, E> {
     pub total_wait: Duration,
 }
 
-// Passed only to: before_attempt
+// Passed to: before_attempt hook
 pub struct BeforeAttemptState {
     pub attempt: u32,             // 1-indexed; the attempt about to begin
     pub elapsed: Option<Duration>,
@@ -200,11 +214,15 @@ pub struct BeforeAttemptState {
 }
 ```
 
-Both types are constructed internally by the execution engine and passed by shared reference. They are never constructed by user code.
+All three types are constructed internally by the execution engine and passed
+by shared reference during normal retry execution. Direct construction is
+supported for tests and custom strategy implementations.
+`Predicate::should_retry` receives `&Result<T, E>` directly, not a state
+struct.
 
 #### `RetryPolicy` — the reusable configuration object
 
-`RetryPolicy<S, W, P>` is a generic struct carrying owned `Stop`, `Wait`, and `Predicate` values. When `alloc` is enabled, `BoxedRetryPolicy` provides a type-erased variant (`Box<dyn Stop>` etc.) for runtime-constructed policies and serde deserialization.
+`RetryPolicy<S, W, P>` is a generic struct carrying owned `Stop`, `Wait`, and `Predicate` values. `RetryPolicy::new()` returns a policy with `S = NeedsStop`, a marker type that does not implement `Stop`. Retry execution methods (`retry`, `retry_async`, `boxed`) require `S: Stop`, so they are unavailable until `.stop(...)` is called. `RetryPolicy::default()` returns a safe, ready-to-run policy. When `alloc` is enabled, `BoxedRetryPolicy` provides a type-erased variant (`Box<dyn Stop>` etc.) for runtime-constructed policies and serde deserialization.
 
 ---
 
@@ -242,7 +260,7 @@ Two execution paths share the same policy type:
 
 The sync engine is a plain loop. It calls `op()`, consults `Stop` and `Predicate`, calls `Wait`, then calls the blocking sleep function. Requires no async runtime.
 
-**Async:** `policy.retry(|| async { op() }).sleep(tokio::time::sleep).await?`
+**Async:** `policy.retry_async(|| async { op() }).sleep(tokio::time::sleep).await?`
 
 The async engine is an `async fn` (or equivalently a hand-written `Future` state machine). Between attempts it `.await`s the sleep future. The sleep function is accepted as a generic `impl Sleeper`, which the blanket impl covers for closures. No executor is required beyond `core::future::Future` machinery.
 
@@ -254,12 +272,15 @@ Both paths share all stop/wait/predicate/hook logic. The only difference is whet
 
 All business logic (stop strategies, wait strategies, predicate composition, policy configuration) is tested with plain unit tests requiring no async runtime. The execution engine is tested with:
 
-- **Sync tests:** real `std::thread::sleep` is avoided; tests inject a no-op sleep closure. Timing-sensitive behavior (elapsed-based stop) is tested by injecting a fake clock via a `ClockFn` type parameter on `AttemptState` construction. This is a narrow, targeted seam — not a global mock.
-- **Async tests:** `tokio::test` for the tokio sleep path; a minimal hand-rolled executor (or `futures::executor::block_on`) for the executor-agnostic path.
-- **no_std compile test:** a separate `tests/no_std_compat.rs` that is compiled with `--target thumbv7m-none-eabi` in CI to confirm the crate compiles without std. Runtime behavior is not tested here.
-- **Composition tests:** property-based tests (via `proptest`) verify that `StopAny(a, b).should_stop()` equals `a.should_stop() || b.should_stop()` for all combinations of attempt counts and durations.
+- **Sync tests:** real `std::thread::sleep` is avoided; tests inject a no-op or recording sleep closure. Elapsed-based stop strategies are tested via `std::thread::sleep` for necessary timing and by constructing `RetryState` directly for deterministic assertions.
+- **Async tests:** a minimal executor via `core::task` polling (no external runtime dependency in tests). Async retry correctness shares the same transition logic as sync.
+- **no_std compile test:** CI builds with `--target thumbv7m-none-eabi --no-default-features` and checks `wasm32-unknown-unknown` with `--features alloc,gloo-timers-sleep` to confirm the crate compiles without std. Runtime behavior is not tested on these targets.
+- **Composition tests:** seeded property-style tests verify that `StopAny(a, b).should_stop()` equals `a.should_stop() || b.should_stop()` and analogous invariants for `Wait` and `Predicate` composition, over generated input sets with reproducible seeds.
 
-Error paths that are genuinely difficult to trigger in real conditions (e.g., arithmetic overflow in backoff duration computation) use direct unit tests on the strategy function with edge-case inputs. No mock injection infrastructure is needed beyond the clock seam.
+Error paths that are genuinely difficult to trigger in real conditions (for
+example, arithmetic overflow in backoff duration computation) use direct unit
+tests on the strategy function with edge-case inputs. No dedicated mock
+injection layer is required.
 
 ---
 
@@ -267,9 +288,9 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 **1.1** The crate root is `#![no_std]` unconditionally. It activates `extern crate alloc` when the `alloc` feature is enabled and `extern crate std` when the `std` feature is enabled.
 
-**1.2** The `Stop` trait is defined in `stop.rs` with two methods: `should_stop(&mut self, state: &AttemptState) -> bool` and `reset(&mut self)`. The `reset` method has a default no-op implementation.
+**1.2** The `Stop` trait is defined in `stop.rs` with two methods: `should_stop(&mut self, state: &RetryState) -> bool` and `reset(&mut self)`. The `reset` method has a default no-op implementation.
 
-**1.3** The `Wait` trait is defined in `wait.rs` with two methods: `next_wait(&mut self, state: &AttemptState) -> Duration` and `reset(&mut self)`. The `reset` method has a default no-op implementation.
+**1.3** The `Wait` trait is defined in `wait.rs` with two methods: `next_wait(&mut self, state: &RetryState) -> Duration` and `reset(&mut self)`. The `reset` method has a default no-op implementation.
 
 **1.4** The `Predicate<T, E>` trait is defined in `predicate.rs` with one method: `should_retry(&self, outcome: &Result<T, E>) -> bool`.
 
@@ -277,9 +298,14 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 **1.6** `Sleeper` is blanket-implemented for any `F: Fn(Duration) -> Fut where Fut: Future<Output = ()>`, so callers can pass `tokio::time::sleep` directly without wrapping.
 
-**1.7** `AttemptState<'a, T, E>` is a struct with fields: `attempt: u32` (1-indexed), `outcome: &'a Result<T, E>`, `elapsed: Option<Duration>`, `next_delay: Duration`, and `total_wait: Duration`.
+**1.7** `RetryState` is a struct with fields: `attempt: u32` (1-indexed), `elapsed: Option<Duration>`, `next_delay: Duration`, and `total_wait: Duration`. It carries only counters and timing — no outcome reference — and is passed to `Stop::should_stop` and `Wait::next_wait`. `AttemptState<'a, T, E>` extends this with `outcome: &'a Result<T, E>` and is passed to hooks that need outcome visibility.
 
-**1.8** `AttemptState` is constructed internally by the execution engine and passed by shared reference to all hooks, `Stop::should_stop`, `Predicate::should_retry`, and `Wait::next_wait`. It is never constructed by user code.
+**1.8** `RetryState` is passed by shared reference to `Stop::should_stop` and
+`Wait::next_wait`. `AttemptState` is passed to `after_attempt`, `before_sleep`,
+and `on_exhausted` hooks. `BeforeAttemptState` is passed to `before_attempt`.
+`Predicate::should_retry` receives `&Result<T, E>` directly. During normal
+execution these state types are constructed by the retry engine; direct
+construction is supported for tests and custom strategy implementations.
 
 **1.9** `RetryError<E>` is defined in `error.rs` as an enum with variants
 `Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> }`,
@@ -296,7 +322,10 @@ Error paths that are genuinely difficult to trigger in real conditions (e.g., ar
 
 **2.1** `stop::attempts(n: u32)` produces a strategy that stops after `n`
 completed attempts. The stop fires when `state.attempt >= n`. `n` must be at
-least `1`; passing `0` panics.
+least `1`; passing `0` panics. The fallible variant
+`stop::attempts_checked(n) -> Result<StopAfterAttempts, StopConfigError>`
+returns `Err(StopConfigError::ZeroAttempts)` instead of panicking. Use
+`attempts_checked` when `n` comes from untrusted or runtime configuration.
 
 **2.2** `stop::elapsed(dur: Duration)` produces a strategy that stops when `state.elapsed >= Some(dur)`. When `state.elapsed` is `None` (no clock), this strategy never fires.
 
@@ -362,7 +391,7 @@ for the first `after` attempts and `other` for all subsequent attempts.
 
 **4.4** `on::result(f: F) where F: Fn(&Result<T, E>) -> bool` produces a predicate that receives the full outcome and returns `true` (retry) when `f` does. This is the general form used for the waitfor pattern.
 
-**4.5** `on::ok(f: F) where F: Fn(&T) -> bool` is a convenience wrapper around `on::result` that returns `true` when the outcome is `Ok(v)` and `f(v)` is true. This handles the polling use case cleanly.
+**4.5** `on::ok(f: F) where F: Fn(&T) -> bool` produces a predicate that returns `true` when the outcome is `Ok(v)` and `f(v)` is true, and `false` for any `Err`. This handles the polling use case cleanly.
 
 **4.6** Two predicates combine with `|` to produce a predicate that retries when either constituent says to retry.
 
@@ -448,7 +477,7 @@ unparameterized `RetryPolicy` type defaults to this safe configuration.
 
 **7.6** Multiple hook callbacks of the same kind can be registered. They fire in registration order. Builder method `.before_sleep(f)` appends to an internal list rather than replacing.
 
-**7.7** When the `alloc` feature is inactive, each hook slot holds at most one callback. Attempting to register a second callback of the same kind in no_std is a compile-time error (not a runtime panic). This is enforced by the type system: without alloc, hooks are `Option<F>` rather than `Vec<Box<dyn FnMut>>`.
+**7.7** When the `alloc` feature is inactive, each hook slot holds at most one callback. Attempting to register a second callback of the same kind is a compile-time error (not a runtime panic). This is enforced by the type system: the no-alloc hook setter methods are only available when the corresponding hook type parameter is `()`, so calling the setter once replaces `()` with a concrete type and the method disappears.
 
 ---
 
@@ -491,10 +520,14 @@ including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
 ## Iteration 10: Public API Surface and Ergonomics
 
 **10.1** The following items are re-exported from the crate root:
-`RetryPolicy`, `RetryError`, `RetryStats`, `StopReason`, `SyncRetry`,
-`SyncRetryWithStats`, `AsyncRetry`, `AsyncRetryWithStats`, the `stop` module,
-the `wait` module, the `on` module, the `Stop` trait, the `Wait` trait, the
-`Predicate` trait, and the `Sleeper` trait.
+`RetryPolicy`, `BoxedRetryPolicy` (alloc), `RetryError`, `RetryStats`,
+`StopReason`, `SyncRetry`, `SyncRetryWithStats`, `AsyncRetry` (alloc),
+`AsyncRetryWithStats` (alloc), `RetryState`, `AttemptState`,
+`BeforeAttemptState`, the `Stop` trait, `StopAll`, `StopAny`, `NeedsStop`,
+`StopConfigError`, the `Wait` trait, `WaitExt`, `WaitCapped`, `WaitChain`,
+`WaitCombine`, `WaitJitter` (jitter), the `Predicate` trait, the `Sleeper`
+trait, the `stop` module, the `wait` module, the `on` module, and the `sleep`
+module.
 
 **10.2** The `sleep` module is re-exported and contains runtime-specific sleeper values (gated by features).
 
