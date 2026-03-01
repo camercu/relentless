@@ -706,6 +706,17 @@ fn duration_is_core_time_duration() {
 }
 
 // ---------------------------------------------------------------------------
+// Thread safety: default policy is Send + Sync
+// ---------------------------------------------------------------------------
+
+fn _assert_send_sync<T: Send + Sync>() {}
+
+#[test]
+fn default_retry_policy_is_send_and_sync() {
+    _assert_send_sync::<tenacious::RetryPolicy>();
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
