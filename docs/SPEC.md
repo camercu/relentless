@@ -129,6 +129,10 @@ jitter = ["dep:rand"]
 # serde: enables Serialize/Deserialize on RetryPolicy and strategy types,
 #        allowing policy configuration from files or environment.
 serde = ["dep:serde"]
+
+# strict-futures: panic on AsyncRetry repoll-after-completion in all builds.
+#                 Without this feature, release builds return Poll::Pending.
+strict-futures = []
 ```
 
 `#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/compat.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
@@ -325,11 +329,16 @@ completed attempts. The stop fires when `state.attempt >= n`. `n` must be at
 least `1`; passing `0` panics. The fallible variant
 `stop::attempts_checked(n) -> Result<StopAfterAttempts, StopConfigError>`
 returns `Err(StopConfigError::ZeroAttempts)` instead of panicking. Use
-`attempts_checked` when `n` comes from untrusted or runtime configuration.
+`attempts` for hardcoded known-valid literals, and use `attempts_checked` for
+runtime or untrusted configuration values.
 
 **2.2** `stop::elapsed(dur: Duration)` produces a strategy that stops when `state.elapsed >= Some(dur)`. When `state.elapsed` is `None` (no clock), this strategy never fires.
 
 **2.3** `stop::before_elapsed(dur: Duration)` produces a conservative strategy that stops when the elapsed time means the next attempt would likely exceed the deadline. It fires when `state.elapsed.map_or(false, |e| e + state.next_delay >= dur)`. This prevents starting an attempt that cannot complete within the budget.
+
+`RetryPolicy::elapsed_clock(fn() -> Duration)` lets callers provide a custom
+monotonic elapsed source. When configured, elapsed-based stop strategies use
+that source even in `no_std` builds.
 
 **2.4** `stop::never()` produces a strategy that always returns `false`. It is the correct explicit spelling of "retry indefinitely."
 
@@ -366,6 +375,8 @@ if jitter is also configured.
 **3.6** When the `jitter` feature is enabled, all wait strategies expose
 `.jitter(max_jitter: Duration)` via `WaitExt`. Jitter is a uniformly random
 value in `[0, max_jitter]` added to the computed wait before capping.
+`WaitJitter` also exposes `.with_seed([u8; 32])` and `.with_nonce(u64)` for
+deterministic and decorrelated sequences in tests or reproducible runs.
 
 **3.7** Two wait strategies combine with `+` to produce `WaitCombine`, which returns the sum of both strategies' outputs. The `Add<Rhs> for W where W: Wait, Rhs: Wait` trait is implemented for all `Wait` types.
 
@@ -451,9 +462,13 @@ unparameterized `RetryPolicy` type defaults to this safe configuration.
 
 **6.3** `AsyncRetry` implements `Future<Output = Result<T, RetryError<E>>>` and can be `.await`ed directly.
 
+Polling an `AsyncRetry` after it has completed is misuse: debug builds panic.
+Release builds return `Poll::Pending` unless the `strict-futures` feature is
+enabled, in which case they also panic.
+
 **6.4** The async execution loop follows the same logic as the sync loop (5.6) but replaces the blocking sleep call with `sleeper.sleep(delay).await`.
 
-**6.5** The async engine does not spawn tasks or use any global state. It is a single `async fn` (or poll-based state machine). It is compatible with any executor that implements `core::task`.
+**6.5** The async engine does not spawn tasks or use any global state. It is a single poll-based state machine compatible with any executor that implements `core::task`, and does not perform per-attempt heap allocations in the retry loop.
 
 **6.6** When the `tokio-sleep` feature is active, `tenacious::sleep::tokio_sleep` is re-exported as a convenience, equivalent to `tokio::time::sleep`.
 
@@ -493,7 +508,7 @@ including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
 
 **8.4** Statistics are accumulated inside the execution engine only when `.with_stats()` is active. Without it, no timing calls are made solely for statistics purposes.
 
-**8.5** When the `std` feature is inactive, `total_elapsed` in `RetryStats` is always `None`.
+**8.5** When the `std` feature is inactive, `total_elapsed` in `RetryStats` is `None` unless a custom elapsed source is configured via `RetryPolicy::elapsed_clock`.
 
 **8.6** `RetryStats` implements `Debug` and `Clone`. It implements `serde::Serialize` when the `serde` feature is active.
 
@@ -509,11 +524,11 @@ including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
 
 **9.4** The `jitter` feature pulls in `rand` with `default-features = false` and enables only `rand`'s `SmallRng` (which is no_std-compatible). It does not transitively enable `std` or `alloc` in `rand`.
 
-**9.5** When `serde` is enabled, `RetryPolicy` serialization covers only the strategy configuration values (delay durations, max attempts, etc.). Hook callbacks are not serializable and are not included.
+**9.5** When `serde` is enabled, `RetryPolicy` serialization covers only the strategy configuration values (delay durations, max attempts, etc.). Hook callbacks and elapsed clock function pointers are not serializable and are not included. Deserialization of built-in strategy types validates constructor invariants (for example, `StopAfterAttempts` rejects `max == 0`). Jitter strategy serde includes `seed` and `nonce` so configured jitter streams can be reproduced.
 
 **9.6** The facade module pattern is used to centralize conditional imports. A single internal module (`src/compat.rs`) re-exports `Duration` from `core::time`, `Vec` from `alloc::vec` (when `alloc`), `Box` from `alloc::boxed` (when `alloc`), and `String` from `alloc::string` (when `alloc`). All other modules import from this facade rather than from `core`/`alloc`/`std` directly.
 
-**9.7** Elapsed time tracking uses `std::time::Instant` when `std` is active. On no_std without a time source, elapsed is always `None`. A future release may add a `TimeSource` injection point; v1 does not include it.
+**9.7** Elapsed time tracking uses `std::time::Instant` when `std` is active unless a custom elapsed source is provided. In `no_std`, callers can provide elapsed tracking through `RetryPolicy::elapsed_clock`; without it, elapsed remains `None`.
 
 ---
 

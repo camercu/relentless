@@ -138,6 +138,13 @@ assert_eq!(stats.attempts, 3);
   `NeedsStop`; you must call `.stop(...)` before `retry`/`retry_async`.
 - `RetryPolicy::default()` returns a safe configured policy (3 attempts,
   100ms exponential backoff).
+- `stop::attempts(n)` is the ergonomic constructor for hardcoded, known-valid
+  literals.
+- `stop::attempts_checked(n)` is the control-path constructor for runtime or
+  untrusted values.
+- `RetryPolicy::elapsed_clock(fn() -> Duration)` lets you provide a monotonic
+  elapsed-time source (useful for `no_std` targets where wall-clock time is not
+  available from `std::time::Instant`).
 
 ## Error behavior
 
@@ -159,6 +166,11 @@ assert_eq!(stats.attempts, 3);
   your target)
 - `jitter`: randomized jitter for wait strategies
 - `serde`: serialization for strategy/stat types
+- `strict-futures`: panics on `AsyncRetry` repoll-after-completion in release
+  builds (debug already panics)
+
+With `jitter` enabled, use `.with_seed([u8; 32])` and `.with_nonce(u64)` on
+`WaitJitter` when you need reproducible jitter sequences.
 
 ## Production notes
 
@@ -177,6 +189,21 @@ user-provided logic, consider catching panics at the call site.
 strategy and hook types are `Send + Sync` (all built-in strategies satisfy
 this). Policies can be shared across threads via `Arc<Mutex<RetryPolicy>>` or
 cloned per-thread since `RetryPolicy` is `Clone`.
+
+**Configuration validation.** `stop::attempts(n)` panics when `n == 0`.
+Use `stop::attempts(n)` for hardcoded constants. For runtime or untrusted
+input, use `stop::attempts_checked(n)` and handle `StopConfigError`
+explicitly.
+
+```rust
+use tenacious::stop;
+
+fn parse_attempts(
+    raw: u32,
+) -> Result<tenacious::stop::StopAfterAttempts, tenacious::stop::StopConfigError> {
+    stop::attempts_checked(raw)
+}
+```
 
 ## no_std support
 
