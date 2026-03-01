@@ -291,6 +291,9 @@ impl Wait for WaitExponential {
 /// Enabled with the `jitter` feature and created by calling `.jitter(max)` on
 /// any wait strategy.
 ///
+/// Jitter uses a fast PRNG intended for retry backoff behavior, not for
+/// cryptographic use.
+///
 /// # Examples
 ///
 /// ```

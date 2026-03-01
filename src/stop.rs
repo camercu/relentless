@@ -182,7 +182,11 @@ impl Stop for StopAfterElapsed {
 ///
 /// Created by [`before_elapsed`]. Fires when
 /// `state.elapsed + state.next_delay >= deadline`. This prevents starting an
-/// attempt that cannot complete within the time budget.
+/// attempt when the computed pre-attempt sleep would already reach or exceed
+/// the deadline.
+///
+/// This strategy does **not** account for the runtime of the *next* operation;
+/// it only uses elapsed time so far plus the computed next delay.
 ///
 /// When `state.elapsed` is `None` (no clock), this strategy never fires.
 ///
@@ -208,6 +212,9 @@ pub struct StopBeforeElapsed {
 
 /// Produces a conservative strategy that stops when elapsed time plus the
 /// next delay would meet or exceed `deadline`.
+///
+/// This check uses only elapsed-so-far and the computed delay before the next
+/// attempt. It does not estimate the next operation's runtime.
 ///
 /// When no clock is available (`elapsed` is `None`), this strategy never fires.
 pub fn before_elapsed(deadline: Duration) -> StopBeforeElapsed {

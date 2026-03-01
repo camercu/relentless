@@ -116,6 +116,12 @@ where
 /// `RetryPolicy` stores retry strategies and hooks, and can be reused across
 /// multiple operations.
 ///
+/// Construction options:
+/// - [`RetryPolicy::new`] starts with `NeedsStop` and intentionally blocks
+///   execution until `.stop(...)` is configured.
+/// - [`Default::default`] returns a fully configured safe policy
+///   (`attempts(3)` plus `exponential(100ms)`).
+///
 /// # Examples
 ///
 /// ```
@@ -673,6 +679,10 @@ where
 /// Created by [`RetryPolicy::retry`]. Call `.sleep(...)` to provide a sleep
 /// implementation and `.call()` to execute.
 ///
+/// In `std` builds, calling `.sleep(...)` is optional because a default
+/// blocking sleeper is available. In non-`std` builds, `.sleep(...)` is
+/// required before `.call()` is available.
+///
 /// # Examples
 ///
 /// ```
@@ -874,6 +884,9 @@ enum AsyncPhase<'policy, Fut> {
 ///
 /// Created by [`RetryPolicy::retry_async`]. Set a sleeper with `.sleep(...)`
 /// and then `.await` the returned future.
+///
+/// `AsyncRetry` is a single-use future. Polling after completion is considered
+/// misuse: debug builds panic, while release builds return `Poll::Pending`.
 ///
 /// # Examples
 ///
