@@ -1,8 +1,18 @@
 //! Allocation profile checks for hot retry execution paths.
 
 use core::time::Duration;
+#[cfg(feature = "alloc")]
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
 use std::sync::{Mutex, MutexGuard, OnceLock};
+#[cfg(feature = "alloc")]
+use std::{cell::Cell, pin::pin};
+#[cfg(feature = "alloc")]
+use tenacious::sleep::Sleeper;
 use tenacious::{RetryPolicy, stop, wait};
 
 #[global_allocator]
@@ -22,6 +32,32 @@ fn allocation_test_guard() -> MutexGuard<'static, ()> {
 }
 
 fn instant_sleep(_dur: Duration) {}
+
+#[cfg(feature = "alloc")]
+fn block_on<F: Future>(future: F) -> F::Output {
+    let mut future = pin!(future);
+    let waker = Waker::noop().clone();
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Clone, Copy)]
+struct InstantSleeper;
+
+#[cfg(feature = "alloc")]
+impl Sleeper for InstantSleeper {
+    type Sleep = core::future::Ready<()>;
+
+    fn sleep(&self, _dur: Duration) -> Self::Sleep {
+        core::future::ready(())
+    }
+}
 
 fn min_allocated_during(mut operation: impl FnMut()) -> (usize, usize) {
     let mut min_allocations = usize::MAX;
@@ -105,5 +141,47 @@ fn boxed_sync_retry_execution_is_allocation_free_after_warmup() {
     assert_eq!(
         min_bytes, 0,
         "boxed execution should not allocate bytes after warmup"
+    );
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn async_retry_execution_is_allocation_free_after_warmup() {
+    let _guard = allocation_test_guard();
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let mut run_once = || {
+        let call_count = Cell::new(0_u32);
+        block_on(
+            policy
+                .retry_async(|| {
+                    let call_count_ref = &call_count;
+                    call_count_ref.set(call_count_ref.get().saturating_add(1));
+                    async move {
+                        if call_count_ref.get() < MAX_ATTEMPTS {
+                            Err::<i32, _>(ERROR_VALUE)
+                        } else {
+                            Ok(SUCCESS_VALUE)
+                        }
+                    }
+                })
+                .sleep(InstantSleeper),
+        )
+    };
+
+    let _ = run_once();
+    let (min_allocations, min_bytes) = min_allocated_during(|| {
+        let _ = run_once();
+    });
+
+    assert_eq!(
+        min_allocations, 0,
+        "async execution should not allocate after warmup"
+    );
+    assert_eq!(
+        min_bytes, 0,
+        "async execution should not allocate bytes after warmup"
     );
 }

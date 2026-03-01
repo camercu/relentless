@@ -10,6 +10,7 @@
 //! - Sleep function requirement (5.10)
 
 use core::cell::Cell;
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
 use tenacious::{RetryError, RetryPolicy};
@@ -33,6 +34,16 @@ const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Arbitrary success value.
 const SUCCESS_VALUE: i32 = 42;
+
+/// Deadline used for deterministic custom-clock elapsed stop tests.
+const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
+
+/// Simulated operation runtime increment for custom-clock tests.
+const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
+
+/// Attempt fallback used when custom elapsed is disabled.
+#[cfg(not(feature = "std"))]
+const CUSTOM_CLOCK_ATTEMPT_FALLBACK: u32 = 2;
 
 /// Sleep duration used to simulate operation runtime.
 #[cfg(feature = "std")]
@@ -60,6 +71,12 @@ fn instant_sleep(_dur: Duration) {}
 /// Records each requested sleep duration.
 fn recording_sleep(recorder: &RefCell<Vec<Duration>>) -> impl FnMut(Duration) + '_ {
     move |dur| recorder.borrow_mut().push(dur)
+}
+
+static ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
+
+fn elapsed_clock_millis() -> Duration {
+    Duration::from_millis(ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
 }
 
 // ---------------------------------------------------------------------------
@@ -668,6 +685,75 @@ fn predicate_rejects_err_means_immediate_return() {
             other
         ),
     }
+}
+
+#[test]
+fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    let mut policy = RetryPolicy::new()
+        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE))
+        .elapsed_clock(elapsed_clock_millis);
+    let call_count = Cell::new(0_u32);
+
+    let result = policy
+        .retry(|| {
+            call_count.set(call_count.get().saturating_add(1));
+            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            Err::<i32, _>("clocked failure")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(
+        result,
+        Err(RetryError::Exhausted { attempts: 1, .. })
+    ));
+}
+
+#[test]
+#[cfg(not(feature = "std"))]
+fn clear_elapsed_clock_disables_custom_elapsed_source_without_std() {
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    let mut with_clock = RetryPolicy::new()
+        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE) | stop::attempts(CUSTOM_CLOCK_ATTEMPT_FALLBACK))
+        .elapsed_clock(elapsed_clock_millis);
+
+    let with_clock_result = with_clock
+        .retry(|| {
+            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            Err::<i32, _>("clocked failure")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(
+        with_clock_result,
+        Err(RetryError::Exhausted { attempts: 1, .. })
+    ));
+
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    let mut cleared_clock = RetryPolicy::new()
+        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE) | stop::attempts(CUSTOM_CLOCK_ATTEMPT_FALLBACK))
+        .elapsed_clock(elapsed_clock_millis)
+        .clear_elapsed_clock();
+
+    let cleared_result = cleared_clock
+        .retry(|| {
+            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            Err::<i32, _>("clocked failure")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(
+        cleared_result,
+        Err(RetryError::Exhausted {
+            attempts: CUSTOM_CLOCK_ATTEMPT_FALLBACK,
+            ..
+        })
+    ));
 }
 
 #[test]

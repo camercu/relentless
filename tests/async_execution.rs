@@ -132,11 +132,35 @@ fn retry_async_executes_when_sleeper_is_set() {
 
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
+    #[allow(clippy::type_complexity)]
+    fn assert_nameable<'a, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>(
+        _retry: tenacious::AsyncRetry<
+            'a,
+            S,
+            W,
+            P,
+            BA,
+            AA,
+            BS,
+            OE,
+            F,
+            Fut,
+            SleepImpl,
+            T,
+            E,
+            SleepFut,
+        >,
+    ) where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+    }
+
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
         .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
         .sleep(|_dur: Duration| async {});
-    let _typed: tenacious::AsyncRetry<'_, _, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    assert_nameable(retry);
 }
 
 #[test]
@@ -174,6 +198,7 @@ fn async_retry_repoll_after_completion_panics_in_debug() {
 
 #[cfg(not(debug_assertions))]
 #[test]
+#[cfg(not(feature = "strict-futures"))]
 fn async_retry_repoll_after_completion_is_pending_in_release() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
     let mut retry = Box::pin(
@@ -189,6 +214,28 @@ fn async_retry_repoll_after_completion_is_pending_in_release() {
 
     let second_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
     assert_eq!(second_poll, Poll::Pending);
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+#[cfg(feature = "strict-futures")]
+fn async_retry_repoll_after_completion_panics_with_strict_feature() {
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let mut retry = Box::pin(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(|_dur: Duration| async {}),
+    );
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+
+    let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
+
+    let second_poll = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = Future::poll(Pin::as_mut(&mut retry), &mut cx);
+    }));
+    assert!(second_poll.is_err());
 }
 
 // ---------------------------------------------------------------------------
