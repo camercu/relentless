@@ -51,8 +51,36 @@ jobs:
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
           toolchain: stable
-      - name: cargo test phase9_feature_compat
-        run: cargo test --test phase9_feature_compat --features ${{ matrix.features }}
+      - name: cargo test feature_compat
+        run: cargo test --test feature_compat --features ${{ matrix.features }}
+
+  runtime-sleep-features:
+    name: Runtime sleep features (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - tokio-sleep
+          - futures-timer-sleep
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
+      - name: cargo test async_execution
+        run: cargo test --test async_execution --features ${{ matrix.features }}
+
+  embassy-sleep-compile:
+    name: Embassy sleep compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+        with:
+          toolchain: stable
+      - name: cargo check embassy-sleep
+        run: cargo check --features embassy-sleep
 
   allocation-profile:
     name: Allocation profile (single-thread)
