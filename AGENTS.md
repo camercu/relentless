@@ -1,8 +1,9 @@
 # Overview
 
-This library, tenacious, is a Rust library for retrying fallible operations and polling for conditions.
+`tenacious` is a Rust library for retrying fallible operations and polling for
+conditions.
 
-For more information on it's specifications, see [SPEC.md](/docs/SPEC.md).
+The spec is in [SPEC.md](/docs/SPEC.md).
 
 ## Coding Rules
 
@@ -16,3 +17,34 @@ For more information on it's specifications, see [SPEC.md](/docs/SPEC.md).
   significance — this obscures rather than clarifies. Standard values like
   `Duration::ZERO`, `true`/`false`, and contextually obvious literals (e.g.
   `Ok(())`, `Err("msg")`) may be used inline.
+
+## Execution guardrails
+
+- Use Conventional Commits with required scopes that describe functionality or
+  domain (for example: `serialization`, `policy`, `security`, `ci`), never
+  phase labels. Split unrelated work into separate atomic commits.
+- When other agents are working concurrently, prefer edits in disjoint files or
+  code areas. Never revert changes you did not make.
+- Before committing, run `git status --short` and include only intended files.
+- Treat [`docs/SPEC.md`](/docs/SPEC.md) as authoritative by default.
+- If an implementation improvement conflicts with spec behavior, stop and
+  present the exact conflict, implications, and recommendation before changing
+  behavior.
+- Keep tests deterministic and fast. Randomized/property-style tests must
+  support an environment-injected seed and print the seed on failures.
+- Avoid timing-flaky tests and non-essential test/example cruft.
+
+## Code review rubric
+
+- Prioritize findings over summaries: list bugs, behavioral regressions,
+  security risks, performance issues, and missing tests first.
+- Order findings by severity and include precise file/line references.
+- Evaluate design quality: complexity, cohesion, modularity, coupling, and
+  abstraction boundaries.
+- Look for opportunities to simplify code and remove non-value-add
+  implementation and test/example cruft.
+- Audit public API surface area and flag items that should be private or
+  crate-private.
+- Confirm tests are deterministic, fast, intent-revealing, and maintainable.
+- Identify significant coverage gaps, especially around edge cases and failure
+  paths.
