@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 8: Statistics (Spec items 8.1–8.6).
+//! Acceptance tests for Statistics (Spec items 8.1–8.6).
 //!
 //! These tests verify:
 //! - `.with_stats()` on SyncRetry/AsyncRetry changes return type (8.1)

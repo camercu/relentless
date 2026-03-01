@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 7: Callbacks and Hooks (Spec items 7.1–7.7).
+//! Acceptance tests for Callbacks and Hooks (Spec items 7.1–7.7).
 
 use core::cell::Cell;
 use core::time::Duration;

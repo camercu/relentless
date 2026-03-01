@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 4: Retry Predicates (Spec items 4.1–4.8).
+//! Acceptance tests for Retry Predicates (Spec items 4.1–4.8).
 //!
 //! These tests verify:
 //! - `on` module factory functions exist and produce predicates (4.1)
@@ -11,7 +11,7 @@
 //! - Closures satisfy `Predicate<T, E>` via blanket impl (4.8)
 //!
 //! Spec items 4.9 and 4.10 concern execution-engine behavior and are validated
-//! in the execution phases where the retry loop exists.
+//! in execution tests where the retry loop exists.
 
 use core::cell::Cell;
 use tenacious::Predicate;

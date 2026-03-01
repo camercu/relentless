@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 3: Wait Strategies (Spec items 3.1–3.11)
+//! Acceptance tests for Wait Strategies (Spec items 3.1–3.11)
 //!
 //! These tests verify:
 //! - wait::fixed(dur) always returns dur (3.1)

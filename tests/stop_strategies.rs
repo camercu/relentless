@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 2: Stop Strategies (Spec items 2.1–2.9)
+//! Acceptance tests for Stop Strategies (Spec items 2.1–2.9)
 //!
 //! These tests verify:
 //! - stop::attempts(n) fires at the correct threshold (2.1)

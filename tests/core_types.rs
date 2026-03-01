@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 1: Core Types and Traits (Spec items 1.1–1.11)
+//! Acceptance tests for Core Types and Traits (Spec items 1.1–1.11)
 //!
 //! These tests verify:
 //! - Stop trait definition and semantics (1.2)

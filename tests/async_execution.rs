@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 6: Async Execution (Spec items 6.1–6.8).
+//! Acceptance tests for Async Execution (Spec items 6.1–6.8).
 //!
 //! These tests verify:
 //! - `RetryPolicy::retry_async(op)` configures async retry (6.1)
@@ -10,7 +10,7 @@
 //! - `embassy_sleep` is available behind feature gate (6.7)
 //! - Async hook callbacks are synchronous and fire at the right points (6.8)
 //!
-//! This file also closes deferred Phase 4 execution behavior checks:
+//! This file also closes deferred retry-predicate execution behavior checks:
 //! - Predicate evaluated before stop (4.9)
 //! - Default predicate behaves like `on::any_error()` (4.10)
 
@@ -260,7 +260,7 @@ fn async_sleep_receives_wait_strategy_delays() {
 }
 
 // ---------------------------------------------------------------------------
-// Deferred phase 4 checks in execution engine (4.9, 4.10)
+// Deferred retry-predicate checks in execution engine (4.9, 4.10)
 // ---------------------------------------------------------------------------
 
 #[test]

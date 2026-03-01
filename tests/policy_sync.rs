@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 5: Policy Builder and Sync Execution (Spec items 5.1–5.10)
+//! Acceptance tests for Policy Builder and Sync Execution (Spec items 5.1–5.10)
 //!
 //! These tests verify:
 //! - RetryPolicy::new() type-state and RetryPolicy::default() safe defaults (5.1)

@@ -80,15 +80,15 @@ tenacious/
 │   stop.rs              # Stop trait + built-in stop strategies + NeedsStop
 │   wait.rs              # Wait trait + WaitExt + built-in wait strategies
 ├── tests/
-│   phase1_core_types.rs
-│   phase2_stop_strategies.rs
-│   phase3_wait_strategies.rs
-│   phase4_retry_predicates.rs
-│   phase5_policy_sync.rs
-│   phase6_async_execution.rs
-│   phase7_callbacks_hooks.rs
-│   phase8_stats.rs
-│   phase9_feature_compat.rs
+│   core_types.rs
+│   stop_strategies.rs
+│   wait_strategies.rs
+│   retry_predicates.rs
+│   policy_sync.rs
+│   async_execution.rs
+│   callbacks_hooks.rs
+│   stats.rs
+│   feature_compat.rs
 │   quality_properties.rs
 │   allocation_hot_paths.rs
 │   wait_ext_ergonomics.rs

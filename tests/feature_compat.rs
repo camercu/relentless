@@ -1,4 +1,4 @@
-//! Acceptance tests for Phase 9: no_std and feature compatibility.
+//! Acceptance tests for no_std and feature compatibility.
 
 #[cfg(any(feature = "jitter", feature = "serde"))]
 use core::time::Duration;
