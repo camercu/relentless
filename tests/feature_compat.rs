@@ -148,9 +148,7 @@ fn jitter_nonce_changes_sequence_for_same_seed() {
 fn retry_policy_serialization_omits_hooks() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::from_millis(5)))
-        .before_attempt(|_state| {})
-        .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {});
+        .wait(wait::fixed(Duration::from_millis(5)));
 
     let value = serde_json::to_value(&policy).expect("policy should serialize");
     let object = value
@@ -164,7 +162,7 @@ fn retry_policy_serialization_omits_hooks() {
     assert!(!object.contains_key("before_attempt"));
     assert!(!object.contains_key("after_attempt"));
     assert!(!object.contains_key("before_sleep"));
-    assert!(!object.contains_key("on_exhausted"));
+    assert!(!object.contains_key("on_exit"));
 }
 
 #[cfg(feature = "serde")]

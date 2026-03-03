@@ -522,10 +522,7 @@ fn sync_stats_work_alongside_hooks() {
     let hook_calls = Cell::new(0_u32);
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
-        .before_attempt(|_state| {
-            hook_calls.set(hook_calls.get().saturating_add(1));
-        });
+        .wait(wait::fixed(WAIT_DURATION));
 
     let (result, stats) = policy
         .retry(|| {
@@ -534,6 +531,9 @@ fn sync_stats_work_alongside_hooks() {
             } else {
                 Ok(SUCCESS_VALUE)
             }
+        })
+        .before_attempt(|_state| {
+            hook_calls.set(hook_calls.get().saturating_add(1));
         })
         .sleep(instant_sleep)
         .with_stats()

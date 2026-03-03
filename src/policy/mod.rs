@@ -1,11 +1,9 @@
 //! RetryPolicy builder and sync/async execution engines.
 
 use crate::compat::Duration;
-use crate::error::RetryError;
 use crate::on;
 use crate::predicate::Predicate;
-use crate::state::{AttemptState, BeforeAttemptState, RetryState};
-use crate::stats::RetryStats;
+use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::stop::{self, Stop};
 use crate::wait::{self, Wait};
 #[cfg(feature = "serde")]
@@ -22,14 +20,6 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Function pointer type used to supply elapsed time in no_std or custom runtimes.
 type ElapsedClockFn = fn() -> Duration;
-
-#[derive(Clone)]
-struct PolicyHooks<BA, AA, BS, OE> {
-    before_attempt: BA,
-    after_attempt: AA,
-    before_sleep: BS,
-    on_exhausted: OE,
-}
 
 #[derive(Clone, Copy)]
 struct PolicyMeta {
@@ -77,6 +67,26 @@ where
     }
 }
 
+/// Hook callback shape for the `on_exit` hook.
+#[doc(hidden)]
+pub trait ExitHook<T, E> {
+    /// Invokes the hook.
+    fn call(&mut self, state: &ExitState<'_, T, E>);
+}
+
+impl<T, E> ExitHook<T, E> for () {
+    fn call(&mut self, _state: &ExitState<'_, T, E>) {}
+}
+
+impl<T, E, F> ExitHook<T, E> for F
+where
+    F: for<'a> FnMut(&ExitState<'a, T, E>),
+{
+    fn call(&mut self, state: &ExitState<'_, T, E>) {
+        (self)(state);
+    }
+}
+
 /// Internal hook-chain wrapper used when multiple hooks are appended.
 #[doc(hidden)]
 #[derive(Clone)]
@@ -117,10 +127,42 @@ where
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<T, E, First, Second> ExitHook<T, E> for HookChain<First, Second>
+where
+    First: ExitHook<T, E>,
+    Second: ExitHook<T, E>,
+{
+    fn call(&mut self, state: &ExitState<'_, T, E>) {
+        self.first.call(state);
+        self.second.call(state);
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct ExecutionHooks<BA, AA, BS, OX> {
+    before_attempt: BA,
+    after_attempt: AA,
+    before_sleep: BS,
+    on_exit: OX,
+}
+
+impl ExecutionHooks<(), (), (), ()> {
+    fn new() -> Self {
+        Self {
+            before_attempt: (),
+            after_attempt: (),
+            before_sleep: (),
+            on_exit: (),
+        }
+    }
+}
+
 /// Reusable retry configuration.
 ///
-/// `RetryPolicy` stores retry strategies and hooks, and can be reused across
-/// multiple operations.
+/// `RetryPolicy` stores retry strategies and can be reused across multiple
+/// operations. Hook callbacks are configured per-execution on `SyncRetry` and
+/// `AsyncRetry` builders.
 ///
 /// Construction options:
 /// - [`RetryPolicy::new`] starts with `NeedsStop` and intentionally blocks
@@ -140,25 +182,24 @@ where
 ///
 /// let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
 /// ```
+///
+/// ```compile_fail
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let _ = RetryPolicy::new()
+///     .stop(stop::attempts(1))
+///     .before_attempt(|_state| {});
+/// ```
 #[derive(Clone)]
-pub struct RetryPolicy<
-    S = stop::StopAfterAttempts,
-    W = wait::WaitExponential,
-    P = on::AnyError,
-    BA = (),
-    AA = (),
-    BS = (),
-    OE = (),
-> {
+pub struct RetryPolicy<S = stop::StopAfterAttempts, W = wait::WaitExponential, P = on::AnyError> {
     stop: S,
     wait: W,
     predicate: P,
-    hooks: PolicyHooks<BA, AA, BS, OE>,
     meta: PolicyMeta,
 }
 
 #[cfg(feature = "serde")]
-impl<S, W, P, BA, AA, BS, OE> serde::Serialize for RetryPolicy<S, W, P, BA, AA, BS, OE>
+impl<S, W, P> serde::Serialize for RetryPolicy<S, W, P>
 where
     S: serde::Serialize,
     W: serde::Serialize,
@@ -168,7 +209,6 @@ where
     where
         Ser: serde::Serializer,
     {
-        // Hooks are intentionally omitted from serialized output.
         let mut state = serializer.serialize_struct("RetryPolicy", 4)?;
         state.serialize_field("stop", &self.stop)?;
         state.serialize_field("wait", &self.wait)?;
@@ -179,7 +219,7 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P, (), (), (), ()>
+impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P>
 where
     S: serde::Deserialize<'de>,
     W: serde::Deserialize<'de>,
@@ -203,12 +243,6 @@ where
             stop: serialized.stop,
             wait: serialized.wait,
             predicate: serialized.predicate,
-            hooks: PolicyHooks {
-                before_attempt: (),
-                after_attempt: (),
-                before_sleep: (),
-                on_exhausted: (),
-            },
             meta: PolicyMeta {
                 predicate_is_default: serialized.predicate_is_default,
                 elapsed_clock: None,
@@ -220,41 +254,37 @@ where
 /// Type-erased retry policy for runtime-configured storage.
 ///
 /// This alias is available when `alloc` is enabled and erases stop/wait/predicate
-/// concrete types into trait objects while preserving hook types.
+/// concrete types into trait objects.
 ///
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, BoxedRetryPolicy, stop};
+/// use tenacious::{BoxedRetryPolicy, RetryPolicy, stop};
 ///
 /// let _policy: BoxedRetryPolicy<i32, &'static str> =
 ///     RetryPolicy::new().stop(stop::attempts(3)).boxed();
 /// ```
 #[cfg(feature = "alloc")]
-pub type BoxedRetryPolicy<T, E, BA = (), AA = (), BS = (), OE = ()> =
-    RetryPolicy<Box<dyn Stop>, Box<dyn Wait>, Box<dyn Predicate<T, E>>, BA, AA, BS, OE>;
+pub type BoxedRetryPolicy<T, E> =
+    RetryPolicy<Box<dyn Stop>, Box<dyn Wait>, Box<dyn Predicate<T, E>>>;
 
-struct PolicyParts<S, W, P, BA, AA, BS, OE> {
+struct PolicyParts<S, W, P> {
     stop: S,
     wait: W,
     predicate: P,
-    hooks: PolicyHooks<BA, AA, BS, OE>,
     meta: PolicyMeta,
 }
 
-fn build_policy<S, W, P, BA, AA, BS, OE>(
-    parts: PolicyParts<S, W, P, BA, AA, BS, OE>,
-) -> RetryPolicy<S, W, P, BA, AA, BS, OE> {
+fn build_policy<S, W, P>(parts: PolicyParts<S, W, P>) -> RetryPolicy<S, W, P> {
     RetryPolicy {
         stop: parts.stop,
         wait: parts.wait,
         predicate: parts.predicate,
-        hooks: parts.hooks,
         meta: parts.meta,
     }
 }
 
-impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()> {
+impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError> {
     /// Creates an unconfigured policy with no stop strategy selected yet.
     ///
     /// This constructor sets zero wait and the default retry predicate
@@ -280,12 +310,6 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()>
             stop: stop::NeedsStop,
             wait: wait::fixed(Duration::ZERO),
             predicate: on::any_error(),
-            hooks: PolicyHooks {
-                before_attempt: (),
-                after_attempt: (),
-                before_sleep: (),
-                on_exhausted: (),
-            },
             meta: PolicyMeta {
                 predicate_is_default: true,
                 elapsed_clock: None,
@@ -294,20 +318,12 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()>
     }
 }
 
-impl Default
-    for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError, (), (), (), ()>
-{
+impl Default for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError> {
     fn default() -> Self {
         build_policy(PolicyParts {
             stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait: wait::exponential(DEFAULT_INITIAL_WAIT),
             predicate: on::any_error(),
-            hooks: PolicyHooks {
-                before_attempt: (),
-                after_attempt: (),
-                before_sleep: (),
-                on_exhausted: (),
-            },
             meta: PolicyMeta {
                 predicate_is_default: true,
                 elapsed_clock: None,
@@ -316,49 +332,43 @@ impl Default
     }
 }
 
-impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
-    fn decompose(self) -> (S, W, P, PolicyHooks<BA, AA, BS, OE>, PolicyMeta) {
-        (self.stop, self.wait, self.predicate, self.hooks, self.meta)
+impl<S, W, P> RetryPolicy<S, W, P> {
+    fn decompose(self) -> (S, W, P, PolicyMeta) {
+        (self.stop, self.wait, self.predicate, self.meta)
     }
 
     /// Replaces the stop strategy.
     #[must_use]
-    pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P, BA, AA, BS, OE> {
-        let (_, wait, predicate, hooks, meta) = self.decompose();
+    pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P> {
+        let (_, wait, predicate, meta) = self.decompose();
         build_policy(PolicyParts {
             stop,
             wait,
             predicate,
-            hooks,
             meta,
         })
     }
 
     /// Replaces the wait strategy.
     #[must_use]
-    pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P, BA, AA, BS, OE> {
-        let (stop, _, predicate, hooks, meta) = self.decompose();
+    pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P> {
+        let (stop, _, predicate, meta) = self.decompose();
         build_policy(PolicyParts {
             stop,
             wait,
             predicate,
-            hooks,
             meta,
         })
     }
 
     /// Replaces the retry predicate.
     #[must_use]
-    pub fn when<NewPredicate>(
-        self,
-        predicate: NewPredicate,
-    ) -> RetryPolicy<S, W, NewPredicate, BA, AA, BS, OE> {
-        let (stop, wait, _, hooks, meta) = self.decompose();
+    pub fn when<NewPredicate>(self, predicate: NewPredicate) -> RetryPolicy<S, W, NewPredicate> {
+        let (stop, wait, _, meta) = self.decompose();
         build_policy(PolicyParts {
             stop,
             wait,
             predicate,
-            hooks,
             meta: PolicyMeta {
                 predicate_is_default: false,
                 ..meta
@@ -369,18 +379,17 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     /// Converts this policy into a type-erased boxed variant.
     #[cfg(feature = "alloc")]
     #[must_use]
-    pub fn boxed<T, E>(self) -> BoxedRetryPolicy<T, E, BA, AA, BS, OE>
+    pub fn boxed<T, E>(self) -> BoxedRetryPolicy<T, E>
     where
         S: Stop + 'static,
         W: Wait + 'static,
         P: Predicate<T, E> + 'static,
     {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let (stop, wait, predicate, meta) = self.decompose();
         build_policy(PolicyParts {
             stop: Box::new(stop),
             wait: Box::new(wait),
             predicate: Box::new(predicate),
-            hooks,
             meta,
         })
     }
@@ -400,231 +409,6 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     pub fn clear_elapsed_clock(mut self) -> Self {
         self.meta.elapsed_clock = None;
         self
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
-    /// Appends a before-attempt hook.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> RetryPolicy<S, W, P, HookChain<BA, Hook>, AA, BS, OE>
-    where
-        Hook: FnMut(&BeforeAttemptState),
-    {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exhausted,
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt: HookChain::new(before_attempt, hook),
-                after_attempt,
-                before_sleep,
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-
-    /// Appends an after-attempt hook.
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> RetryPolicy<S, W, P, BA, HookChain<AA, Hook>, BS, OE> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exhausted,
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt: HookChain::new(after_attempt, hook),
-                before_sleep,
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-
-    /// Appends a before-sleep hook.
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> RetryPolicy<S, W, P, BA, AA, HookChain<BS, Hook>, OE> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exhausted,
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: HookChain::new(before_sleep, hook),
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-
-    /// Appends an on-exhausted hook.
-    #[must_use]
-    pub fn on_exhausted<Hook>(
-        self,
-        hook: Hook,
-    ) -> RetryPolicy<S, W, P, BA, AA, BS, HookChain<OE, Hook>> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exhausted,
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exhausted: HookChain::new(on_exhausted, hook),
-            },
-            meta,
-        })
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
-    /// Sets the sole before-attempt hook (no-alloc mode).
-    #[must_use]
-    pub fn before_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, Hook, AA, BS, OE>
-    where
-        Hook: FnMut(&BeforeAttemptState),
-    {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            after_attempt,
-            before_sleep,
-            on_exhausted,
-            ..
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt: hook,
-                after_attempt,
-                before_sleep,
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
-    /// Sets the sole after-attempt hook (no-alloc mode).
-    #[must_use]
-    pub fn after_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, Hook, BS, OE> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            before_sleep,
-            on_exhausted,
-            ..
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt: hook,
-                before_sleep,
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
-    /// Sets the sole before-sleep hook (no-alloc mode).
-    #[must_use]
-    pub fn before_sleep<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, Hook, OE> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            on_exhausted,
-            ..
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: hook,
-                on_exhausted,
-            },
-            meta,
-        })
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
-    /// Sets the sole on-exhausted hook (no-alloc mode).
-    #[must_use]
-    pub fn on_exhausted<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, BS, Hook> {
-        let (stop, wait, predicate, hooks, meta) = self.decompose();
-        let PolicyHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            ..
-        } = hooks;
-        build_policy(PolicyParts {
-            stop,
-            wait,
-            predicate,
-            hooks: PolicyHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exhausted: hook,
-            },
-            meta,
-        })
     }
 }
 

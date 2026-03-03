@@ -45,7 +45,7 @@ pub struct RetryState {
 }
 
 /// Read-only context passed to [`Predicate::should_retry`](crate::Predicate::should_retry)
-/// and the `after_attempt`, `before_sleep`, and `on_exhausted` hooks.
+/// and the `after_attempt` and `before_sleep` hooks.
 ///
 /// This contains the attempt outcome plus timing/counting fields for the
 /// completed attempt, mirroring the execution context needed by predicates and
@@ -83,6 +83,42 @@ pub struct AttemptState<'a, T, E> {
 
     /// Cumulative time spent sleeping across all previous attempts.
     pub total_wait: Duration,
+}
+
+/// Final read-only context passed to the `on_exit` hook.
+///
+/// This contains the last attempt's outcome and termination reason, and fires
+/// once whenever retry execution exits (success, stop condition, or predicate
+/// acceptance).
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{ExitState, StopReason};
+///
+/// fn on_exit(state: &ExitState<i32, String>) {
+///     if state.reason == StopReason::StopCondition {
+///         println!("stopped on attempt {}", state.attempt);
+///     }
+/// }
+/// ```
+#[derive(Debug)]
+pub struct ExitState<'a, T, E> {
+    /// The 1-indexed attempt number that just completed.
+    pub attempt: u32,
+
+    /// A reference to the final outcome.
+    pub outcome: &'a Result<T, E>,
+
+    /// Wall-clock time elapsed since the first attempt began.
+    /// `None` when no clock is available.
+    pub elapsed: Option<Duration>,
+
+    /// Cumulative time spent sleeping across all attempts.
+    pub total_wait: Duration,
+
+    /// Why the retry loop terminated.
+    pub reason: crate::stats::StopReason,
 }
 
 /// Read-only context passed only to the `before_attempt` hook.

@@ -5,7 +5,10 @@ use core::task::{Context, Poll};
 
 use pin_project_lite::pin_project;
 
+use crate::error::RetryError;
 use crate::sleep::Sleeper;
+use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
+use crate::stats::RetryStats;
 
 use super::common::{AttemptTransition, process_attempt_transition};
 use super::time::ElapsedTracker;
@@ -37,8 +40,8 @@ pin_project! {
 pin_project! {
     /// Async retry execution object.
     ///
-    /// Created by [`RetryPolicy::retry_async`]. Set a sleeper with `.sleep(...)`
-    /// and then `.await` the returned future.
+    /// Created by [`RetryPolicy::retry_async`]. Configure hooks and set a
+    /// sleeper with `.sleep(...)`, then `.await` the returned future.
     ///
     /// `AsyncRetry` is a single-use future. Polling after completion is
     /// misuse: debug builds panic. Release builds return `Poll::Pending`
@@ -54,15 +57,17 @@ pin_project! {
     /// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
     /// let retry = policy
     ///     .retry_async(|| async { Ok::<u32, &str>(1) })
+    ///     .before_attempt(|_state| {})
     ///     .sleep(|_dur: Duration| async {});
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut = ()>
+    pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        policy: &'policy mut RetryPolicy<S, W, P, BA, AA, BS, OE>,
+        policy: &'policy mut RetryPolicy<S, W, P>,
+        hooks: ExecutionHooks<BA, AA, BS, OX>,
         op: F,
         sleeper: SleepImpl,
         #[pin]
@@ -94,17 +99,17 @@ pin_project! {
     ///     .with_stats();
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut = ()>
+    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         #[pin]
-        inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>,
+        inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>,
     }
 }
 
-type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E> = AsyncRetry<
+type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E> = AsyncRetry<
     'policy,
     S,
     W,
@@ -112,7 +117,7 @@ type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T,
     BA,
     AA,
     BS,
-    OE,
+    OX,
     F,
     Fut,
     SleepImpl,
@@ -121,11 +126,147 @@ type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T,
     <SleepImpl as Sleeper>::Sleep,
 >;
 
-type AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> =
-    AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>;
+type AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> =
+    AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>;
 
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, ()>
+#[cfg(feature = "alloc")]
+type AsyncRetryWithBeforeHook<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+    Hook,
+> = AsyncRetry<
+    'policy,
+    S,
+    W,
+    P,
+    HookChain<BA, Hook>,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+>;
+
+#[cfg(feature = "alloc")]
+type AsyncRetryWithAfterHook<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+    Hook,
+> = AsyncRetry<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    HookChain<AA, Hook>,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+>;
+
+#[cfg(feature = "alloc")]
+type AsyncRetryWithBeforeSleepHook<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+    Hook,
+> = AsyncRetry<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    HookChain<BS, Hook>,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+>;
+
+#[cfg(feature = "alloc")]
+type AsyncRetryWithOnExitHook<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+    Hook,
+> = AsyncRetry<
+    'policy,
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    HookChain<OX, Hook>,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+>;
+
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, ()>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -135,12 +276,13 @@ where
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OE, F, Fut, NewSleep, T, E>
+    ) -> AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, NewSleep, T, E>
     where
         NewSleep: Sleeper,
     {
         AsyncRetry {
             policy: self.policy,
+            hooks: self.hooks,
             op: self.op,
             sleeper,
             phase: match self.phase {
@@ -163,8 +305,8 @@ where
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -174,15 +316,400 @@ where
     #[allow(clippy::type_complexity)]
     pub fn with_stats(
         self,
-    ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> {
+    ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> {
         let mut inner = self;
         inner.collect_stats = true;
         AsyncRetryWithStats { inner }
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetry<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
+#[cfg(feature = "alloc")]
+#[allow(clippy::type_complexity)]
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Appends a before-attempt hook.
+    #[must_use]
+    pub fn before_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryWithBeforeHook<
+        'policy,
+        S,
+        W,
+        P,
+        BA,
+        AA,
+        BS,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+        Hook,
+    >
+    where
+        Hook: FnMut(&BeforeAttemptState),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt: HookChain::new(before_attempt, hook),
+                after_attempt,
+                before_sleep,
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Appends an after-attempt hook.
+    #[must_use]
+    pub fn after_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryWithAfterHook<
+        'policy,
+        S,
+        W,
+        P,
+        BA,
+        AA,
+        BS,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+        Hook,
+    >
+    where
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt: HookChain::new(after_attempt, hook),
+                before_sleep,
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Appends a before-sleep hook.
+    #[must_use]
+    pub fn before_sleep<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryWithBeforeSleepHook<
+        'policy,
+        S,
+        W,
+        P,
+        BA,
+        AA,
+        BS,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+        Hook,
+    >
+    where
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep: HookChain::new(before_sleep, hook),
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Appends an on-exit hook.
+    #[must_use]
+    pub fn on_exit<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryWithOnExitHook<
+        'policy,
+        S,
+        W,
+        P,
+        BA,
+        AA,
+        BS,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+        Hook,
+    >
+    where
+        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep,
+                on_exit: HookChain::new(on_exit, hook),
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'policy, S, W, P, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, (), AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Sets the sole before-attempt hook (no-alloc mode).
+    #[must_use]
+    pub fn before_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetry<'policy, S, W, P, Hook, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    where
+        Hook: FnMut(&BeforeAttemptState),
+    {
+        let ExecutionHooks {
+            after_attempt,
+            before_sleep,
+            on_exit,
+            ..
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt: hook,
+                after_attempt,
+                before_sleep,
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'policy, S, W, P, BA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, (), BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Sets the sole after-attempt hook (no-alloc mode).
+    #[must_use]
+    pub fn after_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetry<'policy, S, W, P, BA, Hook, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    where
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            before_sleep,
+            on_exit,
+            ..
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt: hook,
+                before_sleep,
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, (), OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Sets the sole before-sleep hook (no-alloc mode).
+    #[must_use]
+    pub fn before_sleep<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetry<'policy, S, W, P, BA, AA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    where
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            on_exit,
+            ..
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep: hook,
+                on_exit,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'policy, S, W, P, BA, AA, BS, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, (), F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    /// Sets the sole on-exit hook (no-alloc mode).
+    #[must_use]
+    pub fn on_exit<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetry<'policy, S, W, P, BA, AA, BS, Hook, F, Fut, SleepImpl, T, E, SleepFut>
+    where
+        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
+    {
+        let ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            ..
+        } = self.hooks;
+        AsyncRetry {
+            policy: self.policy,
+            hooks: ExecutionHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep,
+                on_exit: hook,
+            },
+            op: self.op,
+            sleeper: self.sleeper,
+            phase: self.phase,
+            attempt: self.attempt,
+            total_wait: self.total_wait,
+            collect_stats: self.collect_stats,
+            final_stats: self.final_stats,
+            elapsed_tracker: self.elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
+    for AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
     S: Stop,
     W: Wait,
@@ -190,7 +717,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     BS: AttemptHook<T, E>,
-    OE: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
     SleepImpl: Sleeper<Sleep = SleepFut>,
@@ -210,7 +737,7 @@ where
                         elapsed: elapsed_before_attempt,
                         total_wait: *this.total_wait,
                     };
-                    this.policy.hooks.before_attempt.call(&before_state);
+                    this.hooks.before_attempt.call(&before_state);
 
                     let op_future = (this.op)();
                     this.phase.set(AsyncPhase::PollingOperation { op_future });
@@ -228,6 +755,7 @@ where
 
                         match process_attempt_transition(
                             &mut **this.policy,
+                            &mut *this.hooks,
                             outcome,
                             retry_state,
                             *this.collect_stats,
@@ -267,8 +795,8 @@ where
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
+    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
     S: Stop,
     W: Wait,
@@ -276,7 +804,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     BS: AttemptHook<T, E>,
-    OE: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
     SleepImpl: Sleeper<Sleep = SleepFut>,
@@ -302,18 +830,17 @@ where
     }
 }
 
-impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE>
+impl<S, W, P> RetryPolicy<S, W, P>
 where
     S: Stop,
     W: Wait,
-    BA: BeforeAttemptHook,
 {
     /// Begins configuring async retry execution.
     #[must_use]
     pub fn retry_async<T, E, F, Fut>(
         &mut self,
         op: F,
-    ) -> AsyncRetry<'_, S, W, P, BA, AA, BS, OE, F, Fut, NoAsyncSleep, T, E>
+    ) -> AsyncRetry<'_, S, W, P, (), (), (), (), F, Fut, NoAsyncSleep, T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -323,6 +850,7 @@ where
         let elapsed_tracker = ElapsedTracker::new(self.meta.elapsed_clock);
         AsyncRetry {
             policy: self,
+            hooks: ExecutionHooks::new(),
             op,
             sleeper: NoAsyncSleep,
             phase: AsyncPhase::ReadyToStartAttempt,

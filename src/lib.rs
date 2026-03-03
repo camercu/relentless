@@ -61,7 +61,7 @@ pub use policy::{AsyncRetry, AsyncRetryWithStats};
 pub use policy::{SyncRetry, SyncRetryWithStats};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
-pub use state::{AttemptState, BeforeAttemptState, RetryState};
+pub use state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
 pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopConfigError};
 #[cfg(feature = "jitter")]
