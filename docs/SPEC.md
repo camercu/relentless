@@ -26,8 +26,8 @@ let result = RetryPolicy::new()
           .jitter(Duration::from_millis(50))
           .cap(Duration::from_secs(5)))
     .when(on::error(|e: &HttpError| e.status().is_server_error()))
-    .before_sleep(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
     .retry_async(|| client.get("/api/data"))
+    .before_sleep(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
     .sleep(tokio_sleep)
     .await?;
 
@@ -75,7 +75,7 @@ tenacious/
 │   policy.rs            # RetryPolicy builder and sync/async execution engines
 │   predicate.rs         # Predicate trait definition
 │   sleep.rs             # Sleeper trait + feature-gated implementations
-│   state.rs             # RetryState, AttemptState, BeforeAttemptState
+│   state.rs             # RetryState, AttemptState, BeforeAttemptState, ExitState
 │   stats.rs             # RetryStats and StopReason
 │   stop.rs              # Stop trait + built-in stop strategies + NeedsStop
 │   wait.rs              # Wait trait + WaitExt + built-in wait strategies
@@ -94,6 +94,12 @@ tenacious/
 │   wait_ext_ergonomics.rs
 │   support/              # shared test utilities
 ```
+
+> **Planned files:** Iteration 13 adds `src/cancel.rs` (Canceler trait).
+> Iteration 14 adds `src/ext.rs` (extension traits).
+> Modules listed as single files above (e.g. `policy.rs`, `stop.rs`, `wait.rs`)
+> may be implemented as directories (`policy/mod.rs`, etc.) when internal
+> splitting aids readability.
 
 ---
 
@@ -133,6 +139,14 @@ serde = ["dep:serde"]
 # strict-futures: panic on AsyncRetry repoll-after-completion in all builds.
 #                 Without this feature, release builds return Poll::Pending.
 strict-futures = []
+```
+
+The following feature flags are planned for future iterations:
+
+```toml
+# Planned (iteration 13): tokio CancellationToken support for mid-sleep
+# cancellation in async retry loops.
+tokio-cancel = ["dep:tokio-util"]
 ```
 
 `#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/compat.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
@@ -188,7 +202,7 @@ Blanket-implemented for `Fn(Duration) -> F where F: Future<Output = ()>`, so `to
 
 #### State types — shared read-only context
 
-Three state types avoid exposing invalid fields at different points in the
+Four state types avoid exposing invalid fields at different points in the
 retry loop:
 
 ```rust
@@ -201,7 +215,7 @@ pub struct RetryState {
     pub total_wait: Duration,
 }
 
-// Passed to: after_attempt, before_sleep, on_exhausted hooks
+// Passed to: after_attempt, before_sleep hooks
 pub struct AttemptState<'a, T, E> {
     pub attempt: u32,             // 1-indexed; the attempt that just completed
     pub outcome: &'a Result<T, E>,
@@ -216,9 +230,18 @@ pub struct BeforeAttemptState {
     pub elapsed: Option<Duration>,
     pub total_wait: Duration,
 }
+
+// Passed to: on_exit hook
+pub struct ExitState<'a, T, E> {
+    pub attempt: u32,             // 1-indexed; the final completed attempt
+    pub outcome: &'a Result<T, E>,
+    pub elapsed: Option<Duration>,
+    pub total_wait: Duration,
+    pub reason: StopReason,
+}
 ```
 
-All three types are constructed internally by the execution engine and passed
+All four types are constructed internally by the execution engine and passed
 by shared reference during normal retry execution. Direct construction is
 supported for tests and custom strategy implementations.
 `Predicate::should_retry` receives `&Result<T, E>` directly, not a state
@@ -254,6 +277,9 @@ ownership of the last value; no clone is required.
 
 `RetryError` implements `std::error::Error` when `std` is active, `E: Error + 'static`, and `T: Debug`. `Display` is implemented unconditionally.
 
+> **Planned change (iteration 13):** `RetryError` gains a `Cancelled` variant
+> when cancellation support is added. See 13.6.
+
 ---
 
 ### Execution Model
@@ -269,6 +295,9 @@ The sync engine is a plain loop. It calls `op()`, consults `Stop` and `Predicate
 The async engine is an `async fn` (or equivalently a hand-written `Future` state machine). Between attempts it `.await`s the sleep future. The sleep function is accepted as a generic `impl Sleeper`, which the blanket impl covers for closures. No executor is required beyond `core::future::Future` machinery.
 
 Both paths share all stop/wait/predicate/hook logic. The only difference is whether sleep is blocking or async.
+
+Iteration 13 adds cancellation checks to both loops (poll-based for sync,
+sleep-racing for async). See that iteration for the amended loop descriptions.
 
 ---
 
@@ -594,3 +623,316 @@ paths allocate as expected.
 **11.7** The crate provides a micro-benchmark target for hot sync execution
 paths, runnable with `cargo bench --bench retry_hot_paths`, and CI verifies the
 benchmark target compiles (`cargo bench --bench retry_hot_paths --no-run`).
+
+---
+
+## Iteration 12: Hooks Migration and `on_exit`
+
+> **Status:** Implemented. This is a breaking change in the current
+> unreleased API. Iterations 1–12 describe the current implemented API.
+
+This iteration moves hook storage from `RetryPolicy` to the per-call execution
+builders (`SyncRetry` / `AsyncRetry`), reducing `RetryPolicy` from 7 generic
+type parameters to 3, and replaces the `on_exhausted` hook with a broader
+`on_exit` hook.
+
+This iteration supersedes: **5.2** (hook builder methods move off policy),
+**5.3** (policy type params reduce to 3), **5.9** (hook callback signatures
+unchanged but now on execution builder), **7.1–7.7** (hook mechanics unchanged
+but host type changes from policy to builder), and the hook in the Intended
+Usage one-shot example.
+
+**12.1** `RetryPolicy<S, W, P>` stores only stop, wait, and predicate values.
+It no longer carries hook type parameters. The current
+`RetryPolicy<S, W, P, BA, AA, BS, OE>` signature becomes `RetryPolicy<S, W, P>`.
+
+**12.2** Hook builder methods (`.before_attempt(f)`, `.after_attempt(f)`,
+`.before_sleep(f)`, `.on_exit(f)`) move to `SyncRetry` and `AsyncRetry`. They
+are chained between `.retry(op)` / `.retry_async(op)` and the terminal method
+(`.call()` / `.await`):
+
+```rust
+policy
+    .retry(|| op())
+    .before_attempt(|s| log::info!("attempt {}", s.attempt))
+    .after_attempt(|s| log::debug!("result: {:?}", s.outcome))
+    .sleep(std::thread::sleep)
+    .call()
+```
+
+**12.3** Hooks remain inline generic types on the execution builder (no
+boxing). The no-alloc single-callback constraint (7.7) still applies, now
+enforced on the builder's type parameters instead of the policy's.
+
+**12.4** `on_exit` replaces `on_exhausted`. It fires once when the retry loop
+terminates for any reason — success, stop condition, predicate rejection, or
+cancellation (if iteration 13 is active). The callback receives an
+`ExitState<'a, T, E>` containing the final `AttemptState` plus a `StopReason`
+indicating why the loop ended:
+
+```rust
+pub struct ExitState<'a, T, E> {
+    pub attempt: u32,
+    pub outcome: &'a Result<T, E>,
+    pub elapsed: Option<Duration>,
+    pub total_wait: Duration,
+    pub reason: StopReason,
+}
+```
+
+**12.5** `RetryPolicy` becomes significantly easier to store in structs and
+name in type aliases:
+
+```rust
+type DbPolicy = RetryPolicy<StopAfterAttempts, WaitFixed, AnyError>;
+
+struct Service {
+    retry: DbPolicy,
+}
+```
+
+**12.6** The policy remains reusable across operations. Hooks are per-call
+configuration, matching the semantic reality that hooks are usually call-site
+concerns (logging, metrics) rather than policy-level configuration.
+
+---
+
+## Iteration 13: Cancellation Support
+
+> **Status:** Planned.
+
+This iteration adds cancellation support for both sync and async retry loops,
+allowing external signals to interrupt retries between attempts and (in async)
+during sleep.
+
+This iteration amends: **1.9** / Error Handling (`Cancelled` variant added to
+`RetryError`), **5.6** (loop gains cancellation checks), **8.3** (`StopReason`
+gains `Cancelled`), and **10.1** (re-exports gain `Canceler`, `cancel` module).
+
+**13.1** A `Canceler` trait is defined in `src/cancel.rs`:
+
+```rust
+pub trait Canceler {
+    /// Returns `true` if cancellation has been requested.
+    fn is_cancelled(&self) -> bool;
+
+    /// A future that resolves when cancellation is requested.
+    /// Used by the async engine to race against the sleep future.
+    /// The default implementation returns `core::future::pending()`,
+    /// meaning cancellation is only checked between attempts.
+    fn cancel(&self) -> impl Future<Output = ()> {
+        core::future::pending()
+    }
+}
+```
+
+**13.2** `Canceler` uses RPITIT (return position `impl Trait` in traits),
+which is stable on the crate's MSRV (1.85). `Canceler` is not intended for
+trait-object use; this is documented.
+
+**13.3** Provided implementations:
+
+- `cancel::never()` — ZST that always returns `false`. This is the default
+  when no canceler is configured. Zero cost.
+- `&AtomicBool` — `is_cancelled()` loads with `Relaxed` ordering. `cancel()`
+  uses the default `pending()` (poll-only, no mid-sleep interruption).
+  Available in `no_std`.
+- `Arc<AtomicBool>` — same as `&AtomicBool` but owned. Requires `alloc`.
+- `tokio_util::sync::CancellationToken` — `is_cancelled()` checks the token,
+  `cancel()` returns `token.cancelled()` (a waking future that enables
+  mid-sleep interruption). Requires the `tokio-cancel` feature.
+
+**13.4** The execution builder gains `.cancel_on(c: impl Canceler)`:
+
+```rust
+policy
+    .retry_async(|| fetch())
+    .sleep(sleep::tokio())
+    .cancel_on(token.clone())
+    .await
+```
+
+**13.5** Cancellation amends the execution loop described in **5.6**:
+
+- A new step 0 is inserted before each attempt: check
+  `canceler.is_cancelled()`. If true, return
+  `Err(RetryError::Cancelled { ... })` immediately.
+- **Sync:** step 6 (blocking sleep) is followed by another `is_cancelled()`
+  check before looping.
+- **Async:** step 6 (async sleep) races the sleep future against
+  `canceler.cancel()`. If cancellation wins, return
+  `Err(RetryError::Cancelled { ... })`.
+- Cancellation never interrupts a running user operation. It only fires
+  between attempts and during sleep.
+
+**13.6** `RetryError` gains a `Cancelled` variant:
+
+```rust
+Cancelled {
+    last_error: Option<E>,
+    attempts: u32,
+    total_elapsed: Option<Duration>,
+}
+```
+
+`last_error` is `Some` if the last attempt returned `Err`, `None` if it
+returned `Ok` (which the predicate rejected) or if cancellation fired before
+the first attempt.
+
+**13.7** `StopReason` gains a `Cancelled` variant for use in `RetryStats`.
+
+**13.8** The `tokio-cancel` feature flag gates the `CancellationToken`
+implementation:
+
+```toml
+tokio-cancel = ["dep:tokio-util"]
+```
+
+---
+
+## Iteration 14: Extension Traits
+
+> **Status:** Planned. Non-breaking addition.
+
+This iteration adds extension traits that allow starting a retry directly from
+a closure or function pointer, as an alternative to the policy-first style.
+
+This iteration amends: **10.1** (re-exports gain `RetryExt`, `AsyncRetryExt`),
+**10.5** (prelude gains `RetryExt`, `AsyncRetryExt`).
+
+**14.1** `RetryExt` is defined in `src/ext.rs` and provides a `.retry()`
+method for any `FnMut() -> Result<T, E>`:
+
+```rust
+pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
+    fn retry(self) -> SyncRetryBuilder<Self, NeedsStop, WaitFixed, AnyError>;
+}
+```
+
+The returned `SyncRetryBuilder` is an owned builder (distinct from `SyncRetry`,
+which borrows a `RetryPolicy`) that embeds both the operation and the
+stop/wait/predicate configuration. It provides the same `.stop()`, `.wait()`,
+`.when()`, hook, and terminal methods as the policy-based path. `.stop()` must
+be called before `.call()` (same `NeedsStop` gate as `RetryPolicy::new()`).
+
+**14.2** `AsyncRetryExt` provides `.retry_async()` for any
+`FnMut() -> Fut where Fut: Future<Output = Result<T, E>>`:
+
+```rust
+pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
+where
+    Fut: Future<Output = Result<T, E>>,
+{
+    fn retry_async(self) -> AsyncRetryBuilder<Self, NeedsStop, WaitFixed, AnyError>;
+}
+```
+
+**14.3** Both traits are blanket-implemented. No manual implementation is
+required.
+
+**14.4** Usage:
+
+```rust
+use tenacious::prelude::*;
+
+// Closure form
+let v = (|| fetch())
+    .retry()
+    .stop(stop::attempts(5))
+    .wait(wait::fixed(Duration::from_millis(200)))
+    .sleep(std::thread::sleep)
+    .call()?;
+
+// Function pointer form
+fn do_work() -> Result<u32, String> { Ok(42) }
+
+let v = do_work
+    .retry()
+    .stop(stop::attempts(3))
+    .call()?;
+```
+
+**14.5** `RetryExt` and `AsyncRetryExt` are re-exported from `prelude`.
+
+---
+
+## Iteration 15: Ergonomic Additions
+
+> **Status:** Planned. Non-breaking additions.
+
+This iteration amends: **10.2** (sleep module gains helper constructors),
+**10.5** (prelude gains named combinator extension traits).
+
+**15.1** Named combinators are added as methods alongside the existing
+operators, providing an alternative spelling for contexts where operators are
+hard to read:
+
+- `Stop`: `.or(other)` equivalent to `|`, `.and(other)` equivalent to `&`
+- `Wait`: `.add(other)` equivalent to `+`
+- `Predicate`: `.or(other)` equivalent to `|`, `.and(other)` equivalent to `&`
+
+These are provided via extension traits (`StopExt`, `WaitExt`, `PredicateExt`)
+or directly on the traits. They return the same composition types (`StopAny`,
+`StopAll`, `WaitCombine`, `PredicateAny`, `PredicateAll`).
+
+**15.2** The `sleep` module provides feature-gated helper constructors that
+return closures compatible with `.sleep(...)`:
+
+- `sleep::tokio()` (requires `tokio-sleep`) — equivalent to the current
+  `sleep::tokio_sleep` re-export but as a function returning a closure
+- `sleep::embassy()` (requires `embassy-sleep`)
+- `sleep::gloo()` (requires `gloo-timers-sleep`)
+- `sleep::futures_timer()` (requires `futures-timer-sleep`)
+
+The existing direct re-exports (`sleep::tokio_sleep`, `sleep::embassy_sleep`)
+remain available for backwards compatibility.
+
+---
+
+## Iteration 16: `tenacious-config` Companion Crate
+
+> **Status:** Planned. Future direction.
+
+A companion crate `tenacious-config` extracts serde support for built-in
+strategies into a separate crate, cleanly separating serializable
+configuration from the closure-based core API.
+
+**16.1** `tenacious-config` provides configuration enums that map to built-in
+strategies:
+
+```rust
+pub enum StopConfig {
+    Attempts(u32),
+    Elapsed(Duration),
+    BeforeElapsed(Duration),
+    Any(Vec<StopConfig>),
+    All(Vec<StopConfig>),
+}
+
+pub enum WaitConfig {
+    Fixed(Duration),
+    Linear { initial: Duration, increment: Duration },
+    Exponential { initial: Duration, base: Option<f64> },
+    Cap { max: Duration, inner: Box<WaitConfig> },
+    Jitter { max: Duration },
+    Chain { first: Box<WaitConfig>, second: Box<WaitConfig>, after: u32 },
+    Sum(Vec<WaitConfig>),
+}
+
+pub struct RetryPolicyConfig {
+    pub stop: StopConfig,
+    pub wait: WaitConfig,
+}
+```
+
+**16.2** `RetryPolicyConfig` provides `.build() -> BoxedRetryPolicy` (or
+`TryFrom`) that produces a `tenacious::BoxedRetryPolicy` from the
+configuration. This requires the `alloc` feature in the core crate.
+
+**16.3** `tenacious-config` feature-gates serde derives behind its own `serde`
+feature flag, keeping the core `tenacious` crate free of serde dependencies
+when the companion crate is not used.
+
+**16.4** The core crate's existing `serde` feature flag remains available for
+direct serialization of strategy types. `tenacious-config` is an optional
+higher-level alternative for configuration-file-driven policies.

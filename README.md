@@ -109,22 +109,25 @@ use tenacious::prelude::*;
 
 ## Hooks and stats
 
-`RetryPolicy` supports lifecycle hooks and optional aggregate stats:
+`SyncRetry` and `AsyncRetry` support lifecycle hooks, and both support optional
+aggregate stats:
 
 ```rust
 use tenacious::{RetryPolicy, stop};
 
-let mut policy = RetryPolicy::new()
-    .stop(stop::attempts(3))
+let mut policy = RetryPolicy::new().stop(stop::attempts(3));
+
+let (_result, stats) = policy
+    .retry(|| Err::<(), _>("fail"))
     .before_attempt(|state| {
         let _ = state.attempt;
     })
     .after_attempt(|state: &tenacious::AttemptState<(), &str>| {
         let _ = state.attempt;
-    });
-
-let (_result, stats) = policy
-    .retry(|| Err::<(), _>("fail"))
+    })
+    .on_exit(|state: &tenacious::ExitState<(), &str>| {
+        let _ = state.reason;
+    })
     .sleep(|_dur| {})
     .with_stats()
     .call();
@@ -216,14 +219,14 @@ let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_| {}).call();
 ```
 
 **Hook panics.** Panics in user-supplied hook callbacks (`before_attempt`,
-`after_attempt`, `before_sleep`, `on_exhausted`) propagate through the retry
+`after_attempt`, `before_sleep`, `on_exit`) propagate through the retry
 loop and will unwind the calling thread. If hooks run fallible or
 user-provided logic, consider catching panics at the call site.
 
 **Thread safety.** `RetryPolicy` is `Send + Sync` when all its constituent
-strategy and hook types are `Send + Sync` (all built-in strategies satisfy
-this). Policies can be shared across threads via `Arc<Mutex<RetryPolicy>>` or
-cloned per-thread since `RetryPolicy` is `Clone`.
+strategy types are `Send + Sync` (all built-in strategies satisfy this).
+Policies can be shared across threads via `Arc<Mutex<RetryPolicy>>` or cloned
+per-thread since `RetryPolicy` is `Clone`.
 
 **Configuration validation.** `stop::attempts(n)` panics when `n == 0`.
 Use `stop::attempts(n)` for hardcoded constants. For runtime or untrusted
@@ -259,14 +262,9 @@ Calling `.base()` with a value below `1.0` silently clamps to `1.0`
 entirely on attempt-count stops. Always pair an elapsed stop with an
 attempt stop on `no_std`: `stop::attempts(n) | stop::elapsed(deadline)`.
 
-**Hook state across retries.** Hooks are not reset between `.retry()` calls
-on the same policy instance. If a hook captures mutable state (counters,
-buffers), that state carries over. Clone the policy or reconstruct hooks
-if isolation between retry invocations is required.
-
-**Serde round-trip drops hooks.** Deserializing a `RetryPolicy` restores
-stop, wait, and predicate configuration but resets all hooks to no-ops.
-Re-attach hooks after deserialization if your workflow depends on them.
+**Hook state across retries.** Hooks are configured on each execution builder
+(`.retry(...)` / `.retry_async(...)`), not stored on `RetryPolicy`. Captured
+state persists only if you reuse the same closure value across calls.
 
 ## no_std support
 

@@ -408,32 +408,31 @@ fn async_hooks_fire_in_expected_places() {
     let before_attempt_calls = Rc::new(RefCell::new(Vec::new()));
     let after_attempt_calls = Rc::new(RefCell::new(Vec::new()));
     let before_sleep_calls = Rc::new(RefCell::new(Vec::new()));
-    let exhausted_called = Rc::new(Cell::new(false));
+    let exit_reason = Rc::new(Cell::new(None));
     let sleeper = RecordingSleeper::new();
 
     let before_attempt_ref = Rc::clone(&before_attempt_calls);
     let after_attempt_ref = Rc::clone(&after_attempt_calls);
     let before_sleep_ref = Rc::clone(&before_sleep_calls);
-    let exhausted_ref = Rc::clone(&exhausted_called);
+    let exit_reason_ref = Rc::clone(&exit_reason);
 
-    let mut policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .before_attempt(move |state| {
-            before_attempt_ref.borrow_mut().push(state.attempt);
-        })
-        .after_attempt(move |state: &tenacious::AttemptState<'_, i32, &str>| {
-            after_attempt_ref.borrow_mut().push(state.attempt);
-        })
-        .before_sleep(move |state: &tenacious::AttemptState<'_, i32, &str>| {
-            before_sleep_ref.borrow_mut().push(state.attempt);
-        })
-        .on_exhausted(move |_state: &tenacious::AttemptState<'_, i32, &str>| {
-            exhausted_ref.set(true);
-        });
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _result: Result<i32, RetryError<&str, i32>> = block_on(
         policy
             .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .before_attempt(move |state| {
+                before_attempt_ref.borrow_mut().push(state.attempt);
+            })
+            .after_attempt(move |state: &tenacious::AttemptState<'_, i32, &str>| {
+                after_attempt_ref.borrow_mut().push(state.attempt);
+            })
+            .before_sleep(move |state: &tenacious::AttemptState<'_, i32, &str>| {
+                before_sleep_ref.borrow_mut().push(state.attempt);
+            })
+            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+                exit_reason_ref.set(Some(state.reason));
+            })
             .sleep(sleeper),
     );
 
@@ -444,7 +443,77 @@ fn async_hooks_fire_in_expected_places() {
     assert_eq!(*before_attempt, vec![1, 2, 3]);
     assert_eq!(*after_attempt, vec![1, 2, 3]);
     assert_eq!(*before_sleep, vec![1, 2]);
-    assert!(exhausted_called.get());
+    assert_eq!(
+        exit_reason.get(),
+        Some(tenacious::StopReason::StopCondition)
+    );
+}
+
+#[test]
+fn async_on_exit_reports_success_reason() {
+    let exit_reason = Rc::new(Cell::new(None));
+    let exit_reason_ref = Rc::clone(&exit_reason);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+                exit_reason_ref.set(Some(state.reason));
+            })
+            .sleep(RecordingSleeper::new()),
+    );
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Success));
+}
+
+#[test]
+fn async_on_exit_reports_predicate_accepted_reason() {
+    let exit_reason = Rc::new(Cell::new(None));
+    let exit_reason_ref = Rc::clone(&exit_reason);
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .when(on::error(|err: &&str| *err == "retryable"));
+
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Err::<i32, &str>("fatal") })
+            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+                exit_reason_ref.set(Some(state.reason));
+            })
+            .sleep(RecordingSleeper::new()),
+    );
+
+    assert!(matches!(result, Err(RetryError::PredicateRejected { .. })));
+    assert_eq!(
+        exit_reason.get(),
+        Some(tenacious::StopReason::PredicateAccepted)
+    );
+}
+
+#[test]
+fn async_hooks_are_per_call_and_do_not_persist() {
+    let exit_calls = Rc::new(Cell::new(0_u32));
+    let exit_calls_ref = Rc::clone(&exit_calls);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+
+    let _ = block_on(
+        policy
+            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .on_exit(move |_state: &tenacious::ExitState<'_, i32, &str>| {
+                exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
+            })
+            .sleep(RecordingSleeper::new()),
+    );
+    assert_eq!(exit_calls.get(), 1);
+
+    let _ = block_on(
+        policy
+            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .sleep(RecordingSleeper::new()),
+    );
+    assert_eq!(exit_calls.get(), 1);
 }
 
 // ---------------------------------------------------------------------------

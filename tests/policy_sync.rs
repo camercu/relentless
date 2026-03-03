@@ -6,14 +6,14 @@
 //! - SyncRetry via .retry(op).call() (5.5, 5.6)
 //! - RetryPolicy is Clone when constituents are Clone (5.7)
 //! - Reset on each .retry() invocation (5.8)
-//! - Hook callbacks: before_attempt, after_attempt, before_sleep, on_exhausted (5.9)
+//! - Hook callbacks: before_attempt, after_attempt, before_sleep, on_exit (5.9, 12.4)
 //! - Sleep function requirement (5.10)
 
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
-use tenacious::{RetryError, RetryPolicy};
+use tenacious::{RetryError, RetryPolicy, StopReason};
 use tenacious::{on, stop, wait};
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,9 @@ const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
 /// Wait used in conservative before-elapsed stop tests.
 #[cfg(feature = "std")]
 const BEFORE_ELAPSED_WAIT: Duration = Duration::from_millis(50);
+
+/// Short wait used by policy-storage ergonomics tests.
+const STORAGE_POLICY_WAIT: Duration = Duration::from_millis(1);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,6 +207,29 @@ fn when_builder_configures_predicate() {
             other
         ),
     }
+}
+
+#[test]
+fn policy_is_easy_to_store_via_three_type_params() {
+    type DbPolicy = RetryPolicy<stop::StopAfterAttempts, wait::WaitFixed, on::AnyError>;
+
+    struct Service {
+        retry: DbPolicy,
+    }
+
+    let mut service = Service {
+        retry: RetryPolicy::new()
+            .stop(stop::attempts(2))
+            .wait(wait::fixed(STORAGE_POLICY_WAIT)),
+    };
+
+    let result = service
+        .retry
+        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +499,31 @@ fn policy_resets_between_retry_invocations() {
     ));
 }
 
+#[test]
+fn hooks_are_per_call_and_do_not_persist_across_retries() {
+    let before_calls = Cell::new(0_u32);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(2));
+
+    let _ = policy
+        .retry(|| Err::<i32, _>("fail"))
+        .before_attempt(|_state| {
+            before_calls.set(before_calls.get().saturating_add(1));
+        })
+        .sleep(instant_sleep)
+        .call();
+    assert_eq!(before_calls.get(), 2);
+
+    let _ = policy
+        .retry(|| Err::<i32, _>("fail again"))
+        .sleep(instant_sleep)
+        .call();
+    assert_eq!(
+        before_calls.get(),
+        2,
+        "hook should not carry over to later retry invocations"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 5.9: Hook callbacks
 // ---------------------------------------------------------------------------
@@ -480,14 +531,13 @@ fn policy_resets_between_retry_invocations() {
 #[test]
 fn before_attempt_hook_fires_before_each_attempt() {
     let hook_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .before_attempt(|state| {
-            hook_calls.borrow_mut().push(state.attempt);
-        });
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
+        .before_attempt(|state| {
+            hook_calls.borrow_mut().push(state.attempt);
+        })
         .sleep(instant_sleep)
         .call();
 
@@ -498,12 +548,7 @@ fn before_attempt_hook_fires_before_each_attempt() {
 #[test]
 fn after_attempt_hook_fires_after_each_attempt() {
     let hook_results: RefCell<Vec<(u32, bool)>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
-            let is_ok = state.outcome.is_ok();
-            hook_results.borrow_mut().push((state.attempt, is_ok));
-        });
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
@@ -515,6 +560,10 @@ fn after_attempt_hook_fires_after_each_attempt() {
             } else {
                 Ok(SUCCESS_VALUE)
             }
+        })
+        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+            let is_ok = state.outcome.is_ok();
+            hook_results.borrow_mut().push((state.attempt, is_ok));
         })
         .sleep(instant_sleep)
         .call();
@@ -532,13 +581,13 @@ fn before_sleep_hook_fires_before_each_sleep() {
     let hook_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
-        .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
-            hook_calls.borrow_mut().push(state.attempt);
-        });
+        .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
+        .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
+            hook_calls.borrow_mut().push(state.attempt);
+        })
         .sleep(instant_sleep)
         .call();
 
@@ -548,37 +597,35 @@ fn before_sleep_hook_fires_before_each_sleep() {
 }
 
 #[test]
-fn on_exhausted_hook_fires_when_stop_triggers() {
-    let exhausted_called = Cell::new(false);
-    let mut policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .on_exhausted(|_state: &tenacious::AttemptState<i32, &str>| {
-            exhausted_called.set(true);
-        });
+fn on_exit_hook_fires_when_stop_triggers() {
+    let exit_reason = Cell::new(None);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
+        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+            exit_reason.set(Some(state.reason));
+        })
         .sleep(instant_sleep)
         .call();
 
-    assert!(exhausted_called.get());
+    assert_eq!(exit_reason.get(), Some(StopReason::StopCondition));
 }
 
 #[test]
-fn on_exhausted_hook_does_not_fire_on_success() {
-    let exhausted_called = Cell::new(false);
-    let mut policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .on_exhausted(|_state: &tenacious::AttemptState<i32, &str>| {
-            exhausted_called.set(true);
-        });
+fn on_exit_hook_fires_on_success() {
+    let exit_reason = Cell::new(None);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
         .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+            exit_reason.set(Some(state.reason));
+        })
         .sleep(instant_sleep)
         .call();
 
-    assert!(!exhausted_called.get());
+    assert_eq!(exit_reason.get(), Some(StopReason::Success));
 }
 
 // ---------------------------------------------------------------------------

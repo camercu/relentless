@@ -5,7 +5,7 @@
 //! - Wait trait definition and semantics (1.3)
 //! - Predicate trait definition and semantics (1.4)
 //! - Sleeper trait and blanket impl (1.5, 1.6)
-//! - RetryState, AttemptState, and BeforeAttemptState structs (1.7, 1.8)
+//! - RetryState, AttemptState, BeforeAttemptState, and ExitState structs
 //! - RetryError enum and Display/Error impls (1.9, 1.10)
 //! - Duration is core::time::Duration (1.11)
 
@@ -480,6 +480,25 @@ fn before_attempt_state_does_not_have_outcome() {
         elapsed: _,
         total_wait: _,
     } = state;
+}
+
+#[test]
+fn exit_state_has_required_fields() {
+    let retry_state = make_retry_state(2);
+    let outcome = Err::<i32, &str>("fatal");
+    let state = tenacious::ExitState {
+        attempt: retry_state.attempt,
+        outcome: &outcome,
+        elapsed: retry_state.elapsed,
+        total_wait: retry_state.total_wait,
+        reason: tenacious::StopReason::StopCondition,
+    };
+
+    assert_eq!(state.attempt, 2);
+    assert!(state.outcome.is_err());
+    assert_eq!(state.elapsed, None);
+    assert_eq!(state.total_wait, Duration::ZERO);
+    assert_eq!(state.reason, tenacious::StopReason::StopCondition);
 }
 
 // ---------------------------------------------------------------------------
