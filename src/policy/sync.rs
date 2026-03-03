@@ -387,6 +387,16 @@ impl<'policy, S, W, P, BA, BS, OX, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, BA, (), BS, OX, F, SleepFn, T, E>
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
+    ///
+    /// ```compile_fail
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let _ = policy
+    ///     .retry(|| Err::<(), _>("fail"))
+    ///     .after_attempt(|_state| {})
+    ///     .after_attempt(|_state| {});
+    /// ```
     #[must_use]
     pub fn after_attempt<Hook>(
         self,
@@ -421,6 +431,16 @@ impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, (), OX, F, SleepFn, T, E>
 {
     /// Sets the sole before-sleep hook (no-alloc mode).
+    ///
+    /// ```compile_fail
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let _ = policy
+    ///     .retry(|| Err::<(), _>("fail"))
+    ///     .before_sleep(|_state| {})
+    ///     .before_sleep(|_state| {});
+    /// ```
     #[must_use]
     pub fn before_sleep<Hook>(
         self,
@@ -455,6 +475,16 @@ impl<'policy, S, W, P, BA, AA, BS, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, BS, (), F, SleepFn, T, E>
 {
     /// Sets the sole on-exit hook (no-alloc mode).
+    ///
+    /// ```compile_fail
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let _ = policy
+    ///     .retry(|| Err::<(), _>("fail"))
+    ///     .on_exit(|_state| {})
+    ///     .on_exit(|_state| {});
+    /// ```
     #[must_use]
     pub fn on_exit<Hook>(
         self,
