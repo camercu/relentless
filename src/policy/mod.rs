@@ -158,6 +158,150 @@ impl ExecutionHooks<(), (), (), ()> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<BA, AA, BS, OX> ExecutionHooks<BA, AA, BS, OX> {
+    fn chain_before_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> ExecutionHooks<HookChain<BA, Hook>, AA, BS, OX> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self;
+        ExecutionHooks {
+            before_attempt: HookChain::new(before_attempt, hook),
+            after_attempt,
+            before_sleep,
+            on_exit,
+        }
+    }
+
+    fn chain_after_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> ExecutionHooks<BA, HookChain<AA, Hook>, BS, OX> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt: HookChain::new(after_attempt, hook),
+            before_sleep,
+            on_exit,
+        }
+    }
+
+    fn chain_before_sleep<Hook>(
+        self,
+        hook: Hook,
+    ) -> ExecutionHooks<BA, AA, HookChain<BS, Hook>, OX> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep: HookChain::new(before_sleep, hook),
+            on_exit,
+        }
+    }
+
+    fn chain_on_exit<Hook>(self, hook: Hook) -> ExecutionHooks<BA, AA, BS, HookChain<OX, Hook>> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit: HookChain::new(on_exit, hook),
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<AA, BS, OX> ExecutionHooks<(), AA, BS, OX> {
+    fn set_before_attempt<Hook>(self, hook: Hook) -> ExecutionHooks<Hook, AA, BS, OX> {
+        let Self {
+            after_attempt,
+            before_sleep,
+            on_exit,
+            ..
+        } = self;
+        ExecutionHooks {
+            before_attempt: hook,
+            after_attempt,
+            before_sleep,
+            on_exit,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<BA, BS, OX> ExecutionHooks<BA, (), BS, OX> {
+    fn set_after_attempt<Hook>(self, hook: Hook) -> ExecutionHooks<BA, Hook, BS, OX> {
+        let Self {
+            before_attempt,
+            before_sleep,
+            on_exit,
+            ..
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt: hook,
+            before_sleep,
+            on_exit,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<BA, AA, OX> ExecutionHooks<BA, AA, (), OX> {
+    fn set_before_sleep<Hook>(self, hook: Hook) -> ExecutionHooks<BA, AA, Hook, OX> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            on_exit,
+            ..
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep: hook,
+            on_exit,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<BA, AA, BS> ExecutionHooks<BA, AA, BS, ()> {
+    fn set_on_exit<Hook>(self, hook: Hook) -> ExecutionHooks<BA, AA, BS, Hook> {
+        let Self {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            ..
+        } = self;
+        ExecutionHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exit: hook,
+        }
+    }
+}
+
 /// Reusable retry configuration.
 ///
 /// `RetryPolicy` stores retry strategies and can be reused across multiple

@@ -129,6 +129,48 @@ type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T,
 type AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> =
     AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>;
 
+impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    // Intentional: this helper preserves type-state hook tracking and avoids
+    // runtime indirection, which necessarily yields a long generic return type.
+    #[allow(clippy::type_complexity)]
+    fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
+        self,
+        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
+    ) -> AsyncRetry<'policy, S, W, P, NewBA, NewAA, NewBS, NewOX, F, Fut, SleepImpl, T, E, SleepFut> {
+        let AsyncRetry {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            ..
+        } = self;
+        AsyncRetry {
+            policy,
+            hooks: map(hooks),
+            op,
+            sleeper,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            _marker: PhantomData,
+        }
+    }
+}
+
 #[cfg(feature = "alloc")]
 type AsyncRetryWithBeforeHook<
     'policy,
@@ -313,6 +355,7 @@ where
 {
     /// Wraps this async retry with statistics collection.
     #[must_use]
+    // Intentional: the stats wrapper carries the full builder type-state.
     #[allow(clippy::type_complexity)]
     pub fn with_stats(
         self,
@@ -324,6 +367,8 @@ where
 }
 
 #[cfg(feature = "alloc")]
+// Intentional: hook chaining APIs preserve compile-time type-state for no-alloc
+// and zero-cost execution; signatures are verbose but mechanically constrained.
 #[allow(clippy::type_complexity)]
 impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
     AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
@@ -356,30 +401,7 @@ where
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt: HookChain::new(before_attempt, hook),
-                after_attempt,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
     }
 
     /// Appends an after-attempt hook.
@@ -407,30 +429,7 @@ where
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt: HookChain::new(after_attempt, hook),
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
     }
 
     /// Appends a before-sleep hook.
@@ -458,30 +457,7 @@ where
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: HookChain::new(before_sleep, hook),
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_before_sleep(hook))
     }
 
     /// Appends an on-exit hook.
@@ -509,30 +485,7 @@ where
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exit: HookChain::new(on_exit, hook),
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_on_exit(hook))
     }
 }
 
@@ -562,30 +515,7 @@ where
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        let ExecutionHooks {
-            after_attempt,
-            before_sleep,
-            on_exit,
-            ..
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt: hook,
-                after_attempt,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
     }
 }
 
@@ -615,30 +545,7 @@ where
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            before_sleep,
-            on_exit,
-            ..
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt: hook,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
     }
 }
 
@@ -668,30 +575,7 @@ where
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            on_exit,
-            ..
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: hook,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_before_sleep(hook))
     }
 }
 
@@ -721,30 +605,7 @@ where
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            ..
-        } = self.hooks;
-        AsyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exit: hook,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            phase: self.phase,
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_on_exit(hook))
     }
 }
 
