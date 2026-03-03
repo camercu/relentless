@@ -334,11 +334,12 @@ injection layer is required.
 **1.7** `RetryState` is a struct with fields: `attempt: u32` (1-indexed), `elapsed: Option<Duration>`, `next_delay: Duration`, and `total_wait: Duration`. It carries only counters and timing — no outcome reference — and is passed to `Stop::should_stop` and `Wait::next_wait`. `AttemptState<'a, T, E>` extends this with `outcome: &'a Result<T, E>` and is passed to hooks that need outcome visibility.
 
 **1.8** `RetryState` is passed by shared reference to `Stop::should_stop` and
-`Wait::next_wait`. `AttemptState` is passed to `after_attempt`, `before_sleep`,
-and `on_exhausted` hooks. `BeforeAttemptState` is passed to `before_attempt`.
-`Predicate::should_retry` receives `&Result<T, E>` directly. During normal
-execution these state types are constructed by the retry engine; direct
-construction is supported for tests and custom strategy implementations.
+`Wait::next_wait`. `AttemptState` is passed to `after_attempt` and
+`before_sleep` hooks. `BeforeAttemptState` is passed to `before_attempt`.
+`ExitState` is passed to `on_exit`. `Predicate::should_retry` receives
+`&Result<T, E>` directly. During normal execution these state types are
+constructed by the retry engine; direct construction is supported for tests and
+custom strategy implementations.
 
 **1.9** `RetryError<E>` is defined in `error.rs` as an enum with variants
 `Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> }`,
@@ -454,7 +455,12 @@ a safe, ready-to-run policy configured with `stop::attempts(3)`,
 `wait::exponential(Duration::from_millis(100))`, and `on::any_error()`. The
 unparameterized `RetryPolicy` type defaults to this safe configuration.
 
-**5.2** `RetryPolicy` provides builder methods: `.stop(s: impl Stop)`, `.wait(w: impl Wait)`, `.when(p: impl Predicate)`, `.before_attempt(f)`, `.after_attempt(f)`, `.before_sleep(f)`, `.on_exhausted(f)`. Each method consumes and returns `Self`.
+**5.2** `RetryPolicy` provides builder methods: `.stop(s: impl Stop)`,
+`.wait(w: impl Wait)`, `.when(p: impl Predicate)`, and
+`.elapsed_clock(clock: fn() -> Duration)`. Each method consumes and returns
+`Self`. Hook builder methods (`.before_attempt(f)`, `.after_attempt(f)`,
+`.before_sleep(f)`, `.on_exit(f)`) are provided on `SyncRetry` and `AsyncRetry`
+instead of on `RetryPolicy`.
 
 **5.3** The generic parameters of `RetryPolicy<S, W, P>` carry the concrete stop, wait, and predicate types. Calling `.stop(new_stop)` replaces the `S` type parameter, producing `RetryPolicy<NewStop, W, P>`. This preserves zero-cost abstraction for statically known policies.
 
@@ -477,7 +483,11 @@ unparameterized `RetryPolicy` type defaults to this safe configuration.
 
 **5.8** `RetryPolicy::retry` calls `Stop::reset` and `Wait::reset` at the start of each invocation, before the first attempt. This ensures a policy can be applied to multiple sequential operations without carrying state from a prior run.
 
-**5.9** Hook callbacks (after_attempt, before_sleep, on_exhausted) accept `FnMut(&AttemptState<T, E>)`. `before_attempt` accepts `FnMut(&BeforeAttemptState)`. All hooks have no return value. Panics in hooks propagate normally.
+**5.9** Hook callbacks are configured on `SyncRetry` and `AsyncRetry`.
+`before_attempt` accepts `FnMut(&BeforeAttemptState)`. `after_attempt` and
+`before_sleep` accept `FnMut(&AttemptState<'_, T, E>)`. `on_exit` accepts
+`FnMut(&ExitState<'_, T, E>)`. All hooks have no return value. Panics in hooks
+propagate normally.
 
 **5.10** When no sleep function is provided and the `std` feature is inactive, the crate does not compile. Users on no_std must supply a sleep function via `.sleep(f)`.
 
@@ -503,13 +513,22 @@ enabled, in which case they also panic.
 
 **6.7** When the `embassy-sleep` feature is active, `tenacious::sleep::embassy_sleep` is a zero-size struct implementing `Sleeper` using `embassy_time::Timer::after`.
 
-**6.8** Hook callbacks in async execution are synchronous `FnMut(&AttemptState)`. Async hooks are not supported. Rationale: async closures are not yet stable in Rust; adding them now would require boxing and add complexity disproportionate to the benefit.
+**6.8** Hook callbacks in async execution are synchronous:
+`before_attempt` receives `&BeforeAttemptState`, `after_attempt` and
+`before_sleep` receive `&AttemptState<'_, T, E>`, and `on_exit` receives
+`&ExitState<'_, T, E>`. Async hooks are not supported. Rationale: async
+closures are not yet stable in Rust; adding them now would require boxing and
+add complexity disproportionate to the benefit.
 
 ---
 
 ## Iteration 7: Callbacks and Hooks
 
-**7.1** Four hook points are defined: `before_attempt`, `after_attempt`, `before_sleep`, and `on_exhausted`. `before_attempt` accepts `FnMut(&BeforeAttemptState)`. The other three accept `FnMut(&AttemptState<T, E>)`.
+**7.1** Four hook points are defined on execution builders (`SyncRetry` and
+`AsyncRetry`): `before_attempt`, `after_attempt`, `before_sleep`, and
+`on_exit`. `before_attempt` accepts `FnMut(&BeforeAttemptState)`.
+`after_attempt` and `before_sleep` accept `FnMut(&AttemptState<'_, T, E>)`.
+`on_exit` accepts `FnMut(&ExitState<'_, T, E>)`.
 
 **7.2** `before_attempt` fires before `op()` is called on each attempt. It receives `BeforeAttemptState` with the attempt number about to execute, elapsed time, and cumulative sleep time. It does not have access to the previous attempt's outcome.
 
@@ -517,7 +536,10 @@ enabled, in which case they also panic.
 
 **7.4** `before_sleep` fires after the stop condition has been checked and failed to stop (i.e., we have decided to retry). At this point `AttemptState.next_delay` is populated with the duration we are about to sleep.
 
-**7.5** `on_exhausted` fires once when the retry loop terminates due to the stop condition firing. It receives the final `AttemptState` (with `attempt` equal to the last attempt number and `outcome` pointing to the last result).
+**7.5** `on_exit` fires once when the retry loop terminates for any reason:
+success, stop condition, predicate acceptance, or cancellation (when iteration
+13 is implemented). It receives `ExitState`, which includes the final attempt
+context and a `StopReason`.
 
 **7.6** Multiple hook callbacks of the same kind can be registered. They fire in registration order. Builder method `.before_sleep(f)` appends to an internal list rather than replacing.
 
