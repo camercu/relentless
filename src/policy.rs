@@ -27,11 +27,6 @@ use pin_project_lite::pin_project;
 #[cfg(feature = "std")]
 use std::time::Instant;
 
-#[cfg(all(feature = "alloc", feature = "std"))]
-type RetryStart = Instant;
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-type RetryStart = ();
-
 /// Default maximum attempts used by the safe policy constructor.
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 
@@ -40,6 +35,20 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Function pointer type used to supply elapsed time in no_std or custom runtimes.
 type ElapsedClockFn = fn() -> Duration;
+
+#[derive(Clone)]
+struct PolicyHooks<BA, AA, BS, OE> {
+    before_attempt: BA,
+    after_attempt: AA,
+    before_sleep: BS,
+    on_exhausted: OE,
+}
+
+#[derive(Clone, Copy)]
+struct PolicyMeta {
+    predicate_is_default: bool,
+    elapsed_clock: Option<ElapsedClockFn>,
+}
 
 /// Hook callback shape for the `before_attempt` hook.
 #[doc(hidden)]
@@ -157,12 +166,8 @@ pub struct RetryPolicy<
     stop: S,
     wait: W,
     predicate: P,
-    before_attempt: BA,
-    after_attempt: AA,
-    before_sleep: BS,
-    on_exhausted: OE,
-    predicate_is_default: bool,
-    elapsed_clock: Option<ElapsedClockFn>,
+    hooks: PolicyHooks<BA, AA, BS, OE>,
+    meta: PolicyMeta,
 }
 
 #[cfg(feature = "serde")]
@@ -181,7 +186,7 @@ where
         state.serialize_field("stop", &self.stop)?;
         state.serialize_field("wait", &self.wait)?;
         state.serialize_field("predicate", &self.predicate)?;
-        state.serialize_field("predicate_is_default", &self.predicate_is_default)?;
+        state.serialize_field("predicate_is_default", &self.meta.predicate_is_default)?;
         state.end()
     }
 }
@@ -211,12 +216,16 @@ where
             stop: serialized.stop,
             wait: serialized.wait,
             predicate: serialized.predicate,
-            before_attempt: (),
-            after_attempt: (),
-            before_sleep: (),
-            on_exhausted: (),
-            predicate_is_default: serialized.predicate_is_default,
-            elapsed_clock: None,
+            hooks: PolicyHooks {
+                before_attempt: (),
+                after_attempt: (),
+                before_sleep: (),
+                on_exhausted: (),
+            },
+            meta: PolicyMeta {
+                predicate_is_default: serialized.predicate_is_default,
+                elapsed_clock: None,
+            },
         })
     }
 }
@@ -242,12 +251,8 @@ struct PolicyParts<S, W, P, BA, AA, BS, OE> {
     stop: S,
     wait: W,
     predicate: P,
-    before_attempt: BA,
-    after_attempt: AA,
-    before_sleep: BS,
-    on_exhausted: OE,
-    predicate_is_default: bool,
-    elapsed_clock: Option<ElapsedClockFn>,
+    hooks: PolicyHooks<BA, AA, BS, OE>,
+    meta: PolicyMeta,
 }
 
 fn build_policy<S, W, P, BA, AA, BS, OE>(
@@ -257,12 +262,8 @@ fn build_policy<S, W, P, BA, AA, BS, OE>(
         stop: parts.stop,
         wait: parts.wait,
         predicate: parts.predicate,
-        before_attempt: parts.before_attempt,
-        after_attempt: parts.after_attempt,
-        before_sleep: parts.before_sleep,
-        on_exhausted: parts.on_exhausted,
-        predicate_is_default: parts.predicate_is_default,
-        elapsed_clock: parts.elapsed_clock,
+        hooks: parts.hooks,
+        meta: parts.meta,
     }
 }
 
@@ -292,12 +293,16 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError, (), (), (), ()>
             stop: stop::NeedsStop,
             wait: wait::fixed(Duration::ZERO),
             predicate: on::any_error(),
-            before_attempt: (),
-            after_attempt: (),
-            before_sleep: (),
-            on_exhausted: (),
-            predicate_is_default: true,
-            elapsed_clock: None,
+            hooks: PolicyHooks {
+                before_attempt: (),
+                after_attempt: (),
+                before_sleep: (),
+                on_exhausted: (),
+            },
+            meta: PolicyMeta {
+                predicate_is_default: true,
+                elapsed_clock: None,
+            },
         })
     }
 }
@@ -310,46 +315,48 @@ impl Default
             stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait: wait::exponential(DEFAULT_INITIAL_WAIT),
             predicate: on::any_error(),
-            before_attempt: (),
-            after_attempt: (),
-            before_sleep: (),
-            on_exhausted: (),
-            predicate_is_default: true,
-            elapsed_clock: None,
+            hooks: PolicyHooks {
+                before_attempt: (),
+                after_attempt: (),
+                before_sleep: (),
+                on_exhausted: (),
+            },
+            meta: PolicyMeta {
+                predicate_is_default: true,
+                elapsed_clock: None,
+            },
         })
     }
 }
 
 impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
+    fn decompose(self) -> (S, W, P, PolicyHooks<BA, AA, BS, OE>, PolicyMeta) {
+        (self.stop, self.wait, self.predicate, self.hooks, self.meta)
+    }
+
     /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P, BA, AA, BS, OE> {
+        let (_, wait, predicate, hooks, meta) = self.decompose();
         build_policy(PolicyParts {
             stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            wait,
+            predicate,
+            hooks,
+            meta,
         })
     }
 
     /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P, BA, AA, BS, OE> {
+        let (stop, _, predicate, hooks, meta) = self.decompose();
         build_policy(PolicyParts {
-            stop: self.stop,
+            stop,
             wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            predicate,
+            hooks,
+            meta,
         })
     }
 
@@ -359,16 +366,16 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         predicate: NewPredicate,
     ) -> RetryPolicy<S, W, NewPredicate, BA, AA, BS, OE> {
+        let (stop, wait, _, hooks, meta) = self.decompose();
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
+            stop,
+            wait,
             predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: false,
-            elapsed_clock: self.elapsed_clock,
+            hooks,
+            meta: PolicyMeta {
+                predicate_is_default: false,
+                ..meta
+            },
         })
     }
 
@@ -381,16 +388,13 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         W: Wait + 'static,
         P: Predicate<T, E> + 'static,
     {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
         build_policy(PolicyParts {
-            stop: Box::new(self.stop),
-            wait: Box::new(self.wait),
-            predicate: Box::new(self.predicate),
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop: Box::new(stop),
+            wait: Box::new(wait),
+            predicate: Box::new(predicate),
+            hooks,
+            meta,
         })
     }
 
@@ -400,14 +404,14 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     /// Elapsed is computed as `clock() - clock_at_start` with saturating math.
     #[must_use]
     pub fn elapsed_clock(mut self, clock: ElapsedClockFn) -> Self {
-        self.elapsed_clock = Some(clock);
+        self.meta.elapsed_clock = Some(clock);
         self
     }
 
     /// Clears any custom elapsed-time clock and restores default behavior.
     #[must_use]
     pub fn clear_elapsed_clock(mut self) -> Self {
-        self.elapsed_clock = None;
+        self.meta.elapsed_clock = None;
         self
     }
 }
@@ -423,16 +427,24 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
     where
         Hook: FnMut(&BeforeAttemptState),
     {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exhausted,
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: HookChain::new(self.before_attempt, hook),
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt: HookChain::new(before_attempt, hook),
+                after_attempt,
+                before_sleep,
+                on_exhausted,
+            },
+            meta,
         })
     }
 
@@ -442,16 +454,24 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, HookChain<AA, Hook>, BS, OE> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exhausted,
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: HookChain::new(self.after_attempt, hook),
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt: HookChain::new(after_attempt, hook),
+                before_sleep,
+                on_exhausted,
+            },
+            meta,
         })
     }
 
@@ -461,16 +481,24 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, AA, HookChain<BS, Hook>, OE> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exhausted,
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: HookChain::new(self.before_sleep, hook),
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep: HookChain::new(before_sleep, hook),
+                on_exhausted,
+            },
+            meta,
         })
     }
 
@@ -480,16 +508,24 @@ impl<S, W, P, BA, AA, BS, OE> RetryPolicy<S, W, P, BA, AA, BS, OE> {
         self,
         hook: Hook,
     ) -> RetryPolicy<S, W, P, BA, AA, BS, HookChain<OE, Hook>> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            on_exhausted,
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: HookChain::new(self.on_exhausted, hook),
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep,
+                on_exhausted: HookChain::new(on_exhausted, hook),
+            },
+            meta,
         })
     }
 }
@@ -502,16 +538,24 @@ impl<S, W, P, AA, BS, OE> RetryPolicy<S, W, P, (), AA, BS, OE> {
     where
         Hook: FnMut(&BeforeAttemptState),
     {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            after_attempt,
+            before_sleep,
+            on_exhausted,
+            ..
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: hook,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt: hook,
+                after_attempt,
+                before_sleep,
+                on_exhausted,
+            },
+            meta,
         })
     }
 }
@@ -521,16 +565,24 @@ impl<S, W, P, BA, BS, OE> RetryPolicy<S, W, P, BA, (), BS, OE> {
     /// Sets the sole after-attempt hook (no-alloc mode).
     #[must_use]
     pub fn after_attempt<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, Hook, BS, OE> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            before_sleep,
+            on_exhausted,
+            ..
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: hook,
-            before_sleep: self.before_sleep,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt: hook,
+                before_sleep,
+                on_exhausted,
+            },
+            meta,
         })
     }
 }
@@ -540,16 +592,24 @@ impl<S, W, P, BA, AA, OE> RetryPolicy<S, W, P, BA, AA, (), OE> {
     /// Sets the sole before-sleep hook (no-alloc mode).
     #[must_use]
     pub fn before_sleep<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, Hook, OE> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            on_exhausted,
+            ..
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: hook,
-            on_exhausted: self.on_exhausted,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep: hook,
+                on_exhausted,
+            },
+            meta,
         })
     }
 }
@@ -559,16 +619,24 @@ impl<S, W, P, BA, AA, BS> RetryPolicy<S, W, P, BA, AA, BS, ()> {
     /// Sets the sole on-exhausted hook (no-alloc mode).
     #[must_use]
     pub fn on_exhausted<Hook>(self, hook: Hook) -> RetryPolicy<S, W, P, BA, AA, BS, Hook> {
+        let (stop, wait, predicate, hooks, meta) = self.decompose();
+        let PolicyHooks {
+            before_attempt,
+            after_attempt,
+            before_sleep,
+            ..
+        } = hooks;
         build_policy(PolicyParts {
-            stop: self.stop,
-            wait: self.wait,
-            predicate: self.predicate,
-            before_attempt: self.before_attempt,
-            after_attempt: self.after_attempt,
-            before_sleep: self.before_sleep,
-            on_exhausted: hook,
-            predicate_is_default: self.predicate_is_default,
-            elapsed_clock: self.elapsed_clock,
+            stop,
+            wait,
+            predicate,
+            hooks: PolicyHooks {
+                before_attempt,
+                after_attempt,
+                before_sleep,
+                on_exhausted: hook,
+            },
+            meta,
         })
     }
 }
@@ -646,7 +714,7 @@ where
     let should_retry = policy.predicate.should_retry(&outcome);
     {
         let attempt_state = attempt_state_from(&retry_state, &outcome);
-        policy.after_attempt.call(&attempt_state);
+        policy.hooks.after_attempt.call(&attempt_state);
     }
     if !should_retry {
         let stats = if collect_stats {
@@ -656,7 +724,7 @@ where
                 total_wait,
                 stop_reason: stop_reason_for_predicate_accept(
                     &outcome,
-                    policy.predicate_is_default,
+                    policy.meta.predicate_is_default,
                 ),
             })
         } else {
@@ -682,7 +750,7 @@ where
     if policy.stop.should_stop(&retry_state) {
         {
             let attempt_state = attempt_state_from(&retry_state, &outcome);
-            policy.on_exhausted.call(&attempt_state);
+            policy.hooks.on_exhausted.call(&attempt_state);
         }
         let stats = if collect_stats {
             Some(RetryStats {
@@ -713,7 +781,7 @@ where
 
     {
         let attempt_state = attempt_state_from(&retry_state, &outcome);
-        policy.before_sleep.call(&attempt_state);
+        policy.hooks.before_sleep.call(&attempt_state);
     }
 
     AttemptTransition::Sleep { next_delay }
@@ -818,29 +886,19 @@ where
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
         let mut attempt: u32 = 1;
         let mut total_wait = Duration::ZERO;
-        let elapsed_start = start_elapsed_clock(self.policy.elapsed_clock);
-        #[cfg(feature = "std")]
-        let start = Instant::now();
+        let elapsed_tracker = ElapsedTracker::new(self.policy.meta.elapsed_clock);
 
         loop {
-            let elapsed_before_attempt = current_elapsed(
-                elapsed_start,
-                #[cfg(feature = "std")]
-                &start,
-            );
+            let elapsed_before_attempt = elapsed_tracker.elapsed();
             let before_state = BeforeAttemptState {
                 attempt,
                 elapsed: elapsed_before_attempt,
                 total_wait,
             };
-            self.policy.before_attempt.call(&before_state);
+            self.policy.hooks.before_attempt.call(&before_state);
 
             let outcome = (self.op)();
-            let elapsed_after_attempt = current_elapsed(
-                elapsed_start,
-                #[cfg(feature = "std")]
-                &start,
-            );
+            let elapsed_after_attempt = elapsed_tracker.elapsed();
             let retry_state = RetryState {
                 attempt,
                 elapsed: elapsed_after_attempt,
@@ -975,8 +1033,7 @@ pin_project! {
         total_wait: Duration,
         collect_stats: bool,
         final_stats: Option<RetryStats>,
-        elapsed_start: Option<CustomElapsedStart>,
-        start: RetryStart,
+        elapsed_tracker: ElapsedTracker,
         _marker: PhantomData<fn() -> (T, E)>,
     }
 }
@@ -1066,8 +1123,7 @@ where
             total_wait: self.total_wait,
             collect_stats: self.collect_stats,
             final_stats: self.final_stats,
-            elapsed_start: self.elapsed_start,
-            start: self.start,
+            elapsed_tracker: self.elapsed_tracker,
             _marker: PhantomData,
         }
     }
@@ -1116,17 +1172,13 @@ where
         loop {
             match this.phase.as_mut().project() {
                 AsyncPhaseProj::ReadyToStartAttempt => {
-                    let elapsed_before_attempt = current_elapsed(
-                        *this.elapsed_start,
-                        #[cfg(feature = "std")]
-                        this.start,
-                    );
+                    let elapsed_before_attempt = this.elapsed_tracker.elapsed();
                     let before_state = BeforeAttemptState {
                         attempt: *this.attempt,
                         elapsed: elapsed_before_attempt,
                         total_wait: *this.total_wait,
                     };
-                    this.policy.before_attempt.call(&before_state);
+                    this.policy.hooks.before_attempt.call(&before_state);
 
                     let op_future = (this.op)();
                     this.phase.set(AsyncPhase::PollingOperation { op_future });
@@ -1134,11 +1186,7 @@ where
                 AsyncPhaseProj::PollingOperation { op_future } => match op_future.poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(outcome) => {
-                        let elapsed_after_attempt = current_elapsed(
-                            *this.elapsed_start,
-                            #[cfg(feature = "std")]
-                            this.start,
-                        );
+                        let elapsed_after_attempt = this.elapsed_tracker.elapsed();
                         let retry_state = RetryState {
                             attempt: *this.attempt,
                             elapsed: elapsed_after_attempt,
@@ -1242,7 +1290,7 @@ where
     {
         self.stop.reset();
         self.wait.reset();
-        let elapsed_start = start_elapsed_clock(self.elapsed_clock);
+        let elapsed_tracker = ElapsedTracker::new(self.meta.elapsed_clock);
         AsyncRetry {
             policy: self,
             op,
@@ -1252,8 +1300,7 @@ where
             total_wait: Duration::ZERO,
             collect_stats: false,
             final_stats: None,
-            elapsed_start,
-            start: retry_start_now(),
+            elapsed_tracker,
             _marker: PhantomData,
         }
     }
@@ -1276,30 +1323,38 @@ struct CustomElapsedStart {
     origin: Duration,
 }
 
-fn start_elapsed_clock(clock: Option<ElapsedClockFn>) -> Option<CustomElapsedStart> {
-    clock.map(|clock| CustomElapsedStart {
-        clock,
-        origin: clock(),
-    })
+#[derive(Clone, Copy)]
+struct ElapsedTracker {
+    start_clock: Option<CustomElapsedStart>,
+    #[cfg(feature = "std")]
+    start: Instant,
 }
 
-#[cfg(all(feature = "alloc", feature = "std"))]
-fn retry_start_now() -> RetryStart {
-    Instant::now()
-}
+impl ElapsedTracker {
+    fn new(clock: Option<ElapsedClockFn>) -> Self {
+        Self {
+            start_clock: clock.map(|clock| CustomElapsedStart {
+                clock,
+                origin: clock(),
+            }),
+            #[cfg(feature = "std")]
+            start: Instant::now(),
+        }
+    }
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
-fn retry_start_now() -> RetryStart {}
+    fn elapsed(&self) -> Option<Duration> {
+        if let Some(start_clock) = self.start_clock {
+            Some((start_clock.clock)().saturating_sub(start_clock.origin))
+        } else {
+            #[cfg(feature = "std")]
+            {
+                Some(self.start.elapsed())
+            }
 
-#[cfg(feature = "std")]
-fn current_elapsed(start_clock: Option<CustomElapsedStart>, start: &Instant) -> Option<Duration> {
-    start_clock.map_or_else(
-        || Some(start.elapsed()),
-        |start_clock| Some((start_clock.clock)().saturating_sub(start_clock.origin)),
-    )
-}
-
-#[cfg(not(feature = "std"))]
-fn current_elapsed(start_clock: Option<CustomElapsedStart>) -> Option<Duration> {
-    start_clock.map(|start_clock| (start_clock.clock)().saturating_sub(start_clock.origin))
+            #[cfg(not(feature = "std"))]
+            {
+                None
+            }
+        }
+    }
 }
