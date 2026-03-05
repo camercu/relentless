@@ -28,10 +28,9 @@ pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
 where
     Fut: Future<Output = Result<T, E>>,
 {
-    /// Starts an owned async retry builder with default wait/predicate and
-    /// an unconfigured stop strategy.
+    /// Starts an owned async retry builder from [`RetryPolicy::default()`].
     ///
-    /// `.stop(...)` must be configured before the builder can be awaited.
+    /// `.sleep(...)` must be configured before the builder can be awaited.
     ///
     /// ```compile_fail
     /// use core::future::ready;
@@ -44,8 +43,8 @@ where
     fn retry_async(
         self,
     ) -> AsyncRetryBuilder<
-        stop::NeedsStop,
-        wait::WaitFixed,
+        stop::StopAfterAttempts,
+        wait::WaitExponential,
         on::AnyError,
         (),
         (),
@@ -69,8 +68,8 @@ where
     fn retry_async(
         self,
     ) -> AsyncRetryBuilder<
-        stop::NeedsStop,
-        wait::WaitFixed,
+        stop::StopAfterAttempts,
+        wait::WaitExponential,
         on::AnyError,
         (),
         (),
@@ -84,7 +83,7 @@ where
         (),
         NeverCancel,
     > {
-        let policy = RetryPolicy::new();
+        let policy = RetryPolicy::default();
         let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
             policy,
@@ -104,6 +103,21 @@ where
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+/// ```compile_fail
+/// use core::future::ready;
+/// use tenacious::AsyncRetryExt;
+///
+/// let _ = async {
+///     let _ = (|| ready(Ok::<(), &str>(())))
+///         .retry_async()
+///         .await;
+/// };
+/// ```
+#[allow(dead_code)]
+fn _async_retry_builder_requires_sleep_before_await() {}
 
 pin_project! {
     /// Owned async retry builder created from [`AsyncRetryExt::retry_async`].

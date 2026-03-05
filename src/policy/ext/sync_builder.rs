@@ -17,12 +17,14 @@ use crate::{
 
 /// Extension trait to start sync retries directly from a closure/function.
 pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
-    /// Starts an owned sync retry builder with default wait/predicate and
-    /// an unconfigured stop strategy.
+    /// Starts an owned sync retry builder from [`RetryPolicy::default()`].
     ///
-    /// `.stop(...)` must be configured before `.call()` is available.
+    /// This means extension-based retries default to:
+    /// - `stop::attempts(3)`
+    /// - exponential backoff starting at 100ms
+    /// - retry on any error
     ///
-    /// ```compile_fail
+    /// ```
     /// use tenacious::RetryExt;
     ///
     /// let _ = (|| Ok::<(), &str>(())).retry().call();
@@ -30,8 +32,8 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     fn retry(
         self,
     ) -> SyncRetryBuilder<
-        stop::NeedsStop,
-        wait::WaitFixed,
+        stop::StopAfterAttempts,
+        wait::WaitExponential,
         on::AnyError,
         (),
         (),
@@ -52,8 +54,8 @@ where
     fn retry(
         self,
     ) -> SyncRetryBuilder<
-        stop::NeedsStop,
-        wait::WaitFixed,
+        stop::StopAfterAttempts,
+        wait::WaitExponential,
         on::AnyError,
         (),
         (),
@@ -66,7 +68,7 @@ where
         NeverCancel,
     > {
         SyncRetryBuilder {
-            policy: RetryPolicy::new(),
+            policy: RetryPolicy::default(),
             hooks: ExecutionHooks::new(),
             op: self,
             sleeper: NoSyncSleep,
@@ -75,6 +77,18 @@ where
         }
     }
 }
+
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+/// ```compile_fail
+/// use tenacious::RetryExt;
+///
+/// let _ = (|| Err::<(), &str>("fail"))
+///     .retry()
+///     .call();
+/// ```
+#[allow(dead_code)]
+fn _sync_retry_builder_requires_sleep_in_no_std() {}
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
 pub struct SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {

@@ -13,6 +13,9 @@ const MAX_ATTEMPTS: u32 = 3;
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 const WAIT_DURATION: Duration = Duration::from_millis(1);
+const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
+const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
+const DEFAULT_WAIT_SEQUENCE: [Duration; 2] = [DEFAULT_INITIAL_WAIT, DEFAULT_SECOND_WAIT];
 
 fn instant_sleep(_dur: Duration) {}
 
@@ -45,8 +48,34 @@ fn do_work() -> Result<i32, &'static str> {
 
 #[test]
 fn retry_ext_function_pointer_form_works() {
-    let result = do_work.retry().stop(stop::attempts(1)).call();
+    let result = do_work.retry().call();
     assert_eq!(result, Ok(SUCCESS_VALUE));
+}
+
+#[test]
+fn retry_ext_uses_default_policy_when_not_overridden() {
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+    let sleeps = Rc::new(RefCell::new(Vec::new()));
+    let sleeps_ref = Rc::clone(&sleeps);
+
+    let result = (move || {
+        attempts_ref.set(attempts_ref.get().saturating_add(1));
+        Err::<i32, &str>(ERROR_VALUE)
+    })
+    .retry()
+    .sleep(move |dur| sleeps_ref.borrow_mut().push(dur))
+    .call();
+
+    assert!(matches!(
+        result,
+        Err(RetryError::Exhausted {
+            attempts: MAX_ATTEMPTS,
+            ..
+        })
+    ));
+    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    assert_eq!(*sleeps.borrow(), DEFAULT_WAIT_SEQUENCE);
 }
 
 #[test]
@@ -315,6 +344,36 @@ mod async_tests {
     }
 
     #[test]
+    fn async_retry_ext_uses_default_policy_when_not_overridden() {
+        let attempts = Rc::new(Cell::new(0_u32));
+        let attempts_ref = Rc::clone(&attempts);
+        let sleeps = Rc::new(RefCell::new(Vec::new()));
+        let sleeps_ref = Rc::clone(&sleeps);
+
+        let result = block_on(
+            (move || {
+                attempts_ref.set(attempts_ref.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+            })
+            .retry_async()
+            .sleep(move |dur| {
+                sleeps_ref.borrow_mut().push(dur);
+                ready(())
+            }),
+        );
+
+        assert!(matches!(
+            result,
+            Err(RetryError::Exhausted {
+                attempts: MAX_ATTEMPTS,
+                ..
+            })
+        ));
+        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(*sleeps.borrow(), DEFAULT_WAIT_SEQUENCE);
+    }
+
+    #[test]
     fn async_retry_ext_hooks_match_policy_hook_points() {
         let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
         let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
@@ -559,15 +618,30 @@ mod async_tests {
 
 #[test]
 fn policy_and_extension_forms_are_equivalent_for_basic_case() {
-    let from_ext = (|| Ok::<i32, &str>(SUCCESS_VALUE))
+    let from_ext = (|| Err::<i32, &str>(ERROR_VALUE))
         .retry()
-        .stop(stop::attempts(1))
+        .sleep(instant_sleep)
         .call();
 
-    let from_policy = RetryPolicy::new()
-        .stop(stop::attempts(1))
-        .retry(|| Ok::<i32, &str>(SUCCESS_VALUE))
+    let from_policy = RetryPolicy::default()
+        .retry(|| Err::<i32, &str>(ERROR_VALUE))
+        .sleep(instant_sleep)
         .call();
 
-    assert_eq!(from_ext, from_policy);
+    assert!(matches!(
+        from_ext,
+        Err(RetryError::Exhausted {
+            error: ERROR_VALUE,
+            attempts: MAX_ATTEMPTS,
+            ..
+        })
+    ));
+    assert!(matches!(
+        from_policy,
+        Err(RetryError::Exhausted {
+            error: ERROR_VALUE,
+            attempts: MAX_ATTEMPTS,
+            ..
+        })
+    ));
 }

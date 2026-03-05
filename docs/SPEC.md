@@ -425,7 +425,10 @@ deterministic and decorrelated sequences in tests or reproducible runs.
 `WaitExt::chain(other: W2, after: u32)`. The resulting `WaitChain` uses `self`
 for the first `after` attempts and `other` for all subsequent attempts.
 
-**3.9** `Wait::reset` on `WaitCombine` calls reset on both constituents. `Wait::reset` on `WaitChain` resets both strategies and the internal attempt counter.
+**3.9** `Wait::reset` on `WaitCombine` calls `reset` on both constituents.
+`Wait::reset` on `WaitChain` resets both strategies. `WaitChain` does not keep
+an internal attempt counter; it switches based on `RetryState.attempt` supplied
+by the execution engine.
 
 **3.10** All wait strategy types are `Clone` and implement `Debug` where their fields implement `Debug`.
 
@@ -851,7 +854,7 @@ method for any `FnMut() -> Result<T, E>`:
 
 ```rust
 pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
-    fn retry(self) -> SyncRetryBuilder<Self, NeedsStop, WaitFixed, AnyError>;
+    fn retry(self) -> SyncRetryBuilder<Self, StopAfterAttempts, WaitExponential, AnyError>;
 }
 ```
 
@@ -859,8 +862,11 @@ The returned `SyncRetryBuilder` is an owned builder (distinct from `SyncRetry`,
 which borrows a `RetryPolicy`) that embeds both the operation and the
 stop/wait/predicate configuration. It provides the same `.stop()`, `.wait()`,
 `.when()`, `.cancel_on()`, hook, and terminal methods as the policy-based
-path. Without `.cancel_on(...)`, it uses `NeverCancel`. `.stop()` must be
-called before `.call()` (same `NeedsStop` gate as `RetryPolicy::new()`).
+path. Without `.cancel_on(...)`, it uses `NeverCancel`.
+
+`RetryExt::retry()` starts from `RetryPolicy::default()`: 3 attempts,
+exponential backoff from 100ms, and retry on any error. `.stop()`, `.wait()`,
+and `.when()` override those defaults when needed.
 
 **14.2** `AsyncRetryExt` provides `.retry_async()` for any
 `FnMut() -> Fut where Fut: Future<Output = Result<T, E>>`:
@@ -870,12 +876,14 @@ pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
 where
     Fut: Future<Output = Result<T, E>>,
 {
-    fn retry_async(self) -> AsyncRetryBuilder<Self, NeedsStop, WaitFixed, AnyError>;
+    fn retry_async(self) -> AsyncRetryBuilder<Self, StopAfterAttempts, WaitExponential, AnyError>;
 }
 ```
 
 `AsyncRetryBuilder` also supports `.cancel_on(c: impl Canceler)` with the same
-cancellation semantics as iteration 13.
+cancellation semantics as iteration 13. Like `RetryExt::retry()`,
+`AsyncRetryExt::retry_async()` starts from `RetryPolicy::default()` and treats
+`.stop()`, `.wait()`, and `.when()` as overrides.
 
 **14.3** Both traits are blanket-implemented. No manual implementation is
 required.
@@ -898,7 +906,6 @@ fn do_work() -> Result<u32, String> { Ok(42) }
 
 let v = do_work
     .retry()
-    .stop(stop::attempts(3))
     .call()?;
 ```
 
