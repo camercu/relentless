@@ -39,6 +39,9 @@ serde = { version = "1", default-features = false, features = ["derive"], option
 tokio-util = { version = "0.7", default-features = false, optional = true }
 
 [dev-dependencies]
+# Satisfies embassy-time driver symbols when running crate-local
+# all-features test/lint commands on host targets.
+embassy-time = { version = "0.3", default-features = false, features = ["mock-driver"] }
 serde_json = "1"
 stats_alloc = "0.1"
 

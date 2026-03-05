@@ -331,9 +331,13 @@ When checking `embassy-sleep` on desktop hosts, use compile-only verification:
 cargo check --features embassy-sleep
 ```
 
-Running `cargo test --all-features` on a host target can fail to link because
-`embassy-time` expects a platform time driver symbol provided by embedded
-targets.
+In this repository, `cargo test --all-features` works on host targets because
+dev-dependencies enable `embassy-time`'s `mock-driver` feature for local test
+and lint runs.
+
+For downstream binaries using `embassy-sleep`, you still need exactly one
+Embassy time driver in the final crate graph (for example, a HAL-provided
+driver on embedded targets). Without a driver, linking fails.
 
 ## MSRV
 
