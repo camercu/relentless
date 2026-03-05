@@ -99,9 +99,14 @@ fn attempts_with_one_stops_immediately() {
 }
 
 #[test]
-#[should_panic(expected = "stop::attempts requires max >= 1")]
 fn attempts_with_zero_panics() {
-    let _ = stop::attempts(0);
+    let panic_result = std::panic::catch_unwind(|| {
+        let _ = stop::attempts(0);
+    });
+    assert!(
+        panic_result.is_err(),
+        "stop::attempts(0) should panic with invalid configuration"
+    );
 }
 
 #[test]

@@ -12,6 +12,7 @@
 use core::time::Duration;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use tenacious::Predicate;
@@ -72,6 +73,11 @@ fn stop_trait_reset_has_default_impl() {
         max: STOP_AFTER_MAX_ATTEMPTS,
     };
     stop.reset();
+    let state = make_retry_state(1);
+    assert!(
+        !stop.should_stop(&state),
+        "default reset must be callable without changing stop behavior"
+    );
 }
 
 /// A Stop impl that overrides reset to verify custom reset works.
@@ -170,6 +176,12 @@ fn wait_trait_reset_has_default_impl() {
         dur: ARBITRARY_DURATION,
     };
     wait.reset();
+    let state = make_retry_state(1);
+    assert_eq!(
+        wait.next_wait(&state),
+        ARBITRARY_DURATION,
+        "default reset must be callable without changing wait behavior"
+    );
 }
 
 /// A Wait impl that overrides reset — counts calls and produces increasing waits.
@@ -225,8 +237,8 @@ fn stop_and_wait_are_not_generic_over_result_type() {
 
     // The same stop and wait instances work regardless of operation type —
     // no <T, E> parameterization needed. This is a compile-time check.
-    let _ = stop.should_stop(&state);
-    let _ = wait.next_wait(&state);
+    assert!(!stop.should_stop(&state));
+    assert_eq!(wait.next_wait(&state), ARBITRARY_DURATION);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,17 +351,32 @@ impl Sleeper for ImmediateSleeper {
     }
 }
 
+/// Creates a no-op waker for polling futures in unit tests.
+fn noop_waker() -> std::task::Waker {
+    struct NoopWake;
+    impl std::task::Wake for NoopWake {
+        fn wake(self: Arc<Self>) {}
+    }
+    std::task::Waker::from(Arc::new(NoopWake))
+}
+
 #[test]
 fn sleeper_trait_direct_impl() {
     let sleeper = ImmediateSleeper;
-    let _fut = sleeper.sleep(ARBITRARY_DURATION);
+    let mut fut = sleeper.sleep(ARBITRARY_DURATION);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
 /// 1.6: Blanket impl — a closure `Fn(Duration) -> Fut` satisfies Sleeper.
 #[test]
 fn sleeper_blanket_impl_for_closure() {
     let sleeper_fn = |_dur: Duration| Immediate;
-    let _fut = Sleeper::sleep(&sleeper_fn, ARBITRARY_DURATION);
+    let mut fut = Sleeper::sleep(&sleeper_fn, ARBITRARY_DURATION);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
 /// Verify the blanket impl works with a closure returning a different future type.
@@ -371,7 +398,11 @@ impl Future for DelayedReady {
 #[test]
 fn sleeper_blanket_impl_different_future_type() {
     let sleeper_fn = |_dur: Duration| DelayedReady(false);
-    let _fut = Sleeper::sleep(&sleeper_fn, Duration::ZERO);
+    let mut fut = Sleeper::sleep(&sleeper_fn, Duration::ZERO);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Pending));
+    assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
 // ---------------------------------------------------------------------------
@@ -476,10 +507,13 @@ fn before_attempt_state_does_not_have_outcome() {
         total_wait: Duration::ZERO,
     };
     let tenacious::BeforeAttemptState {
-        attempt: _,
-        elapsed: _,
-        total_wait: _,
+        attempt,
+        elapsed,
+        total_wait,
     } = state;
+    assert_eq!(attempt, 1);
+    assert_eq!(elapsed, None);
+    assert_eq!(total_wait, Duration::ZERO);
 }
 
 #[test]
@@ -738,6 +772,9 @@ fn _assert_send_sync<T: Send + Sync>() {}
 #[test]
 fn default_retry_policy_is_send_and_sync() {
     _assert_send_sync::<tenacious::RetryPolicy>();
+    let mut policy = tenacious::RetryPolicy::default();
+    let result = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
+    assert_eq!(result, Ok(()));
 }
 
 // ---------------------------------------------------------------------------

@@ -266,7 +266,8 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let retry = policy
         .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep);
-    let _typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    let typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
 #[test]

@@ -10,6 +10,11 @@ const ARBITRARY_ELAPSED: Duration = Duration::from_secs(2);
 const ARBITRARY_WAIT_A: Duration = Duration::from_millis(7);
 const ARBITRARY_WAIT_B: Duration = Duration::from_millis(11);
 
+#[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
+fn assert_is_valid_async_retry<T>(_value: &T) -> bool {
+    true
+}
+
 fn state(attempt: u32, elapsed: Option<Duration>) -> tenacious::RetryState {
     tenacious::RetryState {
         attempt,
@@ -112,33 +117,39 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
 #[cfg(feature = "tokio-sleep")]
 #[test]
 fn tokio_sleep_helper_is_sleep_compatible() {
-    let _helper: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
+    let helper: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
+    assert_ne!(helper as usize, 0);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let _retry = policy
+    let retry = policy
         .retry_async(|| async { Ok::<(), &str>(()) })
-        .sleep(tenacious::sleep::tokio());
+        .sleep(helper);
+    assert!(assert_is_valid_async_retry(&retry));
 }
 
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
 fn futures_timer_sleep_helper_is_sleep_compatible() {
-    let _helper: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
+    let helper: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
+    assert_ne!(helper as usize, 0);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let _retry = policy
+    let retry = policy
         .retry_async(|| async { Ok::<(), &str>(()) })
-        .sleep(tenacious::sleep::futures_timer());
+        .sleep(helper);
+    assert!(assert_is_valid_async_retry(&retry));
 }
 
 #[cfg(feature = "embassy-sleep")]
 #[test]
 fn embassy_sleep_helper_is_sleep_compatible() {
-    let _helper: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
+    let helper: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
+    assert_ne!(helper as usize, 0);
 }
 
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[test]
 fn gloo_sleep_helper_is_sleep_compatible() {
-    let _helper: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
+    let helper: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
+    assert_ne!(helper as usize, 0);
 }

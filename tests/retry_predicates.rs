@@ -63,18 +63,28 @@ fn err(error: TestError) -> TestResult {
 fn factory_functions_return_predicates() {
     let any_error = on::any_error();
     assert_predicate_impl::<u32, TestError, _>(&any_error);
+    assert!(any_error.should_retry(&err(TestError::Fatal)));
+    assert!(!any_error.should_retry(&ok(ARBITRARY_OK_VALUE)));
 
     let error = on::error(|error: &TestError| matches!(error, TestError::Retryable));
     assert_predicate_impl::<u32, TestError, _>(&error);
+    assert!(error.should_retry(&err(TestError::Retryable)));
+    assert!(!error.should_retry(&err(TestError::Fatal)));
 
     let result = on::result(|outcome: &TestResult| outcome.is_err());
     assert_predicate_impl::<u32, TestError, _>(&result);
+    assert!(result.should_retry(&err(TestError::Retryable)));
+    assert!(!result.should_retry(&ok(ARBITRARY_OK_VALUE)));
 
-    let ok = on::ok(|value: &u32| *value < READY_THRESHOLD);
-    assert_predicate_impl::<u32, TestError, _>(&ok);
+    let ok_predicate = on::ok(|value: &u32| *value < READY_THRESHOLD);
+    assert_predicate_impl::<u32, TestError, _>(&ok_predicate);
+    assert!(ok_predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
 
     let wait_for_ok = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD);
     assert_predicate_impl::<u32, TestError, _>(&wait_for_ok);
+    assert!(wait_for_ok.should_retry(&err(TestError::Fatal)));
+    assert!(!wait_for_ok.should_retry(&ok(READY_VALUE)));
 }
 
 // ---------------------------------------------------------------------------
