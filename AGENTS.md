@@ -27,7 +27,7 @@ The spec is in [SPEC.md](/docs/SPEC.md).
   code areas. Never revert changes you did not make.
 - Before committing, run `git status --short` and include only intended files
   associated with a single logical change.
-- Always commit atomically: `git add <explicit-files> && git commit -m "<message>"`
+- Always commit atomically: `git add <explicit-files> && git commit -m "<message>" -- <explicit-files>`
 - Treat [`docs/SPEC.md`](/docs/SPEC.md) as authoritative by default.
 - If an implementation improvement conflicts with spec behavior, stop and
   present the exact conflict, implications, and recommendation before changing
