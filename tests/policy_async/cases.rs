@@ -559,26 +559,50 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 #[test]
 fn tokio_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
-    assert_ne!(sleep_fn as usize, 0);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(sleep_fn),
+    );
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 #[cfg(feature = "embassy-sleep")]
 #[test]
 fn embassy_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
-    assert_ne!(sleep_fn as usize, 0);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(sleep_fn),
+    );
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[test]
 fn gloo_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
-    assert_ne!(sleep_fn as usize, 0);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(sleep_fn),
+    );
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
 fn futures_timer_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
-    assert_ne!(sleep_fn as usize, 0);
+    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .sleep(sleep_fn),
+    );
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }

@@ -2,6 +2,10 @@
 
 use core::time::Duration;
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
+use core::{future::Future, pin::Pin, task::Context, task::Poll};
+#[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
+use std::sync::Arc;
+#[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
 use tenacious::RetryPolicy;
 use tenacious::{Predicate, Stop, StopExt, Wait, WaitExt, on, stop, wait};
 
@@ -11,8 +15,25 @@ const ARBITRARY_WAIT_A: Duration = Duration::from_millis(7);
 const ARBITRARY_WAIT_B: Duration = Duration::from_millis(11);
 
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
-fn assert_is_valid_async_retry<T>(_value: &T) -> bool {
-    true
+fn noop_waker() -> std::task::Waker {
+    struct NoopWake;
+    impl std::task::Wake for NoopWake {
+        fn wake(self: Arc<Self>) {}
+    }
+    std::task::Waker::from(Arc::new(NoopWake))
+}
+
+#[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
+fn block_on<F: Future>(future: F) -> F::Output {
+    let mut future = Box::pin(future);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => core::hint::spin_loop(),
+        }
+    }
 }
 
 fn state(attempt: u32, elapsed: Option<Duration>) -> tenacious::RetryState {
@@ -118,26 +139,28 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
 #[test]
 fn tokio_sleep_helper_is_sleep_compatible() {
     let helper: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
-    assert_ne!(helper as usize, 0);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let retry = policy
-        .retry_async(|| async { Ok::<(), &str>(()) })
-        .sleep(helper);
-    assert!(assert_is_valid_async_retry(&retry));
+    let result: Result<(), tenacious::RetryError<&str>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<(), &str>(()) })
+            .sleep(helper),
+    );
+    assert_eq!(result, Ok(()));
 }
 
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
 fn futures_timer_sleep_helper_is_sleep_compatible() {
     let helper: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
-    assert_ne!(helper as usize, 0);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let retry = policy
-        .retry_async(|| async { Ok::<(), &str>(()) })
-        .sleep(helper);
-    assert!(assert_is_valid_async_retry(&retry));
+    let result: Result<(), tenacious::RetryError<&str>> = block_on(
+        policy
+            .retry_async(|| async { Ok::<(), &str>(()) })
+            .sleep(helper),
+    );
+    assert_eq!(result, Ok(()));
 }
 
 #[cfg(feature = "embassy-sleep")]

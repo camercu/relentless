@@ -103,9 +103,24 @@ fn attempts_with_zero_panics() {
     let panic_result = std::panic::catch_unwind(|| {
         let _ = stop::attempts(0);
     });
+    let panic_message = panic_result
+        .as_ref()
+        .err()
+        .and_then(|payload| payload.downcast_ref::<&str>().copied())
+        .or_else(|| {
+            panic_result
+                .as_ref()
+                .err()
+                .and_then(|payload| payload.downcast_ref::<String>().map(String::as_str))
+        })
+        .unwrap_or("<non-string panic payload>");
     assert!(
         panic_result.is_err(),
         "stop::attempts(0) should panic with invalid configuration"
+    );
+    assert!(
+        panic_message.contains("stop::attempts requires max >= 1"),
+        "panic message should explain invalid attempts count, got: {panic_message}"
     );
 }
 
