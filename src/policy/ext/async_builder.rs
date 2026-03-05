@@ -6,7 +6,7 @@ use core::task::{Context, Poll};
 use crate::compat::Duration;
 use pin_project_lite::pin_project;
 
-use super::super::execution::common::{AsyncPhase, poll_async_loop};
+use super::super::execution::common::{AsyncPhase, poll_async_loop, remap_no_sleep_phase};
 use super::super::time::ElapsedTracker;
 use super::super::{
     AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain, RetryPolicy,
@@ -568,16 +568,7 @@ where
             sleeper,
             canceler,
             last_result,
-            phase: match phase {
-                AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
-                AsyncPhase::PollingOperation { op_future } => {
-                    AsyncPhase::PollingOperation { op_future }
-                }
-                AsyncPhase::Sleeping { .. } => {
-                    unreachable!("NoAsyncSleep cannot create sleeping futures")
-                }
-                AsyncPhase::Finished => AsyncPhase::Finished,
-            },
+            phase: remap_no_sleep_phase(phase, "NoAsyncSleep cannot create sleeping futures"),
             attempt,
             total_wait,
             collect_stats,
@@ -609,16 +600,10 @@ where
             sleeper: self.sleeper,
             canceler,
             last_result: self.last_result,
-            phase: match self.phase {
-                AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
-                AsyncPhase::PollingOperation { op_future } => {
-                    AsyncPhase::PollingOperation { op_future }
-                }
-                AsyncPhase::Sleeping { .. } => {
-                    unreachable!("cancel_on cannot observe a sleeping phase before polling")
-                }
-                AsyncPhase::Finished => AsyncPhase::Finished,
-            },
+            phase: remap_no_sleep_phase(
+                self.phase,
+                "cancel_on cannot observe a sleeping phase before polling",
+            ),
             attempt: self.attempt,
             total_wait: self.total_wait,
             collect_stats: self.collect_stats,
@@ -754,6 +739,7 @@ where
     }
 }
 
+#[allow(private_bounds)]
 impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
     for AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
@@ -800,6 +786,7 @@ where
     }
 }
 
+#[allow(private_bounds)]
 impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
     for AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where

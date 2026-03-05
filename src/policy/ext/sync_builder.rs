@@ -433,6 +433,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     }
 }
 
+#[allow(private_bounds)]
 impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
@@ -475,6 +476,7 @@ where
     }
 }
 
+#[allow(private_bounds)]
 impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where

@@ -195,6 +195,7 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     }
 }
 
+#[allow(private_bounds)]
 impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
@@ -235,6 +236,7 @@ where
     }
 }
 
+#[allow(private_bounds)]
 impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where

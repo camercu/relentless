@@ -2,7 +2,7 @@ use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 
 /// Hook callback shape for the `before_attempt` hook.
 #[doc(hidden)]
-pub trait BeforeAttemptHook {
+pub(crate) trait BeforeAttemptHook {
     /// Invokes the hook.
     fn call(&mut self, state: &BeforeAttemptState);
 }
@@ -22,7 +22,7 @@ where
 
 /// Hook callback shape for hooks receiving an [`AttemptState`].
 #[doc(hidden)]
-pub trait AttemptHook<T, E> {
+pub(crate) trait AttemptHook<T, E> {
     /// Invokes the hook.
     fn call(&mut self, state: &AttemptState<'_, T, E>);
 }
@@ -42,7 +42,7 @@ where
 
 /// Hook callback shape for the `on_exit` hook.
 #[doc(hidden)]
-pub trait ExitHook<T, E> {
+pub(crate) trait ExitHook<T, E> {
     /// Invokes the hook.
     fn call(&mut self, state: &ExitState<'_, T, E>);
 }
