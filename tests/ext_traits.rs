@@ -2,6 +2,7 @@
 #![cfg(feature = "std")]
 
 use core::cell::Cell;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -155,6 +156,55 @@ fn retry_ext_predicate_rejected_returns_error_immediately() {
     ));
 }
 
+#[test]
+fn retry_ext_cancel_before_first_attempt_returns_cancelled() {
+    let flag = AtomicBool::new(true);
+    let result = (|| Err::<i32, &str>(ERROR_VALUE))
+        .retry()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .sleep(instant_sleep)
+        .cancel_on(&flag)
+        .call();
+
+    assert!(matches!(
+        result,
+        Err(RetryError::Cancelled {
+            attempts: 0,
+            last_result: None,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn retry_ext_cancel_after_attempt_preserves_last_result() {
+    let flag = AtomicBool::new(false);
+    let calls = Cell::new(0_u32);
+
+    let result = (|| {
+        calls.set(calls.get().saturating_add(1));
+        Err::<i32, &str>(ERROR_VALUE)
+    })
+    .retry()
+    .stop(stop::attempts(MAX_ATTEMPTS))
+    .wait(wait::fixed(Duration::ZERO))
+    .sleep(|_dur| {
+        flag.store(true, Ordering::Relaxed);
+    })
+    .cancel_on(&flag)
+    .call();
+
+    assert_eq!(calls.get(), 1);
+    assert!(matches!(
+        result,
+        Err(RetryError::Cancelled {
+            attempts: 1,
+            last_result: Some(Err(ERROR_VALUE)),
+            ..
+        })
+    ));
+}
+
 #[cfg(feature = "alloc")]
 mod async_tests {
     use core::future::{Future, ready};
@@ -269,6 +319,59 @@ mod async_tests {
             Err(RetryError::Exhausted { attempts: 2, .. })
         ));
         assert_eq!(stats.attempts, 2);
+    }
+
+    #[test]
+    fn async_retry_ext_cancel_before_first_attempt_returns_cancelled() {
+        let flag = AtomicBool::new(true);
+
+        let result = block_on(
+            (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
+                .retry_async()
+                .stop(stop::attempts(MAX_ATTEMPTS))
+                .sleep(|_dur| ready(()))
+                .cancel_on(&flag),
+        );
+
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 0,
+                last_result: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn async_retry_ext_cancel_after_attempt_preserves_last_result() {
+        let flag = AtomicBool::new(false);
+        let calls = Cell::new(0_u32);
+
+        let result = block_on(
+            (|| {
+                calls.set(calls.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+            })
+            .retry_async()
+            .stop(stop::attempts(MAX_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .sleep(|_dur| {
+                flag.store(true, Ordering::Relaxed);
+                ready(())
+            })
+            .cancel_on(&flag),
+        );
+
+        assert_eq!(calls.get(), 1);
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err(ERROR_VALUE)),
+                ..
+            })
+        ));
     }
 
     #[cfg(debug_assertions)]

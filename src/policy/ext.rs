@@ -2,10 +2,15 @@ use core::marker::PhantomData;
 
 use super::common::execute_sync_loop;
 #[cfg(feature = "alloc")]
-use super::common::{AttemptTransition, poll_after_completion, transition_from_outcome};
+use super::common::{
+    AsyncOperationPoll, AsyncPhase, AsyncPhaseProj, fire_before_attempt, poll_after_completion,
+    poll_operation_future,
+};
 #[cfg(feature = "alloc")]
 use super::time::ElapsedTracker;
 use super::*;
+#[cfg(feature = "alloc")]
+use crate::StopReason;
 #[cfg(feature = "alloc")]
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
@@ -16,7 +21,7 @@ use crate::{
 };
 
 use super::sync::{NoSyncSleep, SyncSleep};
-use crate::cancel::NeverCancel;
+use crate::cancel::{Canceler, NeverCancel};
 
 /// Extension trait to start sync retries directly from a closure/function.
 pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
@@ -44,6 +49,7 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
         NoSyncSleep,
         T,
         E,
+        NeverCancel,
     >;
 }
 
@@ -65,59 +71,63 @@ where
         NoSyncSleep,
         T,
         E,
+        NeverCancel,
     > {
         SyncRetryBuilder {
             policy: RetryPolicy::new(),
             hooks: ExecutionHooks::new(),
             op: self,
             sleeper: NoSyncSleep,
+            canceler: NeverCancel,
             _marker: PhantomData,
         }
     }
 }
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
-pub struct SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+pub struct SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
     policy: RetryPolicy<S, W, P>,
     hooks: ExecutionHooks<BA, AA, BS, OX>,
     op: F,
     sleeper: SleepFn,
+    canceler: C,
     _marker: PhantomData<fn() -> (T, E)>,
 }
 
 /// Owned sync retry builder wrapper that returns statistics.
-pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
-    inner: SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>,
+pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
+    inner: SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>,
 }
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, BS, OX, F, SleepFn, T, E>;
+type SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, BS, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, BS, OX, F, SleepFn, T, E>;
+type SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, BS, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetryBuilder<S, W, P, BA, AA, HookChain<BS, Hook>, OX, F, SleepFn, T, E>;
+type SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, BA, AA, HookChain<BS, Hook>, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetryBuilder<S, W, P, BA, AA, BS, HookChain<OX, Hook>, F, SleepFn, T, E>;
+type SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, BA, AA, BS, HookChain<OX, Hook>, F, SleepFn, T, E, C>;
 
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 {
     fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
         self,
         map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-    ) -> SyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, SleepFn, T, E> {
+    ) -> SyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
             op,
             sleeper,
+            canceler,
             ..
         } = self;
         SyncRetryBuilder {
@@ -125,6 +135,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks: map(hooks),
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
@@ -134,12 +145,13 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> SyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
             op,
             sleeper,
+            canceler,
             ..
         } = self;
         SyncRetryBuilder {
@@ -147,6 +159,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks,
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
@@ -156,12 +169,13 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> SyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
             op,
             sleeper,
+            canceler,
             ..
         } = self;
         SyncRetryBuilder {
@@ -169,6 +183,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks,
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
@@ -178,12 +193,13 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> SyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
             op,
             sleeper,
+            canceler,
             ..
         } = self;
         SyncRetryBuilder {
@@ -191,6 +207,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks,
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
@@ -203,6 +220,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks,
             op,
             sleeper,
+            canceler,
             ..
         } = self;
         SyncRetryBuilder {
@@ -210,6 +228,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
             hooks,
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
@@ -219,30 +238,35 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, NewSleep, T, E> {
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, NewSleep, T, E, C> {
         let Self {
-            policy, hooks, op, ..
+            policy,
+            hooks,
+            op,
+            canceler,
+            ..
         } = self;
         SyncRetryBuilder {
             policy,
             hooks,
             op,
             sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 {
     /// Appends a before-attempt hook.
     #[must_use]
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -254,7 +278,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
@@ -266,7 +290,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn before_sleep<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
@@ -278,7 +302,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -287,8 +311,8 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, (), AA, BS, OX, F, SleepFn, T, E>
+impl<S, W, P, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, (), AA, BS, OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole before-attempt hook (no-alloc mode).
     ///
@@ -305,7 +329,7 @@ impl<S, W, P, AA, BS, OX, F, SleepFn, T, E>
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, Hook, AA, BS, OX, F, SleepFn, T, E>
+    ) -> SyncRetryBuilder<S, W, P, Hook, AA, BS, OX, F, SleepFn, T, E, C>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -314,8 +338,8 @@ impl<S, W, P, AA, BS, OX, F, SleepFn, T, E>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, (), BS, OX, F, SleepFn, T, E>
+impl<S, W, P, BA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, (), BS, OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
     ///
@@ -332,7 +356,7 @@ impl<S, W, P, BA, BS, OX, F, SleepFn, T, E>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, Hook, BS, OX, F, SleepFn, T, E>
+    ) -> SyncRetryBuilder<S, W, P, BA, Hook, BS, OX, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
@@ -341,8 +365,8 @@ impl<S, W, P, BA, BS, OX, F, SleepFn, T, E>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, (), OX, F, SleepFn, T, E>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, (), OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole before-sleep hook (no-alloc mode).
     ///
@@ -359,7 +383,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
     pub fn before_sleep<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, Hook, OX, F, SleepFn, T, E>
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, Hook, OX, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
@@ -368,8 +392,8 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, BS, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, (), F, SleepFn, T, E>
+impl<S, W, P, BA, AA, BS, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, BS, (), F, SleepFn, T, E, C>
 {
     /// Sets the sole on-exit hook (no-alloc mode).
     ///
@@ -386,7 +410,7 @@ impl<S, W, P, BA, AA, BS, F, SleepFn, T, E>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, Hook, F, SleepFn, T, E>
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, Hook, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -395,7 +419,27 @@ impl<S, W, P, BA, AA, BS, F, SleepFn, T, E>
 }
 
 impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NeverCancel>
+{
+    /// Attaches a canceler that is checked before each attempt and after each sleep.
+    #[must_use]
+    pub fn cancel_on<NewC: Canceler>(
+        self,
+        canceler: NewC,
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NewC> {
+        SyncRetryBuilder {
+            policy: self.policy,
+            hooks: self.hooks,
+            op: self.op,
+            sleeper: self.sleeper,
+            canceler,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
@@ -406,6 +450,7 @@ where
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
+    C: Canceler,
 {
     /// Executes the sync retry loop.
     pub fn call(self) -> Result<T, RetryError<E, T>> {
@@ -416,7 +461,7 @@ where
     #[must_use]
     pub fn with_stats(
         self,
-    ) -> SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
         SyncRetryBuilderWithStats { inner: self }
     }
 
@@ -425,18 +470,18 @@ where
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
         self.policy.stop.reset();
         self.policy.wait.reset();
-        execute_sync_loop::<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NeverCancel, COLLECT_STATS>(
+        execute_sync_loop::<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, COLLECT_STATS>(
             &mut self.policy,
             &mut self.hooks,
             &mut self.op,
             &mut self.sleeper,
-            &NeverCancel,
+            &self.canceler,
         )
     }
 }
 
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
@@ -447,6 +492,7 @@ where
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
+    C: Canceler,
 {
     /// Executes the sync retry loop and returns `(result, stats)`.
     pub fn call(self) -> (Result<T, RetryError<E, T>>, RetryStats) {
@@ -469,22 +515,6 @@ mod async_ext {
 
     use super::*;
     use crate::policy::async_retry::NoAsyncSleep;
-
-    pin_project! {
-        #[project = AsyncPhaseProj]
-        enum AsyncPhase<Fut, SleepFut> {
-            ReadyToStartAttempt,
-            PollingOperation {
-                #[pin]
-                op_future: Fut,
-            },
-            Sleeping {
-                #[pin]
-                sleep_future: SleepFut,
-            },
-            Finished,
-        }
-    }
 
     /// Extension trait to start async retries directly from a closure/function.
     pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
@@ -519,6 +549,8 @@ mod async_ext {
             NoAsyncSleep,
             T,
             E,
+            (),
+            NeverCancel,
         >;
     }
 
@@ -542,6 +574,8 @@ mod async_ext {
             NoAsyncSleep,
             T,
             E,
+            (),
+            NeverCancel,
         > {
             let policy = RetryPolicy::new();
             let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
@@ -550,6 +584,8 @@ mod async_ext {
                 hooks: ExecutionHooks::new(),
                 op: self,
                 sleeper: NoAsyncSleep,
+                canceler: NeverCancel,
+                last_result: None,
                 phase: AsyncPhase::ReadyToStartAttempt,
                 attempt: 1,
                 total_wait: Duration::ZERO,
@@ -568,7 +604,7 @@ mod async_ext {
         /// This future is single-use. Polling after completion is misuse:
         /// debug builds panic, and release builds return `Poll::Pending` unless
         /// `strict-futures` is enabled, in which case they also panic.
-        pub struct AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
+        pub struct AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
         where
             F: FnMut() -> Fut,
             Fut: Future<Output = Result<T, E>>,
@@ -577,6 +613,8 @@ mod async_ext {
             hooks: ExecutionHooks<BA, AA, BS, OX>,
             op: F,
             sleeper: SleepImpl,
+            canceler: C,
+            last_result: Option<Result<T, E>>,
             #[pin]
             phase: AsyncPhase<Fut, SleepFut>,
             attempt: u32,
@@ -591,17 +629,17 @@ mod async_ext {
 
     pin_project! {
         /// Owned async retry builder wrapper that returns statistics.
-        pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
+        pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
         where
             F: FnMut() -> Fut,
             Fut: Future<Output = Result<T, E>>,
         {
             #[pin]
-            inner: AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>,
+            inner: AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
         }
     }
 
-    type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E> =
+    type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C> =
         AsyncRetryBuilder<
             S,
             W,
@@ -616,6 +654,7 @@ mod async_ext {
             T,
             E,
             <SleepImpl as Sleeper>::Sleep,
+            C,
         >;
 
     #[cfg(feature = "alloc")]
@@ -633,6 +672,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
         Hook,
     > = AsyncRetryBuilder<
         S,
@@ -648,6 +688,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
     >;
 
     #[cfg(feature = "alloc")]
@@ -665,6 +706,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
         Hook,
     > = AsyncRetryBuilder<
         S,
@@ -680,6 +722,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
     >;
 
     #[cfg(feature = "alloc")]
@@ -697,6 +740,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
         Hook,
     > = AsyncRetryBuilder<
         S,
@@ -712,6 +756,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
     >;
 
     #[cfg(feature = "alloc")]
@@ -729,6 +774,7 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
         Hook,
     > = AsyncRetryBuilder<
         S,
@@ -744,13 +790,14 @@ mod async_ext {
         T,
         E,
         SleepFut,
+        C,
     >;
 
     // Intentional: hook/type-state plumbing keeps full static guarantees and
     // zero-cost generics, which naturally yields long concrete return types.
     #[allow(clippy::type_complexity)]
-    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
-        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -760,13 +807,29 @@ mod async_ext {
             map: impl FnOnce(
                 ExecutionHooks<BA, AA, BS, OX>,
             ) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-        ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, Fut, SleepImpl, T, E, SleepFut>
-        {
+        ) -> AsyncRetryBuilder<
+            S,
+            W,
+            P,
+            NewBA,
+            NewAA,
+            NewBS,
+            NewOX,
+            F,
+            Fut,
+            SleepImpl,
+            T,
+            E,
+            SleepFut,
+            C,
+        > {
             let Self {
                 policy,
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -781,6 +844,8 @@ mod async_ext {
                 hooks: map(hooks),
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -797,13 +862,15 @@ mod async_ext {
         pub fn stop<NewStop>(
             self,
             stop: NewStop,
-        ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+        ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
         {
             let Self {
                 policy,
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -820,6 +887,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -836,13 +905,15 @@ mod async_ext {
         pub fn wait<NewWait>(
             self,
             wait: NewWait,
-        ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+        ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
         {
             let Self {
                 policy,
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -859,6 +930,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -875,13 +948,29 @@ mod async_ext {
         pub fn when<NewPredicate>(
             self,
             predicate: NewPredicate,
-        ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
-        {
+        ) -> AsyncRetryBuilder<
+            S,
+            W,
+            NewPredicate,
+            BA,
+            AA,
+            BS,
+            OX,
+            F,
+            Fut,
+            SleepImpl,
+            T,
+            E,
+            SleepFut,
+            C,
+        > {
             let Self {
                 policy,
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -898,6 +987,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -917,6 +1008,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -932,6 +1025,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -947,7 +1042,7 @@ mod async_ext {
         #[must_use]
         pub fn with_stats(
             self,
-        ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+        ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
         {
             let mut inner = self;
             inner.collect_stats = true;
@@ -955,8 +1050,8 @@ mod async_ext {
         }
     }
 
-    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E>
-        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, ()>
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C>
+        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, (), C>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -966,7 +1061,7 @@ mod async_ext {
         pub fn sleep<NewSleep>(
             self,
             sleeper: NewSleep,
-        ) -> AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, NewSleep, T, E>
+        ) -> AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, NewSleep, T, E, C>
         where
             NewSleep: Sleeper,
         {
@@ -974,6 +1069,8 @@ mod async_ext {
                 policy,
                 hooks,
                 op,
+                canceler,
+                last_result,
                 phase,
                 attempt,
                 total_wait,
@@ -988,6 +1085,8 @@ mod async_ext {
                 hooks,
                 op,
                 sleeper,
+                canceler,
+                last_result,
                 phase: match phase {
                     AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
                     AsyncPhase::PollingOperation { op_future } => {
@@ -1009,12 +1108,44 @@ mod async_ext {
         }
     }
 
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        /// Attaches a canceler that is checked before each attempt and after each sleep.
+        #[must_use]
+        pub fn cancel_on<NewC: Canceler>(
+            self,
+            canceler: NewC,
+        ) -> AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC>
+        {
+            AsyncRetryBuilder {
+                policy: self.policy,
+                hooks: self.hooks,
+                op: self.op,
+                sleeper: self.sleeper,
+                canceler,
+                last_result: self.last_result,
+                phase: self.phase,
+                attempt: self.attempt,
+                total_wait: self.total_wait,
+                collect_stats: self.collect_stats,
+                final_stats: self.final_stats,
+                elapsed_tracker: self.elapsed_tracker,
+                started: self.started,
+                _marker: PhantomData,
+            }
+        }
+    }
+
     #[cfg(feature = "alloc")]
     // Intentional: hook chaining preserves type-state and avoids runtime
     // indirection; signatures are long but mechanically structured.
     #[allow(clippy::type_complexity)]
-    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
-        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+        AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -1038,6 +1169,7 @@ mod async_ext {
             T,
             E,
             SleepFut,
+            C,
             Hook,
         >
         where
@@ -1065,6 +1197,7 @@ mod async_ext {
             T,
             E,
             SleepFut,
+            C,
             Hook,
         >
         where
@@ -1092,6 +1225,7 @@ mod async_ext {
             T,
             E,
             SleepFut,
+            C,
             Hook,
         >
         where
@@ -1119,6 +1253,7 @@ mod async_ext {
             T,
             E,
             SleepFut,
+            C,
             Hook,
         >
         where
@@ -1128,8 +1263,8 @@ mod async_ext {
         }
     }
 
-    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-        for AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+        for AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         S: Stop,
         W: Wait,
@@ -1142,6 +1277,7 @@ mod async_ext {
         Fut: Future<Output = Result<T, E>>,
         SleepImpl: Sleeper<Sleep = SleepFut>,
         SleepFut: Future<Output = ()>,
+        C: Canceler,
     {
         type Output = Result<T, RetryError<E, T>>;
 
@@ -1157,45 +1293,136 @@ mod async_ext {
             loop {
                 match this.phase.as_mut().project() {
                     AsyncPhaseProj::ReadyToStartAttempt => {
-                        let before_state = BeforeAttemptState {
-                            attempt: *this.attempt,
-                            elapsed: this.elapsed_tracker.elapsed(),
-                            total_wait: *this.total_wait,
-                        };
-                        this.hooks.before_attempt.call(&before_state);
+                        if this.canceler.is_cancelled() {
+                            let stats = if *this.collect_stats {
+                                Some(RetryStats {
+                                    attempts: *this.attempt - 1,
+                                    total_elapsed: this.elapsed_tracker.elapsed(),
+                                    total_wait: *this.total_wait,
+                                    stop_reason: StopReason::Cancelled,
+                                })
+                            } else {
+                                None
+                            };
+                            let exit_state = ExitState {
+                                attempt: this.attempt.saturating_sub(1),
+                                outcome: this.last_result.as_ref(),
+                                elapsed: this.elapsed_tracker.elapsed(),
+                                total_wait: *this.total_wait,
+                                reason: StopReason::Cancelled,
+                            };
+                            this.hooks.on_exit.call(&exit_state);
+
+                            *this.final_stats = stats;
+                            this.phase.set(AsyncPhase::Finished);
+                            return Poll::Ready(Err(RetryError::Cancelled {
+                                last_result: this.last_result.take(),
+                                attempts: *this.attempt - 1,
+                                total_elapsed: this.elapsed_tracker.elapsed(),
+                            }));
+                        }
+
+                        fire_before_attempt(
+                            &mut *this.hooks,
+                            *this.attempt,
+                            this.elapsed_tracker.elapsed(),
+                            *this.total_wait,
+                        );
                         this.phase.set(AsyncPhase::PollingOperation {
                             op_future: (this.op)(),
                         });
                     }
-                    AsyncPhaseProj::PollingOperation { op_future } => match op_future.poll(cx) {
-                        Poll::Pending => return Poll::Pending,
-                        Poll::Ready(outcome) => {
-                            match transition_from_outcome(
-                                &mut *this.policy,
-                                &mut *this.hooks,
-                                outcome,
-                                *this.attempt,
-                                this.elapsed_tracker.elapsed(),
-                                *this.total_wait,
-                                *this.collect_stats,
-                            ) {
-                                AttemptTransition::Finished { result, stats } => {
-                                    *this.final_stats = stats;
-                                    this.phase.set(AsyncPhase::Finished);
-                                    return Poll::Ready(result);
-                                }
-                                AttemptTransition::Sleep { next_delay, .. } => {
-                                    *this.total_wait = this.total_wait.saturating_add(next_delay);
-                                    this.phase.set(AsyncPhase::Sleeping {
-                                        sleep_future: this.sleeper.sleep(next_delay),
-                                    });
-                                }
-                            }
+                    AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
+                        op_future,
+                        cx,
+                        &mut *this.policy,
+                        &mut *this.hooks,
+                        *this.attempt,
+                        this.elapsed_tracker,
+                        *this.total_wait,
+                        *this.collect_stats,
+                    ) {
+                        AsyncOperationPoll::Pending => return Poll::Pending,
+                        AsyncOperationPoll::Finished { result, stats } => {
+                            *this.final_stats = stats;
+                            this.phase.set(AsyncPhase::Finished);
+                            return Poll::Ready(result);
+                        }
+                        AsyncOperationPoll::Sleep {
+                            next_delay,
+                            last_result,
+                        } => {
+                            *this.last_result = Some(last_result);
+                            *this.total_wait = this.total_wait.saturating_add(next_delay);
+                            this.phase.set(AsyncPhase::Sleeping {
+                                sleep_future: this.sleeper.sleep(next_delay),
+                            });
                         }
                     },
                     AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
-                        Poll::Pending => return Poll::Pending,
+                        Poll::Pending => {
+                            if this.canceler.is_cancelled() {
+                                let stats = if *this.collect_stats {
+                                    Some(RetryStats {
+                                        attempts: *this.attempt,
+                                        total_elapsed: this.elapsed_tracker.elapsed(),
+                                        total_wait: *this.total_wait,
+                                        stop_reason: StopReason::Cancelled,
+                                    })
+                                } else {
+                                    None
+                                };
+
+                                let exit_state = ExitState {
+                                    attempt: *this.attempt,
+                                    outcome: this.last_result.as_ref(),
+                                    elapsed: this.elapsed_tracker.elapsed(),
+                                    total_wait: *this.total_wait,
+                                    reason: StopReason::Cancelled,
+                                };
+                                this.hooks.on_exit.call(&exit_state);
+                                let last_result = this.last_result.take();
+
+                                *this.final_stats = stats;
+                                this.phase.set(AsyncPhase::Finished);
+                                return Poll::Ready(Err(RetryError::Cancelled {
+                                    last_result,
+                                    attempts: *this.attempt,
+                                    total_elapsed: this.elapsed_tracker.elapsed(),
+                                }));
+                            }
+                            return Poll::Pending;
+                        }
                         Poll::Ready(()) => {
+                            if this.canceler.is_cancelled() {
+                                let stats = if *this.collect_stats {
+                                    Some(RetryStats {
+                                        attempts: *this.attempt,
+                                        total_elapsed: this.elapsed_tracker.elapsed(),
+                                        total_wait: *this.total_wait,
+                                        stop_reason: StopReason::Cancelled,
+                                    })
+                                } else {
+                                    None
+                                };
+                                let exit_state = ExitState {
+                                    attempt: *this.attempt,
+                                    outcome: this.last_result.as_ref(),
+                                    elapsed: this.elapsed_tracker.elapsed(),
+                                    total_wait: *this.total_wait,
+                                    reason: StopReason::Cancelled,
+                                };
+                                this.hooks.on_exit.call(&exit_state);
+
+                                *this.final_stats = stats;
+                                this.phase.set(AsyncPhase::Finished);
+                                return Poll::Ready(Err(RetryError::Cancelled {
+                                    last_result: this.last_result.take(),
+                                    attempts: *this.attempt,
+                                    total_elapsed: this.elapsed_tracker.elapsed(),
+                                }));
+                            }
+
                             *this.attempt = this.attempt.saturating_add(1);
                             this.phase.set(AsyncPhase::ReadyToStartAttempt);
                         }
@@ -1208,8 +1435,23 @@ mod async_ext {
         }
     }
 
-    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-        for AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+        for AsyncRetryBuilderWithStats<
+            S,
+            W,
+            P,
+            BA,
+            AA,
+            BS,
+            OX,
+            F,
+            Fut,
+            SleepImpl,
+            T,
+            E,
+            SleepFut,
+            C,
+        >
     where
         S: Stop,
         W: Wait,
@@ -1222,6 +1464,7 @@ mod async_ext {
         Fut: Future<Output = Result<T, E>>,
         SleepImpl: Sleeper<Sleep = SleepFut>,
         SleepFut: Future<Output = ()>,
+        C: Canceler,
     {
         type Output = (Result<T, RetryError<E, T>>, RetryStats);
 
