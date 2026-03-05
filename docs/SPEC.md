@@ -74,7 +74,10 @@ tenacious/
 │   on.rs                # built-in retry predicate factories and composition
 │   policy/
 │   ├── mod.rs           # RetryPolicy builder + policy module surface
-│   ├── ext.rs           # extension-trait builders
+│   ├── ext/
+│   │   ├── mod.rs        # extension-trait module surface
+│   │   ├── sync_builder.rs
+│   │   └── async_builder.rs
 │   ├── execution/
 │   │   ├── hooks.rs     # hook traits/chaining internals
 │   │   ├── common.rs    # shared retry-loop transitions
@@ -93,6 +96,7 @@ tenacious/
 │   wait_strategies.rs
 │   retry_predicates.rs
 │   policy_sync.rs
+│   policy_sync/          # sync policy test modules
 │   policy_async.rs
 │   policy_async/         # async policy test modules
 │   callbacks_hooks.rs
@@ -105,7 +109,7 @@ tenacious/
 ```
 
 > **Planned files:** Iteration 13 adds `src/cancel.rs` (Canceler trait).
-> Iteration 14 adds extension-trait builders under `src/policy/ext.rs`.
+> Iteration 14 adds extension-trait builders under `src/policy/ext/`.
 > Modules listed as single files in examples (for example `stop.rs`, `wait.rs`)
 > may be implemented as directories (`stop/mod.rs`, etc.) when internal
 > splitting aids readability.
@@ -837,7 +841,7 @@ a closure or function pointer, as an alternative to the policy-first style.
 This iteration amends: **10.1** (re-exports gain `RetryExt`, `AsyncRetryExt`),
 **10.5** (prelude gains `RetryExt`, `AsyncRetryExt`).
 
-**14.1** `RetryExt` is defined in `src/policy/ext.rs` and provides a `.retry()`
+**14.1** `RetryExt` is defined in `src/policy/ext/sync_builder.rs` and provides a `.retry()`
 method for any `FnMut() -> Result<T, E>`:
 
 ```rust
