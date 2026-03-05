@@ -92,6 +92,19 @@ pub(crate) enum AsyncOperationPoll<T, E> {
 }
 
 #[cfg(feature = "alloc")]
+pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, OldCancelFut, NewSleepFut, NewCancelFut>(
+    phase: AsyncPhase<Fut, OldSleepFut, OldCancelFut>,
+    unreachable_message: &'static str,
+) -> AsyncPhase<Fut, NewSleepFut, NewCancelFut> {
+    match phase {
+        AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
+        AsyncPhase::PollingOperation { op_future } => AsyncPhase::PollingOperation { op_future },
+        AsyncPhase::Sleeping { .. } => unreachable!("{unreachable_message}"),
+        AsyncPhase::Finished => AsyncPhase::Finished,
+    }
+}
+
+#[cfg(feature = "alloc")]
 pub(crate) fn fire_before_attempt<BA, AA, BS, OX>(
     hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
     attempt: u32,
@@ -154,6 +167,49 @@ where
             },
         },
     }
+}
+
+#[cfg(feature = "alloc")]
+fn finish_cancelled_async<T, E, BA, AA, BS, OX>(
+    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    last_result: &mut Option<Result<T, E>>,
+    attempt: u32,
+    total_wait: Duration,
+    collect_stats: bool,
+    elapsed_tracker: &ElapsedTracker,
+) -> (Result<T, RetryError<E, T>>, Option<RetryStats>)
+where
+    OX: ExitHook<T, E>,
+{
+    let elapsed = elapsed_tracker.elapsed();
+    let stats = if collect_stats {
+        Some(RetryStats {
+            attempts: attempt,
+            total_elapsed: elapsed,
+            total_wait,
+            stop_reason: StopReason::Cancelled,
+        })
+    } else {
+        None
+    };
+
+    let exit_state = ExitState {
+        attempt,
+        outcome: last_result.as_ref(),
+        elapsed,
+        total_wait,
+        reason: StopReason::Cancelled,
+    };
+    hooks.on_exit.call(&exit_state);
+
+    (
+        Err(RetryError::Cancelled {
+            last_result: last_result.take(),
+            attempts: attempt,
+            total_elapsed: elapsed,
+        }),
+        stats,
+    )
 }
 
 pub(super) fn process_attempt_transition<S, W, P, BA, AA, BS, OX, T, E>(
@@ -540,103 +596,57 @@ where
                 cancel_future,
             } => {
                 if let Poll::Ready(()) = cancel_future.poll(cx) {
-                    let stats = if collect_stats {
-                        Some(RetryStats {
-                            attempts: *attempt,
-                            total_elapsed: elapsed_tracker.elapsed(),
-                            total_wait: *total_wait,
-                            stop_reason: StopReason::Cancelled,
-                        })
-                    } else {
-                        None
-                    };
-
-                    let exit_state = ExitState {
-                        attempt: *attempt,
-                        outcome: last_result.as_ref(),
-                        elapsed: elapsed_tracker.elapsed(),
-                        total_wait: *total_wait,
-                        reason: StopReason::Cancelled,
-                    };
-                    hooks.on_exit.call(&exit_state);
-                    let cancelled_last = last_result.take();
+                    let (result, stats) = finish_cancelled_async(
+                        hooks,
+                        last_result,
+                        *attempt,
+                        *total_wait,
+                        collect_stats,
+                        elapsed_tracker,
+                    );
 
                     *final_stats = stats;
                     phase.set(AsyncPhase::Finished);
-                    return Poll::Ready(Err(RetryError::Cancelled {
-                        last_result: cancelled_last,
-                        attempts: *attempt,
-                        total_elapsed: elapsed_tracker.elapsed(),
-                    }));
+                    return Poll::Ready(result);
                 }
 
                 match sleep_future.poll(cx) {
                 Poll::Pending => {
                     if canceler.is_cancelled() {
-                        let stats = if collect_stats {
-                            Some(RetryStats {
-                                attempts: *attempt,
-                                total_elapsed: elapsed_tracker.elapsed(),
-                                total_wait: *total_wait,
-                                stop_reason: StopReason::Cancelled,
-                            })
-                        } else {
-                            None
-                        };
-
-                        let exit_state = ExitState {
-                            attempt: *attempt,
-                            outcome: last_result.as_ref(),
-                            elapsed: elapsed_tracker.elapsed(),
-                            total_wait: *total_wait,
-                            reason: StopReason::Cancelled,
-                        };
-                        hooks.on_exit.call(&exit_state);
-                        let cancelled_last = last_result.take();
+                        let (result, stats) = finish_cancelled_async(
+                            hooks,
+                            last_result,
+                            *attempt,
+                            *total_wait,
+                            collect_stats,
+                            elapsed_tracker,
+                        );
 
                         *final_stats = stats;
                         phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(Err(RetryError::Cancelled {
-                            last_result: cancelled_last,
-                            attempts: *attempt,
-                            total_elapsed: elapsed_tracker.elapsed(),
-                        }));
+                        return Poll::Ready(result);
                     }
                     return Poll::Pending;
                 }
                 Poll::Ready(()) => {
                     if canceler.is_cancelled() {
-                        let stats = if collect_stats {
-                            Some(RetryStats {
-                                attempts: *attempt,
-                                total_elapsed: elapsed_tracker.elapsed(),
-                                total_wait: *total_wait,
-                                stop_reason: StopReason::Cancelled,
-                            })
-                        } else {
-                            None
-                        };
-                        let exit_state = ExitState {
-                            attempt: *attempt,
-                            outcome: last_result.as_ref(),
-                            elapsed: elapsed_tracker.elapsed(),
-                            total_wait: *total_wait,
-                            reason: StopReason::Cancelled,
-                        };
-                        hooks.on_exit.call(&exit_state);
+                        let (result, stats) = finish_cancelled_async(
+                            hooks,
+                            last_result,
+                            *attempt,
+                            *total_wait,
+                            collect_stats,
+                            elapsed_tracker,
+                        );
 
                         *final_stats = stats;
                         phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(Err(RetryError::Cancelled {
-                            last_result: last_result.take(),
-                            attempts: *attempt,
-                            total_elapsed: elapsed_tracker.elapsed(),
-                        }));
+                        return Poll::Ready(result);
                     }
 
-                    *attempt = attempt.saturating_add(1);
-                    phase.set(AsyncPhase::ReadyToStartAttempt);
-                }
+                        *attempt = attempt.saturating_add(1);
+                        phase.set(AsyncPhase::ReadyToStartAttempt);
+                    }
                 }
             }
             AsyncPhaseProj::Finished => {
