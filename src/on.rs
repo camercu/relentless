@@ -5,8 +5,10 @@
 //! - [`error`] retries on selected errors.
 //! - [`result`] retries based on the full `Result<T, E>`.
 //! - [`ok`] retries on selected `Ok` values (polling/wait-for pattern).
+//! - [`wait_for_ok`] retries on any error and on `Ok` values that are not ready.
 //!
 //! Predicates compose with `|` ([`PredicateAny`]) and `&` ([`PredicateAll`]).
+//! Named combinators are also available via [`crate::PredicateExt`].
 
 use crate::predicate::Predicate;
 use core::ops::{BitAnd, BitOr};
@@ -31,6 +33,20 @@ pub struct AnyError;
 /// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
 pub fn any_error() -> AnyError {
     AnyError
+}
+
+impl AnyError {
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
+    }
 }
 
 impl<T, E> Predicate<T, E> for AnyError {
@@ -65,6 +81,20 @@ pub struct ErrorPredicate<F> {
 /// `matcher(e)` returns `true`.
 pub fn error<F>(matcher: F) -> ErrorPredicate<F> {
     ErrorPredicate { matcher }
+}
+
+impl<F> ErrorPredicate<F> {
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
+    }
 }
 
 impl<T, E, F> Predicate<T, E> for ErrorPredicate<F>
@@ -106,6 +136,20 @@ pub fn result<F>(matcher: F) -> ResultPredicate<F> {
     ResultPredicate { matcher }
 }
 
+impl<F> ResultPredicate<F> {
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
+    }
+}
+
 impl<T, E, F> Predicate<T, E> for ResultPredicate<F>
 where
     F: Fn(&Result<T, E>) -> bool,
@@ -141,6 +185,20 @@ pub fn ok<F>(matcher: F) -> OkPredicate<F> {
     OkPredicate { matcher }
 }
 
+impl<F> OkPredicate<F> {
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
+    }
+}
+
 impl<T, E, F> Predicate<T, E> for OkPredicate<F>
 where
     F: Fn(&T) -> bool,
@@ -149,6 +207,50 @@ where
         match outcome {
             Ok(value) => (self.matcher)(value),
             Err(_) => false,
+        }
+    }
+}
+
+/// Predicate for wait-for-condition flows that retries on transient errors and
+/// on `Ok` values that are not yet ready.
+///
+/// Created by [`wait_for_ok`].
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, on};
+///
+/// let predicate = on::wait_for_ok(|value: &u32| *value >= 3);
+///
+/// assert!(predicate.should_retry(&Err::<u32, &str>("transient")));
+/// assert!(predicate.should_retry(&Ok::<u32, &str>(1)));
+/// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
+/// ```
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WaitForOkPredicate<F> {
+    is_ready: F,
+}
+
+/// Produces a predicate that retries while the condition is not met yet.
+///
+/// This helper is tuned for polling loops:
+/// - retries on any `Err(_)`
+/// - retries on `Ok(value)` when `is_ready(value)` is `false`
+/// - accepts `Ok(value)` when `is_ready(value)` is `true`
+pub fn wait_for_ok<F>(is_ready: F) -> WaitForOkPredicate<F> {
+    WaitForOkPredicate { is_ready }
+}
+
+impl<T, E, F> Predicate<T, E> for WaitForOkPredicate<F>
+where
+    F: Fn(&T) -> bool,
+{
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        match outcome {
+            Ok(value) => !(self.is_ready)(value),
+            Err(_) => true,
         }
     }
 }
@@ -178,6 +280,18 @@ impl<A, B> PredicateAny<A, B> {
     /// Creates a composite predicate that retries when either side retries.
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
+    }
+
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
     }
 }
 
@@ -217,6 +331,18 @@ impl<A, B> PredicateAll<A, B> {
     /// Creates a composite predicate that retries only when both sides retry.
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
+    }
+
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+        PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
+        PredicateAll::new(self, rhs)
     }
 }
 
@@ -263,5 +389,6 @@ impl_predicate_ops!(AnyError);
 impl_predicate_ops!(ErrorPredicate<F>, F);
 impl_predicate_ops!(ResultPredicate<F>, F);
 impl_predicate_ops!(OkPredicate<F>, F);
+impl_predicate_ops!(WaitForOkPredicate<F>, F);
 impl_predicate_ops!(PredicateAny<A, B>, A, B);
 impl_predicate_ops!(PredicateAll<A, B>, A, B);

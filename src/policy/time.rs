@@ -31,18 +31,18 @@ impl ElapsedTracker {
     }
 
     pub(super) fn elapsed(&self) -> Option<Duration> {
-        if let Some(start_clock) = self.start_clock {
-            Some((start_clock.clock)().saturating_sub(start_clock.origin))
-        } else {
-            #[cfg(feature = "std")]
-            {
-                Some(self.start.elapsed())
-            }
+        self.start_clock
+            .map(|start_clock| (start_clock.clock)().saturating_sub(start_clock.origin))
+            .or({
+                #[cfg(feature = "std")]
+                {
+                    Some(self.start.elapsed())
+                }
 
-            #[cfg(not(feature = "std"))]
-            {
-                None
-            }
-        }
+                #[cfg(not(feature = "std"))]
+                {
+                    None
+                }
+            })
     }
 }

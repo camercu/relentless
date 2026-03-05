@@ -87,9 +87,12 @@ pub struct AttemptState<'a, T, E> {
 
 /// Final read-only context passed to the `on_exit` hook.
 ///
-/// This contains the last attempt's outcome and termination reason, and fires
-/// once whenever retry execution exits (success, stop condition, or predicate
-/// acceptance).
+/// This contains the last attempt's outcome (when available) and termination
+/// reason, and fires once whenever retry execution exits (success, stop
+/// condition, predicate acceptance, or cancellation).
+///
+/// `outcome` is `None` only when cancellation happens before the first attempt
+/// starts. In all other exit paths, it is `Some(&Result<T, E>)`.
 ///
 /// # Examples
 ///
@@ -108,7 +111,9 @@ pub struct ExitState<'a, T, E> {
     pub attempt: u32,
 
     /// A reference to the final outcome.
-    pub outcome: &'a Result<T, E>,
+    ///
+    /// `None` only when cancellation happens before the first attempt starts.
+    pub outcome: Option<&'a Result<T, E>>,
 
     /// Wall-clock time elapsed since the first attempt began.
     /// `None` when no clock is available.

@@ -1,7 +1,8 @@
 //! Stop trait and built-in stop strategies.
 //!
 //! Stop strategies determine when the retry loop should give up. They compose
-//! with `|` ([`StopAny`]) and `&` ([`StopAll`]).
+//! with `|` ([`StopAny`]) and `&` ([`StopAll`]), or via named methods on
+//! [`StopExt`].
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
@@ -45,6 +46,27 @@ pub trait Stop {
     /// retry loops. The default implementation is a no-op.
     fn reset(&mut self) {}
 }
+
+/// Ergonomic named combinators for [`Stop`] strategies.
+///
+/// These are equivalent to the operator forms:
+/// - `.or(other)` is the same as `|`.
+/// - `.and(other)` is the same as `&`.
+pub trait StopExt: Stop + Sized {
+    /// Returns a strategy that stops when either side stops.
+    #[must_use]
+    fn or<Rhs: Stop>(self, rhs: Rhs) -> StopAny<Self, Rhs> {
+        StopAny::new(self, rhs)
+    }
+
+    /// Returns a strategy that stops only when both sides stop.
+    #[must_use]
+    fn and<Rhs: Stop>(self, rhs: Rhs) -> StopAll<Self, Rhs> {
+        StopAll::new(self, rhs)
+    }
+}
+
+impl<S> StopExt for S where S: Stop + Sized {}
 
 #[cfg(feature = "alloc")]
 impl<S> Stop for Box<S>

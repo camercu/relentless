@@ -64,6 +64,21 @@ pub enum RetryError<E, T = ()> {
         /// Wall-clock time elapsed, or `None` if no clock was available.
         total_elapsed: Option<Duration>,
     },
+
+    /// An external cancellation signal interrupted the retry loop.
+    ///
+    /// Cancellation is checked before each attempt and after each sleep.
+    /// `last_result` is `None` when cancellation fires before the first attempt.
+    Cancelled {
+        /// The outcome from the most recent attempt, or `None` if cancelled
+        /// before the first attempt. When using `on::ok` predicates this
+        /// preserves `Ok` values that the predicate chose to retry.
+        last_result: Option<Result<T, E>>,
+        /// Total number of attempts that completed before cancellation.
+        attempts: u32,
+        /// Wall-clock time elapsed, or `None` if no clock was available.
+        total_elapsed: Option<Duration>,
+    },
 }
 
 impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
@@ -102,6 +117,27 @@ impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
                     attempts, total_elapsed, error
                 )
             }
+            RetryError::Cancelled {
+                last_result,
+                attempts,
+                total_elapsed,
+            } => match last_result {
+                Some(Err(error)) => write!(
+                    f,
+                    "cancelled after {} attempt(s) (elapsed: {:?}): {}",
+                    attempts, total_elapsed, error
+                ),
+                Some(Ok(value)) => write!(
+                    f,
+                    "cancelled after {} attempt(s) (elapsed: {:?}): last value = {:?}",
+                    attempts, total_elapsed, value
+                ),
+                None => write!(
+                    f,
+                    "cancelled after {} attempt(s) (elapsed: {:?})",
+                    attempts, total_elapsed
+                ),
+            },
         }
     }
 }
@@ -117,6 +153,10 @@ where
             RetryError::Exhausted { error, .. } => Some(error),
             RetryError::PredicateRejected { error, .. } => Some(error),
             RetryError::ConditionNotMet { .. } => None,
+            RetryError::Cancelled { last_result, .. } => match last_result {
+                Some(Err(e)) => Some(e as _),
+                _ => None,
+            },
         }
     }
 }

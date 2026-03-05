@@ -488,14 +488,19 @@ fn exit_state_has_required_fields() {
     let outcome = Err::<i32, &str>("fatal");
     let state = tenacious::ExitState {
         attempt: retry_state.attempt,
-        outcome: &outcome,
+        outcome: Some(&outcome),
         elapsed: retry_state.elapsed,
         total_wait: retry_state.total_wait,
         reason: tenacious::StopReason::StopCondition,
     };
 
     assert_eq!(state.attempt, 2);
-    assert!(state.outcome.is_err());
+    assert!(
+        state
+            .outcome
+            .expect("exit outcome should be present here")
+            .is_err()
+    );
     assert_eq!(state.elapsed, None);
     assert_eq!(state.total_wait, Duration::ZERO);
     assert_eq!(state.reason, tenacious::StopReason::StopCondition);

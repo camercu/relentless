@@ -93,9 +93,14 @@ fn retry_ext_hooks_match_policy_hook_points() {
                 .push((state.attempt, state.next_delay));
         })
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-            exit_calls
-                .borrow_mut()
-                .push((state.attempt, state.outcome.is_err(), state.reason));
+            exit_calls.borrow_mut().push((
+                state.attempt,
+                state
+                    .outcome
+                    .expect("outcome should be present when stop triggers")
+                    .is_err(),
+                state.reason,
+            ));
         })
         .sleep(instant_sleep)
         .call();
@@ -224,9 +229,14 @@ mod async_tests {
                     .push((state.attempt, state.next_delay));
             })
             .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-                exit_calls
-                    .borrow_mut()
-                    .push((state.attempt, state.outcome.is_err(), state.reason));
+                exit_calls.borrow_mut().push((
+                    state.attempt,
+                    state
+                        .outcome
+                        .expect("outcome should be present when stop triggers")
+                        .is_err(),
+                    state.reason,
+                ));
             })
             .sleep(|_dur| ready(()));
 

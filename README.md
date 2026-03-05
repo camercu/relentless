@@ -74,28 +74,44 @@ let retry = policy
 # let _ = retry;
 ```
 
-With `tokio-sleep` enabled, you can pass `tenacious::sleep::tokio_sleep`.
+With `tokio-sleep` enabled, you can pass `tenacious::sleep::tokio()`.
 
 ## Polling for conditions
 
-Use `on::ok` when the operation succeeds but the condition is not met yet:
+Use `on::wait_for_ok` for the common polling flow where transient errors and
+"not ready yet" values should both retry:
 
 ```rust
 use tenacious::{RetryPolicy, on, stop};
 
 let mut policy = RetryPolicy::new()
     .stop(stop::attempts(4))
-    .when(on::ok(|v: &i32| *v < 0));
+    .when(on::wait_for_ok(|v: &i32| *v >= 0));
 
-let result = policy.retry(|| Ok::<_, &str>(-1)).sleep(|_dur| {}).call();
-assert!(result.is_err());
+let mut poll = -2;
+let result = policy
+    .retry(|| {
+        poll += 1;
+        if poll == -1 {
+            Err::<i32, &str>("transient")
+        } else {
+            Ok(poll)
+        }
+    })
+    .sleep(|_dur| {})
+    .call();
+assert_eq!(result, Ok(0));
 ```
+
+Use `on::ok` when you only want to retry selected `Ok` values and immediately
+return on any `Err`.
 
 ## Public API overview
 
 - `stop`: stop strategies (`attempts`, `elapsed`, `before_elapsed`, `never`)
 - `wait`: wait strategies (`fixed`, `linear`, `exponential`, composition)
-- `on`: retry predicates (`any_error`, `error`, `ok`, `result`)
+- `on`: retry predicates (`any_error`, `error`, `ok`, `result`,
+  `wait_for_ok`)
 - `RetryPolicy`: reusable retry configuration
 - `SyncRetry` / `AsyncRetry`: execution builders
 - `RetryError`: terminal retry outcomes
@@ -151,11 +167,12 @@ assert_eq!(stats.attempts, 3);
 
 ## Error behavior
 
-`RetryError<E, T>` has three variants:
+`RetryError<E, T>` has four variants:
 
 - `Exhausted`: stop condition fired while operation kept returning `Err`
 - `PredicateRejected`: predicate rejected an `Err` as non-retryable
 - `ConditionNotMet`: stop condition fired while retrying `Ok` values
+- `Cancelled`: cancellation signal interrupted retries
 
 ## Feature flags
 

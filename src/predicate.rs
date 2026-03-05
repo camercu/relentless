@@ -26,6 +26,33 @@ pub trait Predicate<T, E> {
     fn should_retry(&self, outcome: &Result<T, E>) -> bool;
 }
 
+/// Ergonomic named combinators for [`Predicate`] composition.
+///
+/// These are equivalent to the operator forms:
+/// - `.or(other)` is the same as `|`.
+/// - `.and(other)` is the same as `&`.
+pub trait PredicateExt<T, E>: Predicate<T, E> + Sized {
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    fn or<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAny<Self, Rhs>
+    where
+        Rhs: Predicate<T, E>,
+    {
+        crate::on::PredicateAny::new(self, rhs)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    fn and<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAll<Self, Rhs>
+    where
+        Rhs: Predicate<T, E>,
+    {
+        crate::on::PredicateAll::new(self, rhs)
+    }
+}
+
+impl<T, E, P> PredicateExt<T, E> for P where P: Predicate<T, E> + Sized {}
+
 /// Blanket implementation allowing any `Fn(&Result<T, E>) -> bool` to serve
 /// as a [`Predicate`]. This enables inline closure use:
 ///

@@ -17,7 +17,7 @@
 
 ```rust
 use tenacious::prelude::*;
-use tenacious::sleep::tokio_sleep;
+use tenacious::sleep::tokio;
 
 // One-shot inline retry
 let result = RetryPolicy::new()
@@ -28,7 +28,7 @@ let result = RetryPolicy::new()
     .when(on::error(|e: &HttpError| e.status().is_server_error()))
     .retry_async(|| client.get("/api/data"))
     .before_sleep(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
-    .sleep(tokio_sleep)
+    .sleep(tokio())
     .await?;
 
 // Reusable policy stored in a service struct
@@ -43,9 +43,9 @@ let b = policy.retry(|| db.get_order(id)).call()?;
 let record = RetryPolicy::new()
     .stop(stop::elapsed(Duration::from_secs(60)))
     .wait(wait::fixed(Duration::from_secs(1)))
-    .when(on::ok(|v: &Option<Record>| v.is_none()))
+    .when(on::wait_for_ok(Option::is_some))
     .retry_async(|| store.poll_record(id))
-    .sleep(tokio_sleep)
+    .sleep(tokio())
     .await?;
 
 // With statistics
@@ -53,7 +53,7 @@ let (result, stats) = RetryPolicy::new()
     .stop(stop::attempts(5))
     .wait(wait::exponential(Duration::from_millis(200)))
     .retry_async(|| fetch())
-    .sleep(tokio_sleep)
+    .sleep(tokio())
     .with_stats()
     .await;
 
@@ -233,8 +233,8 @@ pub struct BeforeAttemptState {
 
 // Passed to: on_exit hook
 pub struct ExitState<'a, T, E> {
-    pub attempt: u32,             // 1-indexed; the final completed attempt
-    pub outcome: &'a Result<T, E>,
+    pub attempt: u32,             // 1-indexed; 0 only when cancelled before first attempt
+    pub outcome: Option<&'a Result<T, E>>, // None only for pre-first-attempt cancellation
     pub elapsed: Option<Duration>,
     pub total_wait: Duration,
     pub reason: StopReason,
@@ -509,9 +509,10 @@ enabled, in which case they also panic.
 
 **6.5** The async engine does not spawn tasks or use any global state. It is a single poll-based state machine compatible with any executor that implements `core::task`, and does not perform per-attempt heap allocations in the retry loop.
 
-**6.6** When the `tokio-sleep` feature is active, `tenacious::sleep::tokio_sleep` is re-exported as a convenience, equivalent to `tokio::time::sleep`.
-
-**6.7** When the `embassy-sleep` feature is active, `tenacious::sleep::embassy_sleep` is a zero-size struct implementing `Sleeper` using `embassy_time::Timer::after`.
+**6.6** Runtime helper constructors are provided behind feature flags:
+`tenacious::sleep::tokio()`, `tenacious::sleep::embassy()`,
+`tenacious::sleep::gloo()`, and `tenacious::sleep::futures_timer()`. Each
+returns a function pointer compatible with `.sleep(...)`.
 
 **6.8** Hook callbacks in async execution are synchronous:
 `before_attempt` receives `&BeforeAttemptState`, `after_attempt` and
@@ -539,7 +540,8 @@ add complexity disproportionate to the benefit.
 **7.5** `on_exit` fires once when the retry loop terminates for any reason:
 success, stop condition, predicate acceptance, or cancellation (when iteration
 13 is implemented). It receives `ExitState`, which includes the final attempt
-context and a `StopReason`.
+context and a `StopReason`. `ExitState.outcome` is `None` only when
+cancellation fires before the first attempt.
 
 **7.6** Multiple hook callbacks of the same kind can be registered. They fire in registration order. Builder method `.before_sleep(f)` appends to an internal list rather than replacing.
 
@@ -601,7 +603,11 @@ module.
 
 **10.4** All public types have complete documentation including at least one usage example in the doc comment.
 
-**10.5** The crate exposes a `prelude` module re-exporting all traits and the most common factory functions (`stop::attempts`, `stop::elapsed`, `wait::exponential`, `wait::fixed`, `on::any_error`, `on::error`, `on::ok`), allowing `use tenacious::prelude::*` to work without further imports.
+**10.5** The crate exposes a `prelude` module re-exporting all traits and the
+most common factory functions (`stop::attempts`, `stop::elapsed`,
+`wait::exponential`, `wait::fixed`, `on::any_error`, `on::error`, `on::ok`,
+`on::wait_for_ok`), allowing `use tenacious::prelude::*` to work without
+further imports.
 
 **10.6** The minimum supported Rust version (MSRV) is 1.85. This is required by edition 2024 and also covers the stabilization of `async fn in trait` (via RPITIT), which is required for the `Sleeper` associated type. The MSRV is declared in `Cargo.toml` via `rust-version = "1.85"`.
 
@@ -689,13 +695,14 @@ enforced on the builder's type parameters instead of the policy's.
 **12.4** `on_exit` replaces `on_exhausted`. It fires once when the retry loop
 terminates for any reason — success, stop condition, predicate rejection, or
 cancellation (if iteration 13 is active). The callback receives an
-`ExitState<'a, T, E>` containing the final `AttemptState` plus a `StopReason`
-indicating why the loop ended:
+`ExitState<'a, T, E>` containing termination context plus a `StopReason`
+indicating why the loop ended. `outcome` is `None` only when cancellation
+fires before the first attempt:
 
 ```rust
 pub struct ExitState<'a, T, E> {
     pub attempt: u32,
-    pub outcome: &'a Result<T, E>,
+    pub outcome: Option<&'a Result<T, E>>,
     pub elapsed: Option<Duration>,
     pub total_wait: Duration,
     pub reason: StopReason,
@@ -791,15 +798,14 @@ policy
 
 ```rust
 Cancelled {
-    last_error: Option<E>,
+    last_result: Option<Result<T, E>>,
     attempts: u32,
     total_elapsed: Option<Duration>,
 }
 ```
 
-`last_error` is `Some` if the last attempt returned `Err`, `None` if it
-returned `Ok` (which the predicate rejected) or if cancellation fired before
-the first attempt.
+`last_result` is `Some` when cancellation happens after an attempt and `None`
+when cancellation fires before the first attempt.
 
 **13.7** `StopReason` gains a `Cancelled` variant for use in `RetryStats`.
 
@@ -814,7 +820,7 @@ tokio-cancel = ["dep:tokio-util"]
 
 ## Iteration 14: Extension Traits
 
-> **Status:** Planned. Non-breaking addition.
+> **Status:** Implemented.
 
 This iteration adds extension traits that allow starting a retry directly from
 a closure or function pointer, as an alternative to the policy-first style.
@@ -880,7 +886,7 @@ let v = do_work
 
 ## Iteration 15: Ergonomic Additions
 
-> **Status:** Planned. Non-breaking additions.
+> **Status:** Implemented.
 
 This iteration amends: **10.2** (sleep module gains helper constructors),
 **10.5** (prelude gains named combinator extension traits).
@@ -901,13 +907,15 @@ or directly on the traits. They return the same composition types (`StopAny`,
 return closures compatible with `.sleep(...)`:
 
 - `sleep::tokio()` (requires `tokio-sleep`) — equivalent to the current
-  `sleep::tokio_sleep` re-export but as a function returning a closure
+  runtime sleep adapter for Tokio
 - `sleep::embassy()` (requires `embassy-sleep`)
 - `sleep::gloo()` (requires `gloo-timers-sleep`)
 - `sleep::futures_timer()` (requires `futures-timer-sleep`)
 
-The existing direct re-exports (`sleep::tokio_sleep`, `sleep::embassy_sleep`)
-remain available for backwards compatibility.
+**15.3** The `on` module provides `on::wait_for_ok`, a predicate helper for
+polling-style retries where success depends on an `Ok` value becoming "ready."
+It retries on any `Err`, retries on `Ok(value)` when `is_ready(value)` is
+`false`, and accepts `Ok(value)` when `is_ready(value)` is `true`.
 
 ---
 

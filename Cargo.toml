@@ -24,6 +24,7 @@ tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]
 gloo-timers-sleep = ["dep:gloo-timers"]
 futures-timer-sleep = ["dep:futures-timer", "std"]
+tokio-cancel = ["dep:tokio-util"]
 jitter = ["dep:rand"]
 serde = ["dep:serde"]
 strict-futures = []
@@ -35,6 +36,7 @@ embassy-time = { version = "0.3", optional = true }
 futures-timer = { version = "3", optional = true }
 rand = { version = "0.8", default-features = false, features = ["small_rng"], optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+tokio-util = { version = "0.7", default-features = false, optional = true }
 
 [dev-dependencies]
 serde_json = "1"

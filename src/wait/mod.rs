@@ -1,7 +1,8 @@
 //! Wait trait and built-in wait strategies.
 //!
 //! Wait strategies determine the delay between retry attempts. They compose
-//! with `+` ([`WaitCombine`]) and chain via [`.chain()`](WaitChain).
+//! with `+` ([`WaitCombine`]) or [`.add()`](WaitExt::add), and chain via
+//! [`.chain()`](WaitChain).
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
@@ -99,6 +100,17 @@ pub trait WaitExt: Wait + Sized {
     #[must_use]
     fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
         WaitChain::new(self, other, after)
+    }
+
+    /// Adds another wait strategy to this one.
+    ///
+    /// Equivalent to `self + other`.
+    #[must_use]
+    fn add<W2>(self, other: W2) -> WaitCombine<Self, W2>
+    where
+        W2: Wait,
+    {
+        WaitCombine::new(self, other)
     }
 
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.

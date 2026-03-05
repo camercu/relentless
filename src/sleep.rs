@@ -59,60 +59,45 @@ where
     }
 }
 
-/// Tokio sleep re-export convenience.
+/// Returns a Tokio sleep function compatible with `.sleep(...)`.
 ///
-/// Enabled with the `tokio-sleep` feature. Equivalent to `tokio::time::sleep`.
+/// Enabled with the `tokio-sleep` feature.
 #[cfg(feature = "tokio-sleep")]
-pub use tokio::time::sleep as tokio_sleep;
-
-/// Gloo timers sleep re-export convenience.
-///
-/// Enabled with the `gloo-timers-sleep` feature. Equivalent to
-/// `gloo_timers::future::sleep`.
-#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
-pub use gloo_timers::future::sleep as gloo_sleep;
-
-/// Futures timer sleep convenience.
-///
-/// Enabled with the `futures-timer-sleep` feature. Equivalent to
-/// `futures_timer::Delay::new`.
-#[cfg(feature = "futures-timer-sleep")]
-pub fn futures_timer_sleep(dur: Duration) -> futures_timer::Delay {
-    futures_timer::Delay::new(dur)
+#[must_use]
+pub fn tokio() -> fn(Duration) -> tokio::time::Sleep {
+    tokio::time::sleep
 }
 
-/// Zero-sized embassy sleeper implementation.
+/// Returns a Gloo sleep function compatible with `.sleep(...)`.
+///
+/// Enabled with the `gloo-timers-sleep` feature on `wasm32`.
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+#[must_use]
+pub fn gloo() -> fn(Duration) -> gloo_timers::future::TimeoutFuture {
+    gloo_timers::future::sleep
+}
+
+/// Returns a futures-timer sleep function compatible with `.sleep(...)`.
+///
+/// Enabled with the `futures-timer-sleep` feature.
+#[cfg(feature = "futures-timer-sleep")]
+#[must_use]
+pub fn futures_timer() -> fn(Duration) -> futures_timer::Delay {
+    futures_timer::Delay::new
+}
+
+/// Returns an Embassy sleep function compatible with `.sleep(...)`.
 ///
 /// Enabled with the `embassy-sleep` feature.
-///
-/// # Examples
-///
-/// ```
-/// # #[cfg(feature = "embassy-sleep")]
-/// # {
-/// use tenacious::sleep::embassy_sleep;
-/// use tenacious::Sleeper;
-/// use core::time::Duration;
-///
-/// let _future = embassy_sleep.sleep(Duration::from_millis(1));
-/// # }
-/// ```
 #[cfg(feature = "embassy-sleep")]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EmbassySleep;
-
-/// Embassy sleeper value for ergonomic `.sleep(embassy_sleep)` usage.
-#[cfg(feature = "embassy-sleep")]
-#[allow(non_upper_case_globals)]
-pub const embassy_sleep: EmbassySleep = EmbassySleep;
+#[must_use]
+pub fn embassy() -> fn(Duration) -> embassy_time::Timer {
+    embassy_sleep_fn
+}
 
 #[cfg(feature = "embassy-sleep")]
-impl Sleeper for EmbassySleep {
-    type Sleep = embassy_time::Timer;
-
-    fn sleep(&self, dur: Duration) -> Self::Sleep {
-        embassy_time::Timer::after(to_embassy_duration(dur))
-    }
+fn embassy_sleep_fn(dur: Duration) -> embassy_time::Timer {
+    embassy_time::Timer::after(to_embassy_duration(dur))
 }
 
 /// Converts core `Duration` to embassy `Duration`, saturating on overflow.

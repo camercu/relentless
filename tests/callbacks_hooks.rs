@@ -80,9 +80,14 @@ fn on_exit_fires_once_with_final_state() {
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-            exits
-                .borrow_mut()
-                .push((state.attempt, state.outcome.is_err(), state.reason));
+            exits.borrow_mut().push((
+                state.attempt,
+                state
+                    .outcome
+                    .expect("outcome should be present when stop triggers")
+                    .is_err(),
+                state.reason,
+            ));
         })
         .sleep(instant_sleep)
         .call();

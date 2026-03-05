@@ -27,6 +27,8 @@ pub enum StopReason {
     StopCondition,
     /// A custom predicate accepted the current outcome.
     PredicateAccepted,
+    /// An external cancellation signal interrupted the retry loop.
+    Cancelled,
 }
 
 /// Aggregate statistics for a completed retry execution.

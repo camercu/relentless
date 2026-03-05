@@ -81,11 +81,11 @@ pub use policy::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
 pub use policy::{
     RetryExt, SyncRetry, SyncRetryBuilder, SyncRetryBuilderWithStats, SyncRetryWithStats,
 };
-pub use predicate::Predicate;
+pub use predicate::{Predicate, PredicateExt};
 pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
-pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopConfigError};
+pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopConfigError, StopExt};
 #[cfg(feature = "jitter")]
 pub use wait::WaitJitter;
 pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
@@ -109,12 +109,12 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 pub mod prelude {
     #[cfg(feature = "alloc")]
     pub use crate::AsyncRetryExt;
-    pub use crate::on::{any_error, error, ok};
+    pub use crate::on::{any_error, error, ok, wait_for_ok};
     pub use crate::sleep::Sleeper;
     pub use crate::stop::{attempts, elapsed};
     pub use crate::wait::{exponential, fixed};
     pub use crate::{
-        Canceler, Predicate, RetryError, RetryExt, RetryPolicy, RetryStats, Stop, StopReason, Wait,
-        WaitExt,
+        Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryStats, Stop,
+        StopExt, StopReason, Wait, WaitExt,
     };
 }

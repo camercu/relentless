@@ -7,8 +7,7 @@
 //! - `AsyncRetry` is directly awaitable (6.3)
 //! - Async execution loop behavior matches sync semantics (6.4)
 //! - Async execution is executor-agnostic and deterministic in-process (6.5)
-//! - `tokio_sleep` re-export is available behind feature gate (6.6)
-//! - `embassy_sleep` is available behind feature gate (6.7)
+//! - runtime sleep helper constructors are available behind feature gates
 //! - Async hook callbacks are synchronous and fire at the right points (6.8)
 //!
 //! This file also closes deferred retry-predicate execution behavior checks:
@@ -287,6 +286,35 @@ fn async_retry_returns_condition_not_met_for_ok_exhaustion() {
 }
 
 #[test]
+fn async_wait_for_ok_handles_errors_and_not_ready_values() {
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .when(on::wait_for_ok(|value: &i32| *value >= SUCCESS_VALUE));
+    let sleeper = RecordingSleeper::new();
+    let call_count = Cell::new(0_u32);
+
+    let result = block_on(
+        policy
+            .retry_async(|| {
+                let current = call_count.get().saturating_add(1);
+                call_count.set(current);
+                async move {
+                    match current {
+                        1 => Err::<i32, &str>(ERROR_VALUE),
+                        2 => Ok(0),
+                        _ => Ok(SUCCESS_VALUE),
+                    }
+                }
+            })
+            .sleep(sleeper),
+    );
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(call_count.get(), 3);
+}
+
+#[test]
 fn async_sleep_receives_wait_strategy_delays() {
     let sleeper = RecordingSleeper::new();
     let mut policy = RetryPolicy::new()
@@ -517,37 +545,29 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 }
 
 // ---------------------------------------------------------------------------
-// 6.6: tokio sleep re-export (feature-gated)
+// Runtime sleep helpers (feature-gated)
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "tokio-sleep")]
 #[test]
-fn tokio_sleep_reexport_is_available() {
-    let _sleep_fn: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio_sleep;
+fn tokio_sleep_helper_is_available() {
+    let _sleep_fn: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
 }
-
-// ---------------------------------------------------------------------------
-// 6.7: embassy sleep adapter (feature-gated)
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "embassy-sleep")]
 #[test]
-fn embassy_sleep_adapter_is_available() {
-    let _future = Sleeper::sleep(&tenacious::sleep::embassy_sleep, Duration::ZERO);
+fn embassy_sleep_helper_is_available() {
+    let _sleep_fn: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
 }
-
-// ---------------------------------------------------------------------------
-// Additional runtime sleep adapters (feature-gated)
-// ---------------------------------------------------------------------------
 
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[test]
-fn gloo_sleep_reexport_is_available() {
-    let _future = tenacious::sleep::gloo_sleep(Duration::ZERO);
+fn gloo_sleep_helper_is_available() {
+    let _sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
 }
 
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
-fn futures_timer_sleep_adapter_is_available() {
-    let _future = tenacious::sleep::futures_timer_sleep(Duration::ZERO);
+fn futures_timer_sleep_helper_is_available() {
+    let _sleep_fn: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
 }
