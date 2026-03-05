@@ -151,6 +151,29 @@ let (_result, stats) = policy
 assert_eq!(stats.attempts, 3);
 ```
 
+## Cancellation
+
+All execution builders support `.cancel_on(...)`, including extension-trait
+builders from `RetryExt` and `AsyncRetryExt`.
+
+```rust
+use core::sync::atomic::{AtomicBool, Ordering};
+use tenacious::{RetryExt, RetryError, stop};
+
+let cancelled = AtomicBool::new(false);
+
+let result = (|| Err::<u32, &str>("retryable"))
+    .retry()
+    .stop(stop::attempts(5))
+    .sleep(|_dur| {
+        cancelled.store(true, Ordering::Relaxed);
+    })
+    .cancel_on(&cancelled)
+    .call();
+
+assert!(matches!(result, Err(RetryError::Cancelled { .. })));
+```
+
 ## Constructor behavior
 
 - `RetryPolicy::new()` returns an unconfigured policy whose stop type is

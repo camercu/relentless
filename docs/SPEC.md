@@ -840,8 +840,9 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
 The returned `SyncRetryBuilder` is an owned builder (distinct from `SyncRetry`,
 which borrows a `RetryPolicy`) that embeds both the operation and the
 stop/wait/predicate configuration. It provides the same `.stop()`, `.wait()`,
-`.when()`, hook, and terminal methods as the policy-based path. `.stop()` must
-be called before `.call()` (same `NeedsStop` gate as `RetryPolicy::new()`).
+`.when()`, `.cancel_on()`, hook, and terminal methods as the policy-based
+path. Without `.cancel_on(...)`, it uses `NeverCancel`. `.stop()` must be
+called before `.call()` (same `NeedsStop` gate as `RetryPolicy::new()`).
 
 **14.2** `AsyncRetryExt` provides `.retry_async()` for any
 `FnMut() -> Fut where Fut: Future<Output = Result<T, E>>`:
@@ -854,6 +855,9 @@ where
     fn retry_async(self) -> AsyncRetryBuilder<Self, NeedsStop, WaitFixed, AnyError>;
 }
 ```
+
+`AsyncRetryBuilder` also supports `.cancel_on(c: impl Canceler)` with the same
+cancellation semantics as iteration 13.
 
 **14.3** Both traits are blanket-implemented. No manual implementation is
 required.
