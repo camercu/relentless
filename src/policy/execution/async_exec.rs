@@ -56,6 +56,7 @@ pin_project! {
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
+        C: Canceler,
     {
         policy: &'policy mut RetryPolicy<S, W, P>,
         hooks: ExecutionHooks<BA, AA, BS, OX>,
@@ -64,7 +65,7 @@ pin_project! {
         canceler: C,
         last_result: Option<Result<T, E>>,
         #[pin]
-        phase: AsyncPhase<Fut, SleepFut>,
+        phase: AsyncPhase<Fut, SleepFut, C::Cancel>,
         attempt: u32,
         total_wait: Duration,
         collect_stats: bool,
@@ -96,6 +97,7 @@ pin_project! {
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
+        C: Canceler,
     {
         #[pin]
         inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
@@ -127,6 +129,7 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     // Intentional: this helper preserves type-state hook tracking and avoids
     // runtime indirection, which necessarily yields a long generic return type.
@@ -390,7 +393,16 @@ where
             sleeper: self.sleeper,
             canceler,
             last_result: self.last_result,
-            phase: self.phase,
+            phase: match self.phase {
+                AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
+                AsyncPhase::PollingOperation { op_future } => {
+                    AsyncPhase::PollingOperation { op_future }
+                }
+                AsyncPhase::Sleeping { .. } => {
+                    unreachable!("cancel_on cannot observe a sleeping phase before polling")
+                }
+                AsyncPhase::Finished => AsyncPhase::Finished,
+            },
             attempt: self.attempt,
             total_wait: self.total_wait,
             collect_stats: self.collect_stats,
@@ -406,6 +418,7 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Wraps this async retry with statistics collection.
     #[must_use]
@@ -430,6 +443,7 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Appends a before-attempt hook.
     #[must_use]
@@ -554,6 +568,7 @@ impl<'policy, S, W, P, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Sets the sole before-attempt hook (no-alloc mode).
     ///
@@ -584,6 +599,7 @@ impl<'policy, S, W, P, BA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
     ///
@@ -614,6 +630,7 @@ impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Sets the sole before-sleep hook (no-alloc mode).
     ///
@@ -644,6 +661,7 @@ impl<'policy, S, W, P, BA, AA, BS, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
 {
     /// Sets the sole on-exit hook (no-alloc mode).
     ///

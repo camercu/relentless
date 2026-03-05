@@ -62,7 +62,7 @@ pub(super) enum AttemptTransition<T, E> {
 #[cfg(feature = "alloc")]
 pin_project! {
     #[project = AsyncPhaseProj]
-pub(crate) enum AsyncPhase<Fut, SleepFut> {
+pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
         ReadyToStartAttempt,
         PollingOperation {
             #[pin]
@@ -71,6 +71,8 @@ pub(crate) enum AsyncPhase<Fut, SleepFut> {
         Sleeping {
             #[pin]
             sleep_future: SleepFut,
+            #[pin]
+            cancel_future: CancelFut,
         },
         Finished,
     }
@@ -448,7 +450,7 @@ pub(crate) fn poll_async_loop<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, 
     sleeper: &SleepImpl,
     canceler: &C,
     last_result: &mut Option<Result<T, E>>,
-    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
+    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut, C::Cancel>>,
     attempt: &mut u32,
     total_wait: &mut Duration,
     collect_stats: bool,
@@ -529,10 +531,46 @@ where
                     *total_wait = total_wait.saturating_add(next_delay);
                     phase.set(AsyncPhase::Sleeping {
                         sleep_future: sleeper.sleep(next_delay),
+                        cancel_future: canceler.cancel(),
                     });
                 }
             },
-            AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
+            AsyncPhaseProj::Sleeping {
+                sleep_future,
+                cancel_future,
+            } => {
+                if let Poll::Ready(()) = cancel_future.poll(cx) {
+                    let stats = if collect_stats {
+                        Some(RetryStats {
+                            attempts: *attempt,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                            total_wait: *total_wait,
+                            stop_reason: StopReason::Cancelled,
+                        })
+                    } else {
+                        None
+                    };
+
+                    let exit_state = ExitState {
+                        attempt: *attempt,
+                        outcome: last_result.as_ref(),
+                        elapsed: elapsed_tracker.elapsed(),
+                        total_wait: *total_wait,
+                        reason: StopReason::Cancelled,
+                    };
+                    hooks.on_exit.call(&exit_state);
+                    let cancelled_last = last_result.take();
+
+                    *final_stats = stats;
+                    phase.set(AsyncPhase::Finished);
+                    return Poll::Ready(Err(RetryError::Cancelled {
+                        last_result: cancelled_last,
+                        attempts: *attempt,
+                        total_elapsed: elapsed_tracker.elapsed(),
+                    }));
+                }
+
+                match sleep_future.poll(cx) {
                 Poll::Pending => {
                     if canceler.is_cancelled() {
                         let stats = if collect_stats {
@@ -599,7 +637,8 @@ where
                     *attempt = attempt.saturating_add(1);
                     phase.set(AsyncPhase::ReadyToStartAttempt);
                 }
-            },
+                }
+            }
             AsyncPhaseProj::Finished => {
                 return poll_after_completion(completed_type_name);
             }

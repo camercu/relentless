@@ -24,10 +24,16 @@ impl CancelOnCheck {
 }
 
 impl Canceler for CancelOnCheck {
+    type Cancel = core::future::Pending<()>;
+
     fn is_cancelled(&self) -> bool {
         let calls = self.calls.get().saturating_add(1);
         self.calls.set(calls);
         calls >= self.cancel_at
+    }
+
+    fn cancel(&self) -> Self::Cancel {
+        core::future::pending()
     }
 }
 
