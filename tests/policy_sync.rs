@@ -704,6 +704,31 @@ fn condition_not_met_returned_for_ok_predicate_exhaustion() {
 }
 
 #[test]
+fn wait_for_ok_handles_transient_errors_and_not_ready_values() {
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .when(on::wait_for_ok(|value: &i32| *value >= SUCCESS_VALUE));
+
+    let call_count = Cell::new(0_u32);
+    let result = policy
+        .retry(|| {
+            let next_call = call_count.get().saturating_add(1);
+            call_count.set(next_call);
+            match next_call {
+                1 => Err("transient"),
+                2 => Ok(0),
+                _ => Ok(SUCCESS_VALUE),
+            }
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(call_count.get(), 3);
+}
+
+#[test]
 fn predicate_rejects_err_means_immediate_return() {
     // If predicate says "don't retry this error", return PredicateRejected with attempts=1.
     let mut policy = RetryPolicy::new()
