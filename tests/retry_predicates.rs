@@ -72,6 +72,9 @@ fn factory_functions_return_predicates() {
 
     let ok = on::ok(|value: &u32| *value < READY_THRESHOLD);
     assert_predicate_impl::<u32, TestError, _>(&ok);
+
+    let wait_for_ok = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD);
+    assert_predicate_impl::<u32, TestError, _>(&wait_for_ok);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +156,28 @@ fn ok_does_not_call_matcher_for_error_values() {
 
     assert!(!predicate.should_retry(&err(TestError::Retryable)));
     assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn wait_for_ok_retries_until_ready_and_retries_errors() {
+    let predicate = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD);
+
+    assert!(predicate.should_retry(&err(TestError::Retryable)));
+    assert!(predicate.should_retry(&err(TestError::Fatal)));
+    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    assert!(!predicate.should_retry(&ok(READY_VALUE)));
+}
+
+#[test]
+fn wait_for_ok_composes_with_error_matchers() {
+    let predicate = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD)
+        & on::error(|error: &TestError| matches!(error, TestError::Retryable))
+        | on::ok(|value: &u32| *value < READY_THRESHOLD);
+
+    assert!(predicate.should_retry(&err(TestError::Retryable)));
+    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    assert!(!predicate.should_retry(&err(TestError::Fatal)));
+    assert!(!predicate.should_retry(&ok(READY_VALUE)));
 }
 
 // ---------------------------------------------------------------------------
