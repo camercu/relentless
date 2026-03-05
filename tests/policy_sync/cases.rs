@@ -45,14 +45,6 @@ const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
 #[cfg(not(feature = "std"))]
 const CUSTOM_CLOCK_ATTEMPT_FALLBACK: u32 = 2;
 
-/// Sleep duration used to simulate operation runtime.
-#[cfg(feature = "std")]
-const OPERATION_RUNTIME: Duration = Duration::from_millis(5);
-
-/// Tight elapsed deadline used to verify operation runtime is counted.
-#[cfg(feature = "std")]
-const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);
-
 /// Deadline for conservative before-elapsed stop tests.
 #[cfg(feature = "std")]
 const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
@@ -826,30 +818,6 @@ fn clear_elapsed_clock_disables_custom_elapsed_source_without_std() {
             attempts: CUSTOM_CLOCK_ATTEMPT_FALLBACK,
             ..
         })
-    ));
-}
-
-#[test]
-#[cfg(feature = "std")]
-fn elapsed_stop_counts_operation_runtime() {
-    let mut policy = RetryPolicy::new().stop(stop::elapsed(ELAPSED_DEADLINE));
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
-    let call_count = Cell::new(0_u32);
-
-    let result = policy
-        .retry(|| {
-            call_count.set(call_count.get().saturating_add(1));
-            std::thread::sleep(OPERATION_RUNTIME);
-            Err::<i32, _>("slow failure")
-        })
-        .sleep(recording_sleep(&sleeps))
-        .call();
-
-    assert_eq!(call_count.get(), 1);
-    assert!(sleeps.borrow().is_empty());
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
     ));
 }
 

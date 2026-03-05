@@ -17,6 +17,7 @@
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::Pin;
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use std::cell::RefCell;
@@ -35,11 +36,11 @@ const MAX_ATTEMPTS: u32 = 3;
 /// Wait duration used in async sleep verification tests.
 const WAIT_DURATION: Duration = Duration::from_millis(10);
 
-/// Sleep duration used to simulate operation runtime.
-const OPERATION_RUNTIME: Duration = Duration::from_millis(5);
+/// Deadline used for deterministic custom-clock elapsed stop tests.
+const ASYNC_CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
 
-/// Tight elapsed deadline used to verify operation runtime is counted.
-const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);
+/// Simulated operation runtime increment for custom-clock tests.
+const ASYNC_CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
 
 /// Deadline for conservative before-elapsed stop tests.
 const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
@@ -100,6 +101,12 @@ impl Sleeper for RecordingSleeper {
         self.calls.borrow_mut().push(dur);
         core::future::ready(())
     }
+}
+
+static ASYNC_ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
+
+fn async_elapsed_clock_millis() -> Duration {
+    Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
 }
 
 // ---------------------------------------------------------------------------
@@ -384,8 +391,11 @@ fn async_default_predicate_behaves_like_any_error() {
 }
 
 #[test]
-fn async_elapsed_stop_counts_operation_runtime() {
-    let mut policy = RetryPolicy::new().stop(stop::elapsed(ELAPSED_DEADLINE));
+fn async_custom_elapsed_clock_counts_operation_runtime() {
+    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    let mut policy = RetryPolicy::new()
+        .stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE))
+        .elapsed_clock(async_elapsed_clock_millis);
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
@@ -394,7 +404,8 @@ fn async_elapsed_stop_counts_operation_runtime() {
             .retry_async(|| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    std::thread::sleep(OPERATION_RUNTIME);
+                    ASYNC_ELAPSED_CLOCK_MILLIS
+                        .fetch_add(ASYNC_CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
                     Err::<i32, &str>("slow failure")
                 }
             })
