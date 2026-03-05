@@ -2,6 +2,7 @@
 
 use crate::compat::Duration;
 use crate::on;
+#[cfg(feature = "alloc")]
 use crate::predicate::Predicate;
 use crate::stop;
 #[cfg(feature = "alloc")]
