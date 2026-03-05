@@ -21,11 +21,13 @@ The spec is in [SPEC.md](/docs/SPEC.md).
 ## Execution guardrails
 
 - Use Conventional Commits with required scopes that describe functionality or
-  domain (for example: `serialization`, `policy`, `security`, `ci`), never
+  domain (for example: `serialization`, `policy`, `security`, etc.), never
   phase labels. Split unrelated work into separate atomic commits.
 - When other agents are working concurrently, prefer edits in disjoint files or
   code areas. Never revert changes you did not make.
-- Before committing, run `git status --short` and include only intended files.
+- Before committing, run `git status --short` and include only intended files
+  associated with a single logical change.
+- Always commit atomically: `git add <explicit-files> && git commit -m "<message>"`
 - Treat [`docs/SPEC.md`](/docs/SPEC.md) as authoritative by default.
 - If an implementation improvement conflicts with spec behavior, stop and
   present the exact conflict, implications, and recommendation before changing
