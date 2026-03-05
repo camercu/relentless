@@ -1,10 +1,10 @@
 use core::marker::PhantomData;
 
-use super::common::{AttemptTransition, process_attempt_transition};
-use super::time::ElapsedTracker;
+use super::common::execute_sync_loop;
 use super::*;
+use crate::cancel::{Canceler, NeverCancel};
 use crate::error::RetryError;
-use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
+use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::stats::RetryStats;
 
 /// Marker for the absence of an explicit sync sleep function.
@@ -60,11 +60,12 @@ impl SyncSleep for NoSyncSleep {
 ///     .sleep(|_dur| {});
 /// let _ = retry.call();
 /// ```
-pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
     policy: &'policy mut RetryPolicy<S, W, P>,
     hooks: ExecutionHooks<BA, AA, BS, OX>,
     op: F,
     sleeper: SleepFn,
+    canceler: C,
     _marker: PhantomData<fn() -> (T, E)>,
 }
 
@@ -84,28 +85,75 @@ pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
 ///     .with_stats()
 ///     .call();
 /// ```
-pub struct SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
-    inner: SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>,
+pub struct SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
+    inner: SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>,
 }
 
 #[cfg(feature = "alloc")]
-type SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetry<'policy, S, W, P, HookChain<BA, Hook>, AA, BS, OX, F, SleepFn, T, E>;
+type SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetry<'policy, S, W, P, HookChain<BA, Hook>, AA, BS, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetry<'policy, S, W, P, BA, HookChain<AA, Hook>, BS, OX, F, SleepFn, T, E>;
+type SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetry<'policy, S, W, P, BA, HookChain<AA, Hook>, BS, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncRetryWithBeforeSleepHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetry<'policy, S, W, P, BA, AA, HookChain<BS, Hook>, OX, F, SleepFn, T, E>;
+type SyncRetryWithBeforeSleepHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetry<'policy, S, W, P, BA, AA, HookChain<BS, Hook>, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook> =
-    SyncRetry<'policy, S, W, P, BA, AA, BS, HookChain<OX, Hook>, F, SleepFn, T, E>;
+type SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetry<'policy, S, W, P, BA, AA, BS, HookChain<OX, Hook>, F, SleepFn, T, E, C>;
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, T, E>
-    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, NoSyncSleep, T, E>
+impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+{
+    fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
+        self,
+        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
+    ) -> SyncRetry<'policy, S, W, P, NewBA, NewAA, NewBS, NewOX, F, SleepFn, T, E, C> {
+        let SyncRetry {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            ..
+        } = self;
+        SyncRetry {
+            policy,
+            hooks: map(hooks),
+            op,
+            sleeper,
+            canceler,
+            _marker: PhantomData,
+        }
+    }
+
+    fn with_sleeper<NewSleepFn>(
+        self,
+        sleeper: NewSleepFn,
+    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, NewSleepFn, T, E, C> {
+        let SyncRetry {
+            policy,
+            hooks,
+            op,
+            canceler,
+            ..
+        } = self;
+        SyncRetry {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'policy, S, W, P, BA, AA, BS, OX, F, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, NoSyncSleep, T, E, C>
 where
     S: Stop,
     W: Wait,
@@ -116,19 +164,33 @@ where
     pub fn sleep<SleepFn>(
         self,
         sleeper: SleepFn,
-    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
+        self.with_sleeper(sleeper)
+    }
+}
+
+impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NeverCancel>
+{
+    /// Attaches a canceler that is checked before each attempt and after each sleep.
+    #[must_use]
+    pub fn cancel_on<NewC: Canceler>(
+        self,
+        canceler: NewC,
+    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NewC> {
         SyncRetry {
             policy: self.policy,
             hooks: self.hooks,
             op: self.op,
-            sleeper,
+            sleeper: self.sleeper,
+            canceler,
             _marker: PhantomData,
         }
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
@@ -139,6 +201,7 @@ where
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
+    C: Canceler,
 {
     /// Executes the retry loop synchronously.
     pub fn call(self) -> Result<T, RetryError<E, T>> {
@@ -149,56 +212,25 @@ where
     #[must_use]
     pub fn with_stats(
         self,
-    ) -> SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
         SyncRetryWithStats { inner: self }
     }
 
     fn execute<const COLLECT_STATS: bool>(
         mut self,
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
-        let mut attempt: u32 = 1;
-        let mut total_wait = Duration::ZERO;
-        let elapsed_tracker = ElapsedTracker::new(self.policy.meta.elapsed_clock);
-
-        loop {
-            let elapsed_before_attempt = elapsed_tracker.elapsed();
-            let before_state = BeforeAttemptState {
-                attempt,
-                elapsed: elapsed_before_attempt,
-                total_wait,
-            };
-            self.hooks.before_attempt.call(&before_state);
-
-            let outcome = (self.op)();
-            let elapsed_after_attempt = elapsed_tracker.elapsed();
-            let retry_state = RetryState {
-                attempt,
-                elapsed: elapsed_after_attempt,
-                next_delay: Duration::ZERO,
-                total_wait,
-            };
-
-            match process_attempt_transition(
-                self.policy,
-                &mut self.hooks,
-                outcome,
-                retry_state,
-                COLLECT_STATS,
-                total_wait,
-            ) {
-                AttemptTransition::Finished { result, stats } => return (result, stats),
-                AttemptTransition::Sleep { next_delay } => {
-                    self.sleeper.sleep(next_delay);
-                    total_wait = total_wait.saturating_add(next_delay);
-                    attempt = attempt.saturating_add(1);
-                }
-            }
-        }
+        execute_sync_loop::<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, COLLECT_STATS>(
+            self.policy,
+            &mut self.hooks,
+            &mut self.op,
+            &mut self.sleeper,
+            &self.canceler,
+        )
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
@@ -209,6 +241,7 @@ where
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
+    C: Canceler,
 {
     /// Executes the retry loop synchronously and returns `(result, stats)`.
     pub fn call(self) -> (Result<T, RetryError<E, T>>, RetryStats) {
@@ -218,36 +251,22 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
+// Intentional: hook chaining keeps full type-state and zero-cost generics.
+// The long return types reflect that design, rather than accidental complexity.
+#[allow(clippy::type_complexity)]
+impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 {
     /// Appends a before-attempt hook.
     #[must_use]
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt: HookChain::new(before_attempt, hook),
-                after_attempt,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
     }
 
     /// Appends an after-attempt hook.
@@ -255,28 +274,11 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt: HookChain::new(after_attempt, hook),
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
     }
 
     /// Appends a before-sleep hook.
@@ -284,28 +286,11 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn before_sleep<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryWithBeforeSleepHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncRetryWithBeforeSleepHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: HookChain::new(before_sleep, hook),
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_before_sleep(hook))
     }
 
     /// Appends an on-exit hook.
@@ -313,34 +298,17 @@ impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, Hook>
+    ) -> SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            on_exit,
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exit: HookChain::new(on_exit, hook),
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.chain_on_exit(hook))
     }
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, (), AA, BS, OX, F, SleepFn, T, E>
+impl<'policy, S, W, P, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, (), AA, BS, OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole before-attempt hook (no-alloc mode).
     ///
@@ -357,34 +325,17 @@ impl<'policy, S, W, P, AA, BS, OX, F, SleepFn, T, E>
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetry<'policy, S, W, P, Hook, AA, BS, OX, F, SleepFn, T, E>
+    ) -> SyncRetry<'policy, S, W, P, Hook, AA, BS, OX, F, SleepFn, T, E, C>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
-        let ExecutionHooks {
-            after_attempt,
-            before_sleep,
-            on_exit,
-            ..
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt: hook,
-                after_attempt,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
     }
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, BS, OX, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, BA, (), BS, OX, F, SleepFn, T, E>
+impl<'policy, S, W, P, BA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, (), BS, OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
     ///
@@ -401,34 +352,17 @@ impl<'policy, S, W, P, BA, BS, OX, F, SleepFn, T, E>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetry<'policy, S, W, P, BA, Hook, BS, OX, F, SleepFn, T, E>
+    ) -> SyncRetry<'policy, S, W, P, BA, Hook, BS, OX, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            before_sleep,
-            on_exit,
-            ..
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt: hook,
-                before_sleep,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
     }
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, BA, AA, (), OX, F, SleepFn, T, E>
+impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, (), OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole before-sleep hook (no-alloc mode).
     ///
@@ -445,34 +379,17 @@ impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
     pub fn before_sleep<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetry<'policy, S, W, P, BA, AA, Hook, OX, F, SleepFn, T, E>
+    ) -> SyncRetry<'policy, S, W, P, BA, AA, Hook, OX, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            on_exit,
-            ..
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep: hook,
-                on_exit,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_before_sleep(hook))
     }
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, AA, BS, F, SleepFn, T, E>
-    SyncRetry<'policy, S, W, P, BA, AA, BS, (), F, SleepFn, T, E>
+impl<'policy, S, W, P, BA, AA, BS, F, SleepFn, T, E, C>
+    SyncRetry<'policy, S, W, P, BA, AA, BS, (), F, SleepFn, T, E, C>
 {
     /// Sets the sole on-exit hook (no-alloc mode).
     ///
@@ -489,28 +406,11 @@ impl<'policy, S, W, P, BA, AA, BS, F, SleepFn, T, E>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, Hook, F, SleepFn, T, E>
+    ) -> SyncRetry<'policy, S, W, P, BA, AA, BS, Hook, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
-        let ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            before_sleep,
-            ..
-        } = self.hooks;
-        SyncRetry {
-            policy: self.policy,
-            hooks: ExecutionHooks {
-                before_attempt,
-                after_attempt,
-                before_sleep,
-                on_exit: hook,
-            },
-            op: self.op,
-            sleeper: self.sleeper,
-            _marker: PhantomData,
-        }
+        self.map_hooks(|hooks| hooks.set_on_exit(hook))
     }
 }
 
@@ -535,6 +435,7 @@ where
             hooks: ExecutionHooks::new(),
             op,
             sleeper: NoSyncSleep,
+            canceler: NeverCancel,
             _marker: PhantomData,
         }
     }

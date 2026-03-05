@@ -29,6 +29,22 @@
 //! };
 //! assert_eq!(strategy.next_wait(&state), Duration::from_millis(50));
 //! ```
+//!
+//! # Extension-first usage
+//!
+//! ```
+//! use core::time::Duration;
+//! use tenacious::{RetryExt, stop, wait};
+//!
+//! let result = (|| Err::<u32, &str>("transient"))
+//!     .retry()
+//!     .stop(stop::attempts(3))
+//!     .wait(wait::fixed(Duration::from_millis(5)))
+//!     .sleep(|_dur| {})
+//!     .call();
+//!
+//! assert!(result.is_err());
+//! ```
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -41,6 +57,7 @@ extern crate std;
 
 mod compat;
 
+pub mod cancel;
 mod error;
 pub mod on;
 mod policy;
@@ -52,13 +69,18 @@ pub mod stop;
 pub mod wait;
 
 // Re-export core public types at the crate root (spec 10.1).
+pub use cancel::{Canceler, NeverCancel};
 pub use error::RetryError;
 #[cfg(feature = "alloc")]
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
 #[cfg(feature = "alloc")]
 pub use policy::{AsyncRetry, AsyncRetryWithStats};
-pub use policy::{SyncRetry, SyncRetryWithStats};
+#[cfg(feature = "alloc")]
+pub use policy::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
+pub use policy::{
+    RetryExt, SyncRetry, SyncRetryBuilder, SyncRetryBuilderWithStats, SyncRetryWithStats,
+};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
@@ -85,11 +107,14 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 /// assert!(matches!(result, Err(RetryError::Exhausted { attempts: 3, .. })));
 /// ```
 pub mod prelude {
+    #[cfg(feature = "alloc")]
+    pub use crate::AsyncRetryExt;
     pub use crate::on::{any_error, error, ok};
     pub use crate::sleep::Sleeper;
     pub use crate::stop::{attempts, elapsed};
     pub use crate::wait::{exponential, fixed};
     pub use crate::{
-        Predicate, RetryError, RetryPolicy, RetryStats, Stop, StopReason, Wait, WaitExt,
+        Canceler, Predicate, RetryError, RetryExt, RetryPolicy, RetryStats, Stop, StopReason, Wait,
+        WaitExt,
     };
 }

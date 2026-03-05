@@ -96,7 +96,7 @@ tenacious/
 ```
 
 > **Planned files:** Iteration 13 adds `src/cancel.rs` (Canceler trait).
-> Iteration 14 adds `src/ext.rs` (extension traits).
+> Iteration 14 adds `src/policy/ext.rs` (extension traits).
 > Modules listed as single files above (e.g. `policy.rs`, `stop.rs`, `wait.rs`)
 > may be implemented as directories (`policy/mod.rs`, etc.) when internal
 > splitting aids readability.
@@ -822,7 +822,7 @@ a closure or function pointer, as an alternative to the policy-first style.
 This iteration amends: **10.1** (re-exports gain `RetryExt`, `AsyncRetryExt`),
 **10.5** (prelude gains `RetryExt`, `AsyncRetryExt`).
 
-**14.1** `RetryExt` is defined in `src/ext.rs` and provides a `.retry()`
+**14.1** `RetryExt` is defined in `src/policy/ext.rs` and provides a `.retry()`
 method for any `FnMut() -> Result<T, E>`:
 
 ```rust

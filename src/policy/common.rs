@@ -1,7 +1,12 @@
+use super::sync::SyncSleep;
+use super::time::ElapsedTracker;
 use super::*;
+use crate::cancel::Canceler;
 use crate::error::RetryError;
-use crate::state::{AttemptState, ExitState, RetryState};
+use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
+#[cfg(feature = "alloc")]
+use core::task::Poll;
 
 fn attempt_state_from<'a, T, E>(
     retry_state: &RetryState,
@@ -36,7 +41,39 @@ pub(super) enum AttemptTransition<T, E> {
     },
     Sleep {
         next_delay: Duration,
+        last_result: Result<T, E>,
     },
+}
+
+/// Builds a cancelled return value with optional stats.
+///
+/// Call `on_exit` with a reference to `last_result` before calling this,
+/// since this function takes ownership.
+pub(super) fn cancelled_return<T, E>(
+    last_result: Option<Result<T, E>>,
+    attempts: u32,
+    elapsed: Option<Duration>,
+    total_wait: Duration,
+    collect_stats: bool,
+) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
+    let stats = if collect_stats {
+        Some(RetryStats {
+            attempts,
+            total_elapsed: elapsed,
+            total_wait,
+            stop_reason: StopReason::Cancelled,
+        })
+    } else {
+        None
+    };
+    (
+        Err(RetryError::Cancelled {
+            last_result,
+            attempts,
+            total_elapsed: elapsed,
+        }),
+        stats,
+    )
 }
 
 pub(super) fn process_attempt_transition<S, W, P, BA, AA, BS, OX, T, E>(
@@ -137,7 +174,195 @@ where
         hooks.before_sleep.call(&attempt_state);
     }
 
-    AttemptTransition::Sleep { next_delay }
+    let last_error = outcome.err();
+
+    AttemptTransition::Sleep {
+        next_delay,
+        last_error,
+    }
+}
+
+pub(super) fn transition_from_outcome<S, W, P, BA, AA, BS, OX, T, E>(
+    policy: &mut RetryPolicy<S, W, P>,
+    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    outcome: Result<T, E>,
+    attempt: u32,
+    elapsed: Option<Duration>,
+    total_wait: Duration,
+    collect_stats: bool,
+) -> AttemptTransition<T, E>
+where
+    S: Stop,
+    W: Wait,
+    P: Predicate<T, E>,
+    AA: AttemptHook<T, E>,
+    BS: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
+{
+    let retry_state = RetryState {
+        attempt,
+        elapsed,
+        next_delay: Duration::ZERO,
+        total_wait,
+    };
+
+    process_attempt_transition(
+        policy,
+        hooks,
+        outcome,
+        retry_state,
+        collect_stats,
+        total_wait,
+    )
+}
+
+pub(super) fn execute_sync_loop<
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    SleepFn,
+    T,
+    E,
+    C,
+    const COLLECT_STATS: bool,
+>(
+    policy: &mut RetryPolicy<S, W, P>,
+    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    op: &mut F,
+    sleeper: &mut SleepFn,
+    canceler: &C,
+) -> (Result<T, RetryError<E, T>>, Option<RetryStats>)
+where
+    S: Stop,
+    W: Wait,
+    P: Predicate<T, E>,
+    BA: BeforeAttemptHook,
+    AA: AttemptHook<T, E>,
+    BS: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
+    F: FnMut() -> Result<T, E>,
+    SleepFn: SyncSleep,
+    C: Canceler,
+{
+    let mut attempt: u32 = 1;
+    let mut total_wait = Duration::ZERO;
+    let mut last_err: Option<E> = None;
+    let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
+
+    loop {
+        if canceler.is_cancelled() {
+            let stats = if COLLECT_STATS {
+                Some(RetryStats {
+                    attempts: attempt - 1,
+                    total_elapsed: elapsed_tracker.elapsed(),
+                    total_wait,
+                    stop_reason: StopReason::Cancelled,
+                })
+            } else {
+                None
+            };
+            return (
+                Err(RetryError::Cancelled {
+                    last_error: last_err,
+                    attempts: attempt - 1,
+                    total_elapsed: elapsed_tracker.elapsed(),
+                }),
+                stats,
+            );
+        }
+
+        let before_state = BeforeAttemptState {
+            attempt,
+            elapsed: elapsed_tracker.elapsed(),
+            total_wait,
+        };
+        hooks.before_attempt.call(&before_state);
+
+        let outcome = (op)();
+        match transition_from_outcome(
+            policy,
+            hooks,
+            outcome,
+            attempt,
+            elapsed_tracker.elapsed(),
+            total_wait,
+            COLLECT_STATS,
+        ) {
+            AttemptTransition::Finished { result, stats } => return (result, stats),
+            AttemptTransition::Sleep {
+                next_delay,
+                last_error,
+            } => {
+                sleeper.sleep(next_delay);
+                total_wait = total_wait.saturating_add(next_delay);
+
+                if canceler.is_cancelled() {
+                    let stats = if COLLECT_STATS {
+                        Some(RetryStats {
+                            attempts: attempt,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                            total_wait,
+                            stop_reason: StopReason::Cancelled,
+                        })
+                    } else {
+                        None
+                    };
+
+                    if let Some(error) = last_error {
+                        let outcome: Result<T, E> = Err(error);
+                        let exit_state = ExitState {
+                            attempt,
+                            outcome: &outcome,
+                            elapsed: elapsed_tracker.elapsed(),
+                            total_wait,
+                            reason: StopReason::Cancelled,
+                        };
+                        hooks.on_exit.call(&exit_state);
+                        let error = match outcome {
+                            Err(error) => error,
+                            Ok(_) => unreachable!("cancellation outcome must be an error"),
+                        };
+                        return (
+                            Err(RetryError::Cancelled {
+                                last_error: Some(error),
+                                attempts: attempt,
+                                total_elapsed: elapsed_tracker.elapsed(),
+                            }),
+                            stats,
+                        );
+                    }
+
+                    return (
+                        Err(RetryError::Cancelled {
+                            last_error: None,
+                            attempts: attempt,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                        }),
+                        stats,
+                    );
+                }
+
+                last_err = last_error;
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub(super) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
+    #[cfg(any(debug_assertions, feature = "strict-futures"))]
+    panic!("{type_name} polled after completion");
+
+    #[cfg(all(not(debug_assertions), not(feature = "strict-futures")))]
+    {
+        Poll::Pending
+    }
 }
 
 fn stop_reason_for_predicate_accept<T, E>(
