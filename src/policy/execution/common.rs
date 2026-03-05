@@ -611,38 +611,38 @@ where
                 }
 
                 match sleep_future.poll(cx) {
-                Poll::Pending => {
-                    if canceler.is_cancelled() {
-                        let (result, stats) = finish_cancelled_async(
-                            hooks,
-                            last_result,
-                            *attempt,
-                            *total_wait,
-                            collect_stats,
-                            elapsed_tracker,
-                        );
+                    Poll::Pending => {
+                        if canceler.is_cancelled() {
+                            let (result, stats) = finish_cancelled_async(
+                                hooks,
+                                last_result,
+                                *attempt,
+                                *total_wait,
+                                collect_stats,
+                                elapsed_tracker,
+                            );
 
-                        *final_stats = stats;
-                        phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(result);
+                            *final_stats = stats;
+                            phase.set(AsyncPhase::Finished);
+                            return Poll::Ready(result);
+                        }
+                        return Poll::Pending;
                     }
-                    return Poll::Pending;
-                }
-                Poll::Ready(()) => {
-                    if canceler.is_cancelled() {
-                        let (result, stats) = finish_cancelled_async(
-                            hooks,
-                            last_result,
-                            *attempt,
-                            *total_wait,
-                            collect_stats,
-                            elapsed_tracker,
-                        );
+                    Poll::Ready(()) => {
+                        if canceler.is_cancelled() {
+                            let (result, stats) = finish_cancelled_async(
+                                hooks,
+                                last_result,
+                                *attempt,
+                                *total_wait,
+                                collect_stats,
+                                elapsed_tracker,
+                            );
 
-                        *final_stats = stats;
-                        phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(result);
-                    }
+                            *final_stats = stats;
+                            phase.set(AsyncPhase::Finished);
+                            return Poll::Ready(result);
+                        }
 
                         *attempt = attempt.saturating_add(1);
                         phase.set(AsyncPhase::ReadyToStartAttempt);

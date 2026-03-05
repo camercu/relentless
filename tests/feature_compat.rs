@@ -159,6 +159,7 @@ fn retry_policy_serialization_omits_hooks() {
     assert!(object.contains_key("wait"));
     assert!(object.contains_key("predicate"));
     assert!(object.contains_key("predicate_is_default"));
+    assert!(!object.contains_key("elapsed_clock"));
     assert!(!object.contains_key("before_attempt"));
     assert!(!object.contains_key("after_attempt"));
     assert!(!object.contains_key("before_sleep"));
@@ -225,8 +226,15 @@ fn wait_exponential_deserialization_clamps_subunit_base() {
 #[cfg(all(feature = "serde", feature = "jitter"))]
 #[test]
 fn jitter_strategy_serializes_as_configuration() {
+    let jitter_nonce = SEEDED_NONCE_A;
+    let jitter_seed = SEEDED_JITTER_SEED;
     let policy = RetryPolicy::new()
-        .wait(wait::fixed(BASE_WAIT).jitter(MAX_JITTER))
+        .wait(
+            wait::fixed(BASE_WAIT)
+                .jitter(MAX_JITTER)
+                .with_seed(jitter_seed)
+                .with_nonce(jitter_nonce),
+        )
         .stop(stop::attempts(2));
 
     let value = serde_json::to_value(&policy).expect("jitter policy should serialize");
@@ -235,6 +243,20 @@ fn jitter_strategy_serializes_as_configuration() {
     let wait_value = value
         .get("wait")
         .expect("serialized policy should contain wait");
+    let wait_object = wait_value
+        .as_object()
+        .expect("jitter wait serialization should be an object");
+    assert!(wait_object.contains_key("seed"));
+    assert!(wait_object.contains_key("nonce"));
+    assert_eq!(
+        wait_object.get("seed"),
+        Some(&serde_json::to_value(jitter_seed).expect("seed should serialize"))
+    );
+    assert_eq!(
+        wait_object.get("nonce"),
+        Some(&serde_json::json!(jitter_nonce))
+    );
+
     let mut wait_strategy: tenacious::wait::WaitJitter<tenacious::wait::WaitFixed> =
         serde_json::from_value(wait_value.clone()).expect("wait jitter should deserialize");
     let next = wait_strategy.next_wait(&state(1));

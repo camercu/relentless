@@ -13,22 +13,39 @@ fn instant_sleep(_dur: Duration) {}
 
 #[test]
 fn before_attempt_and_after_attempt_fire_at_defined_points() {
-    let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+    let events: RefCell<Vec<(char, u32)>> = RefCell::new(Vec::new());
+    let op_attempt = Cell::new(0_u32);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
-        .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
+        .retry(|| {
+            let attempt = op_attempt.get().saturating_add(1);
+            op_attempt.set(attempt);
+            events.borrow_mut().push(('o', attempt));
+            Err::<i32, _>("fail")
+        })
+        .before_attempt(|state| events.borrow_mut().push(('b', state.attempt)))
         .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
-            after_calls.borrow_mut().push(state.attempt);
+            events.borrow_mut().push(('a', state.attempt));
         })
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-    assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
+    assert_eq!(
+        *events.borrow(),
+        vec![
+            ('b', 1),
+            ('o', 1),
+            ('a', 1),
+            ('b', 2),
+            ('o', 2),
+            ('a', 2),
+            ('b', 3),
+            ('o', 3),
+            ('a', 3),
+        ]
+    );
 }
 
 #[test]

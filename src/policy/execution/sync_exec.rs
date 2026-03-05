@@ -75,6 +75,17 @@ pub struct SyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = Nev
     _marker: PhantomData<fn() -> (T, E)>,
 }
 
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+/// ```compile_fail
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let _ = policy.retry(|| Err::<(), _>("fail")).call();
+/// ```
+#[allow(dead_code)]
+fn _sync_call_requires_sleep_in_no_std() {}
+
 /// Sync retry execution wrapper that returns statistics.
 ///
 /// Created by calling `.with_stats()` on [`SyncRetry`].

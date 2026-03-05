@@ -75,6 +75,19 @@ pin_project! {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+/// ```compile_fail
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let _ = async {
+///     let _ = policy.retry_async(|| async { Ok::<(), &str>(()) }).await;
+/// };
+/// ```
+#[allow(dead_code)]
+fn _async_retry_requires_sleep_before_await() {}
+
 pin_project! {
     /// Async retry execution wrapper that returns statistics.
     ///
