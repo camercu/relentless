@@ -97,6 +97,54 @@ fn sync_cancel_after_first_attempt() {
 }
 
 #[test]
+fn sync_cancellation_does_not_interrupt_running_operation() {
+    let flag = AtomicBool::new(false);
+    let op_completed = AtomicBool::new(false);
+    let op_started = std::sync::Barrier::new(2);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel::<()>(0);
+
+    std::thread::scope(|scope| {
+        let flag_ref = &flag;
+        let started_ref = &op_started;
+        let release_tx = release_tx;
+        scope.spawn(move || {
+            started_ref.wait();
+            flag_ref.store(true, Ordering::Relaxed);
+            release_tx
+                .send(())
+                .expect("cancellation coordinator should release operation");
+        });
+
+        let mut policy = RetryPolicy::new()
+            .stop(stop::attempts(5))
+            .wait(wait::fixed(Duration::ZERO));
+
+        let result = policy
+            .retry(|| {
+                op_started.wait();
+                release_rx
+                    .recv()
+                    .expect("operation should be released after cancel flag is set");
+                op_completed.store(true, Ordering::Relaxed);
+                Err::<(), _>("in-flight")
+            })
+            .sleep(instant_sleep)
+            .cancel_on(&flag)
+            .call();
+
+        assert!(op_completed.load(Ordering::Relaxed));
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("in-flight")),
+                ..
+            })
+        ));
+    });
+}
+
+#[test]
 fn sync_no_cancel_normal_success() {
     let mut policy = RetryPolicy::new().stop(stop::attempts(3));
     let result = policy
@@ -311,6 +359,29 @@ mod async_tests {
         }
     }
 
+    struct CompleteAfterSecondPoll {
+        poll_count: Rc<Cell<u32>>,
+        cancel_flag: std::sync::Arc<AtomicBool>,
+        completed: Rc<Cell<bool>>,
+    }
+
+    impl Future for CompleteAfterSecondPoll {
+        type Output = Result<(), &'static str>;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+            let next = self.poll_count.get().saturating_add(1);
+            self.poll_count.set(next);
+            if next == 1 {
+                self.cancel_flag.store(true, Ordering::Relaxed);
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                self.completed.set(true);
+                Poll::Ready(Err("op-finished"))
+            }
+        }
+    }
+
     #[derive(Clone)]
     struct CancelViaFuture {
         poll_count: Rc<Cell<u32>>,
@@ -395,7 +466,7 @@ mod async_tests {
     }
 
     #[test]
-    fn async_cancel_during_sleep() {
+    fn async_cancel_after_attempt_when_sleep_sets_flag() {
         let flag = AtomicBool::new(false);
         let exit_calls = Cell::new(0_u32);
         let exit_reason = Cell::new(None);
@@ -440,6 +511,42 @@ mod async_tests {
         assert_eq!(exit_reason.get(), Some(StopReason::Cancelled));
         assert_eq!(exit_attempt.get(), 1);
         assert!(exit_has_outcome.get());
+    }
+
+    #[test]
+    fn async_cancellation_does_not_interrupt_running_operation() {
+        let flag = std::sync::Arc::new(AtomicBool::new(false));
+        let op_poll_count = Rc::new(Cell::new(0_u32));
+        let op_completed = Rc::new(Cell::new(false));
+        let flag_for_op = std::sync::Arc::clone(&flag);
+        let poll_count_for_op = Rc::clone(&op_poll_count);
+        let completed_for_op = Rc::clone(&op_completed);
+
+        let mut policy = RetryPolicy::new()
+            .stop(stop::attempts(5))
+            .wait(wait::fixed(Duration::ZERO));
+
+        let result = block_on(
+            policy
+                .retry_async(move || CompleteAfterSecondPoll {
+                    poll_count: Rc::clone(&poll_count_for_op),
+                    cancel_flag: std::sync::Arc::clone(&flag_for_op),
+                    completed: Rc::clone(&completed_for_op),
+                })
+                .sleep(|_dur: Duration| async {})
+                .cancel_on(std::sync::Arc::clone(&flag)),
+        );
+
+        assert_eq!(op_poll_count.get(), 2);
+        assert!(op_completed.get());
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("op-finished")),
+                ..
+            })
+        ));
     }
 
     #[test]
