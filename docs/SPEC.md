@@ -520,7 +520,10 @@ Polling an `AsyncRetry` after it has completed is misuse: debug builds panic.
 Release builds return `Poll::Pending` unless the `strict-futures` feature is
 enabled, in which case they also panic.
 
-**6.4** The async execution loop follows the same logic as the sync loop (5.6) but replaces the blocking sleep call with `sleeper.sleep(delay).await`.
+**6.4** The async execution loop follows the same logic as the sync loop
+(5.6), replacing the blocking sleep call with an async sleep future. When a
+canceler is configured (iteration 13), the loop polls both the sleep future
+and `canceler.cancel()` so cancellation can interrupt sleeping attempts.
 
 **6.5** The async engine does not spawn tasks or use any global state. It is a single poll-based state machine compatible with any executor that implements `core::task`, and does not perform per-attempt heap allocations in the retry loop.
 
