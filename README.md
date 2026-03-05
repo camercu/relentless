@@ -1,10 +1,21 @@
 # tenacious
 
-`tenacious` is a Rust library for retrying fallible operations and polling for
-conditions with composable stop, wait, and predicate strategies.
+`tenacious` is a Rust retry and polling library for building resilient clients
+without ad hoc retry loops.
 
-It supports `std`, `alloc`, and `no_std` targets, including async execution and
-runtime-specific sleep adapters behind feature flags.
+It is inspired by Python's [`tenacity`](https://github.com/jd/tenacity) library,
+especially its operator-based strategy composition and callback ergonomics, and
+by Rust's [`backon`](https://crates.io/crates/backon) crate, especially its
+lightweight retry-builder workflow.
+
+Compared with `backon`, `tenacious` centers on reusable policy objects that
+compose `Stop`, `Wait`, and `Predicate` strategies directly (`|`, `&`, `+`,
+and `.chain(...)`), support full-result polling predicates like
+`on::wait_for_ok`, and expose lifecycle hooks, cancellation, and optional
+execution stats in the same API surface.
+
+It supports sync and async execution across `std`, `alloc`, `no_std`, and
+`wasm` targets, with runtime-specific sleep adapters behind feature flags.
 
 ## Installation
 
@@ -22,89 +33,113 @@ If you need async runtime adapters or optional integrations, enable features:
 tenacious = { version = "0.1", features = ["tokio-sleep", "jitter", "serde"] }
 ```
 
-## Quick start (sync)
+## Common use cases (start here)
 
-Use `RetryPolicy::default()` for a safe ready-to-run policy:
+For most integrations, start with one of these patterns. They are ordered from
+the simplest default path to more specialized usage.
+
+### Retry reading a file (extension defaults)
+
+Use `RetryExt` for the shortest default path:
 
 - stop: 3 attempts
 - wait: exponential backoff starting at 100ms
 - predicate: retry on any error
 
 ```rust
+use std::fs;
+use tenacious::RetryExt;
+
+let contents = (|| fs::read_to_string("config.toml")).retry().call();
+```
+
+### Retry transient errors with defaults (sync)
+
+Use `RetryPolicy::default()` for a safe, ready-to-run, and reusable policy:
+
+- stop: 3 attempts
+- wait: exponential backoff starting at 100ms
+- predicate: retry on any error
+
+```rust
+use std::fs;
 use tenacious::RetryPolicy;
 
 let mut policy = RetryPolicy::default();
 let result = policy
-    .retry(|| Err::<(), _>("transient"))
-    .sleep(|_dur| {})
+    .retry(|| fs::read_to_string("service-config.toml"))
     .call();
 
-assert!(result.is_err());
+let _ = result;
 ```
 
-If you want full control, start from `RetryPolicy::new()` and configure `.stop`
-explicitly before executing retries:
+### Retry with explicit policy settings (sync)
+
+Use `RetryPolicy::new()` when you want full control over stop and wait behavior:
 
 ```rust
 use core::time::Duration;
+use std::fs;
 use tenacious::{RetryPolicy, stop, wait};
 
 let mut policy = RetryPolicy::new()
     .stop(stop::attempts(5))
     .wait(wait::fixed(Duration::from_millis(20)));
 
-let result = policy.retry(|| Ok::<u32, &str>(42)).sleep(|_dur| {}).call();
-assert_eq!(result, Ok(42));
+let result = policy
+    .retry(|| fs::read_to_string("orders-cache.json"))
+    .call();
+
+let _ = result;
 ```
 
-## Quick start (async)
+### Poll until a value is ready
+
+Use `on::wait_for_ok` when transient errors and "not ready yet" values should
+both keep polling:
+
+```rust
+use core::time::Duration;
+use std::fs;
+use tenacious::{RetryPolicy, on, stop, wait};
+
+let mut policy = RetryPolicy::new()
+    .stop(stop::attempts(4))
+    .wait(wait::fixed(Duration::from_millis(250)))
+    .when(on::wait_for_ok(|ready: &bool| *ready));
+
+let result = policy
+    .retry(|| {
+        let body = fs::read_to_string("/tmp/job-status")?;
+        Ok::<bool, std::io::Error>(body.trim() == "ready")
+    })
+    .call();
+
+let _ = result;
+```
+
+Use `on::ok` when you only want to retry selected `Ok` values and return
+immediately on any `Err`.
+
+### Retry async operations
 
 `retry_async` is runtime-agnostic. Provide any `Sleeper` implementation (or a
 compatible closure):
 
 ```rust
 use core::time::Duration;
+use std::fs;
 use tenacious::{RetryPolicy, stop};
 
 let mut policy = RetryPolicy::new().stop(stop::attempts(3));
 let retry = policy
-    .retry_async(|| async { Ok::<u32, &str>(1) })
+    .retry_async(|| async { fs::read_to_string("profile.json") })
     .sleep(|_dur: Duration| async {});
 
-# let _ = retry;
+let _ = retry;
 ```
 
 With `tokio-sleep` enabled, you can pass `tenacious::sleep::tokio()`.
-
-## Polling for conditions
-
-Use `on::wait_for_ok` for the common polling flow where transient errors and
-"not ready yet" values should both retry:
-
-```rust
-use tenacious::{RetryPolicy, on, stop};
-
-let mut policy = RetryPolicy::new()
-    .stop(stop::attempts(4))
-    .when(on::wait_for_ok(|v: &i32| *v >= 0));
-
-let mut poll = -2;
-let result = policy
-    .retry(|| {
-        poll += 1;
-        if poll == -1 {
-            Err::<i32, &str>("transient")
-        } else {
-            Ok(poll)
-        }
-    })
-    .sleep(|_dur| {})
-    .call();
-assert_eq!(result, Ok(0));
-```
-
-Use `on::ok` when you only want to retry selected `Ok` values and immediately
-return on any `Err`.
 
 ## Public API overview
 
@@ -129,26 +164,26 @@ use tenacious::prelude::*;
 aggregate stats:
 
 ```rust
+use std::fs;
 use tenacious::{RetryPolicy, stop};
 
 let mut policy = RetryPolicy::new().stop(stop::attempts(3));
 
 let (_result, stats) = policy
-    .retry(|| Err::<(), _>("fail"))
+    .retry(|| fs::File::open("service.lock"))
     .before_attempt(|state| {
         let _ = state.attempt;
     })
-    .after_attempt(|state: &tenacious::AttemptState<(), &str>| {
+    .after_attempt(|state| {
         let _ = state.attempt;
     })
-    .on_exit(|state: &tenacious::ExitState<(), &str>| {
+    .on_exit(|state| {
         let _ = state.reason;
     })
-    .sleep(|_dur| {})
     .with_stats()
     .call();
 
-assert_eq!(stats.attempts, 3);
+assert!(stats.attempts >= 1);
 ```
 
 ## Cancellation
@@ -162,13 +197,13 @@ while sleeping between attempts.
 
 ```rust
 use core::sync::atomic::{AtomicBool, Ordering};
-use tenacious::{RetryExt, RetryError, stop};
+use std::fs;
+use tenacious::{RetryExt, RetryError};
 
 let cancelled = AtomicBool::new(false);
 
-let result = (|| Err::<u32, &str>("retryable"))
+let result = (|| fs::read_to_string("/tmp/service.sock"))
     .retry()
-    .stop(stop::attempts(5))
     .sleep(|_dur| {
         cancelled.store(true, Ordering::Relaxed);
     })
@@ -184,6 +219,8 @@ assert!(matches!(result, Err(RetryError::Cancelled { .. })));
   `NeedsStop`; you must call `.stop(...)` before `retry`/`retry_async`.
 - `RetryPolicy::default()` returns a safe configured policy (3 attempts,
   100ms exponential backoff).
+- `RetryExt::retry()` and `AsyncRetryExt::retry_async()` start from the same
+  safe defaults as `RetryPolicy::default()`.
 - `stop::attempts(n)` is the ergonomic constructor for hardcoded, known-valid
   literals.
 - `stop::attempts_checked(n)` is the control-path constructor for runtime or
@@ -230,6 +267,7 @@ amplification. Because `Stop` is an open trait, you can integrate an external
 breaker directly:
 
 ```rust
+use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tenacious::{Stop, RetryState, RetryPolicy, stop, wait};
@@ -260,7 +298,10 @@ let mut policy = RetryPolicy::new()
 
 // When the breaker trips, all in-flight retries stop at the next attempt.
 // breaker.store(true, Ordering::Relaxed);
-let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_| {}).call();
+let _ = policy
+    .retry(|| fs::read_to_string("/tmp/downstream-health"))
+    .sleep(|_| {})
+    .call();
 ```
 
 **Hook panics.** Panics in user-supplied hook callbacks (`before_attempt`,
