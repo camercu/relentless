@@ -156,6 +156,10 @@ assert_eq!(stats.attempts, 3);
 All execution builders support `.cancel_on(...)`, including extension-trait
 builders from `RetryExt` and `AsyncRetryExt`.
 
+With `tokio-cancel` enabled, passing a
+`tokio_util::sync::CancellationToken` enables wake-driven async cancellation
+while sleeping between attempts.
+
 ```rust
 use core::sync::atomic::{AtomicBool, Ordering};
 use tenacious::{RetryExt, RetryError, stop};
@@ -207,6 +211,7 @@ assert!(matches!(result, Err(RetryError::Cancelled { .. })));
 - `gloo-timers-sleep`: wasm/gloo timers adapter
 - `embassy-sleep`: embassy-time adapter (requires an embassy time driver on
   your target)
+- `tokio-cancel`: `CancellationToken`-based async cancellation signaling
 - `jitter`: randomized jitter for wait strategies
 - `serde`: serialization for strategy/stat types
 - `strict-futures`: panics on `AsyncRetry` repoll-after-completion in release

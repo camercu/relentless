@@ -108,8 +108,6 @@ tenacious/
 │   support/              # shared test utilities
 ```
 
-> **Planned files:** Iteration 13 adds `src/cancel.rs` (Canceler trait).
-> Iteration 14 adds extension-trait builders under `src/policy/ext/`.
 > Modules listed as single files in examples (for example `stop.rs`, `wait.rs`)
 > may be implemented as directories (`stop/mod.rs`, etc.) when internal
 > splitting aids readability.
@@ -141,6 +139,10 @@ embassy-sleep = ["dep:embassy-time"]
 gloo-timers-sleep = ["dep:gloo-timers"]
 futures-timer-sleep = ["dep:futures-timer", "std"]
 
+# tokio CancellationToken support for wake-driven cancellation during async
+# sleep.
+tokio-cancel = ["dep:tokio-util"]
+
 # jitter: enables random jitter in wait strategies. Pulls in a small RNG.
 #         Uses rand's SmallRng which is no_std-compatible.
 jitter = ["dep:rand"]
@@ -152,14 +154,6 @@ serde = ["dep:serde"]
 # strict-futures: panic on AsyncRetry repoll-after-completion in all builds.
 #                 Without this feature, release builds return Poll::Pending.
 strict-futures = []
-```
-
-The following feature flags are planned for future iterations:
-
-```toml
-# Planned (iteration 13): tokio CancellationToken support for mid-sleep
-# cancellation in async retry loops.
-tokio-cancel = ["dep:tokio-util"]
 ```
 
 `#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/compat.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
@@ -354,12 +348,16 @@ injection layer is required.
 constructed by the retry engine; direct construction is supported for tests and
 custom strategy implementations.
 
-**1.9** `RetryError<E>` is defined in `error.rs` as an enum with variants
-`Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> }`,
-`PredicateRejected { error: E, attempts: u32, total_elapsed: Option<Duration>
-}`, and `ConditionNotMet { last: T, attempts: u32, total_elapsed: Option<Duration> }`.
+**1.9** `RetryError<E, T = ()>` is defined in `error.rs` as an enum with
+variants `Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration>
+}`, `PredicateRejected { error: E, attempts: u32, total_elapsed:
+Option<Duration> }`, `ConditionNotMet { last: T, attempts: u32,
+total_elapsed: Option<Duration> }`, and `Cancelled { last_result:
+Option<Result<T, E>>, attempts: u32, total_elapsed: Option<Duration> }`.
 
-**1.10** `RetryError<E>` implements `core::fmt::Display` unconditionally and `std::error::Error` when the `std` feature is active and `E: std::error::Error + 'static`.
+**1.10** `RetryError<E, T>` implements `core::fmt::Display` unconditionally
+and `std::error::Error` when the `std` feature is active and `E:
+std::error::Error + 'static`.
 
 **1.11** `Duration` is always `core::time::Duration`, which is available in no_std. No new duration type is introduced.
 
@@ -481,13 +479,16 @@ instead of on `RetryPolicy`.
 
 **5.5** `RetryPolicy::retry(op: F) -> SyncRetry` where `F: FnMut() -> Result<T, E>` begins configuring a sync retry execution. The method takes `&mut self` so it can call `Stop::reset` and `Wait::reset` before beginning. `SyncRetry` borrows the policy for its lifetime and accepts `.sleep(f)` (optional when `std` is active).
 
-**5.6** `SyncRetry::call() -> Result<T, RetryError<E>>` executes the retry loop synchronously. The loop:
+**5.6** `SyncRetry::call() -> Result<T, RetryError<E, T>>` executes the retry
+loop synchronously. The loop:
   1. Calls `op()`.
   2. Evaluates the predicate; if predicate says do not retry, returns the
      current outcome immediately (`Ok(value)` or
      `Err(RetryError::PredicateRejected { ... })`).
-  3. Evaluates the stop condition; if stop fires, returns `Err(RetryError::Exhausted {...})`.
-  4. Calls `Wait::next_wait` to compute the delay.
+  3. Calls `Wait::next_wait` to compute the delay.
+  4. Evaluates the stop condition with `state.next_delay` populated; if stop
+     fires, returns `Err(RetryError::Exhausted { ... })` for `Err` outcomes or
+     `Err(RetryError::ConditionNotMet { ... })` for retried `Ok` outcomes.
   5. Fires `before_sleep` hook with current `AttemptState`.
   6. Calls the sleep function with the computed delay.
   7. Increments attempt counter and repeats.
@@ -512,7 +513,8 @@ propagate normally.
 
 **6.2** `AsyncRetry::sleep(s: impl Sleeper) -> AsyncRetry` sets the sleep implementation. This is required; there is no default async sleep even when a runtime feature is active. Rationale: in async contexts, the correct runtime is always knowable at the call site and implicit selection would silently break in multi-runtime binaries.
 
-**6.3** `AsyncRetry` implements `Future<Output = Result<T, RetryError<E>>>` and can be `.await`ed directly.
+**6.3** `AsyncRetry` implements `Future<Output = Result<T, RetryError<E, T>>>`
+and can be `.await`ed directly.
 
 Polling an `AsyncRetry` after it has completed is misuse: debug builds panic.
 Release builds return `Poll::Pending` unless the `strict-futures` feature is
@@ -564,7 +566,8 @@ cancellation fires before the first attempt.
 
 ## Iteration 8: Statistics
 
-**8.1** Calling `.with_stats()` on `SyncRetry` or `AsyncRetry` changes the return type to `(Result<T, RetryError<E>>, RetryStats)`.
+**8.1** Calling `.with_stats()` on `SyncRetry` or `AsyncRetry` changes the
+return type to `(Result<T, RetryError<E, T>>, RetryStats)`.
 
 **8.2** `RetryStats` is a struct with fields: `attempts: u32`, `total_elapsed: Option<Duration>`, `total_wait: Duration`, `stop_reason: StopReason`.
 
@@ -622,7 +625,8 @@ most common factory functions (`stop::attempts`, `stop::elapsed`,
 `on::wait_for_ok`), allowing `use tenacious::prelude::*` to work without
 further imports.
 
-**10.6** The minimum supported Rust version (MSRV) is 1.85. This is required by edition 2024 and also covers the stabilization of `async fn in trait` (via RPITIT), which is required for the `Sleeper` associated type. The MSRV is declared in `Cargo.toml` via `rust-version = "1.85"`.
+**10.6** The minimum supported Rust version (MSRV) is 1.85. This is required
+by edition 2024 and declared in `Cargo.toml` via `rust-version = "1.85"`.
 
 **10.7** The crate is `#![forbid(unsafe_code)]`. No unsafe is required for any feature. If a dependency requires unsafe, it is isolated and documented.
 
@@ -741,7 +745,7 @@ concerns (logging, metrics) rather than policy-level configuration.
 
 ## Iteration 13: Cancellation Support
 
-> **Status:** Planned.
+> **Status:** Implemented.
 
 This iteration adds cancellation support for both sync and async retry loops,
 allowing external signals to interrupt retries between attempts and (in async)
@@ -755,33 +759,31 @@ gains `Cancelled`), and **10.1** (re-exports gain `Canceler`, `cancel` module).
 
 ```rust
 pub trait Canceler {
+    /// Future type used to detect cancellation while sleeping in async retry.
+    type Cancel: Future<Output = ()>;
+
     /// Returns `true` if cancellation has been requested.
     fn is_cancelled(&self) -> bool;
 
-    /// A future that resolves when cancellation is requested.
-    /// Used by the async engine to race against the sleep future.
-    /// The default implementation returns `core::future::pending()`,
-    /// meaning cancellation is only checked between attempts.
-    fn cancel(&self) -> impl Future<Output = ()> {
-        core::future::pending()
-    }
+    /// Returns a future that resolves when cancellation is requested.
+    fn cancel(&self) -> Self::Cancel;
 }
 ```
 
-**13.2** `Canceler` uses RPITIT (return position `impl Trait` in traits),
-which is stable on the crate's MSRV (1.85). `Canceler` is not intended for
-trait-object use; this is documented.
+**13.2** `Canceler` is not intended for trait-object use. Async retry stores
+`Canceler::Cancel` in its phase machine and polls it alongside the sleep
+future, enabling wake-driven cancellation where implementations support it.
 
 **13.3** Provided implementations:
 
 - `cancel::never()` — ZST that always returns `false`. This is the default
   when no canceler is configured. Zero cost.
-- `&AtomicBool` — `is_cancelled()` loads with `Relaxed` ordering. `cancel()`
-  uses the default `pending()` (poll-only, no mid-sleep interruption).
+- `&AtomicBool` — `is_cancelled()` loads with `Acquire` ordering.
+  `cancel()` returns `pending()` (poll-only, no wake-driven interruption).
   Available in `no_std`.
 - `Arc<AtomicBool>` — same as `&AtomicBool` but owned. Requires `alloc`.
 - `tokio_util::sync::CancellationToken` — `is_cancelled()` checks the token,
-  `cancel()` returns `token.cancelled()` (a waking future that enables
+  `cancel()` returns `token.clone().cancelled_owned()` (a waking future that enables
   mid-sleep interruption). Requires the `tokio-cancel` feature.
 
 **13.4** The execution builder gains `.cancel_on(c: impl Canceler)`:
