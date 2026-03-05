@@ -20,7 +20,7 @@ use crate::{
     wait::{self, Wait},
 };
 
-use super::sync::{NoSyncSleep, SyncSleep};
+use super::sync_retry::{NoSyncSleep, SyncSleep};
 use crate::cancel::{Canceler, NeverCancel};
 
 /// Extension trait to start sync retries directly from a closure/function.

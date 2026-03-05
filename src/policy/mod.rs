@@ -558,7 +558,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
 
 mod common;
 mod ext;
-mod sync;
+mod sync_retry;
 mod time;
 
 #[cfg(feature = "alloc")]
@@ -569,4 +569,4 @@ pub use async_retry::{AsyncRetry, AsyncRetryWithStats};
 #[cfg(feature = "alloc")]
 pub use ext::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
 pub use ext::{RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats};
-pub use sync::{SyncRetry, SyncRetryWithStats};
+pub use sync_retry::{SyncRetry, SyncRetryWithStats};

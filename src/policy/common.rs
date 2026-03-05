@@ -1,4 +1,4 @@
-use super::sync::SyncSleep;
+use super::sync_retry::SyncSleep;
 use super::time::ElapsedTracker;
 use super::*;
 use crate::cancel::Canceler;
