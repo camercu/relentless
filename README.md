@@ -11,36 +11,20 @@ lightweight retry-builder workflow.
 Compared with `backon`, `tenacious` centers on reusable policy objects that
 compose `Stop`, `Wait`, and `Predicate` strategies directly (`|`, `&`, `+`,
 and `.chain(...)`), support full-result polling predicates like
-`on::wait_for_ok`, and expose lifecycle hooks, cancellation, and optional
+`on::until_ready`, and expose lifecycle hooks, cancellation, and optional
 execution stats in the same API surface.
 
 It supports sync and async execution across `std`, `alloc`, `no_std`, and
 `wasm` targets, with runtime-specific sleep adapters behind feature flags.
 
-## Installation
-
-Add the crate to your `Cargo.toml`:
-
-```toml
-[dependencies]
-tenacious = "0.1"
-```
-
-If you need async runtime adapters or optional integrations, enable features:
-
-```toml
-[dependencies]
-tenacious = { version = "0.1", features = ["tokio-sleep", "jitter", "serde"] }
-```
-
-## Common use cases (start here)
+## Examples
 
 For most integrations, start with one of these patterns. They are ordered from
 the simplest default path to more specialized usage.
 
-### Retry reading a file (extension defaults)
+### Retry directly on a closure
 
-Use `RetryExt` for the shortest default path:
+Use `RetryExt` for one-off retry runs. Uses sane defaults:
 
 - stop: 3 attempts
 - wait: exponential backoff starting at 100ms
@@ -50,7 +34,23 @@ Use `RetryExt` for the shortest default path:
 use std::fs;
 use tenacious::RetryExt;
 
-let contents = (|| fs::read_to_string("config.toml")).retry().call();
+let contents = (|| fs::read_to_string("config.toml")).retry().call().unwrap();
+```
+
+Or you can change the default strategy:
+
+```rust
+use core::time::Duration;
+use std::fs;
+use tenacious::RetryExt;
+
+let contents = (|| fs::read_to_string("config.toml"))
+  .retry()
+  .stop(stop::elapsed(Duration::from_secs(5)))
+  .wait(wait::fixed(Duration::from_millis(200)));
+  .call()
+  .unwrap();
+
 ```
 
 ### Retry transient errors with defaults (sync)
@@ -95,31 +95,54 @@ let _ = result;
 
 ### Poll until a value is ready
 
-Use `on::wait_for_ok` when transient errors and "not ready yet" values should
+Use `on::until_ready` when transient errors and "not ready yet" values should
 both keep polling:
 
 ```rust
 use core::time::Duration;
-use std::fs;
 use tenacious::{RetryPolicy, on, stop, wait};
+
+#[derive(Debug)]
+struct HttpError;
+
+#[derive(Debug)]
+struct JobStatus {
+    status: &'static str, // "pending" | "success"
+}
+
+fn fetch_job_status() -> Result<JobStatus, HttpError> {
+    // Example: HTTP 200 { "status": "pending" } -> Ok(JobStatus { status: "pending" })
+    // Example: HTTP 200 { "status": "success" } -> Ok(JobStatus { status: "success" })
+    // Transport/5xx failures would return Err(HttpError).
+    Err(HttpError)
+}
 
 let mut policy = RetryPolicy::new()
     .stop(stop::attempts(4))
     .wait(wait::fixed(Duration::from_millis(250)))
-    .when(on::wait_for_ok(|ready: &bool| *ready));
+    .when(on::until_ready(|response: &JobStatus| response.status == "success"));
 
 let result = policy
-    .retry(|| {
-        let body = fs::read_to_string("/tmp/job-status")?;
-        Ok::<bool, std::io::Error>(body.trim() == "ready")
-    })
+    .retry(fetch_job_status)
     .call();
-
-let _ = result;
 ```
 
-Use `on::ok` when you only want to retry selected `Ok` values and return
-immediately on any `Err`.
+`on::ok` and `on::until_ready` look similar but differ on `Err` handling:
+
+- `on::ok(...)`: retries selected `Ok` values and returns immediately on any `Err`
+- `on::until_ready(...)`: retries on `Err` and retries on `Ok` values until ready criteria met
+
+Side-by-side:
+
+```rust
+use tenacious::on;
+
+let retry_only_ok = on::ok(|value: &u32| *value < 3);
+let retry_until_ready = on::until_ready(|value: &u32| *value >= 3);
+```
+
+`on::until_ready(is_ready)` is equivalent to:
+`on::any_error() | on::ok(|value| !is_ready(value))`.
 
 ### Retry async operations
 
@@ -146,7 +169,7 @@ With `tokio-sleep` enabled, you can pass `tenacious::sleep::tokio()`.
 - `stop`: stop strategies (`attempts`, `elapsed`, `before_elapsed`, `never`)
 - `wait`: wait strategies (`fixed`, `linear`, `exponential`, composition)
 - `on`: retry predicates (`any_error`, `error`, `ok`, `result`,
-  `wait_for_ok`)
+  `until_ready`)
 - `RetryPolicy`: reusable retry configuration
 - `SyncRetry` / `AsyncRetry`: execution builders
 - `RetryError`: terminal retry outcomes

@@ -43,7 +43,7 @@ let b = policy.retry(|| db.get_order(id)).call()?;
 let record = RetryPolicy::new()
     .stop(stop::elapsed(Duration::from_secs(60)))
     .wait(wait::fixed(Duration::from_secs(1)))
-    .when(on::wait_for_ok(Option::is_some))
+    .when(on::until_ready(Option::is_some))
     .retry_async(|| store.poll_record(id))
     .sleep(tokio())
     .await?;
@@ -446,7 +446,10 @@ by the execution engine.
 
 **4.4** `on::result(f: F) where F: Fn(&Result<T, E>) -> bool` produces a predicate that receives the full outcome and returns `true` (retry) when `f` does. This is the general form used for the waitfor pattern.
 
-**4.5** `on::ok(f: F) where F: Fn(&T) -> bool` produces a predicate that returns `true` when the outcome is `Ok(v)` and `f(v)` is true, and `false` for any `Err`. This handles the polling use case cleanly.
+**4.5** `on::ok(f: F) where F: Fn(&T) -> bool` produces a predicate that returns
+`true` when the outcome is `Ok(v)` and `f(v)` is true, and `false` for any
+`Err`. Use this when `Err` outcomes should be terminal and only selected `Ok`
+values should continue retrying.
 
 **4.6** Two predicates combine with `|` to produce a predicate that retries when either constituent says to retry.
 
@@ -628,7 +631,7 @@ module.
 **10.5** The crate exposes a `prelude` module re-exporting all traits and the
 most common factory functions (`stop::attempts`, `stop::elapsed`,
 `wait::exponential`, `wait::fixed`, `on::any_error`, `on::error`, `on::ok`,
-`on::wait_for_ok`), allowing `use tenacious::prelude::*` to work without
+`on::until_ready`), allowing `use tenacious::prelude::*` to work without
 further imports.
 
 **10.6** The minimum supported Rust version (MSRV) is 1.85. This is required
@@ -941,10 +944,12 @@ return closures compatible with `.sleep(...)`:
 - `sleep::gloo()` (requires `gloo-timers-sleep`)
 - `sleep::futures_timer()` (requires `futures-timer-sleep`)
 
-**15.3** The `on` module provides `on::wait_for_ok`, a predicate helper for
+**15.3** The `on` module provides `on::until_ready`, a predicate helper for
 polling-style retries where success depends on an `Ok` value becoming "ready."
 It retries on any `Err`, retries on `Ok(value)` when `is_ready(value)` is
-`false`, and accepts `Ok(value)` when `is_ready(value)` is `true`.
+`false`, and accepts `Ok(value)` when `is_ready(value)` is `true`. This is
+equivalent to composing predicates as:
+`on::any_error() | on::ok(|value| !is_ready(value))`.
 
 ---
 

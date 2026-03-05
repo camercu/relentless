@@ -4,8 +4,8 @@
 //! - [`any_error`] retries on any `Err`.
 //! - [`error`] retries on selected errors.
 //! - [`result`] retries based on the full `Result<T, E>`.
-//! - [`ok`] retries on selected `Ok` values (polling/wait-for pattern).
-//! - [`wait_for_ok`] retries on any error and on `Ok` values that are not ready.
+//! - [`ok`] retries on selected `Ok` values and treats any `Err` as terminal.
+//! - [`until_ready`] retries on any error and on `Ok` values that are not ready.
 //!
 //! Predicates compose with `|` ([`PredicateAny`]) and `&` ([`PredicateAll`]).
 //! Named combinators are also available via [`crate::PredicateExt`].
@@ -163,6 +163,14 @@ where
 ///
 /// Created by [`ok`].
 ///
+/// Behavior:
+///
+/// | Outcome | Retries? |
+/// | --- | --- |
+/// | `Err(e)` | no |
+/// | `Ok(v)` and `matcher(v) == true` | yes |
+/// | `Ok(v)` and `matcher(v) == false` | no |
+///
 /// # Examples
 ///
 /// ```
@@ -181,6 +189,9 @@ pub struct OkPredicate<F> {
 
 /// Produces a predicate that retries when `outcome` is `Ok(value)` and
 /// `matcher(value)` returns `true`.
+///
+/// Use this when `Err` outcomes should return immediately, and only selected
+/// `Ok` values should continue retrying.
 pub fn ok<F>(matcher: F) -> OkPredicate<F> {
     OkPredicate { matcher }
 }
@@ -214,14 +225,22 @@ where
 /// Predicate for wait-for-condition flows that retries on transient errors and
 /// on `Ok` values that are not yet ready.
 ///
-/// Created by [`wait_for_ok`].
+/// Created by [`until_ready`].
+///
+/// Behavior:
+///
+/// | Outcome | Retries? |
+/// | --- | --- |
+/// | `Err(e)` | yes |
+/// | `Ok(v)` and `is_ready(v) == false` | yes |
+/// | `Ok(v)` and `is_ready(v) == true` | no |
 ///
 /// # Examples
 ///
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::wait_for_ok(|value: &u32| *value >= 3);
+/// let predicate = on::until_ready(|value: &u32| *value >= 3);
 ///
 /// assert!(predicate.should_retry(&Err::<u32, &str>("transient")));
 /// assert!(predicate.should_retry(&Ok::<u32, &str>(1)));
@@ -229,7 +248,7 @@ where
 /// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct WaitForOkPredicate<F> {
+pub struct UntilReadyPredicate<F> {
     is_ready: F,
 }
 
@@ -239,11 +258,14 @@ pub struct WaitForOkPredicate<F> {
 /// - retries on any `Err(_)`
 /// - retries on `Ok(value)` when `is_ready(value)` is `false`
 /// - accepts `Ok(value)` when `is_ready(value)` is `true`
-pub fn wait_for_ok<F>(is_ready: F) -> WaitForOkPredicate<F> {
-    WaitForOkPredicate { is_ready }
+///
+/// Equivalent behavior:
+/// `until_ready(is_ready) == any_error() | ok(|value| !is_ready(value))`
+pub fn until_ready<F>(is_ready: F) -> UntilReadyPredicate<F> {
+    UntilReadyPredicate { is_ready }
 }
 
-impl<T, E, F> Predicate<T, E> for WaitForOkPredicate<F>
+impl<T, E, F> Predicate<T, E> for UntilReadyPredicate<F>
 where
     F: Fn(&T) -> bool,
 {
@@ -389,6 +411,6 @@ impl_predicate_ops!(AnyError);
 impl_predicate_ops!(ErrorPredicate<F>, F);
 impl_predicate_ops!(ResultPredicate<F>, F);
 impl_predicate_ops!(OkPredicate<F>, F);
-impl_predicate_ops!(WaitForOkPredicate<F>, F);
+impl_predicate_ops!(UntilReadyPredicate<F>, F);
 impl_predicate_ops!(PredicateAny<A, B>, A, B);
 impl_predicate_ops!(PredicateAll<A, B>, A, B);

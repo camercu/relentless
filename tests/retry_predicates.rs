@@ -81,10 +81,10 @@ fn factory_functions_return_predicates() {
     assert!(ok_predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
 
-    let wait_for_ok = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD);
-    assert_predicate_impl::<u32, TestError, _>(&wait_for_ok);
-    assert!(wait_for_ok.should_retry(&err(TestError::Fatal)));
-    assert!(!wait_for_ok.should_retry(&ok(READY_VALUE)));
+    let until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
+    assert_predicate_impl::<u32, TestError, _>(&until_ready);
+    assert!(until_ready.should_retry(&err(TestError::Fatal)));
+    assert!(!until_ready.should_retry(&ok(READY_VALUE)));
 }
 
 // ---------------------------------------------------------------------------
@@ -169,8 +169,8 @@ fn ok_does_not_call_matcher_for_error_values() {
 }
 
 #[test]
-fn wait_for_ok_retries_until_ready_and_retries_errors() {
-    let predicate = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD);
+fn until_ready_retries_until_ready_and_retries_errors() {
+    let predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&err(TestError::Fatal)));
@@ -179,8 +179,8 @@ fn wait_for_ok_retries_until_ready_and_retries_errors() {
 }
 
 #[test]
-fn wait_for_ok_composes_with_error_matchers() {
-    let predicate = on::wait_for_ok(|value: &u32| *value >= READY_THRESHOLD)
+fn until_ready_composes_with_error_matchers() {
+    let predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD)
         & on::error(|error: &TestError| matches!(error, TestError::Retryable))
         | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
@@ -188,6 +188,30 @@ fn wait_for_ok_composes_with_error_matchers() {
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!predicate.should_retry(&err(TestError::Fatal)));
     assert!(!predicate.should_retry(&ok(READY_VALUE)));
+}
+
+#[test]
+fn until_ready_matches_any_error_or_inverse_ok_composition() {
+    let until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
+    let composed =
+        on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
+
+    assert_eq!(
+        until_ready.should_retry(&err(TestError::Retryable)),
+        composed.should_retry(&err(TestError::Retryable))
+    );
+    assert_eq!(
+        until_ready.should_retry(&err(TestError::Fatal)),
+        composed.should_retry(&err(TestError::Fatal))
+    );
+    assert_eq!(
+        until_ready.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)),
+        composed.should_retry(&ok(ARBITRARY_NOT_READY_VALUE))
+    );
+    assert_eq!(
+        until_ready.should_retry(&ok(READY_VALUE)),
+        composed.should_retry(&ok(READY_VALUE))
+    );
 }
 
 // ---------------------------------------------------------------------------
