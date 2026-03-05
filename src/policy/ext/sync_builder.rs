@@ -1,11 +1,12 @@
 use core::marker::PhantomData;
 
-use crate::compat::Duration;
+#[cfg(feature = "alloc")]
+use super::super::HookChain;
 use super::super::execution::common::execute_sync_loop;
 use super::super::execution::sync_exec::{NoSyncSleep, SyncSleep};
 use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
-#[cfg(feature = "alloc")]
-use super::super::HookChain;
+use crate::cancel::{Canceler, NeverCancel};
+use crate::compat::Duration;
 use crate::predicate::Predicate;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::{
@@ -13,7 +14,6 @@ use crate::{
     stop::{self, Stop},
     wait::{self, Wait},
 };
-use crate::cancel::{Canceler, NeverCancel};
 
 /// Extension trait to start sync retries directly from a closure/function.
 pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
@@ -250,6 +250,9 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 }
 
 #[cfg(feature = "alloc")]
+// Intentional: hook chaining preserves type-state and avoids runtime
+// indirection; signatures are long but mechanically structured.
+#[allow(clippy::type_complexity)]
 impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 {

@@ -5,6 +5,8 @@ use crate::error::RetryError;
 use crate::policy::time::ElapsedTracker;
 use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::predicate::Predicate;
+#[cfg(feature = "alloc")]
+use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
 use crate::stop::Stop;
@@ -431,6 +433,177 @@ pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
     #[cfg(all(not(debug_assertions), not(feature = "strict-futures")))]
     {
         Poll::Pending
+    }
+}
+
+#[cfg(feature = "alloc")]
+// Intentional: this is the shared async state-machine engine used by both
+// policy-based and extension-trait async retry futures.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn poll_async_loop<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>(
+    cx: &mut Context<'_>,
+    policy: &mut RetryPolicy<S, W, P>,
+    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    op: &mut F,
+    sleeper: &SleepImpl,
+    canceler: &C,
+    last_result: &mut Option<Result<T, E>>,
+    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
+    attempt: &mut u32,
+    total_wait: &mut Duration,
+    collect_stats: bool,
+    final_stats: &mut Option<RetryStats>,
+    elapsed_tracker: &ElapsedTracker,
+    completed_type_name: &'static str,
+) -> Poll<Result<T, RetryError<E, T>>>
+where
+    S: Stop,
+    W: Wait,
+    P: Predicate<T, E>,
+    BA: BeforeAttemptHook,
+    AA: AttemptHook<T, E>,
+    BS: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    SleepImpl: Sleeper<Sleep = SleepFut>,
+    SleepFut: Future<Output = ()>,
+    C: Canceler,
+{
+    loop {
+        match phase.as_mut().project() {
+            AsyncPhaseProj::ReadyToStartAttempt => {
+                if canceler.is_cancelled() {
+                    let stats = if collect_stats {
+                        Some(RetryStats {
+                            attempts: *attempt - 1,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                            total_wait: *total_wait,
+                            stop_reason: StopReason::Cancelled,
+                        })
+                    } else {
+                        None
+                    };
+                    let exit_state = ExitState {
+                        attempt: attempt.saturating_sub(1),
+                        outcome: last_result.as_ref(),
+                        elapsed: elapsed_tracker.elapsed(),
+                        total_wait: *total_wait,
+                        reason: StopReason::Cancelled,
+                    };
+                    hooks.on_exit.call(&exit_state);
+                    *final_stats = stats;
+                    phase.set(AsyncPhase::Finished);
+                    return Poll::Ready(Err(RetryError::Cancelled {
+                        last_result: last_result.take(),
+                        attempts: *attempt - 1,
+                        total_elapsed: elapsed_tracker.elapsed(),
+                    }));
+                }
+
+                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed(), *total_wait);
+
+                phase.set(AsyncPhase::PollingOperation { op_future: (op)() });
+            }
+            AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
+                op_future,
+                cx,
+                policy,
+                hooks,
+                *attempt,
+                elapsed_tracker,
+                *total_wait,
+                collect_stats,
+            ) {
+                AsyncOperationPoll::Pending => return Poll::Pending,
+                AsyncOperationPoll::Finished { result, stats } => {
+                    *final_stats = stats;
+                    phase.set(AsyncPhase::Finished);
+                    return Poll::Ready(result);
+                }
+                AsyncOperationPoll::Sleep {
+                    next_delay,
+                    last_result: attempt_last_result,
+                } => {
+                    *last_result = Some(attempt_last_result);
+                    *total_wait = total_wait.saturating_add(next_delay);
+                    phase.set(AsyncPhase::Sleeping {
+                        sleep_future: sleeper.sleep(next_delay),
+                    });
+                }
+            },
+            AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
+                Poll::Pending => {
+                    if canceler.is_cancelled() {
+                        let stats = if collect_stats {
+                            Some(RetryStats {
+                                attempts: *attempt,
+                                total_elapsed: elapsed_tracker.elapsed(),
+                                total_wait: *total_wait,
+                                stop_reason: StopReason::Cancelled,
+                            })
+                        } else {
+                            None
+                        };
+
+                        let exit_state = ExitState {
+                            attempt: *attempt,
+                            outcome: last_result.as_ref(),
+                            elapsed: elapsed_tracker.elapsed(),
+                            total_wait: *total_wait,
+                            reason: StopReason::Cancelled,
+                        };
+                        hooks.on_exit.call(&exit_state);
+                        let cancelled_last = last_result.take();
+
+                        *final_stats = stats;
+                        phase.set(AsyncPhase::Finished);
+                        return Poll::Ready(Err(RetryError::Cancelled {
+                            last_result: cancelled_last,
+                            attempts: *attempt,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                        }));
+                    }
+                    return Poll::Pending;
+                }
+                Poll::Ready(()) => {
+                    if canceler.is_cancelled() {
+                        let stats = if collect_stats {
+                            Some(RetryStats {
+                                attempts: *attempt,
+                                total_elapsed: elapsed_tracker.elapsed(),
+                                total_wait: *total_wait,
+                                stop_reason: StopReason::Cancelled,
+                            })
+                        } else {
+                            None
+                        };
+                        let exit_state = ExitState {
+                            attempt: *attempt,
+                            outcome: last_result.as_ref(),
+                            elapsed: elapsed_tracker.elapsed(),
+                            total_wait: *total_wait,
+                            reason: StopReason::Cancelled,
+                        };
+                        hooks.on_exit.call(&exit_state);
+
+                        *final_stats = stats;
+                        phase.set(AsyncPhase::Finished);
+                        return Poll::Ready(Err(RetryError::Cancelled {
+                            last_result: last_result.take(),
+                            attempts: *attempt,
+                            total_elapsed: elapsed_tracker.elapsed(),
+                        }));
+                    }
+
+                    *attempt = attempt.saturating_add(1);
+                    phase.set(AsyncPhase::ReadyToStartAttempt);
+                }
+            },
+            AsyncPhaseProj::Finished => {
+                return poll_after_completion(completed_type_name);
+            }
+        }
     }
 }
 

@@ -6,24 +6,24 @@ use core::task::{Context, Poll};
 use crate::compat::Duration;
 use pin_project_lite::pin_project;
 
-use super::super::execution::common::{
-    AsyncOperationPoll, AsyncPhase, AsyncPhaseProj, fire_before_attempt, poll_after_completion,
-    poll_operation_future,
-};
+use super::super::execution::common::{AsyncPhase, poll_async_loop};
 use super::super::time::ElapsedTracker;
-use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain, RetryPolicy};
+use super::super::{
+    AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain, RetryPolicy,
+};
 use crate::cancel::{Canceler, NeverCancel};
-use crate::predicate::Predicate;
 use crate::policy::execution::async_exec::NoAsyncSleep;
+use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::{
-    RetryError, RetryStats, StopReason, on,
+    RetryError, RetryStats, on,
     stop::{self, Stop},
     wait::{self, Wait},
 };
 
 /// Extension trait to start async retries directly from a closure/function.
+#[allow(clippy::type_complexity)]
 pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
 where
     Fut: Future<Output = Result<T, E>>,
@@ -146,23 +146,22 @@ pin_project! {
     }
 }
 
-type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C> =
-    AsyncRetryBuilder<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        <SleepImpl as Sleeper>::Sleep,
-        C,
-    >;
+type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C> = AsyncRetryBuilder<
+    S,
+    W,
+    P,
+    BA,
+    AA,
+    BS,
+    OX,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    <SleepImpl as Sleeper>::Sleep,
+    C,
+>;
 
 #[cfg(feature = "alloc")]
 type AsyncBuilderWithBeforeHook<
@@ -311,25 +310,9 @@ where
 {
     fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
         self,
-        map: impl FnOnce(
-            ExecutionHooks<BA, AA, BS, OX>,
-        ) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-    ) -> AsyncRetryBuilder<
-        S,
-        W,
-        P,
-        NewBA,
-        NewAA,
-        NewBS,
-        NewOX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-    > {
+        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
+    ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    {
         let Self {
             policy,
             hooks,
@@ -455,22 +438,8 @@ where
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> AsyncRetryBuilder<
-        S,
-        W,
-        NewPredicate,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-    > {
+    ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    {
         let Self {
             policy,
             hooks,
@@ -565,6 +534,7 @@ where
 {
     /// Sets the async sleep implementation.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
@@ -623,11 +593,11 @@ where
 {
     /// Attaches a canceler that is checked before each attempt and after each sleep.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn cancel_on<NewC: Canceler>(
         self,
         canceler: NewC,
-    ) -> AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC>
-    {
+    ) -> AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
         AsyncRetryBuilder {
             policy: self.policy,
             hooks: self.hooks,
@@ -797,168 +767,27 @@ where
             *this.started = true;
         }
 
-        loop {
-            match this.phase.as_mut().project() {
-                AsyncPhaseProj::ReadyToStartAttempt => {
-                    if this.canceler.is_cancelled() {
-                        let stats = if *this.collect_stats {
-                            Some(RetryStats {
-                                attempts: *this.attempt - 1,
-                                total_elapsed: this.elapsed_tracker.elapsed(),
-                                total_wait: *this.total_wait,
-                                stop_reason: StopReason::Cancelled,
-                            })
-                        } else {
-                            None
-                        };
-                        let exit_state = ExitState {
-                            attempt: this.attempt.saturating_sub(1),
-                            outcome: this.last_result.as_ref(),
-                            elapsed: this.elapsed_tracker.elapsed(),
-                            total_wait: *this.total_wait,
-                            reason: StopReason::Cancelled,
-                        };
-                        this.hooks.on_exit.call(&exit_state);
-
-                        *this.final_stats = stats;
-                        this.phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(Err(RetryError::Cancelled {
-                            last_result: this.last_result.take(),
-                            attempts: *this.attempt - 1,
-                            total_elapsed: this.elapsed_tracker.elapsed(),
-                        }));
-                    }
-
-                    fire_before_attempt(
-                        &mut *this.hooks,
-                        *this.attempt,
-                        this.elapsed_tracker.elapsed(),
-                        *this.total_wait,
-                    );
-                    this.phase.set(AsyncPhase::PollingOperation {
-                        op_future: (this.op)(),
-                    });
-                }
-                AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
-                    op_future,
-                    cx,
-                    &mut *this.policy,
-                    &mut *this.hooks,
-                    *this.attempt,
-                    this.elapsed_tracker,
-                    *this.total_wait,
-                    *this.collect_stats,
-                ) {
-                    AsyncOperationPoll::Pending => return Poll::Pending,
-                    AsyncOperationPoll::Finished { result, stats } => {
-                        *this.final_stats = stats;
-                        this.phase.set(AsyncPhase::Finished);
-                        return Poll::Ready(result);
-                    }
-                    AsyncOperationPoll::Sleep {
-                        next_delay,
-                        last_result,
-                    } => {
-                        *this.last_result = Some(last_result);
-                        *this.total_wait = this.total_wait.saturating_add(next_delay);
-                        this.phase.set(AsyncPhase::Sleeping {
-                            sleep_future: this.sleeper.sleep(next_delay),
-                        });
-                    }
-                },
-                AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
-                    Poll::Pending => {
-                        if this.canceler.is_cancelled() {
-                            let stats = if *this.collect_stats {
-                                Some(RetryStats {
-                                    attempts: *this.attempt,
-                                    total_elapsed: this.elapsed_tracker.elapsed(),
-                                    total_wait: *this.total_wait,
-                                    stop_reason: StopReason::Cancelled,
-                                })
-                            } else {
-                                None
-                            };
-
-                            let exit_state = ExitState {
-                                attempt: *this.attempt,
-                                outcome: this.last_result.as_ref(),
-                                elapsed: this.elapsed_tracker.elapsed(),
-                                total_wait: *this.total_wait,
-                                reason: StopReason::Cancelled,
-                            };
-                            this.hooks.on_exit.call(&exit_state);
-                            let last_result = this.last_result.take();
-
-                            *this.final_stats = stats;
-                            this.phase.set(AsyncPhase::Finished);
-                            return Poll::Ready(Err(RetryError::Cancelled {
-                                last_result,
-                                attempts: *this.attempt,
-                                total_elapsed: this.elapsed_tracker.elapsed(),
-                            }));
-                        }
-                        return Poll::Pending;
-                    }
-                    Poll::Ready(()) => {
-                        if this.canceler.is_cancelled() {
-                            let stats = if *this.collect_stats {
-                                Some(RetryStats {
-                                    attempts: *this.attempt,
-                                    total_elapsed: this.elapsed_tracker.elapsed(),
-                                    total_wait: *this.total_wait,
-                                    stop_reason: StopReason::Cancelled,
-                                })
-                            } else {
-                                None
-                            };
-                            let exit_state = ExitState {
-                                attempt: *this.attempt,
-                                outcome: this.last_result.as_ref(),
-                                elapsed: this.elapsed_tracker.elapsed(),
-                                total_wait: *this.total_wait,
-                                reason: StopReason::Cancelled,
-                            };
-                            this.hooks.on_exit.call(&exit_state);
-
-                            *this.final_stats = stats;
-                            this.phase.set(AsyncPhase::Finished);
-                            return Poll::Ready(Err(RetryError::Cancelled {
-                                last_result: this.last_result.take(),
-                                attempts: *this.attempt,
-                                total_elapsed: this.elapsed_tracker.elapsed(),
-                            }));
-                        }
-
-                        *this.attempt = this.attempt.saturating_add(1);
-                        this.phase.set(AsyncPhase::ReadyToStartAttempt);
-                    }
-                },
-                AsyncPhaseProj::Finished => {
-                    return poll_after_completion("AsyncRetryBuilder");
-                }
-            }
-        }
+        poll_async_loop(
+            cx,
+            &mut *this.policy,
+            &mut *this.hooks,
+            &mut *this.op,
+            &*this.sleeper,
+            &*this.canceler,
+            &mut *this.last_result,
+            this.phase.as_mut(),
+            &mut *this.attempt,
+            &mut *this.total_wait,
+            *this.collect_stats,
+            &mut *this.final_stats,
+            this.elapsed_tracker,
+            "AsyncRetryBuilder",
+        )
     }
 }
 
 impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
-    for AsyncRetryBuilderWithStats<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-    >
+    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     S: Stop,
     W: Wait,
