@@ -284,6 +284,66 @@ mod alloc_tests {
 #[cfg(feature = "alloc")]
 mod async_tests {
     use super::*;
+    use core::future::Future;
+    use core::pin::Pin;
+    use core::task::Poll;
+    use std::rc::Rc;
+
+    /// Number of cancellation-future polls before cancellation is reported.
+    const CANCEL_READY_AFTER_POLLS: u32 = 2;
+
+    struct CancelAfterPollsFuture {
+        poll_count: Rc<Cell<u32>>,
+        ready_after: u32,
+    }
+
+    impl Future for CancelAfterPollsFuture {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+            let next = self.poll_count.get().saturating_add(1);
+            self.poll_count.set(next);
+            if next >= self.ready_after {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct CancelViaFuture {
+        poll_count: Rc<Cell<u32>>,
+        ready_after: u32,
+    }
+
+    impl CancelViaFuture {
+        fn new(ready_after: u32) -> Self {
+            Self {
+                poll_count: Rc::new(Cell::new(0)),
+                ready_after,
+            }
+        }
+
+        fn poll_count(&self) -> u32 {
+            self.poll_count.get()
+        }
+    }
+
+    impl Canceler for CancelViaFuture {
+        type Cancel = CancelAfterPollsFuture;
+
+        fn is_cancelled(&self) -> bool {
+            false
+        }
+
+        fn cancel(&self) -> Self::Cancel {
+            CancelAfterPollsFuture {
+                poll_count: Rc::clone(&self.poll_count),
+                ready_after: self.ready_after,
+            }
+        }
+    }
 
     fn block_on<F: core::future::Future>(f: F) -> F::Output {
         // Minimal single-threaded executor for testing
@@ -491,6 +551,71 @@ mod async_tests {
             Err(RetryError::Cancelled {
                 attempts: 1,
                 last_result: Some(Ok(-1)),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn async_cancel_future_interrupts_sleep_when_poll_signal_stays_false() {
+        let canceler = CancelViaFuture::new(CANCEL_READY_AFTER_POLLS);
+        let canceler_for_assert = canceler.clone();
+        let call_count = Cell::new(0_u32);
+        let mut policy = RetryPolicy::new()
+            .stop(stop::attempts(5))
+            .wait(wait::fixed(Duration::ZERO));
+
+        let result = block_on(
+            policy
+                .retry_async(|| {
+                    call_count.set(call_count.get().saturating_add(1));
+                    async { Err::<(), _>("future-cancel") }
+                })
+                .sleep(|_dur: Duration| core::future::pending())
+                .cancel_on(canceler),
+        );
+
+        assert_eq!(call_count.get(), 1);
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("future-cancel")),
+                ..
+            })
+        ));
+        assert!(canceler_for_assert.poll_count() >= CANCEL_READY_AFTER_POLLS);
+    }
+
+    #[cfg(feature = "tokio-cancel")]
+    #[test]
+    fn async_tokio_cancellation_token_interrupts_sleep() {
+        let token = tokio_util::sync::CancellationToken::new();
+        let token_for_sleep = token.clone();
+        let call_count = Cell::new(0_u32);
+        let mut policy = RetryPolicy::new()
+            .stop(stop::attempts(5))
+            .wait(wait::fixed(Duration::ZERO));
+
+        let result = block_on(
+            policy
+                .retry_async(|| {
+                    call_count.set(call_count.get().saturating_add(1));
+                    async { Err::<(), _>("tokio-cancel") }
+                })
+                .sleep(move |_dur: Duration| {
+                    token_for_sleep.cancel();
+                    core::future::pending()
+                })
+                .cancel_on(token),
+        );
+
+        assert_eq!(call_count.get(), 1);
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("tokio-cancel")),
                 ..
             })
         ));

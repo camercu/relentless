@@ -214,6 +214,62 @@ mod async_tests {
 
     use super::*;
 
+    /// Number of cancellation-future polls before cancellation is reported.
+    const CANCEL_READY_AFTER_POLLS: u32 = 2;
+
+    struct CancelAfterPollsFuture {
+        poll_count: Rc<Cell<u32>>,
+        ready_after: u32,
+    }
+
+    impl Future for CancelAfterPollsFuture {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let next = self.poll_count.get().saturating_add(1);
+            self.poll_count.set(next);
+            if next >= self.ready_after {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct CancelViaFuture {
+        poll_count: Rc<Cell<u32>>,
+        ready_after: u32,
+    }
+
+    impl CancelViaFuture {
+        fn new(ready_after: u32) -> Self {
+            Self {
+                poll_count: Rc::new(Cell::new(0)),
+                ready_after,
+            }
+        }
+
+        fn poll_count(&self) -> u32 {
+            self.poll_count.get()
+        }
+    }
+
+    impl tenacious::Canceler for CancelViaFuture {
+        type Cancel = CancelAfterPollsFuture;
+
+        fn is_cancelled(&self) -> bool {
+            false
+        }
+
+        fn cancel(&self) -> Self::Cancel {
+            CancelAfterPollsFuture {
+                poll_count: Rc::clone(&self.poll_count),
+                ready_after: self.ready_after,
+            }
+        }
+    }
+
     fn noop_waker() -> Waker {
         struct NoopWake;
         impl std::task::Wake for NoopWake {
@@ -369,6 +425,69 @@ mod async_tests {
             Err(RetryError::Cancelled {
                 attempts: 1,
                 last_result: Some(Err(ERROR_VALUE)),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn async_retry_ext_cancel_future_interrupts_sleep_when_poll_signal_stays_false() {
+        let canceler = CancelViaFuture::new(CANCEL_READY_AFTER_POLLS);
+        let canceler_for_assert = canceler.clone();
+        let calls = Cell::new(0_u32);
+
+        let result = block_on(
+            (|| {
+                calls.set(calls.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err("future-cancel"))
+            })
+            .retry_async()
+            .stop(stop::attempts(MAX_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .sleep(|_dur| core::future::pending())
+            .cancel_on(canceler),
+        );
+
+        assert_eq!(calls.get(), 1);
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("future-cancel")),
+                ..
+            })
+        ));
+        assert!(canceler_for_assert.poll_count() >= CANCEL_READY_AFTER_POLLS);
+    }
+
+    #[cfg(feature = "tokio-cancel")]
+    #[test]
+    fn async_retry_ext_tokio_cancellation_token_interrupts_sleep() {
+        let token = tokio_util::sync::CancellationToken::new();
+        let token_for_sleep = token.clone();
+        let calls = Cell::new(0_u32);
+
+        let result = block_on(
+            (|| {
+                calls.set(calls.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err("tokio-cancel"))
+            })
+            .retry_async()
+            .stop(stop::attempts(MAX_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .sleep(move |_dur| {
+                token_for_sleep.cancel();
+                core::future::pending()
+            })
+            .cancel_on(token),
+        );
+
+        assert_eq!(calls.get(), 1);
+        assert!(matches!(
+            result,
+            Err(RetryError::Cancelled {
+                attempts: 1,
+                last_result: Some(Err("tokio-cancel")),
                 ..
             })
         ));
