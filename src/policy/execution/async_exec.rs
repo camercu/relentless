@@ -6,17 +6,23 @@ use core::task::{Context, Poll};
 use pin_project_lite::pin_project;
 
 use crate::cancel::{Canceler, NeverCancel};
+use crate::compat::Duration;
 use crate::error::RetryError;
+#[cfg(feature = "alloc")]
+use crate::policy::HookChain;
+use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{BeforeAttemptState, ExitState};
 use crate::stats::{RetryStats, StopReason};
+use crate::stop::Stop;
+use crate::wait::Wait;
 
 use super::common::{
     AsyncOperationPoll, AsyncPhase, AsyncPhaseProj, fire_before_attempt, poll_after_completion,
     poll_operation_future,
 };
-use super::time::ElapsedTracker;
-use super::*;
+use crate::policy::time::ElapsedTracker;
 
 /// Marker for the absence of an explicit async sleep implementation.
 ///

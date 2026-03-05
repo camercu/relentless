@@ -1,11 +1,17 @@
 use core::marker::PhantomData;
 
 use super::common::execute_sync_loop;
-use super::*;
 use crate::cancel::{Canceler, NeverCancel};
+use crate::compat::Duration;
 use crate::error::RetryError;
+#[cfg(feature = "alloc")]
+use crate::policy::HookChain;
+use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+use crate::predicate::Predicate;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::stats::RetryStats;
+use crate::stop::Stop;
+use crate::wait::Wait;
 
 /// Marker for the absence of an explicit sync sleep function.
 #[doc(hidden)]

@@ -1,10 +1,14 @@
-use super::sync_retry::SyncSleep;
-use super::time::ElapsedTracker;
-use super::*;
+use super::sync_exec::SyncSleep;
 use crate::cancel::Canceler;
+use crate::compat::Duration;
 use crate::error::RetryError;
+use crate::policy::time::ElapsedTracker;
+use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+use crate::predicate::Predicate;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
+use crate::stop::Stop;
+use crate::wait::Wait;
 #[cfg(feature = "alloc")]
 use core::future::Future;
 #[cfg(feature = "alloc")]
@@ -56,7 +60,7 @@ pub(super) enum AttemptTransition<T, E> {
 #[cfg(feature = "alloc")]
 pin_project! {
     #[project = AsyncPhaseProj]
-    pub(super) enum AsyncPhase<Fut, SleepFut> {
+pub(crate) enum AsyncPhase<Fut, SleepFut> {
         ReadyToStartAttempt,
         PollingOperation {
             #[pin]
@@ -71,7 +75,7 @@ pin_project! {
 }
 
 #[cfg(feature = "alloc")]
-pub(super) enum AsyncOperationPoll<T, E> {
+pub(crate) enum AsyncOperationPoll<T, E> {
     Pending,
     Finished {
         result: Result<T, RetryError<E, T>>,
@@ -84,7 +88,7 @@ pub(super) enum AsyncOperationPoll<T, E> {
 }
 
 #[cfg(feature = "alloc")]
-pub(super) fn fire_before_attempt<BA, AA, BS, OX>(
+pub(crate) fn fire_before_attempt<BA, AA, BS, OX>(
     hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
@@ -104,7 +108,7 @@ pub(super) fn fire_before_attempt<BA, AA, BS, OX>(
 // Intentional: this helper wires all state-machine inputs in one place to keep
 // async retry transition logic shared between policy and extension builders.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn poll_operation_future<S, W, P, BA, AA, BS, OX, Fut, T, E>(
+pub(crate) fn poll_operation_future<S, W, P, BA, AA, BS, OX, Fut, T, E>(
     op_future: Pin<&mut Fut>,
     cx: &mut Context<'_>,
     policy: &mut RetryPolicy<S, W, P>,
@@ -288,7 +292,7 @@ where
     )
 }
 
-pub(super) fn execute_sync_loop<
+pub(crate) fn execute_sync_loop<
     S,
     W,
     P,
@@ -420,7 +424,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
-pub(super) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
+pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
     #[cfg(any(debug_assertions, feature = "strict-futures"))]
     panic!("{type_name} polled after completion");
 

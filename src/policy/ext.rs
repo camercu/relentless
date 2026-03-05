@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 
-use super::common::execute_sync_loop;
+use super::execution::common::execute_sync_loop;
 #[cfg(feature = "alloc")]
-use super::common::{
+use super::execution::common::{
     AsyncOperationPoll, AsyncPhase, AsyncPhaseProj, fire_before_attempt, poll_after_completion,
     poll_operation_future,
 };
@@ -20,7 +20,7 @@ use crate::{
     wait::{self, Wait},
 };
 
-use super::sync_retry::{NoSyncSleep, SyncSleep};
+use super::execution::sync_exec::{NoSyncSleep, SyncSleep};
 use crate::cancel::{Canceler, NeverCancel};
 
 /// Extension trait to start sync retries directly from a closure/function.
@@ -514,7 +514,7 @@ mod async_ext {
     use pin_project_lite::pin_project;
 
     use super::*;
-    use crate::policy::async_retry::NoAsyncSleep;
+    use crate::policy::execution::async_exec::NoAsyncSleep;
 
     /// Extension trait to start async retries directly from a closure/function.
     pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized

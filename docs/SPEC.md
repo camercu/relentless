@@ -72,20 +72,29 @@ tenacious/
 │   compat.rs            # conditional-import facade (core/alloc/std)
 │   error.rs             # RetryError type
 │   on.rs                # built-in retry predicate factories and composition
-│   policy.rs            # RetryPolicy builder and sync/async execution engines
+│   policy/
+│   ├── mod.rs           # RetryPolicy builder + policy module surface
+│   ├── ext.rs           # extension-trait builders
+│   ├── execution/
+│   │   ├── hooks.rs     # hook traits/chaining internals
+│   │   ├── common.rs    # shared retry-loop transitions
+│   │   ├── sync_exec.rs # sync execution engine
+│   │   └── async_exec.rs# async execution engine
+│   └── time.rs          # elapsed-time tracking helpers
 │   predicate.rs         # Predicate trait definition
 │   sleep.rs             # Sleeper trait + feature-gated implementations
 │   state.rs             # RetryState, AttemptState, BeforeAttemptState, ExitState
 │   stats.rs             # RetryStats and StopReason
-│   stop.rs              # Stop trait + built-in stop strategies + NeedsStop
-│   wait.rs              # Wait trait + WaitExt + built-in wait strategies
+│   stop/                # Stop trait + built-in stop strategies + NeedsStop
+│   wait/                # Wait trait + WaitExt + built-in wait strategies
 ├── tests/
 │   core_types.rs
 │   stop_strategies.rs
 │   wait_strategies.rs
 │   retry_predicates.rs
 │   policy_sync.rs
-│   async_execution.rs
+│   policy_async.rs
+│   policy_async/         # async policy test modules
 │   callbacks_hooks.rs
 │   stats.rs
 │   feature_compat.rs
@@ -96,9 +105,9 @@ tenacious/
 ```
 
 > **Planned files:** Iteration 13 adds `src/cancel.rs` (Canceler trait).
-> Iteration 14 adds `src/policy/ext.rs` (extension traits).
-> Modules listed as single files above (e.g. `policy.rs`, `stop.rs`, `wait.rs`)
-> may be implemented as directories (`policy/mod.rs`, etc.) when internal
+> Iteration 14 adds extension-trait builders under `src/policy/ext.rs`.
+> Modules listed as single files in examples (for example `stop.rs`, `wait.rs`)
+> may be implemented as directories (`stop/mod.rs`, etc.) when internal
 > splitting aids readability.
 
 ---
