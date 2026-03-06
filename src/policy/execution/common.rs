@@ -169,7 +169,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 fn finish_cancelled_async<T, E, BA, AA, BS, OX>(
     hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
     last_result: &mut Option<Result<T, E>>,
@@ -204,7 +203,7 @@ where
 
     (
         Err(RetryError::Cancelled {
-            last_result: last_result.take(),
+            last: last_result.take(),
             attempts: attempt,
             total_elapsed: elapsed,
         }),
@@ -257,7 +256,7 @@ where
             result: match outcome {
                 Ok(value) => Ok(value),
                 Err(error) => Err(RetryError::PredicateRejected {
-                    error,
+                    last: Err(error),
                     attempts: retry_state.attempt,
                     total_elapsed: retry_state.elapsed,
                 }),
@@ -291,12 +290,12 @@ where
         return AttemptTransition::Finished {
             result: match outcome {
                 Err(error) => Err(RetryError::Exhausted {
-                    error,
+                    last: Err(error),
                     attempts: retry_state.attempt,
                     total_elapsed: retry_state.elapsed,
                 }),
                 Ok(last) => Err(RetryError::ConditionNotMet {
-                    last,
+                    last: Ok(last),
                     attempts: retry_state.attempt,
                     total_elapsed: retry_state.elapsed,
                 }),
@@ -392,9 +391,10 @@ where
 
     loop {
         if canceler.is_cancelled() {
+            let completed_attempts = attempt.saturating_sub(1);
             let stats = if COLLECT_STATS {
                 Some(RetryStats {
-                    attempts: attempt - 1,
+                    attempts: completed_attempts,
                     total_elapsed: elapsed_tracker.elapsed(),
                     total_wait,
                     stop_reason: StopReason::Cancelled,
@@ -403,7 +403,7 @@ where
                 None
             };
             let exit_state = ExitState {
-                attempt: attempt.saturating_sub(1),
+                attempt: completed_attempts,
                 outcome: last_result.as_ref(),
                 elapsed: elapsed_tracker.elapsed(),
                 total_wait,
@@ -412,8 +412,8 @@ where
             hooks.on_exit.call(&exit_state);
             return (
                 Err(RetryError::Cancelled {
-                    last_result,
-                    attempts: attempt - 1,
+                    last: last_result.take(),
+                    attempts: completed_attempts,
                     total_elapsed: elapsed_tracker.elapsed(),
                 }),
                 stats,
@@ -468,7 +468,7 @@ where
 
                     return (
                         Err(RetryError::Cancelled {
-                            last_result: Some(attempt_last_result),
+                            last: Some(attempt_last_result),
                             attempts: attempt,
                             total_elapsed: elapsed_tracker.elapsed(),
                         }),
@@ -532,9 +532,10 @@ where
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
                 if canceler.is_cancelled() {
+                    let completed_attempts = attempt.saturating_sub(1);
                     let stats = if collect_stats {
                         Some(RetryStats {
-                            attempts: *attempt - 1,
+                            attempts: completed_attempts,
                             total_elapsed: elapsed_tracker.elapsed(),
                             total_wait: *total_wait,
                             stop_reason: StopReason::Cancelled,
@@ -543,7 +544,7 @@ where
                         None
                     };
                     let exit_state = ExitState {
-                        attempt: attempt.saturating_sub(1),
+                        attempt: completed_attempts,
                         outcome: last_result.as_ref(),
                         elapsed: elapsed_tracker.elapsed(),
                         total_wait: *total_wait,
@@ -553,8 +554,8 @@ where
                     *final_stats = stats;
                     phase.set(AsyncPhase::Finished);
                     return Poll::Ready(Err(RetryError::Cancelled {
-                        last_result: last_result.take(),
-                        attempts: *attempt - 1,
+                        last: last_result.take(),
+                        attempts: completed_attempts,
                         total_elapsed: elapsed_tracker.elapsed(),
                     }));
                 }

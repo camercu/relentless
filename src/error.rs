@@ -8,9 +8,7 @@ use core::fmt;
 /// # Type Parameters
 ///
 /// - `E`: The error type from the retried operation.
-/// - `T`: The `Ok` value type. Defaults to `()` for the common retry-on-error case,
-///   where `ConditionNotMet` is unreachable. When `on::ok` or `on::result`
-///   predicates cause retries on `Ok` values, `T` carries the last `Ok` value.
+/// - `T`: The `Ok` value type. Defaults to `()` for the common retry-on-error case.
 ///
 /// # Examples
 ///
@@ -20,7 +18,7 @@ use core::fmt;
 ///
 /// // Common case: T defaults to ()
 /// let err: RetryError<String> = RetryError::Exhausted {
-///     error: "connection refused".to_string(),
+///     last: Err("connection refused".to_string()),
 ///     attempts: 3,
 ///     total_elapsed: Some(Duration::from_secs(5)),
 /// };
@@ -31,8 +29,8 @@ use core::fmt;
 pub enum RetryError<E, T = ()> {
     /// All retries exhausted; the operation kept returning `Err`.
     Exhausted {
-        /// The error from the final attempt.
-        error: E,
+        /// The final attempt outcome. In normal `on::error` usage this is `Err(E)`.
+        last: Result<T, E>,
         /// Total number of attempts made.
         attempts: u32,
         /// Wall-clock time elapsed, or `None` if no clock was available.
@@ -44,8 +42,8 @@ pub enum RetryError<E, T = ()> {
     /// This occurs when using a custom predicate (for example `on::error`) that
     /// classifies some errors as non-retryable.
     PredicateRejected {
-        /// The error from the rejected attempt.
-        error: E,
+        /// The rejected attempt outcome. In normal usage this is `Err(E)`.
+        last: Result<T, E>,
         /// Total number of attempts made.
         attempts: u32,
         /// Wall-clock time elapsed, or `None` if no clock was available.
@@ -55,10 +53,9 @@ pub enum RetryError<E, T = ()> {
     /// The stop condition fired while the predicate was still rejecting `Ok` values.
     /// This variant is used when `on::ok` or `on::result` predicates cause retries
     /// on `Ok` values and the stop condition fires before the predicate accepts.
-    /// The last `Ok` value is moved here; no clone is required.
     ConditionNotMet {
-        /// The last `Ok` value that did not satisfy the predicate.
-        last: T,
+        /// The final attempt outcome. In normal `on::ok` usage this is `Ok(T)`.
+        last: Result<T, E>,
         /// Total number of attempts made.
         attempts: u32,
         /// Wall-clock time elapsed, or `None` if no clock was available.
@@ -67,13 +64,11 @@ pub enum RetryError<E, T = ()> {
 
     /// An external cancellation signal interrupted the retry loop.
     ///
-    /// Cancellation is checked before each attempt and after each sleep.
-    /// `last_result` is `None` when cancellation fires before the first attempt.
+    /// Cancellation is checked before each attempt and during sleeps.
     Cancelled {
-        /// The outcome from the most recent attempt, or `None` if cancelled
-        /// before the first attempt. When using `on::ok` predicates this
-        /// preserves `Ok` values that the predicate chose to retry.
-        last_result: Option<Result<T, E>>,
+        /// The outcome from the most recent completed attempt, or `None` when
+        /// cancellation fires before the first attempt.
+        last: Option<Result<T, E>>,
         /// Total number of attempts that completed before cancellation.
         attempts: u32,
         /// Wall-clock time elapsed, or `None` if no clock was available.
@@ -81,47 +76,67 @@ pub enum RetryError<E, T = ()> {
     },
 }
 
+/// Convenience alias for retry-returning operations.
+///
+/// Expands to `Result<T, RetryError<E, T>>`.
+pub type RetryResult<T, E> = core::result::Result<T, RetryError<E, T>>;
+
 impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RetryError::Exhausted {
-                error,
+                last,
                 attempts,
                 total_elapsed,
-            } => {
-                write!(
+            } => match last {
+                Err(error) => write!(
                     f,
                     "retry exhausted after {} attempt(s) (elapsed: {:?}): {}",
                     attempts, total_elapsed, error
-                )
-            }
+                ),
+                Ok(value) => write!(
+                    f,
+                    "retry exhausted after {} attempt(s) (elapsed: {:?}): last value = {:?}",
+                    attempts, total_elapsed, value
+                ),
+            },
             RetryError::ConditionNotMet {
                 last,
                 attempts,
                 total_elapsed,
-            } => {
-                write!(
+            } => match last {
+                Ok(value) => write!(
                     f,
                     "condition not met after {} attempt(s) (elapsed: {:?}): last value = {:?}",
-                    attempts, total_elapsed, last
-                )
-            }
+                    attempts, total_elapsed, value
+                ),
+                Err(error) => write!(
+                    f,
+                    "condition not met after {} attempt(s) (elapsed: {:?}): {}",
+                    attempts, total_elapsed, error
+                ),
+            },
             RetryError::PredicateRejected {
-                error,
+                last,
                 attempts,
                 total_elapsed,
-            } => {
-                write!(
+            } => match last {
+                Err(error) => write!(
                     f,
                     "predicate rejected error after {} attempt(s) (elapsed: {:?}): {}",
                     attempts, total_elapsed, error
-                )
-            }
+                ),
+                Ok(value) => write!(
+                    f,
+                    "predicate rejected error after {} attempt(s) (elapsed: {:?}): last value = {:?}",
+                    attempts, total_elapsed, value
+                ),
+            },
             RetryError::Cancelled {
-                last_result,
+                last,
                 attempts,
                 total_elapsed,
-            } => match last_result {
+            } => match last {
                 Some(Err(error)) => write!(
                     f,
                     "cancelled after {} attempt(s) (elapsed: {:?}): {}",
@@ -150,11 +165,14 @@ where
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            RetryError::Exhausted { error, .. } => Some(error),
-            RetryError::PredicateRejected { error, .. } => Some(error),
-            RetryError::ConditionNotMet { .. } => None,
-            RetryError::Cancelled { last_result, .. } => match last_result {
-                Some(Err(e)) => Some(e as _),
+            RetryError::Exhausted { last, .. }
+            | RetryError::PredicateRejected { last, .. }
+            | RetryError::ConditionNotMet { last, .. } => match last {
+                Err(error) => Some(error as _),
+                _ => None,
+            },
+            RetryError::Cancelled { last, .. } => match last {
+                Some(Err(error)) => Some(error as _),
                 _ => None,
             },
         }

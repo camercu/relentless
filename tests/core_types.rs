@@ -547,18 +547,18 @@ fn exit_state_has_required_fields() {
 #[test]
 fn retry_error_exhausted_variant() {
     let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
-        error: "connection refused".to_string(),
+        last: Err("connection refused".to_string()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
     };
 
     match err {
         tenacious::RetryError::Exhausted {
-            ref error,
+            ref last,
             attempts,
             total_elapsed,
         } => {
-            assert_eq!(error, "connection refused");
+            assert_eq!(last, &Err("connection refused".to_string()));
             assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
             assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
         }
@@ -569,18 +569,18 @@ fn retry_error_exhausted_variant() {
 #[test]
 fn retry_error_predicate_rejected_variant() {
     let err: tenacious::RetryError<String> = tenacious::RetryError::PredicateRejected {
-        error: "fatal".to_string(),
+        last: Err("fatal".to_string()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
     };
 
     match err {
         tenacious::RetryError::PredicateRejected {
-            ref error,
+            ref last,
             attempts,
             total_elapsed,
         } => {
-            assert_eq!(error, "fatal");
+            assert_eq!(last, &Err("fatal".to_string()));
             assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
             assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
         }
@@ -591,7 +591,7 @@ fn retry_error_predicate_rejected_variant() {
 #[test]
 fn retry_error_condition_not_met_variant_carries_last_value() {
     let err: tenacious::RetryError<String, i32> = tenacious::RetryError::ConditionNotMet {
-        last: 42,
+        last: Ok(42),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
     };
@@ -602,7 +602,7 @@ fn retry_error_condition_not_met_variant_carries_last_value() {
             attempts,
             total_elapsed,
         } => {
-            assert_eq!(last, 42);
+            assert_eq!(last, Ok(42));
             assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
             assert_eq!(total_elapsed, None);
         }
@@ -614,7 +614,7 @@ fn retry_error_condition_not_met_variant_carries_last_value() {
 fn retry_error_condition_not_met_default_t_is_unit() {
     // When T defaults to (), ConditionNotMet still compiles.
     let err: tenacious::RetryError<String> = tenacious::RetryError::ConditionNotMet {
-        last: (),
+        last: Ok(()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
     };
@@ -624,7 +624,7 @@ fn retry_error_condition_not_met_default_t_is_unit() {
 #[test]
 fn retry_error_exhausted_elapsed_can_be_none() {
     let err: tenacious::RetryError<&str> = tenacious::RetryError::Exhausted {
-        error: "fail",
+        last: Err("fail"),
         attempts: 1,
         total_elapsed: None,
     };
@@ -638,7 +638,7 @@ fn retry_error_exhausted_elapsed_can_be_none() {
 #[test]
 fn retry_error_display_includes_meaningful_content() {
     let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
-        error: "timeout".to_string(),
+        last: Err("timeout".to_string()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
     };
@@ -654,7 +654,7 @@ fn retry_error_display_includes_meaningful_content() {
     );
 
     let err2: tenacious::RetryError<String, i32> = tenacious::RetryError::ConditionNotMet {
-        last: 99,
+        last: Ok(99),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
     };
@@ -671,7 +671,7 @@ fn retry_error_display_includes_meaningful_content() {
 fn retry_error_implements_std_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out");
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::Exhausted {
-        error: inner,
+        last: Err(inner),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
     };
@@ -689,7 +689,7 @@ fn retry_error_implements_std_error() {
 #[cfg(feature = "std")]
 fn retry_error_condition_not_met_source_is_none() {
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::ConditionNotMet {
-        last: (),
+        last: Ok(()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
     };
@@ -707,7 +707,7 @@ fn retry_error_condition_not_met_source_is_none() {
 fn retry_error_predicate_rejected_source_is_inner_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
     let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::PredicateRejected {
-        error: inner,
+        last: Err(inner),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
     };
@@ -723,7 +723,7 @@ fn retry_error_predicate_rejected_source_is_inner_error() {
 #[test]
 fn retry_error_derives_clone_and_partial_eq() {
     let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
-        error: "fail".to_string(),
+        last: Err("fail".to_string()),
         attempts: 1,
         total_elapsed: None,
     };
@@ -737,13 +737,28 @@ fn retry_error_derives_clone_and_partial_eq() {
 fn retry_error_in_result_context() {
     fn fallible() -> Result<i32, tenacious::RetryError<String>> {
         Err(tenacious::RetryError::Exhausted {
-            error: "fail".to_string(),
+            last: Err("fail".to_string()),
             attempts: 1,
             total_elapsed: None,
         })
     }
 
     assert!(fallible().is_err());
+}
+
+/// Verify RetryResult aliases Result<T, RetryError<E, T>>.
+#[test]
+fn retry_result_alias_matches_retry_error_shape() {
+    fn fallible() -> tenacious::RetryResult<i32, String> {
+        Err(tenacious::RetryError::Exhausted {
+            last: Err("fail".to_string()),
+            attempts: 1,
+            total_elapsed: None,
+        })
+    }
+
+    let result: Result<i32, tenacious::RetryError<String, i32>> = fallible();
+    assert!(result.is_err());
 }
 
 // ---------------------------------------------------------------------------

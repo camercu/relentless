@@ -265,27 +265,30 @@ struct.
 ```rust
 pub enum RetryError<E, T = ()> {
     /// All retries exhausted; the operation kept returning Err.
-    Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration> },
+    Exhausted { last: Result<T, E>, attempts: u32, total_elapsed: Option<Duration> },
     /// Predicate rejected an Err as non-retryable.
-    PredicateRejected { error: E, attempts: u32, total_elapsed: Option<Duration> },
+    PredicateRejected { last: Result<T, E>, attempts: u32, total_elapsed: Option<Duration> },
     /// The stop condition fired while the predicate was still rejecting Ok values.
-    /// The last Ok value is moved here; no clone is required.
-    ConditionNotMet { last: T, attempts: u32, total_elapsed: Option<Duration> },
+    ConditionNotMet { last: Result<T, E>, attempts: u32, total_elapsed: Option<Duration> },
+    /// External cancellation stopped retrying.
+    Cancelled { last: Option<Result<T, E>>, attempts: u32, total_elapsed: Option<Duration> },
 }
 ```
 
 In the common case (retry-on-error, accept any Ok), `T` defaults to `()` and
 `ConditionNotMet` is unreachable. When custom predicates classify some errors
 as non-retryable, `PredicateRejected` returns the current `Err` immediately.
-When `on::ok` or `on::result` is used to retry on Ok values, the caller's
-`Result<T, RetryError<E, T>>` carries the last Ok in the error variant if the
-stop condition fires before the predicate accepts. The execution engine takes
-ownership of the last value; no clone is required.
+When `on::ok` or `on::result` is used to retry on Ok values, `last` may carry
+an `Ok(T)` value. In the usual retry-on-error path, `last` carries `Err(E)`.
+For `Cancelled`, `last` is `None` when cancellation fires before the first
+attempt. The execution engine moves the last outcome into the error; no clone
+is required.
 
-`RetryError` implements `std::error::Error` when `std` is active, `E: Error + 'static`, and `T: Debug`. `Display` is implemented unconditionally.
+The crate also provides `type RetryResult<T, E> = Result<T, RetryError<E, T>>`
+as a convenience alias for retry-returning operations.
 
-> **Planned change (iteration 13):** `RetryError` gains a `Cancelled` variant
-> when cancellation support is added. See 13.6.
+`RetryError` implements `std::error::Error` when `std` is active, `E: Error +
+'static`, and `T: Debug`. `Display` is implemented unconditionally.
 
 ---
 
@@ -349,11 +352,12 @@ constructed by the retry engine; direct construction is supported for tests and
 custom strategy implementations.
 
 **1.9** `RetryError<E, T = ()>` is defined in `error.rs` as an enum with
-variants `Exhausted { error: E, attempts: u32, total_elapsed: Option<Duration>
-}`, `PredicateRejected { error: E, attempts: u32, total_elapsed:
-Option<Duration> }`, `ConditionNotMet { last: T, attempts: u32,
-total_elapsed: Option<Duration> }`, and `Cancelled { last_result:
+variants `Exhausted { last: Result<T, E>, attempts: u32, total_elapsed:
+Option<Duration> }`, `PredicateRejected { last: Result<T, E>, attempts: u32,
+total_elapsed: Option<Duration> }`, `ConditionNotMet { last: Result<T, E>,
+attempts: u32, total_elapsed: Option<Duration> }`, and `Cancelled { last:
 Option<Result<T, E>>, attempts: u32, total_elapsed: Option<Duration> }`.
+`RetryResult<T, E>` is a public alias for `Result<T, RetryError<E, T>>`.
 
 **1.10** `RetryError<E, T>` implements `core::fmt::Display` unconditionally
 and `std::error::Error` when the `std` feature is active and `E:
@@ -613,7 +617,8 @@ including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
 ## Iteration 10: Public API Surface and Ergonomics
 
 **10.1** The following items are re-exported from the crate root:
-`RetryPolicy`, `BoxedRetryPolicy` (alloc), `RetryError`, `RetryStats`,
+`RetryPolicy`, `BoxedRetryPolicy` (alloc), `RetryError`, `RetryResult`,
+`RetryStats`,
 `StopReason`, `SyncRetry`, `SyncRetryWithStats`, `AsyncRetry` (alloc),
 `AsyncRetryWithStats` (alloc), `RetryState`, `AttemptState`,
 `BeforeAttemptState`, the `Stop` trait, `StopAll`, `StopAny`, `NeedsStop`,
@@ -822,14 +827,14 @@ policy
 
 ```rust
 Cancelled {
-    last_result: Option<Result<T, E>>,
+    last: Option<Result<T, E>>,
     attempts: u32,
     total_elapsed: Option<Duration>,
 }
 ```
 
-`last_result` is `Some` when cancellation happens after an attempt and `None`
-when cancellation fires before the first attempt.
+`last` is `Some` when cancellation happens after an attempt and `None` when
+cancellation fires before the first attempt.
 
 **13.7** `StopReason` gains a `Cancelled` variant for use in `RetryStats`.
 

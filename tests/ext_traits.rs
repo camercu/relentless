@@ -159,7 +159,7 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
     assert!(matches!(
         result,
         Err(RetryError::ConditionNotMet {
-            last: -1,
+            last: Ok(-1),
             attempts: 2,
             ..
         })
@@ -178,7 +178,7 @@ fn retry_ext_predicate_rejected_returns_error_immediately() {
     assert!(matches!(
         result,
         Err(RetryError::PredicateRejected {
-            error: ERROR_VALUE,
+            last: Err(ERROR_VALUE),
             attempts: 1,
             ..
         })
@@ -199,7 +199,7 @@ fn retry_ext_cancel_before_first_attempt_returns_cancelled() {
         result,
         Err(RetryError::Cancelled {
             attempts: 0,
-            last_result: None,
+            last: None,
             ..
         })
     ));
@@ -228,7 +228,7 @@ fn retry_ext_cancel_after_attempt_preserves_last_result() {
         result,
         Err(RetryError::Cancelled {
             attempts: 1,
-            last_result: Some(Err(ERROR_VALUE)),
+            last: Some(Err(ERROR_VALUE)),
             ..
         })
     ));
@@ -452,7 +452,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 0,
-                last_result: None,
+                last: None,
                 ..
             })
         ));
@@ -483,7 +483,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err(ERROR_VALUE)),
+                last: Some(Err(ERROR_VALUE)),
                 ..
             })
         ));
@@ -512,7 +512,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("future-cancel")),
+                last: Some(Err("future-cancel")),
                 ..
             })
         ));
@@ -546,7 +546,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("tokio-cancel")),
+                last: Some(Err("tokio-cancel")),
                 ..
             })
         ));
@@ -631,7 +631,7 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
     assert!(matches!(
         from_ext,
         Err(RetryError::Exhausted {
-            error: ERROR_VALUE,
+            last: Err(ERROR_VALUE),
             attempts: MAX_ATTEMPTS,
             ..
         })
@@ -639,7 +639,7 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
     assert!(matches!(
         from_policy,
         Err(RetryError::Exhausted {
-            error: ERROR_VALUE,
+            last: Err(ERROR_VALUE),
             attempts: MAX_ATTEMPTS,
             ..
         })

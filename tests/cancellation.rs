@@ -51,12 +51,12 @@ fn sync_cancel_before_first_attempt() {
 
     match result {
         Err(RetryError::Cancelled {
-            last_result,
+            last,
             attempts,
             ..
         }) => {
             assert_eq!(attempts, 0);
-            assert!(last_result.is_none());
+            assert_eq!(last, None);
         }
         other => panic!("expected Cancelled, got {:?}", other),
     }
@@ -84,12 +84,12 @@ fn sync_cancel_after_first_attempt() {
 
     match result {
         Err(RetryError::Cancelled {
-            last_result,
+            last,
             attempts,
             ..
         }) => {
             assert_eq!(attempts, 1);
-            assert_eq!(last_result, Some(Err("fail")));
+            assert_eq!(last, Some(Err("fail")));
         }
         other => panic!("expected Cancelled, got {:?}", other),
     }
@@ -137,7 +137,7 @@ fn sync_cancellation_does_not_interrupt_running_operation() {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("in-flight")),
+                last: Some(Err("in-flight")),
                 ..
             })
         ));
@@ -261,7 +261,7 @@ fn on_exit_fires_when_cancelled_between_attempts() {
         result,
         Err(RetryError::Cancelled {
             attempts: 1,
-            last_result: Some(Err("fail")),
+            last: Some(Err("fail")),
             ..
         })
     ));
@@ -291,7 +291,7 @@ fn cancelled_last_result_preserves_ok_value_in_polling_mode() {
         result,
         Err(RetryError::Cancelled {
             attempts: 1,
-            last_result: Some(Ok(-1)),
+            last: Some(Ok(-1)),
             ..
         })
     ));
@@ -454,12 +454,12 @@ mod async_tests {
 
         match result {
             Err(RetryError::Cancelled {
-                last_result,
+                last,
                 attempts,
                 ..
             }) => {
                 assert_eq!(attempts, 0);
-                assert!(last_result.is_none());
+                assert_eq!(last, None);
             }
             other => panic!("expected Cancelled, got {:?}", other),
         }
@@ -498,12 +498,12 @@ mod async_tests {
 
         match result {
             Err(RetryError::Cancelled {
-                last_result,
+                last,
                 attempts,
                 ..
             }) => {
                 assert_eq!(attempts, 1);
-                assert_eq!(last_result, Some(Err("async fail")));
+                assert_eq!(last, Some(Err("async fail")));
             }
             other => panic!("expected Cancelled, got {:?}", other),
         }
@@ -543,7 +543,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("op-finished")),
+                last: Some(Err("op-finished")),
                 ..
             })
         ));
@@ -625,7 +625,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("fail")),
+                last: Some(Err("fail")),
                 ..
             })
         ));
@@ -657,7 +657,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Ok(-1)),
+                last: Some(Ok(-1)),
                 ..
             })
         ));
@@ -687,7 +687,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("future-cancel")),
+                last: Some(Err("future-cancel")),
                 ..
             })
         ));
@@ -722,7 +722,7 @@ mod async_tests {
             result,
             Err(RetryError::Cancelled {
                 attempts: 1,
-                last_result: Some(Err("tokio-cancel")),
+                last: Some(Err("tokio-cancel")),
                 ..
             })
         ));

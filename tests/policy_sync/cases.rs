@@ -189,9 +189,9 @@ fn when_builder_configures_predicate() {
     assert_eq!(call_count.get(), 1);
     match result {
         Err(RetryError::PredicateRejected {
-            error, attempts, ..
+            last, attempts, ..
         }) => {
-            assert_eq!(error, "fatal");
+            assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }
         other => panic!(
@@ -273,9 +273,9 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 
     match result {
         Err(RetryError::Exhausted {
-            error, attempts, ..
+            last, attempts, ..
         }) => {
-            assert_eq!(error, "always fails");
+            assert_eq!(last, Err("always fails"));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected Exhausted, got {:?}", other),
@@ -689,7 +689,7 @@ fn condition_not_met_returned_for_ok_predicate_exhaustion() {
 
     match result {
         Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
-            assert_eq!(last, -1);
+            assert_eq!(last, Ok(-1));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected ConditionNotMet, got {:?}", other),
@@ -740,9 +740,9 @@ fn predicate_rejects_err_means_immediate_return() {
     assert_eq!(call_count.get(), 1);
     match result {
         Err(RetryError::PredicateRejected {
-            error, attempts, ..
+            last, attempts, ..
         }) => {
-            assert_eq!(error, "fatal");
+            assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }
         other => panic!(

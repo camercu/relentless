@@ -268,9 +268,9 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
 
     match result {
         Err(RetryError::Exhausted {
-            error, attempts, ..
+            last, attempts, ..
         }) => {
-            assert_eq!(error, ERROR_VALUE);
+            assert_eq!(last, Err(ERROR_VALUE));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected Exhausted, got {:?}", other),
@@ -292,7 +292,7 @@ fn async_retry_returns_condition_not_met_for_ok_exhaustion() {
 
     match result {
         Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
-            assert_eq!(last, -1);
+            assert_eq!(last, Ok(-1));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected ConditionNotMet, got {:?}", other),

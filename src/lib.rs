@@ -70,7 +70,7 @@ pub mod wait;
 
 // Re-export core public types at the crate root (spec 10.1).
 pub use cancel::{Canceler, NeverCancel};
-pub use error::RetryError;
+pub use error::{RetryError, RetryResult};
 #[cfg(feature = "alloc")]
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
@@ -114,7 +114,7 @@ pub mod prelude {
     pub use crate::stop::{attempts, elapsed};
     pub use crate::wait::{exponential, fixed};
     pub use crate::{
-        Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryStats, Stop,
-        StopExt, StopReason, Wait, WaitExt,
+        Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryResult,
+        RetryStats, Stop, StopExt, StopReason, Wait, WaitExt,
     };
 }

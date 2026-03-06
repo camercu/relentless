@@ -290,7 +290,7 @@ fn sync_stop_reason_stop_condition_on_condition_not_met() {
 
     match result {
         Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
-            assert_eq!(last, -1);
+            assert_eq!(last, Ok(-1));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected ConditionNotMet, got {:?}", other),
@@ -359,7 +359,7 @@ fn async_stop_reason_condition_not_met() {
 
     assert!(matches!(
         result,
-        Err(RetryError::ConditionNotMet { last: -1, .. })
+        Err(RetryError::ConditionNotMet { last: Ok(-1), .. })
     ));
     assert_eq!(stats.stop_reason, StopReason::StopCondition);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
