@@ -44,10 +44,10 @@ typos:
     typos
 
 taplo-fmt:
-    taplo fmt
+    taplo fmt Cargo.toml deny.toml
 
 taplo-check:
-    taplo fmt --check
+    taplo fmt --check Cargo.toml deny.toml
 
 targets:
     rustup target add thumbv7m-none-eabi wasm32-unknown-unknown

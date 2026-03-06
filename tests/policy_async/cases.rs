@@ -267,9 +267,7 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
     );
 
     match result {
-        Err(RetryError::Exhausted {
-            last, attempts, ..
-        }) => {
+        Err(RetryError::Exhausted { last, attempts, .. }) => {
             assert_eq!(last, Err(ERROR_VALUE));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }

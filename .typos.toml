@@ -1,2 +1,9 @@
 [files]
 extend-exclude = ["target", "Cargo.lock"]
+
+[default.extend-words]
+AA = "AA"
+BA = "BA"
+BS = "BS"
+OE = "OE"
+OX = "OX"

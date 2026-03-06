@@ -193,8 +193,7 @@ fn until_ready_composes_with_error_matchers() {
 #[test]
 fn until_ready_matches_any_error_or_inverse_ok_composition() {
     let until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
-    let composed =
-        on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
+    let composed = on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
     assert_eq!(
         until_ready.should_retry(&err(TestError::Retryable)),

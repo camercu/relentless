@@ -188,9 +188,7 @@ fn when_builder_configures_predicate() {
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::PredicateRejected {
-            last, attempts, ..
-        }) => {
+        Err(RetryError::PredicateRejected { last, attempts, .. }) => {
             assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }
@@ -272,9 +270,7 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
         .call();
 
     match result {
-        Err(RetryError::Exhausted {
-            last, attempts, ..
-        }) => {
+        Err(RetryError::Exhausted { last, attempts, .. }) => {
             assert_eq!(last, Err("always fails"));
             assert_eq!(attempts, MAX_ATTEMPTS);
         }
@@ -739,9 +735,7 @@ fn predicate_rejects_err_means_immediate_return() {
 
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::PredicateRejected {
-            last, attempts, ..
-        }) => {
+        Err(RetryError::PredicateRejected { last, attempts, .. }) => {
             assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }

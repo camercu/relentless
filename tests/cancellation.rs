@@ -50,11 +50,7 @@ fn sync_cancel_before_first_attempt() {
         .call();
 
     match result {
-        Err(RetryError::Cancelled {
-            last,
-            attempts,
-            ..
-        }) => {
+        Err(RetryError::Cancelled { last, attempts, .. }) => {
             assert_eq!(attempts, 0);
             assert_eq!(last, None);
         }
@@ -83,11 +79,7 @@ fn sync_cancel_after_first_attempt() {
         .call();
 
     match result {
-        Err(RetryError::Cancelled {
-            last,
-            attempts,
-            ..
-        }) => {
+        Err(RetryError::Cancelled { last, attempts, .. }) => {
             assert_eq!(attempts, 1);
             assert_eq!(last, Some(Err("fail")));
         }
@@ -453,11 +445,7 @@ mod async_tests {
         );
 
         match result {
-            Err(RetryError::Cancelled {
-                last,
-                attempts,
-                ..
-            }) => {
+            Err(RetryError::Cancelled { last, attempts, .. }) => {
                 assert_eq!(attempts, 0);
                 assert_eq!(last, None);
             }
@@ -497,11 +485,7 @@ mod async_tests {
         );
 
         match result {
-            Err(RetryError::Cancelled {
-                last,
-                attempts,
-                ..
-            }) => {
+            Err(RetryError::Cancelled { last, attempts, .. }) => {
                 assert_eq!(attempts, 1);
                 assert_eq!(last, Some(Err("async fail")));
             }
