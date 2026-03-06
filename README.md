@@ -193,8 +193,13 @@ let client = reqwest::blocking::Client::new();
 let (result, stats) = (|| fetch_control_plane(&client))
     .retry()
     .when(on::any_error())
-    .before_attempt(|state| {
-        let _ = state.attempt;
+    .after_attempt(|state| {
+        if let Err(err) = state.outcome {
+            log::warn!(
+                "control-plane health check failed on attempt {}: {err}",
+                state.attempt
+            );
+        }
     })
     .sleep(|_dur| {
         // Real world: shutdown signal arrives while waiting for retry.
