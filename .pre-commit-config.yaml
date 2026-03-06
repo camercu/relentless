@@ -1,0 +1,41 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: just-fmt-check
+        name: just fmt-check
+        entry: just fmt-check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: just-taplo-check
+        name: just taplo-check
+        entry: just taplo-check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: just-typos
+        name: just typos
+        entry: just typos
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: just-lint
+        name: just lint
+        entry: just lint
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: just-test-nextest
+        name: just test-nextest
+        entry: just test-nextest
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
