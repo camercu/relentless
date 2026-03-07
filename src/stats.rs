@@ -21,11 +21,14 @@ use crate::compat::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StopReason {
-    /// The operation produced a successful result under the default predicate.
+    /// The retry loop terminated with an accepted `Ok` outcome.
+    ///
+    /// This includes acceptance under custom predicates such as `on::ok(...)`
+    /// or `on::result(...)`, not only the default predicate.
     Success,
     /// A stop strategy fired and terminated retries.
     StopCondition,
-    /// A custom predicate accepted the current outcome.
+    /// A predicate terminated retries on an `Err` outcome before stop fired.
     PredicateAccepted,
     /// An external cancellation signal interrupted the retry loop.
     Cancelled,
@@ -51,7 +54,7 @@ pub enum StopReason {
 /// assert_eq!(stats.attempts, 3);
 /// assert_eq!(stats.total_wait, Duration::from_millis(10));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RetryStats {
     /// Number of attempts that were executed.

@@ -631,8 +631,10 @@ return type to `(Result<T, RetryError<E, T>>, RetryStats)`.
 **8.2** `RetryStats` is a struct with fields: `attempts: u32`, `total_elapsed: Option<Duration>`, `total_wait: Duration`, `stop_reason: StopReason`.
 
 **8.3** `StopReason` is an enum with variants: `Success`, `StopCondition`,
-`PredicateAccepted` (predicate terminated retries before a stop condition,
-including accepted `Ok` outcomes and predicate-rejected `Err` outcomes).
+`PredicateAccepted`, and `Cancelled`. `Success` is used when the retry loop
+terminates with an accepted `Ok` outcome, including acceptance under a custom
+predicate. `PredicateAccepted` is used when the predicate terminates retries on
+an `Err` outcome before a stop condition fires.
 
 **8.4** Statistics are accumulated inside the execution engine only when `.with_stats()` is active. Without it, no timing calls are made solely for statistics purposes.
 

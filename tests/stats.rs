@@ -239,7 +239,7 @@ fn sync_stop_reason_stop_condition_on_exhaustion() {
 }
 
 #[test]
-fn sync_stop_reason_predicate_accepted_for_custom_predicate_on_ok() {
+fn sync_stop_reason_success_for_custom_predicate_on_ok() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(on::ok(|value: &i32| *value < 0));
@@ -253,7 +253,8 @@ fn sync_stop_reason_predicate_accepted_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::PredicateAccepted);
+    // Accepted Ok outcomes report Success, even with custom predicates.
+    assert_eq!(stats.stop_reason, StopReason::Success);
 }
 
 #[test]
@@ -367,7 +368,7 @@ fn async_stop_reason_condition_not_met() {
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_stop_reason_predicate_accepted_for_custom_predicate_on_ok() {
+fn async_stop_reason_success_for_custom_predicate_on_ok() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(on::ok(|value: &i32| *value < 0));
@@ -382,7 +383,8 @@ fn async_stop_reason_predicate_accepted_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::PredicateAccepted);
+    // Accepted Ok outcomes report Success, even with custom predicates.
+    assert_eq!(stats.stop_reason, StopReason::Success);
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +455,7 @@ fn retry_stats_implements_debug_and_clone() {
         stop_reason: StopReason::Success,
     };
 
-    let cloned = stats.clone();
+    let cloned = stats;
     assert_eq!(stats, cloned);
 
     let debug = format!("{:?}", stats);
