@@ -9,32 +9,26 @@ repos:
 
   - repo: local
     hooks:
-      - id: just-fmt-check
-        name: just fmt-check
+      - id: fmt-check
+        name: fmt-check
         entry: nix-shell --run 'just fmt-check'
         language: system
         pass_filenames: false
         stages: [pre-commit]
-      - id: just-taplo-check
-        name: just fmt-check-taplo
-        entry: nix-shell --run 'just fmt-check-taplo'
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-      - id: just-typos
-        name: just lint-typos
+      - id: lint-typos
+        name: lint-typos
         entry: nix-shell --run 'just lint-typos'
         language: system
         pass_filenames: false
         stages: [pre-commit]
-      - id: just-lint
-        name: just lint
-        entry: nix-shell --run 'just lint'
+      - id: lint-clippy
+        name: lint-clippy
+        entry: nix-shell --run 'just lint-clippy'
         language: system
         pass_filenames: false
         stages: [pre-push]
-      - id: just-test-nextest
-        name: just test
+      - id: test
+        name: test
         entry: nix-shell --run 'just test'
         language: system
         pass_filenames: false
