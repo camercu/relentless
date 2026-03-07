@@ -72,7 +72,8 @@ impl<W> WaitJitter<W> {
         }
     }
 
-    /// Sets an explicit PRNG seed for deterministic jitter sequences.
+    /// Sets an explicit PRNG seed for reproducible jitter when paired with
+    /// [`with_nonce`](Self::with_nonce).
     #[must_use]
     pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
         self.seed = seed;
