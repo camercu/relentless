@@ -11,31 +11,31 @@ repos:
     hooks:
       - id: just-fmt-check
         name: just fmt-check
-        entry: just fmt-check
+        entry: nix-shell --run 'just fmt-check'
         language: system
         pass_filenames: false
         stages: [pre-commit]
       - id: just-taplo-check
-        name: just taplo-check
-        entry: just taplo-check
+        name: just fmt-check-taplo
+        entry: nix-shell --run 'just fmt-check-taplo'
         language: system
         pass_filenames: false
         stages: [pre-commit]
       - id: just-typos
-        name: just typos
-        entry: just typos
+        name: just lint-typos
+        entry: nix-shell --run 'just lint-typos'
         language: system
         pass_filenames: false
         stages: [pre-commit]
       - id: just-lint
         name: just lint
-        entry: just lint
+        entry: nix-shell --run 'just lint'
         language: system
         pass_filenames: false
         stages: [pre-push]
       - id: just-test-nextest
-        name: just test-nextest
-        entry: just test-nextest
+        name: just test
+        entry: nix-shell --run 'just test'
         language: system
         pass_filenames: false
         stages: [pre-push]

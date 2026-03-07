@@ -4,37 +4,39 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  fmt:
-    name: Format check
+  canonical-gate:
+    name: Canonical gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: cachix/install-nix-action@19effe9fe722874e6d46dd7182e4b8b7a43c4a99 # v31.10.0
         with:
-          toolchain: stable
-          components: rustfmt
-      - name: cargo fmt
-        run: cargo fmt --all --check
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: just ci
+        run: nix-shell --run 'just ci'
 
-  test-and-lint:
-    name: Test + clippy (all features)
+  stable-advisory:
+    name: Latest stable advisory
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
           toolchain: stable
           components: clippy
-      - name: cargo test
-        run: cargo test --all-targets
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: cargo bench --no-run
-        run: cargo bench --bench retry_hot_paths --no-run
+      - uses: taiki-e/install-action@87026687851535188a2e3e5ac8af4f68b8470b34 # v2.67.22
+        with:
+          tool: just
+      - name: just ci-stable
+        run: just ci-stable
 
   feature-compat:
     name: Feature compatibility (${{ matrix.features }})
@@ -50,9 +52,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
-          toolchain: stable
+          toolchain: "1.85.0"
       - name: cargo test feature_compat
-        run: cargo test --test feature_compat --features ${{ matrix.features }}
+        run: cargo test --test feature_compat --features "${{ matrix.features }}"
 
   runtime-sleep-features:
     name: Runtime sleep features (${{ matrix.features }})
@@ -67,9 +69,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
-          toolchain: stable
+          toolchain: "1.85.0"
       - name: cargo test policy_async
-        run: cargo test --test policy_async --features ${{ matrix.features }}
+        run: cargo test --test policy_async --features "${{ matrix.features }}"
 
   embassy-sleep-compile:
     name: Embassy sleep compile check
@@ -78,7 +80,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
-          toolchain: stable
+          toolchain: "1.85.0"
       - name: cargo check embassy-sleep
         run: cargo check --features embassy-sleep
 
@@ -89,36 +91,20 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
-          toolchain: stable
+          toolchain: "1.85.0"
       - name: cargo test allocation_hot_paths
         run: cargo test --test allocation_hot_paths -- --test-threads=1
 
-  docs:
-    name: Docs lint
-    runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
-        with:
-          toolchain: stable
-      - name: cargo test --doc
-        run: cargo test --doc
-      - name: cargo doc
-        run: cargo doc --all-features --no-deps
-
-  cargo-deny:
-    name: Supply chain (cargo-deny)
+  alloc-compat:
+    name: alloc-only compatibility
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
         with:
-          toolchain: stable
-      - uses: taiki-e/install-action@87026687851535188a2e3e5ac8af4f68b8470b34 # v2.67.22
-      - name: cargo deny
-        run: cargo deny check advisories licenses bans sources
+          toolchain: "1.85.0"
+      - name: cargo check --no-default-features --features alloc
+        run: cargo check --no-default-features --features alloc
 
   msrv:
     name: MSRV 1.85
@@ -132,40 +118,3 @@ jobs:
         run: cargo check --all-targets
       - name: cargo test
         run: cargo test --all-targets
-
-  no-default-feature-tests:
-    name: no-default-features test path
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
-        with:
-          toolchain: stable
-      - name: cargo test --no-default-features
-        run: cargo test --no-default-features
-      - name: cargo check --no-default-features --features alloc
-        run: cargo check --no-default-features --features alloc
-
-  no-std-thumb:
-    name: no_std thumbv7m
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
-        with:
-          toolchain: stable
-          targets: thumbv7m-none-eabi
-      - name: build no-default-features for thumbv7m
-        run: cargo build --target thumbv7m-none-eabi --no-default-features
-
-  no-std-wasm:
-    name: wasm32 no_std compatibility
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-      - name: check no-default-features + alloc + gloo
-        run: cargo check --target wasm32-unknown-unknown --no-default-features --features alloc,gloo-timers-sleep

@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.85.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["thumbv7m-none-eabi", "wasm32-unknown-unknown"]
