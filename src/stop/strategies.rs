@@ -15,14 +15,15 @@ use core::fmt;
 /// use tenacious::stop;
 ///
 /// let mut s = stop::attempts(3);
-/// # let state = tenacious::RetryState {
-/// #     attempt: 3, elapsed: None,
-/// #     next_delay: core::time::Duration::ZERO,
-/// #     total_wait: core::time::Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(
+/// #     3,
+/// #     None,
+/// #     core::time::Duration::ZERO,
+/// #     core::time::Duration::ZERO,
+/// # );
 /// assert!(s.should_stop(&state));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StopAfterAttempts {
     max: u32,
 }
@@ -55,6 +56,7 @@ impl std::error::Error for StopConfigError {}
 /// # Panics
 ///
 /// Panics if `max` is `0`.
+#[must_use]
 pub fn attempts(max: u32) -> StopAfterAttempts {
     attempts_checked(max).expect("stop::attempts requires max >= 1")
 }
@@ -123,13 +125,15 @@ impl<'de> serde::Deserialize<'de> for StopAfterAttempts {
 /// use tenacious::stop;
 ///
 /// let mut s = stop::elapsed(Duration::from_secs(30));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 1, elapsed: Some(Duration::from_secs(31)),
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(
+/// #     1,
+/// #     Some(Duration::from_secs(31)),
+/// #     Duration::ZERO,
+/// #     Duration::ZERO,
+/// # );
 /// assert!(s.should_stop(&state));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAfterElapsed {
     deadline: Duration,
@@ -138,6 +142,7 @@ pub struct StopAfterElapsed {
 /// Produces a strategy that stops when `state.elapsed >= Some(deadline)`.
 ///
 /// When no clock is available (`elapsed` is `None`), this strategy never fires.
+#[must_use]
 pub fn elapsed(deadline: Duration) -> StopAfterElapsed {
     StopAfterElapsed { deadline }
 }
@@ -171,13 +176,15 @@ impl Stop for StopAfterElapsed {
 /// use tenacious::stop;
 ///
 /// let mut s = stop::before_elapsed(Duration::from_secs(10));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 1, elapsed: Some(Duration::from_secs(9)),
-/// #     next_delay: Duration::from_secs(2), total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(
+/// #     1,
+/// #     Some(Duration::from_secs(9)),
+/// #     Duration::from_secs(2),
+/// #     Duration::ZERO,
+/// # );
 /// assert!(s.should_stop(&state)); // 9s + 2s >= 10s
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopBeforeElapsed {
     deadline: Duration,
@@ -190,6 +197,7 @@ pub struct StopBeforeElapsed {
 /// attempt. It does not estimate the next operation's runtime.
 ///
 /// When no clock is available (`elapsed` is `None`), this strategy never fires.
+#[must_use]
 pub fn before_elapsed(deadline: Duration) -> StopBeforeElapsed {
     StopBeforeElapsed { deadline }
 }
@@ -214,18 +222,20 @@ impl Stop for StopBeforeElapsed {
 /// use tenacious::stop;
 ///
 /// let mut s = stop::never();
-/// # let state = tenacious::RetryState {
-/// #     attempt: u32::MAX, elapsed: None,
-/// #     next_delay: core::time::Duration::ZERO,
-/// #     total_wait: core::time::Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(
+/// #     u32::MAX,
+/// #     None,
+/// #     core::time::Duration::ZERO,
+/// #     core::time::Duration::ZERO,
+/// # );
 /// assert!(!s.should_stop(&state));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopNever;
 
 /// Produces a strategy that always returns `false` — never stops.
+#[must_use]
 pub fn never() -> StopNever {
     StopNever
 }
@@ -240,5 +250,5 @@ impl Stop for StopNever {
 ///
 /// This type intentionally does **not** implement [`Stop`], so retry
 /// execution methods are unavailable until a concrete stop strategy is set.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NeedsStop;

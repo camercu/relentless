@@ -37,12 +37,7 @@ const CHAIN_AFTER: u32 = 3;
 // ---------------------------------------------------------------------------
 
 fn make_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: None,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
 }
 
 // ---------------------------------------------------------------------------
@@ -393,32 +388,36 @@ fn chain_reset_propagates_and_resets_counter() {
 #[test]
 fn fixed_is_clone_and_debug() {
     let w = wait::fixed(BASE);
-    let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&w);
+    let debug = format!("{:?}", w);
     assert!(!debug.is_empty());
 }
 
 #[test]
 fn linear_is_clone_and_debug() {
     let w = wait::linear(BASE, INCREMENT);
-    let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&w);
+    let debug = format!("{:?}", w);
     assert!(!debug.is_empty());
 }
 
 #[test]
 fn exponential_is_clone_and_debug() {
     let w = wait::exponential(BASE);
-    let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&w);
+    let debug = format!("{:?}", w);
     assert!(!debug.is_empty());
 }
 
 #[test]
 fn exponential_with_base_is_clone_and_debug() {
     let w = wait::exponential(BASE).base(3.0);
-    let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&w);
+    let debug = format!("{:?}", w);
     assert!(!debug.is_empty());
 }
 

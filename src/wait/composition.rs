@@ -21,13 +21,10 @@ use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
 ///     .cap(Duration::from_millis(500));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 10, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(10, None, Duration::ZERO, Duration::ZERO);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCapped<W> {
     pub(super) inner: W,
@@ -58,13 +55,10 @@ impl<W: Wait> Wait for WaitCapped<W> {
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100))
 ///     + wait::fixed(Duration::from_millis(50));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 1, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCombine<A, B> {
     left: A,
@@ -97,6 +91,13 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 ///
 /// Created by calling `.chain(other, after)` on a wait strategy.
 ///
+/// The second strategy receives the original `RetryState` unchanged — in
+/// particular, `state.attempt` is the *global* attempt count, not a count
+/// relative to the chain switch. Growth-based strategies like
+/// [`exponential`](super::exponential) or [`linear`](super::linear) will
+/// therefore compute delays based on the total attempt number. For a
+/// flat fallback, use [`fixed`](super::fixed) as the second strategy.
+///
 /// # Examples
 ///
 /// ```
@@ -106,14 +107,11 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
 ///     .chain(wait::fixed(Duration::from_secs(5)), 3);
-/// # let state = tenacious::RetryState {
-/// #     attempt: 4, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(4, None, Duration::ZERO, Duration::ZERO);
 /// // Attempt 4 > 3, so uses the fixed fallback.
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitChain<A, B> {
     first: A,

@@ -74,12 +74,7 @@ fn make_state(state: &mut u64) -> tenacious::RetryState {
     };
     let next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
 
-    tenacious::RetryState {
-        attempt,
-        elapsed,
-        next_delay,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, elapsed, next_delay, Duration::ZERO)
 }
 
 #[test]

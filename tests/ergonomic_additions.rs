@@ -37,12 +37,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 fn state(attempt: u32, elapsed: Option<Duration>) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, elapsed, Duration::ZERO, Duration::ZERO)
 }
 
 #[test]

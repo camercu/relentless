@@ -36,12 +36,7 @@ const SUBUNIT_EXPONENTIAL_BASE: f64 = 0.5;
 
 #[cfg(any(feature = "jitter", feature = "serde"))]
 fn state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: None,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
 }
 
 #[cfg(feature = "jitter")]

@@ -215,6 +215,7 @@ retry loop:
 ```rust
 // Passed to: Stop::should_stop, Wait::next_wait
 // Contains only counters and timing — no outcome reference.
+#[non_exhaustive]
 pub struct RetryState {
     pub attempt: u32,             // 1-indexed; the attempt that just completed
     pub elapsed: Option<Duration>,
@@ -222,7 +223,17 @@ pub struct RetryState {
     pub total_wait: Duration,
 }
 
+impl RetryState {
+    pub fn new(
+        attempt: u32,
+        elapsed: Option<Duration>,
+        next_delay: Duration,
+        total_wait: Duration,
+    ) -> Self;
+}
+
 // Passed to: after_attempt, before_sleep hooks
+#[non_exhaustive]
 pub struct AttemptState<'a, T, E> {
     pub attempt: u32,             // 1-indexed; the attempt that just completed
     pub outcome: &'a Result<T, E>,
@@ -231,20 +242,46 @@ pub struct AttemptState<'a, T, E> {
     pub total_wait: Duration,
 }
 
+impl<'a, T, E> AttemptState<'a, T, E> {
+    pub fn new(
+        attempt: u32,
+        outcome: &'a Result<T, E>,
+        elapsed: Option<Duration>,
+        next_delay: Duration,
+        total_wait: Duration,
+    ) -> Self;
+}
+
 // Passed to: before_attempt hook
+#[non_exhaustive]
 pub struct BeforeAttemptState {
     pub attempt: u32,             // 1-indexed; the attempt about to begin
     pub elapsed: Option<Duration>,
     pub total_wait: Duration,
 }
 
+impl BeforeAttemptState {
+    pub fn new(attempt: u32, elapsed: Option<Duration>, total_wait: Duration) -> Self;
+}
+
 // Passed to: on_exit hook
+#[non_exhaustive]
 pub struct ExitState<'a, T, E> {
     pub attempt: u32,             // 1-indexed; 0 only when cancelled before first attempt
     pub outcome: Option<&'a Result<T, E>>, // None only for pre-first-attempt cancellation
     pub elapsed: Option<Duration>,
     pub total_wait: Duration,
     pub reason: StopReason,
+}
+
+impl<'a, T, E> ExitState<'a, T, E> {
+    pub fn new(
+        attempt: u32,
+        outcome: Option<&'a Result<T, E>>,
+        elapsed: Option<Duration>,
+        total_wait: Duration,
+        reason: StopReason,
+    ) -> Self;
 }
 ```
 
@@ -341,15 +378,24 @@ injection layer is required.
 
 **1.6** `Sleeper` is blanket-implemented for any `F: Fn(Duration) -> Fut where Fut: Future<Output = ()>`, so callers can pass `tokio::time::sleep` directly without wrapping.
 
-**1.7** `RetryState` is a struct with fields: `attempt: u32` (1-indexed), `elapsed: Option<Duration>`, `next_delay: Duration`, and `total_wait: Duration`. It carries only counters and timing — no outcome reference — and is passed to `Stop::should_stop` and `Wait::next_wait`. `AttemptState<'a, T, E>` extends this with `outcome: &'a Result<T, E>` and is passed to hooks that need outcome visibility.
+**1.7** `RetryState` is a `#[non_exhaustive]` public struct with fields:
+`attempt: u32` (1-indexed), `elapsed: Option<Duration>`, `next_delay:
+Duration`, and `total_wait: Duration`. It carries only counters and timing —
+no outcome reference — and is passed to `Stop::should_stop` and
+`Wait::next_wait`. `AttemptState<'a, T, E>` extends this with
+`outcome: &'a Result<T, E>` and is passed to hooks that need outcome
+visibility. `BeforeAttemptState` and `ExitState<'a, T, E>` follow the same
+pattern and are also `#[non_exhaustive]`.
 
 **1.8** `RetryState` is passed by shared reference to `Stop::should_stop` and
 `Wait::next_wait`. `AttemptState` is passed to `after_attempt` and
 `before_sleep` hooks. `BeforeAttemptState` is passed to `before_attempt`.
 `ExitState` is passed to `on_exit`. `Predicate::should_retry` receives
 `&Result<T, E>` directly. During normal execution these state types are
-constructed by the retry engine; direct construction is supported for tests and
-custom strategy implementations.
+constructed by the retry engine. For tests, examples, and custom strategy
+implementations, the crate provides `new(...)` constructors on each state type.
+External code must not rely on struct literals, because the state types are
+`#[non_exhaustive]` to preserve forward compatibility.
 
 **1.9** `RetryError<E, T = ()>` is defined in `error.rs` as an enum with
 variants `Exhausted { last: Result<T, E>, attempts: u32, total_elapsed:

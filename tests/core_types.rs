@@ -415,12 +415,7 @@ fn retry_state_has_required_fields() {
     let next_delay = Duration::from_millis(200);
     let total_wait = Duration::from_millis(100);
 
-    let state = tenacious::RetryState {
-        attempt: 1,
-        elapsed: Some(elapsed),
-        next_delay,
-        total_wait,
-    };
+    let state = tenacious::RetryState::new(1, Some(elapsed), next_delay, total_wait);
 
     assert_eq!(state.attempt, 1);
     assert_eq!(state.elapsed, Some(elapsed));
@@ -436,12 +431,7 @@ fn retry_state_attempt_is_one_indexed() {
 
 #[test]
 fn retry_state_elapsed_can_be_none() {
-    let state = tenacious::RetryState {
-        attempt: 1,
-        elapsed: None,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    };
+    let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
     assert_eq!(state.elapsed, None);
 }
 
@@ -450,13 +440,13 @@ fn attempt_state_has_flat_fields_and_outcome() {
     let retry_state = make_retry_state(1);
     let outcome: Result<i32, String> = Ok(42);
 
-    let state = tenacious::AttemptState {
-        attempt: retry_state.attempt,
-        outcome: &outcome,
-        elapsed: retry_state.elapsed,
-        next_delay: retry_state.next_delay,
-        total_wait: retry_state.total_wait,
-    };
+    let state = tenacious::AttemptState::new(
+        retry_state.attempt,
+        &outcome,
+        retry_state.elapsed,
+        retry_state.next_delay,
+        retry_state.total_wait,
+    );
 
     assert_eq!(state.attempt, 1);
     assert_eq!(*state.outcome, Ok(42));
@@ -468,13 +458,13 @@ fn attempt_state_with_err_outcome() {
     let retry_state = make_retry_state(1);
     let outcome: Result<(), String> = Err("network timeout".to_string());
 
-    let state = tenacious::AttemptState {
-        attempt: retry_state.attempt,
-        outcome: &outcome,
-        elapsed: retry_state.elapsed,
-        next_delay: retry_state.next_delay,
-        total_wait: retry_state.total_wait,
-    };
+    let state = tenacious::AttemptState::new(
+        retry_state.attempt,
+        &outcome,
+        retry_state.elapsed,
+        retry_state.next_delay,
+        retry_state.total_wait,
+    );
 
     assert!(state.outcome.is_err());
     assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
@@ -485,11 +475,7 @@ fn before_attempt_state_has_required_fields() {
     let elapsed = Duration::from_secs(1);
     let total_wait = Duration::from_millis(500);
 
-    let state = tenacious::BeforeAttemptState {
-        attempt: 2,
-        elapsed: Some(elapsed),
-        total_wait,
-    };
+    let state = tenacious::BeforeAttemptState::new(2, Some(elapsed), total_wait);
 
     assert_eq!(state.attempt, 2);
     assert_eq!(state.elapsed, Some(elapsed));
@@ -498,35 +484,23 @@ fn before_attempt_state_has_required_fields() {
 
 #[test]
 fn before_attempt_state_does_not_have_outcome() {
-    // Compile-time structural check: BeforeAttemptState has only these three fields.
-    // If an `outcome` or `next_delay` field were added, this exhaustive destructure
-    // would fail to compile.
-    let state = tenacious::BeforeAttemptState {
-        attempt: 1,
-        elapsed: None,
-        total_wait: Duration::ZERO,
-    };
-    let tenacious::BeforeAttemptState {
-        attempt,
-        elapsed,
-        total_wait,
-    } = state;
-    assert_eq!(attempt, 1);
-    assert_eq!(elapsed, None);
-    assert_eq!(total_wait, Duration::ZERO);
+    let state = tenacious::BeforeAttemptState::new(1, None, Duration::ZERO);
+    assert_eq!(state.attempt, 1);
+    assert_eq!(state.elapsed, None);
+    assert_eq!(state.total_wait, Duration::ZERO);
 }
 
 #[test]
 fn exit_state_has_required_fields() {
     let retry_state = make_retry_state(2);
     let outcome = Err::<i32, &str>("fatal");
-    let state = tenacious::ExitState {
-        attempt: retry_state.attempt,
-        outcome: Some(&outcome),
-        elapsed: retry_state.elapsed,
-        total_wait: retry_state.total_wait,
-        reason: tenacious::StopReason::StopCondition,
-    };
+    let state = tenacious::ExitState::new(
+        retry_state.attempt,
+        Some(&outcome),
+        retry_state.elapsed,
+        retry_state.total_wait,
+        tenacious::StopReason::StopCondition,
+    );
 
     assert_eq!(state.attempt, 2);
     assert!(
@@ -732,6 +706,31 @@ fn retry_error_derives_clone_and_partial_eq() {
     assert_eq!(err, cloned);
 }
 
+#[test]
+fn public_value_types_derive_common_traits() {
+    fn assert_copy<T: Copy>() {}
+
+    assert_copy::<tenacious::RetryState>();
+    assert_copy::<tenacious::BeforeAttemptState>();
+    assert_copy::<tenacious::RetryStats>();
+    assert_copy::<tenacious::StopReason>();
+    assert_copy::<tenacious::wait::WaitFixed>();
+    assert_copy::<tenacious::wait::WaitLinear>();
+    assert_copy::<tenacious::wait::WaitExponential>();
+    assert_copy::<tenacious::stop::StopAfterAttempts>();
+    assert_copy::<tenacious::stop::StopAfterElapsed>();
+    assert_copy::<tenacious::stop::StopBeforeElapsed>();
+    assert_copy::<tenacious::stop::StopNever>();
+    assert_copy::<tenacious::NeverCancel>();
+    assert_copy::<tenacious::on::AnyError>();
+
+    let policy = tenacious::RetryPolicy::default();
+    assert_eq!(policy, policy.clone());
+    assert_eq!(tenacious::stop::StopNever, tenacious::stop::never());
+    assert_eq!(tenacious::NeverCancel, tenacious::cancel::never());
+    assert_eq!(tenacious::on::AnyError, tenacious::on::any_error());
+}
+
 /// Verify RetryError can be used in a Result context (ergonomics).
 #[test]
 fn retry_error_in_result_context() {
@@ -769,12 +768,7 @@ fn retry_result_alias_matches_retry_error_shape() {
 fn duration_is_core_time_duration() {
     // AttemptState uses Duration — verify it's the standard core::time::Duration.
     let d: core::time::Duration = ARBITRARY_DURATION;
-    let state = tenacious::RetryState {
-        attempt: 1,
-        elapsed: None,
-        next_delay: d,
-        total_wait: Duration::ZERO,
-    };
+    let state = tenacious::RetryState::new(1, None, d, Duration::ZERO);
     assert_eq!(state.next_delay, ARBITRARY_DURATION);
 }
 
@@ -801,10 +795,5 @@ fn default_retry_policy_is_send_and_sync() {
 /// NOTE: The spec says state types are "never constructed by user code" (1.8).
 /// These helpers simulate what the execution engine would do.
 fn make_retry_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: None,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
 }

@@ -10,8 +10,8 @@ use crate::compat::Duration;
 /// `Wait` decoupled from the operation's `Result<T, E>` type.
 ///
 /// This struct is normally constructed by the execution engine and passed by
-/// shared reference. Direct construction is available for testing and custom
-/// strategy implementations.
+/// shared reference. For tests and custom strategy implementations, use
+/// [`RetryState::new`] rather than a struct literal.
 ///
 /// # Examples
 ///
@@ -23,7 +23,8 @@ use crate::compat::Duration;
 ///     println!("attempt {} elapsed {:?}", state.attempt, state.elapsed);
 /// }
 /// ```
-#[derive(Debug)]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryState {
     /// The 1-indexed attempt number that just completed.
     ///
@@ -44,6 +45,24 @@ pub struct RetryState {
     pub total_wait: Duration,
 }
 
+impl RetryState {
+    /// Creates a retry state value for tests and custom strategy code.
+    #[must_use]
+    pub const fn new(
+        attempt: u32,
+        elapsed: Option<Duration>,
+        next_delay: Duration,
+        total_wait: Duration,
+    ) -> Self {
+        Self {
+            attempt,
+            elapsed,
+            next_delay,
+            total_wait,
+        }
+    }
+}
+
 /// Read-only context passed to [`Predicate::should_retry`](crate::Predicate::should_retry)
 /// and the `after_attempt` and `before_sleep` hooks.
 ///
@@ -52,7 +71,8 @@ pub struct RetryState {
 /// hooks.
 ///
 /// This struct is constructed internally by the execution engine and passed by
-/// shared reference. It is never constructed by user code in normal usage.
+/// shared reference. For tests and custom integrations, use
+/// [`AttemptState::new`] rather than a struct literal.
 ///
 /// # Examples
 ///
@@ -65,7 +85,8 @@ pub struct RetryState {
 ///     println!("attempt {} result {:?}", state.attempt, state.outcome);
 /// }
 /// ```
-#[derive(Debug)]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttemptState<'a, T, E> {
     /// The 1-indexed attempt number that just completed.
     pub attempt: u32,
@@ -83,6 +104,26 @@ pub struct AttemptState<'a, T, E> {
 
     /// Cumulative time spent sleeping across all previous attempts.
     pub total_wait: Duration,
+}
+
+impl<'a, T, E> AttemptState<'a, T, E> {
+    /// Creates an attempt state value for tests and custom integrations.
+    #[must_use]
+    pub const fn new(
+        attempt: u32,
+        outcome: &'a Result<T, E>,
+        elapsed: Option<Duration>,
+        next_delay: Duration,
+        total_wait: Duration,
+    ) -> Self {
+        Self {
+            attempt,
+            outcome,
+            elapsed,
+            next_delay,
+            total_wait,
+        }
+    }
 }
 
 /// Final read-only context passed to the `on_exit` hook.
@@ -105,7 +146,8 @@ pub struct AttemptState<'a, T, E> {
 ///     }
 /// }
 /// ```
-#[derive(Debug)]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExitState<'a, T, E> {
     /// The 1-indexed attempt number that just completed.
     pub attempt: u32,
@@ -126,6 +168,26 @@ pub struct ExitState<'a, T, E> {
     pub reason: crate::stats::StopReason,
 }
 
+impl<'a, T, E> ExitState<'a, T, E> {
+    /// Creates an exit state value for tests and custom integrations.
+    #[must_use]
+    pub const fn new(
+        attempt: u32,
+        outcome: Option<&'a Result<T, E>>,
+        elapsed: Option<Duration>,
+        total_wait: Duration,
+        reason: crate::stats::StopReason,
+    ) -> Self {
+        Self {
+            attempt,
+            outcome,
+            elapsed,
+            total_wait,
+            reason,
+        }
+    }
+}
+
 /// Read-only context passed only to the `before_attempt` hook.
 ///
 /// Unlike [`AttemptState`], this does not contain the outcome of the previous
@@ -142,7 +204,8 @@ pub struct ExitState<'a, T, E> {
 ///     println!("starting attempt {}", state.attempt);
 /// }
 /// ```
-#[derive(Debug)]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BeforeAttemptState {
     /// The 1-indexed attempt number about to begin.
     pub attempt: u32,
@@ -153,4 +216,16 @@ pub struct BeforeAttemptState {
 
     /// Cumulative time spent sleeping across all previous attempts.
     pub total_wait: Duration,
+}
+
+impl BeforeAttemptState {
+    /// Creates a before-attempt state value for tests and custom integrations.
+    #[must_use]
+    pub const fn new(attempt: u32, elapsed: Option<Duration>, total_wait: Duration) -> Self {
+        Self {
+            attempt,
+            elapsed,
+            total_wait,
+        }
+    }
 }

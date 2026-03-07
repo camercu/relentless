@@ -3,7 +3,7 @@ use crate::state::RetryState;
 
 use super::Wait;
 
-#[cfg(all(feature = "jitter", target_has_atomic = "ptr"))]
+#[cfg(target_has_atomic = "ptr")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use rand::{Rng, SeedableRng, rngs::SmallRng};
@@ -39,12 +39,7 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 ///
 /// let mut strategy = wait::fixed(Duration::from_millis(50))
 ///     .jitter(Duration::from_millis(10));
-/// let state = RetryState {
-///     attempt: 1,
-///     elapsed: None,
-///     next_delay: Duration::ZERO,
-///     total_wait: Duration::ZERO,
-/// };
+/// let state = RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));

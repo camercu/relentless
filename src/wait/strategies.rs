@@ -19,13 +19,10 @@ use super::math::{
 /// use core::time::Duration;
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 1, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitFixed {
     duration: Duration,
@@ -56,14 +53,11 @@ impl Wait for WaitFixed {
 /// use core::time::Duration;
 ///
 /// let mut w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 3, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
 /// // 100ms + (3-1)*50ms = 200ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitLinear {
     initial: Duration,
@@ -103,14 +97,11 @@ impl Wait for WaitLinear {
 /// use core::time::Duration;
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100));
-/// # let state = tenacious::RetryState {
-/// #     attempt: 3, elapsed: None,
-/// #     next_delay: Duration::ZERO, total_wait: Duration::ZERO,
-/// # };
+/// # let state = tenacious::RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
 /// // 100ms * 2^2 = 400ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaitExponential {
     initial: Duration,
     base: f64,
@@ -143,6 +134,7 @@ fn deserialize_exponential_base(base: f64) -> Result<f64, &'static str> {
 impl WaitExponential {
     /// Changes the exponential base from the default of `2.0`.
     ///
+    /// Non-finite values (`NaN`, `Infinity`) are clamped to `1.0`.
     /// Values below `1.0` are clamped to `1.0` without panicking. A base of
     /// `1.0` produces a constant delay equal to `initial` on every attempt.
     #[must_use]
@@ -215,18 +207,8 @@ mod serde_validation_tests {
     fn deserialize_exponential_base_clamps_subunit_values() {
         let mut strategy = exponential(ARBITRARY_INITIAL_WAIT)
             .base(deserialize_exponential_base(SUBUNIT_BASE).expect("base should parse"));
-        let first = strategy.next_wait(&RetryState {
-            attempt: 1,
-            elapsed: None,
-            next_delay: Duration::ZERO,
-            total_wait: Duration::ZERO,
-        });
-        let second = strategy.next_wait(&RetryState {
-            attempt: 2,
-            elapsed: None,
-            next_delay: Duration::ZERO,
-            total_wait: Duration::ZERO,
-        });
+        let first = strategy.next_wait(&RetryState::new(1, None, Duration::ZERO, Duration::ZERO));
+        let second = strategy.next_wait(&RetryState::new(2, None, Duration::ZERO, Duration::ZERO));
         assert_eq!(first, second);
     }
 }

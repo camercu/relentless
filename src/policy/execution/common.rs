@@ -26,26 +26,26 @@ fn attempt_state_from<'a, T, E>(
     retry_state: &RetryState,
     outcome: &'a Result<T, E>,
 ) -> AttemptState<'a, T, E> {
-    AttemptState {
-        attempt: retry_state.attempt,
+    AttemptState::new(
+        retry_state.attempt,
         outcome,
-        elapsed: retry_state.elapsed,
-        next_delay: retry_state.next_delay,
-        total_wait: retry_state.total_wait,
-    }
+        retry_state.elapsed,
+        retry_state.next_delay,
+        retry_state.total_wait,
+    )
 }
 
 fn exit_state_from<'a, T, E>(
     attempt_state: &AttemptState<'a, T, E>,
     reason: StopReason,
 ) -> ExitState<'a, T, E> {
-    ExitState {
-        attempt: attempt_state.attempt,
-        outcome: Some(attempt_state.outcome),
-        elapsed: attempt_state.elapsed,
-        total_wait: attempt_state.total_wait,
+    ExitState::new(
+        attempt_state.attempt,
+        Some(attempt_state.outcome),
+        attempt_state.elapsed,
+        attempt_state.total_wait,
         reason,
-    }
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -93,13 +93,13 @@ where
         StopReason::Cancelled,
     );
 
-    let exit_state = ExitState {
-        attempt: attempts,
-        outcome: last_result.as_ref(),
+    let exit_state = ExitState::new(
+        attempts,
+        last_result.as_ref(),
         elapsed,
         total_wait,
-        reason: StopReason::Cancelled,
-    };
+        StopReason::Cancelled,
+    );
     hooks.on_exit.call(&exit_state);
 
     (
@@ -271,11 +271,7 @@ pub(crate) fn fire_before_attempt<BA, AA, BS, OX>(
 ) where
     BA: BeforeAttemptHook,
 {
-    let before_state = BeforeAttemptState {
-        attempt,
-        elapsed,
-        total_wait,
-    };
+    let before_state = BeforeAttemptState::new(attempt, elapsed, total_wait);
     hooks.before_attempt.call(&before_state);
 }
 
@@ -401,12 +397,7 @@ where
     BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
-    let retry_state = RetryState {
-        attempt,
-        elapsed,
-        next_delay: Duration::ZERO,
-        total_wait,
-    };
+    let retry_state = RetryState::new(attempt, elapsed, Duration::ZERO, total_wait);
 
     process_attempt_transition(policy, hooks, outcome, retry_state, collect_stats)
 }
@@ -647,9 +638,9 @@ where
 
 fn stop_reason_for_predicate_accept<T, E>(
     outcome: &Result<T, E>,
-    predicate_is_default: bool,
+    _predicate_is_default: bool,
 ) -> StopReason {
-    if outcome.is_ok() && predicate_is_default {
+    if outcome.is_ok() {
         StopReason::Success
     } else {
         StopReason::PredicateAccepted

@@ -31,21 +31,11 @@ const DEADLINE: Duration = Duration::from_secs(30);
 // ---------------------------------------------------------------------------
 
 fn make_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: None,
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
 }
 
 fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: Some(elapsed),
-        next_delay: Duration::ZERO,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, Some(elapsed), Duration::ZERO, Duration::ZERO)
 }
 
 fn make_state_with_delay(
@@ -53,12 +43,7 @@ fn make_state_with_delay(
     elapsed: Duration,
     next_delay: Duration,
 ) -> tenacious::RetryState {
-    tenacious::RetryState {
-        attempt,
-        elapsed: Some(elapsed),
-        next_delay,
-        total_wait: Duration::ZERO,
-    }
+    tenacious::RetryState::new(attempt, Some(elapsed), next_delay, Duration::ZERO)
 }
 
 // ---------------------------------------------------------------------------
@@ -370,32 +355,36 @@ fn nested_composite_reset_propagates_deeply() {
 #[test]
 fn attempts_is_clone_and_debug() {
     let s = stop::attempts(MAX_ATTEMPTS);
-    let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&s);
+    let debug = format!("{:?}", s);
     assert!(debug.contains("StopAfterAttempts"));
 }
 
 #[test]
 fn elapsed_is_clone_and_debug() {
     let s = stop::elapsed(DEADLINE);
-    let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&s);
+    let debug = format!("{:?}", s);
     assert!(debug.contains("StopAfterElapsed"));
 }
 
 #[test]
 fn before_elapsed_is_clone_and_debug() {
     let s = stop::before_elapsed(DEADLINE);
-    let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&s);
+    let debug = format!("{:?}", s);
     assert!(debug.contains("StopBeforeElapsed"));
 }
 
 #[test]
 fn never_is_clone_and_debug() {
     let s = stop::never();
-    let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    fn assert_clone<T: Clone>(_value: &T) {}
+    assert_clone(&s);
+    let debug = format!("{:?}", s);
     assert!(debug.contains("StopNever"));
 }
 
@@ -419,7 +408,7 @@ fn stop_all_is_clone_and_debug() {
 #[test]
 fn cloned_strategy_is_independent() {
     let mut original = stop::attempts(MAX_ATTEMPTS);
-    let mut cloned = original.clone();
+    let mut cloned = original;
 
     let state = make_state(MAX_ATTEMPTS);
     assert!(original.should_stop(&state));
