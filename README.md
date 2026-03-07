@@ -30,6 +30,8 @@ cargo add tenacious
 
 Optional runtime adapters and feature flags are in [`Cargo.toml`](./Cargo.toml).
 
+If you want to contribute, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
 ---
 
 ## Quick start
