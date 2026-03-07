@@ -1,20 +1,27 @@
 //! Cancellation support for retry loops.
 //!
 //! The [`Canceler`] trait allows external signals to interrupt a retry loop
-//! between attempts. Cancellation is checked at two points:
+//! between attempts. Cancellation is checked at three points:
 //!
 //! 1. Before starting a new attempt (including the very first).
 //! 2. After sleeping between attempts.
-//! 3. While sleeping in async retries, by polling a cancellation future.
+//! 3. While sleeping in async retries, by racing against a cancellation future.
 //!
 //! # Implementations
 //!
-//! | Type | Feature gate | Notes |
-//! |------|-------------|-------|
-//! | [`NeverCancel`] | *(always)* | Zero-cost no-op; the default. |
-//! | `&AtomicBool` | *(always)* | Shared flag; `Acquire` load. |
-//! | `Arc<AtomicBool>` | `alloc` | Owned shared flag. |
-//! | `CancellationToken` | `tokio-cancel` | Tokio-util token. |
+//! | Type | Feature gate | Async sleep interruption |
+//! |------|-------------|--------------------------|
+//! | [`NeverCancel`] | *(always)* | N/A (no cancellation). |
+//! | `&AtomicBool` | *(always)* | **No.** Detected only at check-points 1 and 2. |
+//! | `Arc<AtomicBool>` | `alloc` | **No.** Same as `&AtomicBool`. |
+//! | `CancellationToken` | `tokio-cancel` | **Yes.** Wakes the sleep future immediately. |
+//!
+//! `AtomicBool`-based cancelers cannot wake a sleeping async future. During an
+//! async sleep, cancellation is only detected when the sleep future itself
+//! yields `Pending` and the poll falls through to the `is_cancelled()` check.
+//! In practice, this means cancellation latency can be as long as the current
+//! sleep duration. For latency-sensitive async cancellation, use
+//! `CancellationToken` via the `tokio-cancel` feature.
 //!
 //! `Canceler` is **not** intended for trait-object use (`dyn Canceler`);
 //! all implementations are concrete, zero-cost types.
@@ -43,7 +50,7 @@ pub trait Canceler {
 
 /// A canceler that never cancels. This is the default when no canceler
 /// is configured, and compiles down to nothing.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NeverCancel;
 
 impl Canceler for NeverCancel {
@@ -62,6 +69,7 @@ impl Canceler for NeverCancel {
 
 /// Convenience constructor for [`NeverCancel`].
 #[inline]
+#[must_use]
 pub fn never() -> NeverCancel {
     NeverCancel
 }

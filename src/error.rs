@@ -10,6 +10,11 @@ use core::fmt;
 /// - `E`: The error type from the retried operation.
 /// - `T`: The `Ok` value type. Defaults to `()` for the common retry-on-error case.
 ///
+/// The parameter order `<E, T>` is intentionally reversed from `Result<T, E>`
+/// so that `T` can default to `()`. Rust requires default type parameters to
+/// be trailing, and this ordering enables the common `RetryError<MyError>`
+/// shorthand without specifying `T`.
+///
 /// # Examples
 ///
 /// ```
@@ -25,7 +30,7 @@ use core::fmt;
 ///
 /// println!("{}", err);
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryError<E, T = ()> {
     /// All retries exhausted; the operation kept returning `Err`.
     Exhausted {
@@ -128,7 +133,7 @@ impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
                 ),
                 Ok(value) => write!(
                     f,
-                    "predicate rejected error after {} attempt(s) (elapsed: {:?}): last value = {:?}",
+                    "predicate rejected result after {} attempt(s) (elapsed: {:?}): last value = {:?}",
                     attempts, total_elapsed, value
                 ),
             },

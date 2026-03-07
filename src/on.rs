@@ -26,27 +26,14 @@ use core::ops::{BitAnd, BitOr};
 /// let outcome: Result<u32, &str> = Err("boom");
 /// assert!(predicate.should_retry(&outcome));
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AnyError;
 
 /// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
+#[must_use]
 pub fn any_error() -> AnyError {
     AnyError
-}
-
-impl AnyError {
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
-    }
 }
 
 impl<T, E> Predicate<T, E> for AnyError {
@@ -79,22 +66,9 @@ pub struct ErrorPredicate<F> {
 
 /// Produces a predicate that retries when `outcome` is `Err(e)` and
 /// `matcher(e)` returns `true`.
+#[must_use]
 pub fn error<F>(matcher: F) -> ErrorPredicate<F> {
     ErrorPredicate { matcher }
-}
-
-impl<F> ErrorPredicate<F> {
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
-    }
 }
 
 impl<T, E, F> Predicate<T, E> for ErrorPredicate<F>
@@ -132,22 +106,9 @@ pub struct ResultPredicate<F> {
 }
 
 /// Produces a predicate that retries when `matcher(outcome)` returns `true`.
+#[must_use]
 pub fn result<F>(matcher: F) -> ResultPredicate<F> {
     ResultPredicate { matcher }
-}
-
-impl<F> ResultPredicate<F> {
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
-    }
 }
 
 impl<T, E, F> Predicate<T, E> for ResultPredicate<F>
@@ -192,22 +153,9 @@ pub struct OkPredicate<F> {
 ///
 /// Use this when `Err` outcomes should return immediately, and only selected
 /// `Ok` values should continue retrying.
+#[must_use]
 pub fn ok<F>(matcher: F) -> OkPredicate<F> {
     OkPredicate { matcher }
-}
-
-impl<F> OkPredicate<F> {
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
-    }
 }
 
 impl<T, E, F> Predicate<T, E> for OkPredicate<F>
@@ -261,6 +209,7 @@ pub struct UntilReadyPredicate<F> {
 ///
 /// Equivalent behavior:
 /// `until_ready(is_ready) == any_error() | ok(|value| !is_ready(value))`
+#[must_use]
 pub fn until_ready<F>(is_ready: F) -> UntilReadyPredicate<F> {
     UntilReadyPredicate { is_ready }
 }
@@ -291,7 +240,7 @@ where
 /// assert!(predicate.should_retry(&Ok(1)));
 /// assert!(!predicate.should_retry(&Ok(5)));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAny<A, B> {
     left: A,
@@ -300,20 +249,9 @@ pub struct PredicateAny<A, B> {
 
 impl<A, B> PredicateAny<A, B> {
     /// Creates a composite predicate that retries when either side retries.
+    #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
-    }
-
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
     }
 }
 
@@ -342,7 +280,7 @@ where
 /// assert!(predicate.should_retry(&Err("retryable")));
 /// assert!(!predicate.should_retry(&Err("fatal")));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAll<A, B> {
     left: A,
@@ -351,20 +289,9 @@ pub struct PredicateAll<A, B> {
 
 impl<A, B> PredicateAll<A, B> {
     /// Creates a composite predicate that retries only when both sides retry.
+    #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
-    }
-
-    /// Returns a predicate that retries when either side retries.
-    #[must_use]
-    pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-        PredicateAny::new(self, rhs)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    #[must_use]
-    pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-        PredicateAll::new(self, rhs)
     }
 }
 
@@ -382,8 +309,8 @@ where
 // Predicate composition operator impls
 // ---------------------------------------------------------------------------
 
-/// Generates `BitOr` and `BitAnd` impls for a predicate type, producing
-/// [`PredicateAny`] and [`PredicateAll`] composites respectively.
+/// Generates `BitOr` / `BitAnd` operator impls and inherent `or()` / `and()`
+/// combinator methods for a predicate type.
 ///
 /// Each invocation takes `($ty:ty $(, $param:ident)*)` where `$param` lists
 /// any generic parameters the type carries (e.g. `F` for `ErrorPredicate<F>`).
@@ -401,6 +328,20 @@ macro_rules! impl_predicate_ops {
             type Output = PredicateAll<Self, Rhs>;
 
             fn bitand(self, rhs: Rhs) -> Self::Output {
+                PredicateAll::new(self, rhs)
+            }
+        }
+
+        impl<$($param,)*> $ty {
+            /// Returns a predicate that retries when either side retries.
+            #[must_use]
+            pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
+                PredicateAny::new(self, rhs)
+            }
+
+            /// Returns a predicate that retries only when both sides retry.
+            #[must_use]
+            pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
                 PredicateAll::new(self, rhs)
             }
         }

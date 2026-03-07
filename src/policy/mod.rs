@@ -25,11 +25,24 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 /// Function pointer type used to supply elapsed time in no_std or custom runtimes.
 type ElapsedClockFn = fn() -> Duration;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct PolicyMeta {
     predicate_is_default: bool,
     elapsed_clock: Option<ElapsedClockFn>,
 }
+
+impl PartialEq for PolicyMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.predicate_is_default == other.predicate_is_default
+            && match (self.elapsed_clock, other.elapsed_clock) {
+                (Some(left), Some(right)) => core::ptr::fn_addr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+impl Eq for PolicyMeta {}
 
 /// Reusable retry configuration.
 ///
@@ -63,7 +76,7 @@ struct PolicyMeta {
 ///     .stop(stop::attempts(1))
 ///     .before_attempt(|_state| {});
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy<S = stop::StopAfterAttempts, W = wait::WaitExponential, P = on::AnyError> {
     stop: S,
     wait: W,
@@ -91,6 +104,12 @@ where
     }
 }
 
+/// # Serde round-trip note
+///
+/// The `elapsed_clock` function pointer is not serializable and is dropped
+/// during serialization. Deserialized policies always have `elapsed_clock`
+/// set to `None`. If you rely on a custom clock, re-apply it after
+/// deserialization via [`RetryPolicy::elapsed_clock`].
 #[cfg(feature = "serde")]
 impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P>
 where

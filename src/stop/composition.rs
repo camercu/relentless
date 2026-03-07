@@ -21,7 +21,7 @@ use core::ops::{BitAnd, BitOr};
 /// // Stop after 5 attempts OR after 30 seconds, whichever comes first.
 /// let mut s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAny<A, B> {
     left: A,
@@ -33,6 +33,7 @@ impl<A, B> StopAny<A, B> {
     ///
     /// This constructor is useful for composing custom [`Stop`] implementations
     /// that don't have `BitOr` operator overloads.
+    #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
@@ -89,7 +90,7 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 /// // Stop only when BOTH conditions are true.
 /// let mut s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAll<A, B> {
     left: A,
@@ -101,6 +102,7 @@ impl<A, B> StopAll<A, B> {
     ///
     /// This constructor is useful for composing custom [`Stop`] implementations
     /// that don't have `BitAnd` operator overloads.
+    #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
