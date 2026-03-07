@@ -5,6 +5,11 @@ conditions.
 
 The spec is in [SPEC.md](/docs/SPEC.md).
 
+For developer workflow and tool setup, follow
+[CONTRIBUTING.md](/CONTRIBUTING.md). Treat it as the source of truth for the
+pinned shell environment, setup script, Git hooks, and `just`-based CI
+workflow.
+
 ## Coding Rules
 
 - Never use magic numbers whose meaning isn't obvious from context. Extract
