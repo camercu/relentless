@@ -4,6 +4,9 @@ use crate::compat::Duration;
 pub(super) const MIN_EXPONENTIAL_BASE: f64 = 1.0;
 
 pub(super) fn clamp_exponential_base(base: f64) -> f64 {
+    if !base.is_finite() {
+        return MIN_EXPONENTIAL_BASE;
+    }
     f64::max(base, MIN_EXPONENTIAL_BASE)
 }
 

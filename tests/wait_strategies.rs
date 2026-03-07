@@ -195,6 +195,13 @@ fn exponential_base_negative_clamped_to_1() {
     assert_eq!(w.next_wait(&state), BASE);
 }
 
+#[test]
+fn exponential_base_infinity_clamped_to_1() {
+    let mut w = wait::exponential(BASE).base(f64::INFINITY);
+    let state = make_state(3);
+    assert_eq!(w.next_wait(&state), BASE);
+}
+
 // ---------------------------------------------------------------------------
 // 3.5: .cap(max)
 // ---------------------------------------------------------------------------
