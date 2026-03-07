@@ -27,7 +27,10 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// ```
     /// use tenacious::RetryExt;
     ///
-    /// let _ = (|| Ok::<(), &str>(())).retry().call();
+    /// let _ = (|| Ok::<(), &str>(()))
+    ///     .retry()
+    ///     .sleep(|_| {})
+    ///     .call();
     /// ```
     fn retry(
         self,
