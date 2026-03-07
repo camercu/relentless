@@ -1,12 +1,22 @@
 //! Tests for cancellation support (Spec iteration 13).
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 use std::cell::Cell;
 
 use tenacious::{Canceler, RetryError, RetryPolicy, RetryStats, StopReason, cancel, stop, wait};
 
 fn instant_sleep(_dur: Duration) {}
+
+const ELAPSED_SNAPSHOT_STEP_MILLIS: u64 = 1;
+
+static ELAPSED_SNAPSHOT_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
+
+fn elapsed_snapshot_clock() -> Duration {
+    Duration::from_millis(
+        ELAPSED_SNAPSHOT_CLOCK_MILLIS.fetch_add(ELAPSED_SNAPSHOT_STEP_MILLIS, Ordering::Relaxed),
+    )
+}
 
 #[derive(Default)]
 struct CancelOnCheck {
@@ -162,6 +172,35 @@ fn stats_reports_cancelled_reason() {
     assert!(matches!(result, Err(RetryError::Cancelled { .. })));
     assert_eq!(stats.stop_reason, StopReason::Cancelled);
     assert_eq!(stats.attempts, 0);
+}
+
+#[test]
+fn sync_cancelled_elapsed_is_consistent_across_error_stats_and_on_exit() {
+    ELAPSED_SNAPSHOT_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    let flag = AtomicBool::new(true);
+    let exit_elapsed = Cell::new(None);
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(5))
+        .elapsed_clock(elapsed_snapshot_clock);
+
+    let (result, stats): (Result<(), _>, RetryStats) = policy
+        .retry(|| Err::<(), _>("fail"))
+        .on_exit(|state| {
+            exit_elapsed.set(state.elapsed);
+        })
+        .sleep(instant_sleep)
+        .cancel_on(&flag)
+        .with_stats()
+        .call();
+
+    let error_elapsed = match result {
+        Err(RetryError::Cancelled { total_elapsed, .. }) => total_elapsed,
+        other => panic!("expected Cancelled, got {:?}", other),
+    };
+
+    assert_eq!(stats.total_elapsed, error_elapsed);
+    assert_eq!(exit_elapsed.get(), error_elapsed);
 }
 
 #[test]
@@ -548,6 +587,35 @@ mod async_tests {
         assert!(matches!(result, Err(RetryError::Cancelled { .. })));
         assert_eq!(stats.stop_reason, StopReason::Cancelled);
         assert_eq!(stats.attempts, 0);
+    }
+
+    #[test]
+    fn async_cancelled_elapsed_is_consistent_across_error_stats_and_on_exit() {
+        ELAPSED_SNAPSHOT_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+        let flag = AtomicBool::new(true);
+        let exit_elapsed = Cell::new(None);
+        let mut policy = RetryPolicy::new()
+            .stop(stop::attempts(5))
+            .elapsed_clock(elapsed_snapshot_clock);
+        let (result, stats) = block_on(
+            policy
+                .retry_async(|| async { Err::<(), _>("fail") })
+                .on_exit(|state| {
+                    exit_elapsed.set(state.elapsed);
+                })
+                .sleep(|_dur: Duration| async {})
+                .cancel_on(&flag)
+                .with_stats(),
+        );
+
+        let error_elapsed = match result {
+            Err(RetryError::Cancelled { total_elapsed, .. }) => total_elapsed,
+            other => panic!("expected Cancelled, got {:?}", other),
+        };
+
+        assert_eq!(stats.total_elapsed, error_elapsed);
+        assert_eq!(exit_elapsed.get(), error_elapsed);
     }
 
     #[test]
