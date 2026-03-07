@@ -687,8 +687,10 @@ most common factory functions (`stop::attempts`, `stop::elapsed`,
 `on::until_ready`), allowing `use tenacious::prelude::*` to work without
 further imports.
 
-**10.6** The minimum supported Rust version (MSRV) is 1.85. This is required
-by edition 2024 and declared in `Cargo.toml` via `rust-version = "1.85"`.
+**10.6** The minimum supported Rust version (MSRV) is Rust 1.85.0. The
+repository pins that toolchain in `rust-toolchain.toml` via
+`channel = "1.85.0"`, and `Cargo.toml` declares the compatible manifest floor
+via `rust-version = "1.85"`.
 
 **10.7** The crate is `#![forbid(unsafe_code)]`. No unsafe is required for any feature. If a dependency requires unsafe, it is isolated and documented.
 
@@ -709,7 +711,7 @@ and pull request.
 and rustdoc warnings promoted to errors
 (`RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps`).
 
-**11.3** CI enforces MSRV compatibility at Rust 1.85 with
+**11.3** CI enforces MSRV compatibility at Rust 1.85.0 with
 `cargo check --all-targets` and `cargo test --all-targets`.
 
 **11.4** CI enforces no_std target compatibility by building
