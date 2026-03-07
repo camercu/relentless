@@ -11,25 +11,13 @@ repos:
     hooks:
       - id: fmt-check
         name: fmt-check
-        entry: nix-shell --run 'just fmt-check'
+        entry: nix-shell --run 'just pre-commit'
         language: system
         pass_filenames: false
         stages: [pre-commit]
-      - id: lint-typos
-        name: lint-typos
-        entry: nix-shell --run 'just lint-typos'
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-      - id: lint-clippy
-        name: lint-clippy
-        entry: nix-shell --run 'just lint-clippy'
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-      - id: test
-        name: test
-        entry: nix-shell --run 'just test'
+      - id: pre-push
+        name: pre-push
+        entry: nix-shell --run 'just pre-push'
         language: system
         pass_filenames: false
         stages: [pre-push]

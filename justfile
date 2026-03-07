@@ -97,6 +97,10 @@ bench-no-run:
 bench-no-run-strict:
     RUSTFLAGS="{{warning_flags}}" cargo bench --bench {{benchmark_target}} --no-run
 
+pre-commit: fmt-check lint-typos
+
+pre-push: lint-clippy test
+
 ci: fmt-check lint test-strict test-no-default-strict doc-strict check-no-std-strict check-wasm-strict bench-no-run-strict
 
 ci-stable: build-stable test-stable lint-clippy-stable
