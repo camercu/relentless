@@ -248,8 +248,8 @@ where
 }
 
 #[allow(private_bounds)]
-impl<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+    SyncRetryWithStats<'_, S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
