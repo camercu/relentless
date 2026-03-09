@@ -10,8 +10,8 @@
 //! - Predicate composition with `&` retries only when both sides retry (4.7)
 //! - Closures satisfy `Predicate<T, E>` via blanket impl (4.8)
 //!
-//! Spec items 4.9 and 4.10 concern execution-engine behavior and are validated
-//! in execution tests where the retry loop exists.
+//! Polling behavior that combines `error`, `ok`, and `result` is validated here
+//! and in execution tests where the retry loop exists.
 
 use core::cell::Cell;
 use tenacious::Predicate;
@@ -80,11 +80,6 @@ fn factory_functions_return_predicates() {
     assert_predicate_impl::<u32, TestError, _>(&ok_predicate);
     assert!(ok_predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
-
-    let mut until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
-    assert_predicate_impl::<u32, TestError, _>(&until_ready);
-    assert!(until_ready.should_retry(&err(TestError::Fatal)));
-    assert!(!until_ready.should_retry(&ok(READY_VALUE)));
 }
 
 // ---------------------------------------------------------------------------
@@ -169,19 +164,8 @@ fn ok_does_not_call_matcher_for_error_values() {
 }
 
 #[test]
-fn until_ready_retries_until_ready_and_retries_errors() {
-    let mut predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
-
-    assert!(predicate.should_retry(&err(TestError::Retryable)));
-    assert!(predicate.should_retry(&err(TestError::Fatal)));
-    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    assert!(!predicate.should_retry(&ok(READY_VALUE)));
-}
-
-#[test]
-fn until_ready_composes_with_error_matchers() {
-    let mut predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD)
-        & on::error(|error: &TestError| matches!(error, TestError::Retryable))
+fn polling_can_retry_selected_errors_and_not_ready_values() {
+    let mut predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable))
         | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
@@ -191,26 +175,17 @@ fn until_ready_composes_with_error_matchers() {
 }
 
 #[test]
-fn until_ready_matches_any_error_or_inverse_ok_composition() {
-    let mut until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
-    let mut composed = on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
+fn result_can_express_polling_rules_in_one_predicate() {
+    let mut predicate = on::result(|outcome: &TestResult| match outcome {
+        Ok(value) => *value < READY_THRESHOLD,
+        Err(TestError::Retryable) => true,
+        Err(TestError::Fatal) => false,
+    });
 
-    assert_eq!(
-        until_ready.should_retry(&err(TestError::Retryable)),
-        composed.should_retry(&err(TestError::Retryable))
-    );
-    assert_eq!(
-        until_ready.should_retry(&err(TestError::Fatal)),
-        composed.should_retry(&err(TestError::Fatal))
-    );
-    assert_eq!(
-        until_ready.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)),
-        composed.should_retry(&ok(ARBITRARY_NOT_READY_VALUE))
-    );
-    assert_eq!(
-        until_ready.should_retry(&ok(READY_VALUE)),
-        composed.should_retry(&ok(READY_VALUE))
-    );
+    assert!(predicate.should_retry(&err(TestError::Retryable)));
+    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    assert!(!predicate.should_retry(&err(TestError::Fatal)));
+    assert!(!predicate.should_retry(&ok(READY_VALUE)));
 }
 
 // ---------------------------------------------------------------------------

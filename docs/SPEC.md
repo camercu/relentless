@@ -121,7 +121,13 @@ Built-in predicate constructors:
 - `on::error(f)`
 - `on::result(f)`
 - `on::ok(f)`
-- `on::until_ready(f)`
+
+Polling is expressed with the existing predicate combinators:
+
+- use `on::ok(|value| !is_ready(value))` when `Err` should terminate
+- combine `on::error(is_retryable)` with `on::ok(...)` when selected errors
+  should retry
+- use `on::result(...)` when the retry decision needs the full `Result<T, E>`
 
 Composition is supported with:
 
@@ -411,7 +417,7 @@ Conditionally exported:
 
 The crate also exports a `prelude` module containing the most common traits and
 constructors, including `RetryExt`, `AsyncRetryExt`, `attempts`, `elapsed`,
-`fixed`, `exponential`, `any_error`, `error`, `ok`, and `until_ready`.
+`fixed`, `exponential`, `any_error`, `error`, and `ok`.
 
 ## Compatibility guarantees
 

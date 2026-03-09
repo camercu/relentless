@@ -5,7 +5,6 @@
 //! - [`error`] retries on selected errors.
 //! - [`result`] retries based on the full `Result<T, E>`.
 //! - [`ok`] retries on selected `Ok` values and treats any `Err` as terminal.
-//! - [`until_ready`] retries on any error and on `Ok` values that are not ready.
 //!
 //! Predicates compose with `|` ([`PredicateAny`]) and `&` ([`PredicateAll`]).
 //! Named combinators are also available via [`crate::PredicateExt`].
@@ -153,6 +152,11 @@ pub struct OkPredicate<F> {
 ///
 /// Use this when `Err` outcomes should return immediately, and only selected
 /// `Ok` values should continue retrying.
+///
+/// For polling flows:
+/// - use `ok(|value| !is_ready(value))` when any `Err` should stop immediately
+/// - combine it with [`error`] when only selected errors are retryable
+/// - use [`result`] when the retry decision needs the full `Result<T, E>`
 #[must_use]
 pub fn ok<F>(matcher: F) -> OkPredicate<F> {
     OkPredicate { matcher }
@@ -166,62 +170,6 @@ where
         match outcome {
             Ok(value) => (self.matcher)(value),
             Err(_) => false,
-        }
-    }
-}
-
-/// Predicate for wait-for-condition flows that retries on transient errors and
-/// on `Ok` values that are not yet ready.
-///
-/// Created by [`until_ready`].
-///
-/// Behavior:
-///
-/// | Outcome | Retries? |
-/// | --- | --- |
-/// | `Err(e)` | yes |
-/// | `Ok(v)` and `is_ready(v) == false` | yes |
-/// | `Ok(v)` and `is_ready(v) == true` | no |
-///
-/// # Examples
-///
-/// ```
-/// use tenacious::{Predicate, on};
-///
-/// let mut predicate = on::until_ready(|value: &u32| *value >= 3);
-///
-/// assert!(predicate.should_retry(&Err::<u32, &str>("transient")));
-/// assert!(predicate.should_retry(&Ok::<u32, &str>(1)));
-/// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
-/// ```
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct UntilReadyPredicate<F> {
-    is_ready: F,
-}
-
-/// Produces a predicate that retries while the condition is not met yet.
-///
-/// This helper is tuned for polling loops:
-/// - retries on any `Err(_)`
-/// - retries on `Ok(value)` when `is_ready(value)` is `false`
-/// - accepts `Ok(value)` when `is_ready(value)` is `true`
-///
-/// Equivalent behavior:
-/// `until_ready(is_ready) == any_error() | ok(|value| !is_ready(value))`
-#[must_use]
-pub fn until_ready<F>(is_ready: F) -> UntilReadyPredicate<F> {
-    UntilReadyPredicate { is_ready }
-}
-
-impl<T, E, F> Predicate<T, E> for UntilReadyPredicate<F>
-where
-    F: Fn(&T) -> bool,
-{
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
-        match outcome {
-            Ok(value) => !(self.is_ready)(value),
-            Err(_) => true,
         }
     }
 }
@@ -352,6 +300,5 @@ impl_predicate_ops!(AnyError);
 impl_predicate_ops!(ErrorPredicate<F>, F);
 impl_predicate_ops!(ResultPredicate<F>, F);
 impl_predicate_ops!(OkPredicate<F>, F);
-impl_predicate_ops!(UntilReadyPredicate<F>, F);
 impl_predicate_ops!(PredicateAny<A, B>, A, B);
 impl_predicate_ops!(PredicateAll<A, B>, A, B);

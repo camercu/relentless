@@ -702,11 +702,14 @@ fn condition_not_met_returned_for_ok_predicate_exhaustion() {
 }
 
 #[test]
-fn until_ready_handles_transient_errors_and_not_ready_values() {
+fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(on::until_ready(|value: &i32| *value >= SUCCESS_VALUE));
+        .when(
+            on::error(|error: &&str| *error == "transient")
+                | on::ok(|value: &i32| *value < SUCCESS_VALUE),
+        );
 
     let call_count = Cell::new(0_u32);
     let result = policy

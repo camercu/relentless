@@ -101,7 +101,7 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 /// ```
 pub mod prelude {
     pub use crate::AsyncRetryExt;
-    pub use crate::on::{any_error, error, ok, until_ready};
+    pub use crate::on::{any_error, error, ok};
     pub use crate::sleep::Sleeper;
     pub use crate::stop::{attempts, elapsed};
     pub use crate::wait::{exponential, fixed};

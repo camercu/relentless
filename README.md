@@ -5,9 +5,9 @@
 It models retry behavior as three composable parts: when to stop retrying
 (`Stop`), how long to wait between retries (`Wait`), and what outcomes are
 retryable (`Predicate`). Compared with simpler retry helpers, it gives you
-policy reuse, polling-aware predicates like `on::any_error`, hooks for
-dynamically interacting with retries, cancellation, and stats, all under one API
-that works in sync and async code across `std`, `no_std`, and `wasm` targets.
+policy reuse, polling-oriented predicate composition, hooks for dynamically
+interacting with retries, cancellation, and stats, all under one API that
+works in sync and async code across `std`, `no_std`, and `wasm` targets.
 
 It is inspired by Python's [`tenacity`](https://github.com/jd/tenacity),
 especially composable strategy algebra, and Rust's
@@ -106,17 +106,18 @@ let invoice_id = api_policy
     .unwrap();
 ```
 
-### 3) Poll conditions until ready (`on::until_ready`)
+### 3) Poll conditions with `on::ok`
 
-Use this when both transient `Err` values and `Ok("pending")` results should
-retry.
+Use `on::ok` when the operation returns successful values for both "not ready"
+and "ready" states, and any `Err` must stop immediately.
 
 ```rust
 use core::time::Duration;
 use tenacious::{RetryPolicy, on, stop, wait};
-use reqwest::Error;
 
-fn fetch_export_status(client: &reqwest::blocking::Client) -> Result<String, Error> {
+fn fetch_export_status(
+    client: &reqwest::blocking::Client,
+) -> Result<String, reqwest::Error> {
     let body = client
         .get("https://api.example.com/exports/exp_42")
         .send()?
@@ -135,10 +136,46 @@ fn fetch_export_status(client: &reqwest::blocking::Client) -> Result<String, Err
 let mut policy = RetryPolicy::new()
     .stop(stop::attempts(8))
     .wait(wait::fixed(Duration::from_millis(250)))
-    .when(on::until_ready(|status: &String| status == "success"));
+    .when(on::ok(|status: &String| status != "success"));
 
 let client = reqwest::blocking::Client::new();
 let final_status = policy.retry(|| fetch_export_status(&client)).call().unwrap();
+```
+
+If selected errors are also retryable, compose the predicates directly or use
+`on::result(...)`:
+
+```rust
+use core::time::Duration;
+use tenacious::{RetryPolicy, on, stop, wait};
+
+#[derive(Debug)]
+enum ExportState {
+    Pending,
+    Success,
+}
+
+#[derive(Debug)]
+enum ExportError {
+    RetryableTransport,
+    Fatal,
+}
+
+fn fetch_export_status() -> Result<ExportState, ExportError> {
+    unimplemented!()
+}
+
+let mut policy = RetryPolicy::new()
+    .stop(stop::attempts(8))
+    .wait(wait::fixed(Duration::from_millis(250)))
+    .when(on::result(|outcome: &Result<ExportState, ExportError>| {
+        matches!(
+            outcome,
+            Ok(ExportState::Pending) | Err(ExportError::RetryableTransport)
+        )
+    }));
+
+let _ = policy.retry(fetch_export_status).call();
 ```
 
 ### 4) Use the same model in async code
@@ -228,7 +265,7 @@ assert_eq!(stats.attempts, 1);
 - `RetryExt` / `AsyncRetryExt`: start from closures and function pointers.
 - `stop`: `attempts`, `elapsed`, `before_elapsed`, `never`.
 - `wait`: `fixed`, `linear`, `exponential`, plus composition.
-- `on`: `any_error`, `error`, `ok`, `result`, `until_ready`.
+- `on`: `any_error`, `error`, `ok`, `result`.
 - `SyncRetry` / `AsyncRetry`: execution builders with lifecycle hooks.
 - `RetryError<E, T>` / `RetryResult<T, E>`: terminal outcomes and alias.
 - `RetryStats`: aggregate execution stats via `.with_stats()`.

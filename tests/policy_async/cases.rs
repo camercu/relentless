@@ -239,11 +239,14 @@ fn async_retry_returns_condition_not_met_for_ok_exhaustion() {
 }
 
 #[test]
-fn async_until_ready_handles_errors_and_not_ready_values() {
+fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(on::until_ready(|value: &i32| *value >= SUCCESS_VALUE));
+        .when(
+            on::error(|error: &&str| *error == ERROR_VALUE)
+                | on::ok(|value: &i32| *value < SUCCESS_VALUE),
+        );
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
