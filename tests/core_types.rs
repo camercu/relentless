@@ -779,6 +779,55 @@ fn retry_error_derives_clone_and_partial_eq() {
 }
 
 #[test]
+fn retry_error_accessors_expose_last_outcome_and_error() {
+    let exhausted: tenacious::RetryError<String, i32> = tenacious::RetryError::Exhausted {
+        last: Err("timeout".to_string()),
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: Some(ARBITRARY_DURATION),
+    };
+    let expected_error = "timeout".to_string();
+    assert_eq!(exhausted.last(), Some(&Err(expected_error.clone())));
+    assert_eq!(exhausted.last_error(), Some(&expected_error));
+    assert_eq!(exhausted.attempts(), ARBITRARY_ATTEMPT_COUNT);
+    assert_eq!(exhausted.total_elapsed(), Some(ARBITRARY_DURATION));
+
+    let condition_not_met: tenacious::RetryError<String, i32> =
+        tenacious::RetryError::ConditionNotMet {
+            last: Ok(42),
+            attempts: 2,
+            total_elapsed: None,
+        };
+    assert_eq!(condition_not_met.last(), Some(&Ok(42)));
+    assert_eq!(condition_not_met.last_error(), None);
+
+    let cancelled: tenacious::RetryError<String, i32> = tenacious::RetryError::Cancelled {
+        last: None,
+        attempts: 0,
+        total_elapsed: None,
+    };
+    assert_eq!(cancelled.last(), None);
+    assert_eq!(cancelled.last_error(), None);
+}
+
+#[test]
+fn retry_error_into_accessors_extract_owned_values() {
+    let exhausted: tenacious::RetryError<String, i32> = tenacious::RetryError::Exhausted {
+        last: Err("timeout".to_string()),
+        attempts: 1,
+        total_elapsed: None,
+    };
+    assert_eq!(exhausted.into_last(), Some(Err("timeout".to_string())));
+
+    let non_retryable: tenacious::RetryError<String, i32> =
+        tenacious::RetryError::NonRetryableError {
+            last: Err("fatal".to_string()),
+            attempts: 1,
+            total_elapsed: None,
+        };
+    assert_eq!(non_retryable.into_last_error(), Some("fatal".to_string()));
+}
+
+#[test]
 fn public_value_types_derive_common_traits() {
     fn assert_copy<T: Copy>() {}
 

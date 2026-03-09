@@ -153,6 +153,10 @@ pub struct OkPredicate<F> {
 /// Use this when `Err` outcomes should return immediately, and only selected
 /// `Ok` values should continue retrying.
 ///
+/// If the stop strategy fires while `ok(...)` is still asking for another
+/// attempt, execution terminates with
+/// [`RetryError::ConditionNotMet`](crate::RetryError::ConditionNotMet).
+///
 /// For polling flows:
 /// - use `ok(|value| !is_ready(value))` when any `Err` should stop immediately
 /// - combine it with [`error`] when only selected errors are retryable

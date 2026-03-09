@@ -222,6 +222,28 @@ fn policy_is_easy_to_store_via_three_type_params() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
+#[test]
+fn retry_clone_starts_owned_execution_without_mut_borrowing_template() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(STORAGE_POLICY_WAIT));
+    let call_count = Cell::new(0_u32);
+
+    let result = policy
+        .retry_clone(|| {
+            call_count.set(call_count.get().saturating_add(1));
+            Err::<i32, _>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(
+        result,
+        Err(RetryError::Exhausted { attempts: 2, .. })
+    ));
+    assert_eq!(call_count.get(), 2);
+}
+
 // ---------------------------------------------------------------------------
 // 5.5, 5.6: SyncRetry execution
 // ---------------------------------------------------------------------------

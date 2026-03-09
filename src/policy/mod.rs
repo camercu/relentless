@@ -1,4 +1,25 @@
 //! RetryPolicy builder and sync/async execution engines.
+//!
+//! This module exposes three related entry-point families:
+//!
+//! - [`RetryPolicy::retry`] and [`RetryPolicy::retry_async`] borrow a policy by
+//!   `&mut self`. Use these when you want one reusable policy value whose
+//!   stateful `Stop` and `Wait` strategies are reset and reused in place across
+//!   sequential executions.
+//! - [`RetryPolicy::retry_clone`] and
+//!   [`RetryPolicy::retry_async_clone`] take `&self` and clone the policy into
+//!   an owned execution builder. Use these when you want to keep a shared
+//!   template policy and start independent retry executions without taking a
+//!   mutable borrow of the original value.
+//! - [`crate::RetryExt`] and [`crate::AsyncRetryExt`] start from
+//!   [`RetryPolicy::default()`] and own the policy immediately. Use those for
+//!   one-off operations where you want to configure retries inline from the
+//!   operation itself.
+//!
+//! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
+//! keeps the reusable policy focused on stop, wait, predicate, and clock
+//! configuration, while per-call hooks, sleepers, cancelers, and stats remain
+//! local to a specific execution.
 
 use crate::compat::Duration;
 use crate::on;
@@ -65,6 +86,21 @@ impl Eq for PolicyMeta {}
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 ///
 /// let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
+/// ```
+///
+/// When you need shared-template reuse without taking `&mut self`, clone into
+/// an owned execution:
+///
+/// ```
+/// use tenacious::{RetryPolicy, stop};
+///
+/// let template = RetryPolicy::new().stop(stop::attempts(3));
+/// let result = template
+///     .retry_clone(|| Err::<(), _>("fail"))
+///     .sleep(|_dur| {})
+///     .call();
+///
+/// assert!(result.is_err());
 /// ```
 ///
 /// ```compile_fail

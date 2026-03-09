@@ -23,6 +23,10 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// - exponential backoff starting at 100ms
     /// - retry on any error
     ///
+    /// In `std` builds, `.call()` works without `.sleep(...)`. The example
+    /// below still configures `.sleep(...)` so it also works in non-`std`
+    /// documentation tests.
+    ///
     /// ```
     /// use tenacious::RetryExt;
     ///
@@ -72,6 +76,54 @@ where
                 RetryPolicy::default(),
                 ExecutionHooks::new(),
                 self,
+                NoSyncSleep,
+                NeverCancel,
+                true,
+            ),
+        }
+    }
+}
+
+impl<S, W, P> RetryPolicy<S, W, P>
+where
+    S: Stop,
+    W: Wait,
+    Self: Clone,
+{
+    /// Starts an owned sync retry builder by cloning this policy.
+    ///
+    /// This is the mutability-free counterpart to [`RetryPolicy::retry`]. It
+    /// is useful when you keep a shared template policy and want each
+    /// execution to own an independent copy of the stop, wait, and predicate
+    /// state.
+    ///
+    /// In `std` builds, calling `.sleep(...)` remains optional. In non-`std`
+    /// builds, configure `.sleep(...)` before `.call()`.
+    ///
+    /// ```
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let template = RetryPolicy::new().stop(stop::attempts(2));
+    /// let result = template
+    ///     .retry_clone(|| Err::<(), _>("fail"))
+    ///     .sleep(|_dur| {})
+    ///     .call();
+    ///
+    /// assert!(result.is_err());
+    /// ```
+    #[must_use]
+    pub fn retry_clone<T, E, F>(
+        &self,
+        op: F,
+    ) -> SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, NeverCancel>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        SyncRetryBuilder {
+            inner: SyncRetryCore::new(
+                self.clone(),
+                ExecutionHooks::new(),
+                op,
                 NoSyncSleep,
                 NeverCancel,
                 true,

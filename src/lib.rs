@@ -27,6 +27,10 @@
 //!
 //! # Extension-first usage
 //!
+//! In sync `std` builds, `.sleep(...)` is optional because `tenacious` falls
+//! back to `std::thread::sleep`. The example below still calls `.sleep(...)`
+//! so it compiles under `no_std` documentation test runs too.
+//!
 //! ```
 //! use core::time::Duration;
 //! use tenacious::{RetryExt, stop, wait};
@@ -85,6 +89,17 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 
 /// Common traits and constructors for ergonomic imports.
 ///
+/// The prelude intentionally exports the most common retry-building items:
+/// core traits, builder entry points, terminal error/result types, and the
+/// built-in stop, wait, and predicate constructors that appear most often in
+/// retry chains.
+///
+/// It does not export the `cancel`, `on`, `sleep`, `stop`, or `wait` modules
+/// themselves, and it leaves runtime-specific sleep helpers such as
+/// `sleep::tokio()` on their modules. That keeps
+/// `use tenacious::prelude::*;` useful for day-to-day call sites without
+/// flattening the entire crate root into one import.
+///
 /// # Examples
 ///
 /// ```
@@ -101,10 +116,10 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 /// ```
 pub mod prelude {
     pub use crate::AsyncRetryExt;
-    pub use crate::on::{any_error, error, ok};
+    pub use crate::on::{any_error, error, ok, result};
     pub use crate::sleep::Sleeper;
-    pub use crate::stop::{attempts, elapsed};
-    pub use crate::wait::{exponential, fixed};
+    pub use crate::stop::{attempts, before_elapsed, elapsed, never};
+    pub use crate::wait::{exponential, fixed, linear};
     pub use crate::{
         Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryResult,
         RetryStats, Stop, StopExt, StopReason, Wait, WaitExt,

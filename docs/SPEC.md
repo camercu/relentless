@@ -193,11 +193,15 @@ Builder methods:
 - `.elapsed_clock(fn() -> Duration)`
 - `.clear_elapsed_clock()`
 - `.boxed()` with `alloc`
+- `.retry_clone(...)` and `.retry_async_clone(...)` when the policy is `Clone`
 
 Policy lifecycle guarantees:
 
 - `RetryPolicy::retry(...)` and `RetryPolicy::retry_async(...)` call
   `stop.reset()` and `wait.reset()` before execution begins
+- `RetryPolicy::retry_clone(...)` and `RetryPolicy::retry_async_clone(...)`
+  clone the policy into an owned execution builder and reset stateful stop and
+  wait strategies when that owned execution starts
 - owned extension builders created by `RetryExt` and `AsyncRetryExt` reset
   stateful stop and wait strategies when first polled or called
 - `elapsed_clock` uses a bare function pointer so it works without allocation
@@ -210,8 +214,8 @@ only how sleeping happens.
 
 ### Sync execution
 
-`RetryPolicy::retry(op)` returns `SyncRetry`. `RetryExt::retry()` returns an
-owned `SyncRetryBuilder`.
+`RetryPolicy::retry(op)` returns `SyncRetry`. `RetryPolicy::retry_clone(op)`
+and `RetryExt::retry()` return owned `SyncRetryBuilder` values.
 
 Calling `.sleep(...)` is:
 
@@ -235,8 +239,9 @@ The sync loop performs these steps:
 
 ### Async execution
 
-`RetryPolicy::retry_async(op)` returns `AsyncRetry`. `AsyncRetryExt::retry_async()`
-returns an owned `AsyncRetryBuilder`.
+`RetryPolicy::retry_async(op)` returns `AsyncRetry`.
+`RetryPolicy::retry_async_clone(op)` and `AsyncRetryExt::retry_async()`
+return owned `AsyncRetryBuilder` values.
 
 Async execution always requires `.sleep(...)` before the future can run. The
 crate never auto-selects an async runtime.
@@ -271,6 +276,9 @@ Additional guarantees:
 - `ConditionNotMet` is the terminal error when the loop is retrying `Ok`
   values and the stop strategy fires first
 - `RetryResult<T, E>` is `Result<T, RetryError<E, T>>`
+- `RetryError::last()`, `RetryError::into_last()`, `RetryError::last_error()`,
+  and `RetryError::into_last_error()` expose the final recorded outcome without
+  forcing manual variant matching
 
 ## Hooks
 
@@ -416,8 +424,9 @@ Conditionally exported:
 - `WaitJitter` with `jitter`
 
 The crate also exports a `prelude` module containing the most common traits and
-constructors, including `RetryExt`, `AsyncRetryExt`, `attempts`, `elapsed`,
-`fixed`, `exponential`, `any_error`, `error`, and `ok`.
+constructors, including `RetryExt`, `AsyncRetryExt`, `attempts`,
+`before_elapsed`, `elapsed`, `never`, `fixed`, `linear`, `exponential`,
+`any_error`, `error`, `ok`, and `result`.
 
 ## Compatibility guarantees
 

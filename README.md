@@ -43,7 +43,12 @@ For full docs and additional examples, see <https://docs.rs/tenacious>.
 
 Behavior spec: [docs/SPEC.md](./docs/SPEC.md)
 
+Runnable examples live in [`examples/`](./examples).
+
 The HTTP-focused examples below use `reqwest`. The async example uses `tokio`.
+Sync examples omit `.sleep(...)` because `std` builds use
+`std::thread::sleep` by default. If you build without `std`, pass an explicit
+blocking sleeper before `.call()`.
 
 ### 1) Basic Retry on closures/functions with defaults (`RetryExt`)
 
@@ -98,14 +103,14 @@ fn is_retryable(err: &Error) -> bool {
 }
 
 fn run() -> Result<(), tenacious::RetryError<Error, String>> {
-    let mut api_policy = RetryPolicy::new()
+    let api_policy = RetryPolicy::new()
         .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(2)))
         .wait(wait::fixed(Duration::from_millis(50))
             + wait::exponential(Duration::from_millis(100)))
         .when(on::error(is_retryable));
     let client = reqwest::blocking::Client::new();
     let invoice_id = api_policy
-        .retry(|| fetch_invoice(&client, "inv_123"))
+        .retry_clone(|| fetch_invoice(&client, "inv_123"))
         .call()?;
     let _ = invoice_id;
     Ok(())
@@ -140,16 +145,23 @@ fn fetch_export_status(
 }
 
 fn run() -> Result<(), tenacious::RetryError<reqwest::Error, String>> {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(8))
         .wait(wait::fixed(Duration::from_millis(250)))
         .when(on::ok(|status: &String| status != "success"));
     let client = reqwest::blocking::Client::new();
-    let final_status = policy.retry(|| fetch_export_status(&client)).call()?;
+    let final_status = policy
+        .retry_clone(|| fetch_export_status(&client))
+        .call()?;
     let _ = final_status;
     Ok(())
 }
 ```
+
+When you use `on::ok(...)`, the final stop-triggered error is
+`RetryError::ConditionNotMet` because the loop was still retrying `Ok` values.
+With `on::any_error()` or `on::error(...)`, the same stop trigger on `Err`
+produces `RetryError::Exhausted`.
 
 If selected errors are also retryable, compose the predicates directly or use
 `on::result(...)`:
@@ -174,7 +186,7 @@ fn fetch_export_status() -> Result<ExportState, ExportError> {
     unimplemented!()
 }
 
-let mut policy = RetryPolicy::new()
+let policy = RetryPolicy::new()
     .stop(stop::attempts(8))
     .wait(wait::fixed(Duration::from_millis(250)))
     .when(on::result(|outcome: &Result<ExportState, ExportError>| {
@@ -184,7 +196,7 @@ let mut policy = RetryPolicy::new()
         )
     }));
 
-let _ = policy.retry(fetch_export_status).call();
+let _ = policy.retry_clone(fetch_export_status).call();
 ```
 
 ### 4) Use the same model in async code
@@ -210,13 +222,13 @@ async fn fetch_profile(client: &reqwest::Client) -> Result<String, reqwest::Erro
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(4))
         .wait(wait::exponential(Duration::from_millis(100)))
         .when(on::any_error());
 
     let profile_json = policy
-        .retry_async(|| fetch_profile(&client))
+        .retry_async_clone(|| fetch_profile(&client))
         .sleep(tokio::time::sleep)
         .await
         ?;
@@ -284,6 +296,13 @@ If you prefer concise imports:
 ```rust
 use tenacious::prelude::*;
 ```
+
+The prelude exports the common builder entry traits, terminal types, and the
+most common constructors: `attempts`, `before_elapsed`, `elapsed`, `never`,
+`fixed`, `linear`, `exponential`, `any_error`, `error`, `ok`, and `result`.
+
+It intentionally leaves modules and runtime-specific helpers such as
+`sleep::tokio()` on their original paths so wildcard imports stay predictable.
 
 ## MSRV
 

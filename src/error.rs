@@ -15,6 +15,20 @@ use core::fmt;
 /// be trailing, and this ordering enables the common `RetryError<MyError>`
 /// shorthand without specifying `T`.
 ///
+/// When you want the familiar `Result<T, E>` ordering at the call site, prefer
+/// [`RetryResult<T, E>`](crate::RetryResult).
+///
+/// Variant selection follows the retry predicate and terminal outcome:
+///
+/// - [`RetryError::Exhausted`] means the stop strategy fired while the loop was
+///   still retrying an `Err(E)`.
+/// - [`RetryError::ConditionNotMet`] means the stop strategy fired while the
+///   loop was still retrying an `Ok(T)`, which is the common `on::ok(...)`
+///   polling case.
+/// - [`RetryError::NonRetryableError`] means the predicate rejected an
+///   `Err(E)` immediately.
+/// - [`RetryError::Cancelled`] means an external canceler interrupted the loop.
+///
 /// # Examples
 ///
 /// ```
@@ -85,6 +99,74 @@ pub enum RetryError<E, T = ()> {
 ///
 /// Expands to `Result<T, RetryError<E, T>>`.
 pub type RetryResult<T, E> = core::result::Result<T, RetryError<E, T>>;
+
+impl<E, T> RetryError<E, T> {
+    /// Returns the final attempt outcome, if one exists.
+    ///
+    /// This is `None` only for cancellation before the first attempt.
+    #[must_use]
+    pub fn last(&self) -> Option<&Result<T, E>> {
+        match self {
+            RetryError::Exhausted { last, .. }
+            | RetryError::NonRetryableError { last, .. }
+            | RetryError::ConditionNotMet { last, .. } => Some(last),
+            RetryError::Cancelled { last, .. } => last.as_ref(),
+        }
+    }
+
+    /// Consumes the error and returns the final attempt outcome, if one exists.
+    ///
+    /// This is `None` only for cancellation before the first attempt.
+    #[must_use]
+    pub fn into_last(self) -> Option<Result<T, E>> {
+        match self {
+            RetryError::Exhausted { last, .. }
+            | RetryError::NonRetryableError { last, .. }
+            | RetryError::ConditionNotMet { last, .. } => Some(last),
+            RetryError::Cancelled { last, .. } => last,
+        }
+    }
+
+    /// Returns the last error value when the terminal outcome carried `Err(E)`.
+    ///
+    /// This is `None` for `ConditionNotMet`, successful terminal values, and
+    /// cancellation before the first attempt.
+    #[must_use]
+    pub fn last_error(&self) -> Option<&E> {
+        self.last().and_then(|last| last.as_ref().err())
+    }
+
+    /// Consumes the retry error and returns the last error value, if present.
+    ///
+    /// This is `None` for `ConditionNotMet`, successful terminal values, and
+    /// cancellation before the first attempt.
+    #[must_use]
+    pub fn into_last_error(self) -> Option<E> {
+        self.into_last().and_then(Result::err)
+    }
+
+    /// Returns the number of completed attempts.
+    #[must_use]
+    pub fn attempts(&self) -> u32 {
+        match self {
+            RetryError::Exhausted { attempts, .. }
+            | RetryError::NonRetryableError { attempts, .. }
+            | RetryError::ConditionNotMet { attempts, .. }
+            | RetryError::Cancelled { attempts, .. } => *attempts,
+        }
+    }
+
+    /// Returns the measured elapsed time, if an elapsed clock was available.
+    #[must_use]
+    pub fn total_elapsed(&self) -> Option<Duration> {
+        match self {
+            RetryError::Exhausted { total_elapsed, .. }
+            | RetryError::NonRetryableError { total_elapsed, .. }
+            | RetryError::ConditionNotMet { total_elapsed, .. }
+            | RetryError::Cancelled { total_elapsed, .. } => *total_elapsed,
+        }
+    }
+}
 
 impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

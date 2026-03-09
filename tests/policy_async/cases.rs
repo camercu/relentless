@@ -192,6 +192,30 @@ fn async_retry_repoll_after_completion_panics() {
     assert!(second_poll.is_err());
 }
 
+#[test]
+fn retry_async_clone_starts_owned_execution_without_mut_borrowing_template() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(Duration::ZERO));
+    let call_count = Rc::new(Cell::new(0_u32));
+
+    let result: Result<i32, RetryError<&str, i32>> = block_on(
+        policy
+            .retry_async_clone(|| {
+                let call_count = Rc::clone(&call_count);
+                call_count.set(call_count.get().saturating_add(1));
+                async move { Err::<i32, &str>(ERROR_VALUE) }
+            })
+            .sleep(|_dur: Duration| async {}),
+    );
+
+    assert!(matches!(
+        result,
+        Err(RetryError::Exhausted { attempts: 2, .. })
+    ));
+    assert_eq!(call_count.get(), 2);
+}
+
 // ---------------------------------------------------------------------------
 // 6.4: Async loop behavior matches sync semantics
 // ---------------------------------------------------------------------------

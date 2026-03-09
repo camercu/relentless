@@ -96,6 +96,59 @@ where
     }
 }
 
+impl<S, W, P> RetryPolicy<S, W, P>
+where
+    S: Stop,
+    W: Wait,
+    Self: Clone,
+{
+    /// Starts an owned async retry builder by cloning this policy.
+    ///
+    /// This is the mutability-free counterpart to
+    /// [`RetryPolicy::retry_async`]. It is useful when you keep a shared
+    /// template policy and want each execution to own an independent copy of
+    /// the stop, wait, and predicate state.
+    ///
+    /// Async execution still requires `.sleep(...)` before awaiting the
+    /// builder.
+    ///
+    /// ```
+    /// use core::future::ready;
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let template = RetryPolicy::new().stop(stop::attempts(1));
+    /// let retry = template
+    ///     .retry_async_clone(|| ready(Ok::<(), &str>(())))
+    ///     .sleep(|_dur| ready(()));
+    ///
+    /// let _ = retry;
+    /// ```
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn retry_async_clone<T, E, F, Fut>(
+        &self,
+        op: F,
+    ) -> AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E, (), NeverCancel>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        let policy = self.clone();
+        let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
+        AsyncRetryBuilder {
+            inner: AsyncRetryCore::new(
+                policy,
+                ExecutionHooks::new(),
+                op,
+                NoAsyncSleep,
+                NeverCancel,
+                elapsed_tracker,
+                true,
+            ),
+        }
+    }
+}
+
 #[doc(hidden)]
 /// ```compile_fail
 /// use core::future::ready;
