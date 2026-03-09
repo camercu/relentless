@@ -383,14 +383,12 @@ where
             total_wait,
             collect_stats,
             final_stats,
-            elapsed_tracker: _,
+            elapsed_tracker,
             started,
             _marker: _,
         } = self;
-        let policy = policy.stop(stop);
-        let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
-            policy,
+            policy: policy.stop(stop),
             hooks,
             op,
             sleeper,
@@ -426,14 +424,12 @@ where
             total_wait,
             collect_stats,
             final_stats,
-            elapsed_tracker: _,
+            elapsed_tracker,
             started,
             _marker: _,
         } = self;
-        let policy = policy.wait(wait);
-        let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
-            policy,
+            policy: policy.wait(wait),
             hooks,
             op,
             sleeper,
@@ -469,14 +465,12 @@ where
             total_wait,
             collect_stats,
             final_stats,
-            elapsed_tracker: _,
+            elapsed_tracker,
             started,
             _marker: _,
         } = self;
-        let policy = policy.when(predicate);
-        let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
-            policy,
+            policy: policy.when(predicate),
             hooks,
             op,
             sleeper,
@@ -508,13 +502,12 @@ where
             total_wait,
             collect_stats,
             final_stats,
+            elapsed_tracker,
             started,
             ..
         } = self;
-        let policy = policy.elapsed_clock(clock);
-        let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
-            policy,
+            policy: policy.elapsed_clock(clock),
             hooks,
             op,
             sleeper,
@@ -778,6 +771,7 @@ where
         if !*this.started {
             this.policy.stop.reset();
             this.policy.wait.reset();
+            *this.elapsed_tracker = ElapsedTracker::new(this.policy.meta.elapsed_clock);
             *this.started = true;
         }
 

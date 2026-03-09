@@ -249,21 +249,21 @@ fn stop_and_wait_are_not_generic_over_result_type() {
 struct RetryOnAnyError;
 
 impl Predicate<String, std::io::Error> for RetryOnAnyError {
-    fn should_retry(&self, outcome: &Result<String, std::io::Error>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<String, std::io::Error>) -> bool {
         outcome.is_err()
     }
 }
 
 #[test]
 fn predicate_trait_should_retry_on_error() {
-    let pred = RetryOnAnyError;
+    let mut pred = RetryOnAnyError;
     let err_result: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
     assert!(pred.should_retry(&err_result));
 }
 
 #[test]
 fn predicate_trait_should_not_retry_on_ok() {
-    let pred = RetryOnAnyError;
+    let mut pred = RetryOnAnyError;
     let ok_result: Result<String, std::io::Error> = Ok("success".to_string());
     assert!(!pred.should_retry(&ok_result));
 }
@@ -273,58 +273,57 @@ fn predicate_trait_should_not_retry_on_ok() {
 struct AlwaysRetry;
 
 impl Predicate<u32, String> for AlwaysRetry {
-    fn should_retry(&self, _outcome: &Result<u32, String>) -> bool {
+    fn should_retry(&mut self, _outcome: &Result<u32, String>) -> bool {
         true
     }
 }
 
 impl Predicate<bool, i32> for AlwaysRetry {
-    fn should_retry(&self, _outcome: &Result<bool, i32>) -> bool {
+    fn should_retry(&mut self, _outcome: &Result<bool, i32>) -> bool {
         true
     }
 }
 
 #[test]
 fn predicate_trait_type_params_on_trait() {
-    let pred = AlwaysRetry;
+    let mut pred = AlwaysRetry;
     let r1: Result<u32, String> = Ok(42);
     let r2: Result<bool, i32> = Err(-1);
 
     // Both should compile and work — T, E are on the trait, not the method.
     assert!(<AlwaysRetry as Predicate<u32, String>>::should_retry(
-        &pred, &r1
+        &mut pred, &r1
     ));
     assert!(<AlwaysRetry as Predicate<bool, i32>>::should_retry(
-        &pred, &r2
+        &mut pred, &r2
     ));
 }
 
 /// 4.8: Predicate is blanket-implemented for Fn(&Result<T, E>) -> bool.
 #[test]
 fn predicate_blanket_impl_for_closure() {
-    let pred = |outcome: &Result<i32, &str>| outcome.is_err();
+    let mut pred = |outcome: &Result<i32, &str>| outcome.is_err();
 
     let err: Result<i32, &str> = Err("fail");
     let ok: Result<i32, &str> = Ok(42);
 
-    assert!(Predicate::should_retry(&pred, &err));
-    assert!(!Predicate::should_retry(&pred, &ok));
+    assert!(Predicate::should_retry(&mut pred, &err));
+    assert!(!Predicate::should_retry(&mut pred, &ok));
 }
 
-/// Predicate::should_retry takes &self (immutable). Verify it can be called
-/// multiple times through a shared reference.
+/// Predicate::should_retry takes &mut self. Verify it can be called
+/// multiple times through a mutable reference.
 #[test]
-fn predicate_is_immutable() {
-    let pred = RetryOnAnyError;
-    let shared: &dyn Predicate<String, std::io::Error> = &pred;
+fn predicate_is_callable_multiple_times() {
+    let mut pred = RetryOnAnyError;
 
     let err: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
     let ok: Result<String, std::io::Error> = Ok("ok".to_string());
 
-    // Multiple calls through a shared reference must work.
-    assert!(shared.should_retry(&err));
-    assert!(shared.should_retry(&err));
-    assert!(!shared.should_retry(&ok));
+    // Multiple calls through a mutable reference must work.
+    assert!(pred.should_retry(&err));
+    assert!(pred.should_retry(&Err(std::io::Error::other("boom2"))));
+    assert!(!pred.should_retry(&ok));
 }
 
 // ---------------------------------------------------------------------------

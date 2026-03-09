@@ -184,14 +184,14 @@ fn predicate_composition_matches_boolean_algebra() {
         };
         let sample = sample_index + SAMPLE_INDEX_OFFSET;
 
-        let left = on::error(|err: &u32| err % 2 == 0);
-        let right = on::ok(|value: &u32| *value < OK_THRESHOLD);
+        let mut left = on::error(|err: &u32| err % 2 == 0);
+        let mut right = on::ok(|value: &u32| *value < OK_THRESHOLD);
         let left_value = left.should_retry(&outcome);
         let right_value = right.should_retry(&outcome);
 
-        let either =
+        let mut either =
             on::error(|err: &u32| err % 2 == 0) | on::ok(|value: &u32| *value < OK_THRESHOLD);
-        let both =
+        let mut both =
             on::error(|err: &u32| err % 2 == 0) & on::ok(|value: &u32| *value < OK_THRESHOLD);
 
         assert_eq!(

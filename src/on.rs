@@ -22,7 +22,7 @@ use core::ops::{BitAnd, BitOr};
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::any_error();
+/// let mut predicate = on::any_error();
 /// let outcome: Result<u32, &str> = Err("boom");
 /// assert!(predicate.should_retry(&outcome));
 /// ```
@@ -37,7 +37,7 @@ pub fn any_error() -> AnyError {
 }
 
 impl<T, E> Predicate<T, E> for AnyError {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         outcome.is_err()
     }
 }
@@ -51,7 +51,7 @@ impl<T, E> Predicate<T, E> for AnyError {
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::error(|err: &&str| *err == "retryable");
+/// let mut predicate = on::error(|err: &&str| *err == "retryable");
 /// let retryable: Result<u32, &str> = Err("retryable");
 /// let fatal: Result<u32, &str> = Err("fatal");
 ///
@@ -75,7 +75,7 @@ impl<T, E, F> Predicate<T, E> for ErrorPredicate<F>
 where
     F: Fn(&E) -> bool,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         match outcome {
             Ok(_) => false,
             Err(error) => (self.matcher)(error),
@@ -92,7 +92,7 @@ where
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::result(|outcome: &Result<u32, &str>| {
+/// let mut predicate = on::result(|outcome: &Result<u32, &str>| {
 ///     matches!(outcome, Ok(value) if *value < 10)
 /// });
 ///
@@ -115,7 +115,7 @@ impl<T, E, F> Predicate<T, E> for ResultPredicate<F>
 where
     F: Fn(&Result<T, E>) -> bool,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         (self.matcher)(outcome)
     }
 }
@@ -137,7 +137,7 @@ where
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::ok(|value: &u32| *value < 3);
+/// let mut predicate = on::ok(|value: &u32| *value < 3);
 ///
 /// assert!(predicate.should_retry(&Ok::<u32, &str>(2)));
 /// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
@@ -162,7 +162,7 @@ impl<T, E, F> Predicate<T, E> for OkPredicate<F>
 where
     F: Fn(&T) -> bool,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         match outcome {
             Ok(value) => (self.matcher)(value),
             Err(_) => false,
@@ -188,7 +188,7 @@ where
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::until_ready(|value: &u32| *value >= 3);
+/// let mut predicate = on::until_ready(|value: &u32| *value >= 3);
 ///
 /// assert!(predicate.should_retry(&Err::<u32, &str>("transient")));
 /// assert!(predicate.should_retry(&Ok::<u32, &str>(1)));
@@ -218,7 +218,7 @@ impl<T, E, F> Predicate<T, E> for UntilReadyPredicate<F>
 where
     F: Fn(&T) -> bool,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         match outcome {
             Ok(value) => !(self.is_ready)(value),
             Err(_) => true,
@@ -235,7 +235,7 @@ where
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
+/// let mut predicate = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
 /// assert!(predicate.should_retry(&Err("retryable")));
 /// assert!(predicate.should_retry(&Ok(1)));
 /// assert!(!predicate.should_retry(&Ok(5)));
@@ -260,7 +260,7 @@ where
     A: Predicate<T, E>,
     B: Predicate<T, E>,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         self.left.should_retry(outcome) || self.right.should_retry(outcome)
     }
 }
@@ -274,7 +274,7 @@ where
 /// ```
 /// use tenacious::{Predicate, on};
 ///
-/// let predicate = on::result(|outcome: &Result<u32, &str>| outcome.is_err())
+/// let mut predicate = on::result(|outcome: &Result<u32, &str>| outcome.is_err())
 ///     & on::error(|err: &&str| *err == "retryable");
 ///
 /// assert!(predicate.should_retry(&Err("retryable")));
@@ -300,7 +300,7 @@ where
     A: Predicate<T, E>,
     B: Predicate<T, E>,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         self.left.should_retry(outcome) && self.right.should_retry(outcome)
     }
 }

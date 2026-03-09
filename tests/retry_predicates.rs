@@ -61,27 +61,27 @@ fn err(error: TestError) -> TestResult {
 
 #[test]
 fn factory_functions_return_predicates() {
-    let any_error = on::any_error();
+    let mut any_error = on::any_error();
     assert_predicate_impl::<u32, TestError, _>(&any_error);
     assert!(any_error.should_retry(&err(TestError::Fatal)));
     assert!(!any_error.should_retry(&ok(ARBITRARY_OK_VALUE)));
 
-    let error = on::error(|error: &TestError| matches!(error, TestError::Retryable));
+    let mut error = on::error(|error: &TestError| matches!(error, TestError::Retryable));
     assert_predicate_impl::<u32, TestError, _>(&error);
     assert!(error.should_retry(&err(TestError::Retryable)));
     assert!(!error.should_retry(&err(TestError::Fatal)));
 
-    let result = on::result(|outcome: &TestResult| outcome.is_err());
+    let mut result = on::result(|outcome: &TestResult| outcome.is_err());
     assert_predicate_impl::<u32, TestError, _>(&result);
     assert!(result.should_retry(&err(TestError::Retryable)));
     assert!(!result.should_retry(&ok(ARBITRARY_OK_VALUE)));
 
-    let ok_predicate = on::ok(|value: &u32| *value < READY_THRESHOLD);
+    let mut ok_predicate = on::ok(|value: &u32| *value < READY_THRESHOLD);
     assert_predicate_impl::<u32, TestError, _>(&ok_predicate);
     assert!(ok_predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
 
-    let until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
+    let mut until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
     assert_predicate_impl::<u32, TestError, _>(&until_ready);
     assert!(until_ready.should_retry(&err(TestError::Fatal)));
     assert!(!until_ready.should_retry(&ok(READY_VALUE)));
@@ -93,7 +93,7 @@ fn factory_functions_return_predicates() {
 
 #[test]
 fn error_retries_only_matching_errors() {
-    let predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable));
+    let mut predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable));
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(!predicate.should_retry(&err(TestError::Fatal)));
@@ -103,7 +103,7 @@ fn error_retries_only_matching_errors() {
 #[test]
 fn error_does_not_call_matcher_for_ok_values() {
     let calls = Cell::new(0_u32);
-    let predicate = on::error(|_error: &TestError| {
+    let mut predicate = on::error(|_error: &TestError| {
         calls.set(calls.get().saturating_add(1));
         true
     });
@@ -118,7 +118,7 @@ fn error_does_not_call_matcher_for_ok_values() {
 
 #[test]
 fn any_error_retries_on_any_error() {
-    let predicate = on::any_error();
+    let mut predicate = on::any_error();
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&err(TestError::Fatal)));
@@ -131,7 +131,7 @@ fn any_error_retries_on_any_error() {
 
 #[test]
 fn result_can_decide_using_full_outcome() {
-    let predicate = on::result(|outcome: &TestResult| match outcome {
+    let mut predicate = on::result(|outcome: &TestResult| match outcome {
         Ok(value) => *value < READY_THRESHOLD,
         Err(TestError::Retryable) => true,
         Err(TestError::Fatal) => false,
@@ -149,7 +149,7 @@ fn result_can_decide_using_full_outcome() {
 
 #[test]
 fn ok_retries_only_matching_ok_values() {
-    let predicate = on::ok(|value: &u32| *value < READY_THRESHOLD);
+    let mut predicate = on::ok(|value: &u32| *value < READY_THRESHOLD);
 
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!predicate.should_retry(&ok(READY_VALUE)));
@@ -159,7 +159,7 @@ fn ok_retries_only_matching_ok_values() {
 #[test]
 fn ok_does_not_call_matcher_for_error_values() {
     let calls = Cell::new(0_u32);
-    let predicate = on::ok(|_value: &u32| {
+    let mut predicate = on::ok(|_value: &u32| {
         calls.set(calls.get().saturating_add(1));
         true
     });
@@ -170,7 +170,7 @@ fn ok_does_not_call_matcher_for_error_values() {
 
 #[test]
 fn until_ready_retries_until_ready_and_retries_errors() {
-    let predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
+    let mut predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&err(TestError::Fatal)));
@@ -180,7 +180,7 @@ fn until_ready_retries_until_ready_and_retries_errors() {
 
 #[test]
 fn until_ready_composes_with_error_matchers() {
-    let predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD)
+    let mut predicate = on::until_ready(|value: &u32| *value >= READY_THRESHOLD)
         & on::error(|error: &TestError| matches!(error, TestError::Retryable))
         | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
@@ -192,8 +192,8 @@ fn until_ready_composes_with_error_matchers() {
 
 #[test]
 fn until_ready_matches_any_error_or_inverse_ok_composition() {
-    let until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
-    let composed = on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
+    let mut until_ready = on::until_ready(|value: &u32| *value >= READY_THRESHOLD);
+    let mut composed = on::any_error() | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
     assert_eq!(
         until_ready.should_retry(&err(TestError::Retryable)),
@@ -219,7 +219,7 @@ fn until_ready_matches_any_error_or_inverse_ok_composition() {
 
 #[test]
 fn predicate_or_retries_when_either_side_retries() {
-    let predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable))
+    let mut predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable))
         | on::ok(|value: &u32| *value < READY_THRESHOLD);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
@@ -230,7 +230,7 @@ fn predicate_or_retries_when_either_side_retries() {
 
 #[test]
 fn predicate_or_supports_chained_composition() {
-    let predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable))
+    let mut predicate = on::error(|error: &TestError| matches!(error, TestError::Retryable))
         | on::ok(|value: &u32| *value < READY_THRESHOLD)
         | on::result(|outcome: &TestResult| matches!(outcome, Ok(value) if *value == READY_VALUE));
 
@@ -243,7 +243,7 @@ fn predicate_or_supports_chained_composition() {
 #[test]
 fn predicate_or_short_circuits_when_left_retries() {
     let right_calls = Cell::new(0_u32);
-    let predicate = on::result(|_outcome: &TestResult| true)
+    let mut predicate = on::result(|_outcome: &TestResult| true)
         | on::result(|_outcome: &TestResult| {
             right_calls.set(right_calls.get().saturating_add(1));
             false
@@ -259,7 +259,7 @@ fn predicate_or_short_circuits_when_left_retries() {
 
 #[test]
 fn predicate_and_retries_only_when_both_sides_retry() {
-    let predicate =
+    let mut predicate =
         on::any_error() & on::error(|error: &TestError| matches!(error, TestError::Retryable));
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
@@ -269,7 +269,7 @@ fn predicate_and_retries_only_when_both_sides_retry() {
 
 #[test]
 fn predicate_and_supports_chained_composition() {
-    let predicate = on::result(|outcome: &TestResult| outcome.is_ok())
+    let mut predicate = on::result(|outcome: &TestResult| outcome.is_ok())
         & on::ok(|value: &u32| *value < READY_THRESHOLD)
         & on::result(|outcome: &TestResult| matches!(outcome, Ok(value) if *value > 0));
 
@@ -281,7 +281,7 @@ fn predicate_and_supports_chained_composition() {
 #[test]
 fn predicate_and_short_circuits_when_left_rejects() {
     let right_calls = Cell::new(0_u32);
-    let predicate = on::result(|_outcome: &TestResult| false)
+    let mut predicate = on::result(|_outcome: &TestResult| false)
         & on::result(|_outcome: &TestResult| {
             right_calls.set(right_calls.get().saturating_add(1));
             true
@@ -297,21 +297,21 @@ fn predicate_and_short_circuits_when_left_rejects() {
 
 #[test]
 fn closure_implements_predicate_trait() {
-    let predicate = |outcome: &TestResult| outcome.is_err();
+    let mut predicate = |outcome: &TestResult| outcome.is_err();
 
     assert!(Predicate::should_retry(
-        &predicate,
+        &mut predicate,
         &err(TestError::Retryable)
     ));
     assert!(!Predicate::should_retry(
-        &predicate,
+        &mut predicate,
         &ok(ARBITRARY_OK_VALUE)
     ));
 }
 
 #[test]
 fn closure_predicate_can_be_used_in_generic_context() {
-    fn evaluate<P: Predicate<u32, TestError>>(predicate: P, outcome: TestResult) -> bool {
+    fn evaluate<P: Predicate<u32, TestError>>(mut predicate: P, outcome: TestResult) -> bool {
         predicate.should_retry(&outcome)
     }
 

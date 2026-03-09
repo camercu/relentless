@@ -290,6 +290,23 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     ///
     /// The provided function should return a monotonically increasing duration.
     /// Elapsed is computed as `clock() - clock_at_start` with saturating math.
+    ///
+    /// The clock is a bare `fn()` pointer rather than a generic or boxed closure
+    /// so that `RetryPolicy` remains `Copy` and `'static` without allocation.
+    /// This means the clock cannot capture state directly. For test clocks that
+    /// need mutation, use a `static AtomicU64` (or similar) that the `fn()`
+    /// reads:
+    ///
+    /// ```
+    /// use core::sync::atomic::{AtomicU64, Ordering};
+    /// use core::time::Duration;
+    ///
+    /// static MILLIS: AtomicU64 = AtomicU64::new(0);
+    ///
+    /// fn test_clock() -> Duration {
+    ///     Duration::from_millis(MILLIS.load(Ordering::Relaxed))
+    /// }
+    /// ```
     #[must_use]
     pub fn elapsed_clock(mut self, clock: ElapsedClockFn) -> Self {
         self.meta.elapsed_clock = Some(clock);

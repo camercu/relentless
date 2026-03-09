@@ -16,14 +16,14 @@ use crate::compat::Box;
 /// struct RetryOnError;
 ///
 /// impl Predicate<String, &str> for RetryOnError {
-///     fn should_retry(&self, outcome: &Result<String, &str>) -> bool {
+///     fn should_retry(&mut self, outcome: &Result<String, &str>) -> bool {
 ///         outcome.is_err()
 ///     }
 /// }
 /// ```
 pub trait Predicate<T, E> {
     /// Returns `true` if the retry loop should retry based on this outcome.
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool;
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool;
 }
 
 /// Ergonomic named combinators for [`Predicate`] composition.
@@ -34,19 +34,13 @@ pub trait Predicate<T, E> {
 pub trait PredicateExt<T, E>: Predicate<T, E> + Sized {
     /// Returns a predicate that retries when either side retries.
     #[must_use]
-    fn or<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAny<Self, Rhs>
-    where
-        Rhs: Predicate<T, E>,
-    {
+    fn or<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAny<Self, Rhs> {
         crate::on::PredicateAny::new(self, rhs)
     }
 
     /// Returns a predicate that retries only when both sides retry.
     #[must_use]
-    fn and<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAll<Self, Rhs>
-    where
-        Rhs: Predicate<T, E>,
-    {
+    fn and<Rhs>(self, rhs: Rhs) -> crate::on::PredicateAll<Self, Rhs> {
         crate::on::PredicateAll::new(self, rhs)
     }
 }
@@ -59,22 +53,22 @@ impl<T, E, P> PredicateExt<T, E> for P where P: Predicate<T, E> + Sized {}
 /// ```
 /// use tenacious::Predicate;
 ///
-/// let pred = |outcome: &Result<i32, &str>| outcome.is_err();
+/// let mut pred = |outcome: &Result<i32, &str>| outcome.is_err();
 /// let err: Result<i32, &str> = Err("boom");
 /// assert!(pred.should_retry(&err));
 /// ```
 impl<T, E, F> Predicate<T, E> for F
 where
-    F: Fn(&Result<T, E>) -> bool,
+    F: FnMut(&Result<T, E>) -> bool,
 {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         (self)(outcome)
     }
 }
 
 #[cfg(feature = "alloc")]
 impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E>> {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         (**self).should_retry(outcome)
     }
 }

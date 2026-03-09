@@ -372,7 +372,7 @@ injection layer is required.
 
 **1.3** The `Wait` trait is defined in `wait.rs` with two methods: `next_wait(&mut self, state: &RetryState) -> Duration` and `reset(&mut self)`. The `reset` method has a default no-op implementation.
 
-**1.4** The `Predicate<T, E>` trait is defined in `predicate.rs` with one method: `should_retry(&self, outcome: &Result<T, E>) -> bool`.
+**1.4** The `Predicate<T, E>` trait is defined in `predicate.rs` with one method: `should_retry(&mut self, outcome: &Result<T, E>) -> bool`.
 
 **1.5** The `Sleeper` trait is defined in `sleep.rs` with an associated type `Sleep: Future<Output = ()>` and a method `sleep(&self, dur: Duration) -> Self::Sleep`.
 
@@ -457,7 +457,7 @@ builder methods when `WaitExt` is in scope.
 
 **3.3** `wait::exponential(initial: Duration)` produces a strategy where the wait after attempt `n` is `initial * 2^(n-1)`. Overflow saturates at `Duration::MAX`.
 
-**3.4** `wait::exponential` accepts a builder method `.base(f: f64)` to change the multiplier from 2. Valid range is `[1.0, ∞)`. Values below 1.0 are clamped to 1.0 without panicking.
+**3.4** `wait::exponential` accepts a builder method `.base(f: f64)` to change the multiplier from 2. Valid range is `[1.0, ∞)`. Values below 1.0 are clamped to 1.0 without panicking. Non-finite values (`NaN`, `Infinity`, `NEG_INFINITY`) are also clamped to 1.0.
 
 **3.5** All wait strategies expose `.cap(max: Duration)` via `WaitExt`. This
 builder method clamps the computed wait to `max`. This is applied after jitter
@@ -632,9 +632,10 @@ return type to `(Result<T, RetryError<E, T>>, RetryStats)`.
 
 **8.3** `StopReason` is an enum with variants: `Success`, `StopCondition`,
 `PredicateAccepted`, and `Cancelled`. `Success` is used when the retry loop
-terminates with an accepted `Ok` outcome, including acceptance under a custom
-predicate. `PredicateAccepted` is used when the predicate terminates retries on
-an `Err` outcome before a stop condition fires.
+terminates with any `Ok` outcome, whether accepted by the default predicate or
+a custom one. `PredicateAccepted` is used when the predicate accepts an `Err`
+outcome as terminal (i.e., stops retrying on a non-retryable error) before a
+stop condition fires.
 
 **8.4** Statistics are accumulated inside the execution engine only when `.with_stats()` is active. Without it, no timing calls are made solely for statistics purposes.
 

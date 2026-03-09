@@ -75,8 +75,9 @@ fn stop_named_combinators_match_operator_forms() {
 
 #[test]
 fn predicate_named_combinators_match_operator_forms() {
-    let named_or = on::error(|err: &&str| *err == "retryable").or(on::ok(|value: &u32| *value < 2));
-    let op_or = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
+    let mut named_or =
+        on::error(|err: &&str| *err == "retryable").or(on::ok(|value: &u32| *value < 2));
+    let mut op_or = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
 
     assert_eq!(
         named_or.should_retry(&Err("retryable")),
@@ -91,8 +92,8 @@ fn predicate_named_combinators_match_operator_forms() {
         op_or.should_retry(&Err("fatal"))
     );
 
-    let named_and = on::any_error().and(on::error(|err: &&str| *err == "retryable"));
-    let op_and = on::any_error() & on::error(|err: &&str| *err == "retryable");
+    let mut named_and = on::any_error().and(on::error(|err: &&str| *err == "retryable"));
+    let mut op_and = on::any_error() & on::error(|err: &&str| *err == "retryable");
     assert_eq!(
         named_and.should_retry(&Err::<u32, &str>("retryable")),
         op_and.should_retry(&Err::<u32, &str>("retryable"))

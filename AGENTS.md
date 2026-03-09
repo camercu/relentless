@@ -29,16 +29,30 @@ changing code.
   [src/policy/ext/async_builder.rs](/src/policy/ext/async_builder.rs). When
   you change hooks, cancellation, stats, or type-state ergonomics, audit all
   four paths for drift.
-- Verify feature claims explicitly. The fastest useful checks are `cargo test`,
-  `cargo test --no-default-features --lib`, `cargo build --target
-  thumbv7m-none-eabi --no-default-features`, and `cargo check --target
-  wasm32-unknown-unknown --no-default-features --features
-  alloc,gloo-timers-sleep`.
+- Verify feature claims explicitly. Prefer the repo's `just` targets over ad
+  hoc `cargo` commands. The fastest useful checks are `just test`,
+  `just test-no-default`, `just check-no-std`, and `just check-wasm`.
 - Do not assume `cargo test --all-features` is a healthy host-side lane. As of
   March 7, 2026, enabling `embassy-sleep` in host tests fails to link because
   `embassy-time` expects a time driver symbol. If you touch feature gating or
   CI coverage, review [Cargo.toml](/Cargo.toml) and [justfile](/justfile)
   together.
+
+## Iteration workflow
+
+Use this loop for every feature-development iteration.
+
+- Start with the narrowest relevant validation command for the area you are
+  changing: `just test`, `just test-no-default`, `just check-no-std`,
+  `just check-wasm`, `just doc`, or `just bench-no-run`.
+- After each substantive code change, run the smallest `just` command that can
+  catch regressions in that area before moving on.
+- Before every commit, run `just pre-commit`.
+- Before handing work back for review or declaring the feature complete, run
+  `just pre-push`.
+- Run `just ci` before merge or when you need the full pinned-toolchain gate.
+- Treat `just ci-stable` as advisory only. It is useful for detecting
+  newest-stable drift, but it does not replace `just ci`.
 
 ## Coding Rules
 
