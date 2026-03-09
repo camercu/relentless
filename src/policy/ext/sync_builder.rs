@@ -1,3 +1,5 @@
+use core::fmt;
+
 #[cfg(feature = "alloc")]
 use super::super::HookChain;
 use super::super::execution::sync_exec::{NoSyncSleep, SyncRetryCore, SyncSleep};
@@ -91,14 +93,59 @@ where
 fn _sync_retry_builder_requires_sleep_in_no_std() {}
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
+///
+/// # Examples
+///
+/// ```
+/// use core::time::Duration;
+/// use tenacious::{RetryExt, stop};
+///
+/// let retry = (|| Ok::<u32, &str>(1))
+///     .retry()
+///     .stop(stop::attempts(2))
+///     .sleep(|_dur: Duration| {});
+///
+/// let _ = retry;
+/// ```
 #[allow(clippy::type_complexity)]
 pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     inner: SyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
 }
 
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
+    for SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SyncRetryBuilder").finish_non_exhaustive()
+    }
+}
+
 /// Owned sync retry builder wrapper that returns statistics.
+///
+/// # Examples
+///
+/// ```
+/// use core::time::Duration;
+/// use tenacious::RetryExt;
+///
+/// let retry = (|| Ok::<u32, &str>(1))
+///     .retry()
+///     .sleep(|_dur: Duration| {})
+///     .with_stats();
+///
+/// let _ = retry;
+/// ```
 pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     inner: SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>,
+}
+
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
+    for SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SyncRetryBuilderWithStats")
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(feature = "alloc")]

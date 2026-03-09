@@ -61,8 +61,12 @@ fn fetch_health(client: &reqwest::blocking::Client) -> Result<String, reqwest::E
         .text()
 }
 
-let client = reqwest::blocking::Client::new();
-let health = (|| fetch_health(&client)).retry().call().unwrap();
+fn run() -> Result<(), tenacious::RetryError<reqwest::Error, String>> {
+    let client = reqwest::blocking::Client::new();
+    let health = (|| fetch_health(&client)).retry().call()?;
+    let _ = health;
+    Ok(())
+}
 ```
 
 ### 2) Reuse a policy for API calls
@@ -93,17 +97,19 @@ fn is_retryable(err: &Error) -> bool {
         })
 }
 
-let mut api_policy = RetryPolicy::new()
-    .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(2)))
-    .wait(wait::fixed(Duration::from_millis(50))
-        + wait::exponential(Duration::from_millis(100)))
-    .when(on::error(is_retryable));
-
-let client = reqwest::blocking::Client::new();
-let invoice_id = api_policy
-    .retry(|| fetch_invoice(&client, "inv_123"))
-    .call()
-    .unwrap();
+fn run() -> Result<(), tenacious::RetryError<Error, String>> {
+    let mut api_policy = RetryPolicy::new()
+        .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(2)))
+        .wait(wait::fixed(Duration::from_millis(50))
+            + wait::exponential(Duration::from_millis(100)))
+        .when(on::error(is_retryable));
+    let client = reqwest::blocking::Client::new();
+    let invoice_id = api_policy
+        .retry(|| fetch_invoice(&client, "inv_123"))
+        .call()?;
+    let _ = invoice_id;
+    Ok(())
+}
 ```
 
 ### 3) Poll conditions with `on::ok`
@@ -133,13 +139,16 @@ fn fetch_export_status(
     }
 }
 
-let mut policy = RetryPolicy::new()
-    .stop(stop::attempts(8))
-    .wait(wait::fixed(Duration::from_millis(250)))
-    .when(on::ok(|status: &String| status != "success"));
-
-let client = reqwest::blocking::Client::new();
-let final_status = policy.retry(|| fetch_export_status(&client)).call().unwrap();
+fn run() -> Result<(), tenacious::RetryError<reqwest::Error, String>> {
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(8))
+        .wait(wait::fixed(Duration::from_millis(250)))
+        .when(on::ok(|status: &String| status != "success"));
+    let client = reqwest::blocking::Client::new();
+    let final_status = policy.retry(|| fetch_export_status(&client)).call()?;
+    let _ = final_status;
+    Ok(())
+}
 ```
 
 If selected errors are also retryable, compose the predicates directly or use
@@ -210,7 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .retry_async(|| fetch_profile(&client))
         .sleep(tokio::time::sleep)
         .await
-        .unwrap();
+        ?;
 
     let _ = profile_json;
     Ok(())
@@ -279,6 +288,10 @@ use tenacious::prelude::*;
 ## MSRV
 
 Minimum supported Rust version: `1.85`.
+
+## Release notes
+
+For user-facing changes, see the [changelog](./CHANGELOG.md).
 
 ## License
 

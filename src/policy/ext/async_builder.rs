@@ -1,3 +1,4 @@
+use core::fmt;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -114,6 +115,20 @@ pin_project! {
     ///
     /// This future is single-use. Polling after completion is misuse and
     /// always panics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::future::ready;
+    /// use core::time::Duration;
+    /// use tenacious::AsyncRetryExt;
+    ///
+    /// let retry = (|| ready(Ok::<u32, &str>(1)))
+    ///     .retry_async()
+    ///     .sleep(|_dur: Duration| async {});
+    ///
+    /// let _ = retry;
+    /// ```
     pub struct AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
@@ -125,8 +140,35 @@ pin_project! {
     }
 }
 
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
+    for AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncRetryBuilder").finish_non_exhaustive()
+    }
+}
+
 pin_project! {
     /// Owned async retry builder wrapper that returns statistics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::future::ready;
+    /// use core::time::Duration;
+    /// use tenacious::AsyncRetryExt;
+    ///
+    /// let retry = (|| ready(Ok::<u32, &str>(1)))
+    ///     .retry_async()
+    ///     .sleep(|_dur: Duration| async {})
+    ///     .with_stats();
+    ///
+    /// let _ = retry;
+    /// ```
     pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
@@ -135,6 +177,19 @@ pin_project! {
     {
         #[pin]
         inner: AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
+    }
+}
+
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
+    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncRetryBuilderWithStats")
+            .finish_non_exhaustive()
     }
 }
 

@@ -7,6 +7,8 @@ license = "MIT OR Apache-2.0"
 description = "Composable retry policies for fallible operations and polling."
 documentation = "https://docs.rs/tenacious"
 readme = "README.md"
+homepage = "https://docs.rs/tenacious"
+repository = "https://github.com/camercu/tenacious"
 keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
 categories = ["asynchronous", "no-std", "rust-patterns"]
 

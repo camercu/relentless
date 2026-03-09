@@ -1,3 +1,4 @@
+use core::fmt;
 use core::marker::PhantomData;
 
 use super::common::execute_sync_loop;
@@ -231,6 +232,14 @@ pub struct SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCa
     inner: SyncRetryCore<&'policy mut RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
 }
 
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
+    for SyncRetry<'_, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SyncRetry").finish_non_exhaustive()
+    }
+}
+
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 /// ```compile_fail
@@ -260,6 +269,14 @@ fn _sync_call_requires_sleep_in_no_std() {}
 /// ```
 pub struct SyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     inner: SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>,
+}
+
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
+    for SyncRetryWithStats<'_, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SyncRetryWithStats").finish_non_exhaustive()
+    }
 }
 
 #[cfg(feature = "alloc")]

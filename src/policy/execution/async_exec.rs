@@ -1,3 +1,4 @@
+use core::fmt;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::pin::Pin;
@@ -357,6 +358,18 @@ pin_project! {
     }
 }
 
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
+    for AsyncRetry<'_, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncRetry").finish_non_exhaustive()
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 /// ```compile_fail
@@ -396,6 +409,19 @@ pin_project! {
     {
         #[pin]
         inner: AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
+    }
+}
+
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
+    for AsyncRetryWithStats<'_, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncRetryWithStats")
+            .finish_non_exhaustive()
     }
 }
 
