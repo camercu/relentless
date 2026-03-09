@@ -74,9 +74,13 @@ pub use error::{RetryError, RetryResult};
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryWithStats};
-pub use policy::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
 pub use policy::{
-    RetryExt, SyncRetry, SyncRetryBuilder, SyncRetryBuilderWithStats, SyncRetryWithStats,
+    AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
+    PolicyAsyncRetryBuilder,
+};
+pub use policy::{
+    DefaultSyncRetryBuilder, PolicySyncRetryBuilder, RetryExt, SyncRetry, SyncRetryBuilder,
+    SyncRetryBuilderWithStats, SyncRetryWithStats,
 };
 pub use predicate::{Predicate, PredicateExt};
 pub use sleep::Sleeper;

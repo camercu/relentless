@@ -416,6 +416,8 @@ Always exported:
 - `AsyncRetry`, `AsyncRetryWithStats`
 - `SyncRetryBuilder`, `SyncRetryBuilderWithStats`, `RetryExt`
 - `AsyncRetryBuilder`, `AsyncRetryBuilderWithStats`, `AsyncRetryExt`
+- `DefaultSyncRetryBuilder`, `PolicySyncRetryBuilder`
+- `DefaultAsyncRetryBuilder`, `PolicyAsyncRetryBuilder`
 - modules: `cancel`, `on`, `sleep`, `stop`, `wait`
 
 Conditionally exported:

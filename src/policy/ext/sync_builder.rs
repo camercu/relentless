@@ -35,42 +35,14 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     ///     .sleep(|_| {})
     ///     .call();
     /// ```
-    fn retry(
-        self,
-    ) -> SyncRetryBuilder<
-        stop::StopAfterAttempts,
-        wait::WaitExponential,
-        on::AnyError,
-        (),
-        (),
-        (),
-        Self,
-        NoSyncSleep,
-        T,
-        E,
-        NeverCancel,
-    >;
+    fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E>;
 }
 
 impl<T, E, F> RetryExt<T, E> for F
 where
     F: FnMut() -> Result<T, E> + Sized,
 {
-    fn retry(
-        self,
-    ) -> SyncRetryBuilder<
-        stop::StopAfterAttempts,
-        wait::WaitExponential,
-        on::AnyError,
-        (),
-        (),
-        (),
-        Self,
-        NoSyncSleep,
-        T,
-        E,
-        NeverCancel,
-    > {
+    fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E> {
         SyncRetryBuilder {
             inner: SyncRetryCore::new(
                 RetryPolicy::default(),
@@ -83,6 +55,32 @@ where
         }
     }
 }
+
+/// Alias for the default owned sync retry builder returned by [`RetryExt::retry`].
+///
+/// This hides the default stop, wait, predicate, hook, sleeper, and canceler
+/// state from user-facing type signatures.
+pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    on::AnyError,
+    (),
+    (),
+    (),
+    F,
+    NoSyncSleep,
+    T,
+    E,
+    NeverCancel,
+>;
+
+/// Alias for the owned sync retry builder returned by
+/// [`RetryPolicy::retry_clone`].
+///
+/// This keeps the policy strategy types visible while hiding the initial hook,
+/// sleeper, and canceler plumbing from user-facing type signatures.
+pub type PolicySyncRetryBuilder<S, W, P, F, T, E> =
+    SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, NeverCancel>;
 
 impl<S, W, P> RetryPolicy<S, W, P>
 where
@@ -112,10 +110,7 @@ where
     /// assert!(result.is_err());
     /// ```
     #[must_use]
-    pub fn retry_clone<T, E, F>(
-        &self,
-        op: F,
-    ) -> SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, NeverCancel>
+    pub fn retry_clone<T, E, F>(&self, op: F) -> PolicySyncRetryBuilder<S, W, P, F, T, E>
     where
         F: FnMut() -> Result<T, E>,
     {

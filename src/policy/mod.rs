@@ -429,5 +429,8 @@ pub use execution::async_exec::{AsyncRetry, AsyncRetryWithStats};
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
 pub use execution::sync_exec::{SyncRetry, SyncRetryWithStats};
-pub use ext::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
-pub use ext::{RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats};
+pub use ext::{
+    AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
+    DefaultSyncRetryBuilder, PolicyAsyncRetryBuilder, PolicySyncRetryBuilder, RetryExt,
+    SyncRetryBuilder, SyncRetryBuilderWithStats,
+};

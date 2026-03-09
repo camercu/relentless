@@ -90,6 +90,15 @@ fn retry_ext_function_pointer_form_works() {
 }
 
 #[test]
+fn default_sync_retry_builder_alias_is_nameable_from_crate_root() {
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
+    type Builder = tenacious::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
+
+    let typed: Builder = (do_work as SyncWorkFn).retry();
+    assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
+}
+
+#[test]
 fn retry_ext_uses_default_policy_when_not_overridden() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
@@ -389,6 +398,10 @@ mod async_tests {
         }
     }
 
+    fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
+        ready(Ok(SUCCESS_VALUE))
+    }
+
     #[test]
     fn async_retry_ext_retries_until_success() {
         let attempts = Rc::new(Cell::new(0_u32));
@@ -440,6 +453,19 @@ mod async_tests {
         ));
         assert_eq!(attempts.get(), MAX_ATTEMPTS);
         assert_eq!(*sleeps.borrow(), DEFAULT_WAIT_SEQUENCE);
+    }
+
+    #[test]
+    fn default_async_retry_builder_alias_is_nameable_from_crate_root() {
+        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
+        type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
+        type Builder =
+            tenacious::DefaultAsyncRetryBuilder<AsyncWorkFn, AsyncWork, i32, &'static str>;
+
+        let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
+        let result: Result<i32, RetryError<&str, i32>> =
+            block_on(typed.sleep(|_dur: Duration| async {}));
+        assert_eq!(result, Ok(SUCCESS_VALUE));
     }
 
     #[test]

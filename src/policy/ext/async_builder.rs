@@ -39,23 +39,7 @@ where
     ///     let _ = (|| ready(Ok::<(), &str>(()))).retry_async().await;
     /// };
     /// ```
-    fn retry_async(
-        self,
-    ) -> AsyncRetryBuilder<
-        stop::StopAfterAttempts,
-        wait::WaitExponential,
-        on::AnyError,
-        (),
-        (),
-        (),
-        Self,
-        Fut,
-        NoAsyncSleep,
-        T,
-        E,
-        (),
-        NeverCancel,
-    >;
+    fn retry_async(self) -> DefaultAsyncRetryBuilder<Self, Fut, T, E>;
 }
 
 impl<T, E, Fut, F> AsyncRetryExt<T, E, Fut> for F
@@ -63,23 +47,7 @@ where
     F: FnMut() -> Fut + Sized,
     Fut: Future<Output = Result<T, E>>,
 {
-    fn retry_async(
-        self,
-    ) -> AsyncRetryBuilder<
-        stop::StopAfterAttempts,
-        wait::WaitExponential,
-        on::AnyError,
-        (),
-        (),
-        (),
-        Self,
-        Fut,
-        NoAsyncSleep,
-        T,
-        E,
-        (),
-        NeverCancel,
-    > {
+    fn retry_async(self) -> DefaultAsyncRetryBuilder<Self, Fut, T, E> {
         let policy = RetryPolicy::default();
         let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
@@ -95,6 +63,36 @@ where
         }
     }
 }
+
+/// Alias for the default owned async retry builder returned by
+/// [`AsyncRetryExt::retry_async`].
+///
+/// This hides the default stop, wait, predicate, hook, sleeper, sleep-future,
+/// and canceler state from user-facing type signatures.
+pub type DefaultAsyncRetryBuilder<F, Fut, T, E> = AsyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    on::AnyError,
+    (),
+    (),
+    (),
+    F,
+    Fut,
+    NoAsyncSleep,
+    T,
+    E,
+    (),
+    NeverCancel,
+>;
+
+/// Alias for the owned async retry builder returned by
+/// [`RetryPolicy::retry_async_clone`].
+///
+/// This keeps the policy strategy types visible while hiding the initial hook,
+/// sleeper, sleep-future, and canceler plumbing from user-facing type
+/// signatures.
+pub type PolicyAsyncRetryBuilder<S, W, P, F, Fut, T, E> =
+    AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E, (), NeverCancel>;
 
 impl<S, W, P> RetryPolicy<S, W, P>
 where
@@ -128,7 +126,7 @@ where
     pub fn retry_async_clone<T, E, F, Fut>(
         &self,
         op: F,
-    ) -> AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E, (), NeverCancel>
+    ) -> PolicyAsyncRetryBuilder<S, W, P, F, Fut, T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
