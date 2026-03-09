@@ -83,6 +83,13 @@ pub use policy::{
     PolicySyncRetryBuilderWithStats, RetryExt, SyncRetry, SyncRetryBuilder,
     SyncRetryBuilderWithStats, SyncRetryWithStats,
 };
+#[cfg(feature = "alloc")]
+pub use policy::{
+    EasyAsyncRetryBuilder, EasyAsyncRetryBuilderWithStats, EasyAsyncRetryRunner,
+    EasyAsyncRetryRunnerWithStats,
+};
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub use policy::{EasySyncRetryBuilder, EasySyncRetryBuilderWithStats};
 pub use predicate::{Predicate, PredicateExt};
 pub use sleep::Sleeper;
 pub use state::{AttemptState, BeforeAttemptState, ExitState, RetryState};

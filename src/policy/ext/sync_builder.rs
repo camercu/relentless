@@ -4,7 +4,14 @@ use core::fmt;
 use super::super::HookChain;
 use super::super::execution::sync_exec::{NoSyncSleep, SyncRetryCore, SyncSleep};
 use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+#[cfg(all(feature = "alloc", feature = "std"))]
+use super::easy_shared::{
+    ErasedCanceler, VecAttemptHooks, VecBeforeHooks, VecExitHooks, boxed_sync_sleep,
+    default_erased_policy, default_sync_sleep, empty_erased_hooks,
+};
 use crate::cancel::{Canceler, NeverCancel};
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use crate::compat::Duration;
 use crate::predicate::Predicate;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
@@ -36,6 +43,17 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     ///     .call();
     /// ```
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E>;
+
+    /// Starts an `alloc`-backed sync retry builder with erased internal types.
+    ///
+    /// This keeps the user-facing builder type small at the cost of dynamic
+    /// dispatch for strategy, hook, sleeper, and canceler configuration.
+    ///
+    /// This easy path is available only with `alloc` and `std`.
+    #[cfg(all(feature = "alloc", feature = "std"))]
+    fn retry_easy(self) -> EasySyncRetryBuilder<'static, Self, T, E>
+    where
+        Self: 'static;
 }
 
 impl<T, E, F> RetryExt<T, E> for F
@@ -52,6 +70,25 @@ where
                 NeverCancel,
                 true,
             ),
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "std"))]
+    fn retry_easy(self) -> EasySyncRetryBuilder<'static, Self, T, E>
+    where
+        Self: 'static,
+    {
+        EasySyncRetryBuilder {
+            inner: SyncRetryBuilder {
+                inner: SyncRetryCore::new(
+                    default_erased_policy(),
+                    empty_erased_hooks(),
+                    self,
+                    default_sync_sleep(),
+                    ErasedCanceler::default(),
+                    true,
+                ),
+            },
         }
     }
 }
@@ -103,6 +140,211 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E, C = NeverCancel> =
 /// `.with_stats()` on [`RetryPolicy::retry_clone`].
 pub type PolicySyncRetryBuilderWithStats<S, W, P, F, SleepFn, T, E, C = NeverCancel> =
     SyncRetryBuilderWithStats<S, W, P, (), (), (), F, SleepFn, T, E, C>;
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+type EasySyncInner<'a, F, T, E> = SyncRetryBuilder<
+    Box<dyn Stop + 'a>,
+    Box<dyn Wait + 'a>,
+    Box<dyn Predicate<T, E> + 'a>,
+    VecBeforeHooks<'a>,
+    VecAttemptHooks<'a, T, E>,
+    VecExitHooks<'a, T, E>,
+    F,
+    Box<dyn SyncSleep + 'a>,
+    T,
+    E,
+    ErasedCanceler<'a>,
+>;
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+type EasySyncInnerWithStats<'a, F, T, E> = SyncRetryBuilderWithStats<
+    Box<dyn Stop + 'a>,
+    Box<dyn Wait + 'a>,
+    Box<dyn Predicate<T, E> + 'a>,
+    VecBeforeHooks<'a>,
+    VecAttemptHooks<'a, T, E>,
+    VecExitHooks<'a, T, E>,
+    F,
+    Box<dyn SyncSleep + 'a>,
+    T,
+    E,
+    ErasedCanceler<'a>,
+>;
+
+/// `alloc`-backed sync retry builder with erased internal strategy types.
+///
+/// This façade favors smaller public types and easier-to-read compiler output
+/// over the zero-cost generic plumbing used by [`SyncRetryBuilder`].
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub struct EasySyncRetryBuilder<'a, F, T, E> {
+    inner: EasySyncInner<'a, F, T, E>,
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl<F, T, E> fmt::Debug for EasySyncRetryBuilder<'_, F, T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasySyncRetryBuilder")
+            .finish_non_exhaustive()
+    }
+}
+
+/// `alloc`-backed sync retry builder with statistics collection enabled.
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub struct EasySyncRetryBuilderWithStats<'a, F, T, E> {
+    inner: EasySyncInnerWithStats<'a, F, T, E>,
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl<F, T, E> fmt::Debug for EasySyncRetryBuilderWithStats<'_, F, T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasySyncRetryBuilderWithStats")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl<'a, F, T, E> EasySyncRetryBuilder<'a, F, T, E> {
+    #[must_use]
+    pub fn stop<S>(self, stop: S) -> Self
+    where
+        S: Stop + 'a,
+    {
+        let SyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: SyncRetryBuilder {
+                inner: inner.map_policy(|policy| policy.stop(Box::new(stop) as Box<dyn Stop + 'a>)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn wait<W>(self, wait: W) -> Self
+    where
+        W: Wait + 'a,
+    {
+        let SyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: SyncRetryBuilder {
+                inner: inner.map_policy(|policy| policy.wait(Box::new(wait) as Box<dyn Wait + 'a>)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn when<P>(self, predicate: P) -> Self
+    where
+        P: Predicate<T, E> + 'a,
+    {
+        let SyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: SyncRetryBuilder {
+                inner: inner.map_policy(|policy| {
+                    policy.when(Box::new(predicate) as Box<dyn Predicate<T, E> + 'a>)
+                }),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
+        Self {
+            inner: self.inner.elapsed_clock(clock),
+        }
+    }
+
+    #[must_use]
+    pub fn sleep<SleepFn>(self, sleeper: SleepFn) -> Self
+    where
+        SleepFn: FnMut(Duration) + 'a,
+    {
+        let SyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: SyncRetryBuilder {
+                inner: inner.with_sleeper(boxed_sync_sleep(sleeper)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn cancel_on<C>(self, canceler: C) -> Self
+    where
+        C: Canceler + 'a,
+        C::Cancel: 'a,
+    {
+        let SyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: SyncRetryBuilder {
+                inner: inner.with_canceler(ErasedCanceler::new(canceler)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn before_attempt<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: FnMut(&BeforeAttemptState) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.before_attempt.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn after_attempt<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: for<'state> FnMut(&AttemptState<'state, T, E>) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.after_attempt.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn on_exit<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: for<'state> FnMut(&ExitState<'state, T, E>) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.on_exit.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    pub fn call(self) -> Result<T, RetryError<E, T>>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        self.inner.call()
+    }
+
+    #[must_use]
+    pub fn with_stats(self) -> EasySyncRetryBuilderWithStats<'a, F, T, E>
+    where
+        F: FnMut() -> Result<T, E>,
+    {
+        EasySyncRetryBuilderWithStats {
+            inner: self.inner.with_stats(),
+        }
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl<F, T, E> EasySyncRetryBuilderWithStats<'_, F, T, E>
+where
+    F: FnMut() -> Result<T, E>,
+{
+    pub fn call(self) -> (Result<T, RetryError<E, T>>, RetryStats) {
+        self.inner.call()
+    }
+}
 
 impl<S, W, P> RetryPolicy<S, W, P>
 where

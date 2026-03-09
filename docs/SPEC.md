@@ -195,6 +195,17 @@ Builder methods:
 - `.boxed()` with `alloc`
 - `.retry_clone(...)` and `.retry_async_clone(...)` when the policy is `Clone`
 
+Extension-owned convenience builders:
+
+- `RetryExt::retry_easy()` is available with `alloc` and `std`
+- `AsyncRetryExt::retry_async_easy()` is available with `alloc`
+- easy builders erase stop, wait, predicate, hook, sleeper, and canceler
+  concrete types behind trait objects to keep public builder types compact
+- easy builders require `'static` captured state for the operation and any
+  configured strategies, hooks, sleepers, or cancelers
+- `retry_async_easy()` currently supports stop, wait, predicate, hooks, stats,
+  and sleep configuration, but does not expose `cancel_on(...)`
+
 Policy lifecycle guarantees:
 
 - `RetryPolicy::retry(...)` and `RetryPolicy::retry_async(...)` call
@@ -216,6 +227,8 @@ only how sleeping happens.
 
 `RetryPolicy::retry(op)` returns `SyncRetry`. `RetryPolicy::retry_clone(op)`
 and `RetryExt::retry()` return owned `SyncRetryBuilder` values.
+`RetryExt::retry_easy()` returns `EasySyncRetryBuilder` when `alloc` and `std`
+are enabled.
 
 Calling `.sleep(...)` is:
 
@@ -242,6 +255,8 @@ The sync loop performs these steps:
 `RetryPolicy::retry_async(op)` returns `AsyncRetry`.
 `RetryPolicy::retry_async_clone(op)` and `AsyncRetryExt::retry_async()`
 return owned `AsyncRetryBuilder` values.
+`AsyncRetryExt::retry_async_easy()` returns `EasyAsyncRetryBuilder` when
+`alloc` is enabled.
 
 Async execution always requires `.sleep(...)` before the future can run. The
 crate never auto-selects an async runtime.
@@ -416,6 +431,10 @@ Always exported:
 - `AsyncRetry`, `AsyncRetryWithStats`
 - `SyncRetryBuilder`, `SyncRetryBuilderWithStats`, `RetryExt`
 - `AsyncRetryBuilder`, `AsyncRetryBuilderWithStats`, `AsyncRetryExt`
+- `EasySyncRetryBuilder`, `EasySyncRetryBuilderWithStats` with `alloc` and
+  `std`
+- `EasyAsyncRetryBuilder`, `EasyAsyncRetryBuilderWithStats`,
+  `EasyAsyncRetryRunner`, `EasyAsyncRetryRunnerWithStats` with `alloc`
 - `DefaultSyncRetryBuilder`, `PolicySyncRetryBuilder`
 - `DefaultAsyncRetryBuilder`, `PolicyAsyncRetryBuilder`
 - `DefaultSyncRetryBuilderWithStats`, `PolicySyncRetryBuilderWithStats`

@@ -67,7 +67,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E>> {
+impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + '_> {
     fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
         (**self).should_retry(outcome)
     }

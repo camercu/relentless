@@ -3,6 +3,11 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+#[cfg(feature = "alloc")]
+use super::easy_shared::{
+    ErasedAsyncSleep, ErasedCanceler, VecAttemptHooks, VecBeforeHooks, VecExitHooks,
+    default_erased_policy, empty_erased_hooks,
+};
 use crate::compat::Duration;
 use pin_project_lite::pin_project;
 
@@ -12,6 +17,8 @@ use super::super::execution::async_exec::{AsyncRetryCore, NoAsyncSleep};
 use super::super::time::ElapsedTracker;
 use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::cancel::{Canceler, NeverCancel};
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
@@ -40,6 +47,17 @@ where
     /// };
     /// ```
     fn retry_async(self) -> DefaultAsyncRetryBuilder<Self, Fut, T, E>;
+
+    /// Starts an `alloc`-backed async retry builder with erased internal
+    /// strategy types.
+    ///
+    /// Call `.sleep(...)` to select the runtime-specific sleeper and obtain an
+    /// awaitable runner.
+    #[cfg(feature = "alloc")]
+    fn retry_async_easy(self) -> EasyAsyncRetryBuilder<'static, Self, Fut, T, E>
+    where
+        Self: 'static,
+        Fut: 'static;
 }
 
 impl<T, E, Fut, F> AsyncRetryExt<T, E, Fut> for F
@@ -60,6 +78,27 @@ where
                 elapsed_tracker,
                 true,
             ),
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    fn retry_async_easy(self) -> EasyAsyncRetryBuilder<'static, Self, Fut, T, E>
+    where
+        Self: 'static,
+        Fut: 'static,
+    {
+        EasyAsyncRetryBuilder {
+            inner: AsyncRetryBuilder {
+                inner: AsyncRetryCore::new(
+                    default_erased_policy(),
+                    empty_erased_hooks(),
+                    self,
+                    NoAsyncSleep,
+                    ErasedCanceler::default(),
+                    ElapsedTracker::new(None),
+                    true,
+                ),
+            },
         }
     }
 }
@@ -135,6 +174,173 @@ pub type PolicyAsyncRetryBuilderWithStats<
     C = NeverCancel,
 > = AsyncRetryBuilderWithStats<S, W, P, (), (), (), F, Fut, SleepImpl, T, E, SleepFut, C>;
 
+#[cfg(feature = "alloc")]
+type EasyAsyncInner<'a, F, Fut, T, E> = AsyncRetryBuilder<
+    Box<dyn Stop + 'a>,
+    Box<dyn Wait + 'a>,
+    Box<dyn Predicate<T, E> + 'a>,
+    VecBeforeHooks<'a>,
+    VecAttemptHooks<'a, T, E>,
+    VecExitHooks<'a, T, E>,
+    F,
+    Fut,
+    NoAsyncSleep,
+    T,
+    E,
+    (),
+    ErasedCanceler<'a>,
+>;
+
+#[cfg(feature = "alloc")]
+type EasyAsyncRunnerInner<'a, F, Fut, T, E> = AsyncRetryBuilder<
+    Box<dyn Stop + 'a>,
+    Box<dyn Wait + 'a>,
+    Box<dyn Predicate<T, E> + 'a>,
+    VecBeforeHooks<'a>,
+    VecAttemptHooks<'a, T, E>,
+    VecExitHooks<'a, T, E>,
+    F,
+    Fut,
+    ErasedAsyncSleep<'a>,
+    T,
+    E,
+    Pin<Box<dyn Future<Output = ()> + 'a>>,
+    ErasedCanceler<'a>,
+>;
+
+/// `alloc`-backed async retry builder with erased internal strategy types.
+#[cfg(feature = "alloc")]
+pub struct EasyAsyncRetryBuilder<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    inner: EasyAsyncInner<'a, F, Fut, T, E>,
+}
+
+#[cfg(feature = "alloc")]
+impl<F, Fut, T, E> fmt::Debug for EasyAsyncRetryBuilder<'_, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasyAsyncRetryBuilder")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+pin_project! {
+    /// Awaitable runner returned by [`EasyAsyncRetryBuilder::sleep`].
+    pub struct EasyAsyncRetryRunner<'a, F, Fut, T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        #[pin]
+        inner: EasyAsyncRunnerInner<'a, F, Fut, T, E>,
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<F, Fut, T, E> fmt::Debug for EasyAsyncRetryRunner<'_, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasyAsyncRetryRunner")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct EasyAsyncRetryBuilderWithStats<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    inner: EasyAsyncRetryBuilder<'a, F, Fut, T, E>,
+}
+
+#[cfg(feature = "alloc")]
+impl<F, Fut, T, E> fmt::Debug for EasyAsyncRetryBuilderWithStats<'_, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasyAsyncRetryBuilderWithStats")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+pin_project! {
+    /// Awaitable stats runner returned by [`EasyAsyncRetryBuilderWithStats::sleep`].
+    pub struct EasyAsyncRetryRunnerWithStats<'a, F, Fut, T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        #[pin]
+        inner: AsyncRetryBuilderWithStats<
+            Box<dyn Stop + 'a>,
+            Box<dyn Wait + 'a>,
+            Box<dyn Predicate<T, E> + 'a>,
+            VecBeforeHooks<'a>,
+            VecAttemptHooks<'a, T, E>,
+            VecExitHooks<'a, T, E>,
+            F,
+            Fut,
+            ErasedAsyncSleep<'a>,
+            T,
+            E,
+            Pin<Box<dyn Future<Output = ()> + 'a>>,
+            ErasedCanceler<'a>,
+        >,
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<F, Fut, T, E> fmt::Debug for EasyAsyncRetryRunnerWithStats<'_, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EasyAsyncRetryRunnerWithStats")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, F, Fut, T, E> Future for EasyAsyncRetryRunner<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>> + 'a,
+{
+    type Output = Result<T, RetryError<E, T>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().inner.poll(cx)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, F, Fut, T, E> Future for EasyAsyncRetryRunnerWithStats<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>> + 'a,
+{
+    type Output = (Result<T, RetryError<E, T>>, RetryStats);
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().inner.poll(cx)
+    }
+}
+
 impl<S, W, P> RetryPolicy<S, W, P>
 where
     S: Stop,
@@ -184,6 +390,143 @@ where
                 elapsed_tracker,
                 true,
             ),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, F, Fut, T, E> EasyAsyncRetryBuilder<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    #[must_use]
+    pub fn stop<S>(self, stop: S) -> Self
+    where
+        S: Stop + 'a,
+    {
+        let AsyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: AsyncRetryBuilder {
+                inner: inner.map_policy(|policy| policy.stop(Box::new(stop) as Box<dyn Stop + 'a>)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn wait<W>(self, wait: W) -> Self
+    where
+        W: Wait + 'a,
+    {
+        let AsyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: AsyncRetryBuilder {
+                inner: inner.map_policy(|policy| policy.wait(Box::new(wait) as Box<dyn Wait + 'a>)),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn when<P>(self, predicate: P) -> Self
+    where
+        P: Predicate<T, E> + 'a,
+    {
+        let AsyncRetryBuilder { inner } = self.inner;
+        Self {
+            inner: AsyncRetryBuilder {
+                inner: inner.map_policy(|policy| {
+                    policy.when(Box::new(predicate) as Box<dyn Predicate<T, E> + 'a>)
+                }),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
+        Self {
+            inner: self.inner.elapsed_clock(clock),
+        }
+    }
+
+    #[must_use]
+    pub fn before_attempt<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: FnMut(&BeforeAttemptState) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.before_attempt.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn after_attempt<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: for<'state> FnMut(&AttemptState<'state, T, E>) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.after_attempt.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn on_exit<Hook>(self, hook: Hook) -> Self
+    where
+        Hook: for<'state> FnMut(&ExitState<'state, T, E>) + 'a,
+    {
+        Self {
+            inner: self.inner.map_hooks(|mut hooks| {
+                hooks.on_exit.push(hook);
+                hooks
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn with_stats(self) -> EasyAsyncRetryBuilderWithStats<'a, F, Fut, T, E> {
+        EasyAsyncRetryBuilderWithStats { inner: self }
+    }
+
+    #[must_use]
+    pub fn sleep<SleepImpl>(self, sleeper: SleepImpl) -> EasyAsyncRetryRunner<'a, F, Fut, T, E>
+    where
+        SleepImpl: Sleeper + 'a,
+        SleepImpl::Sleep: 'a,
+    {
+        let AsyncRetryBuilder { inner } = self.inner;
+        EasyAsyncRetryRunner {
+            inner: AsyncRetryBuilder {
+                inner: inner.with_sleeper(
+                    ErasedAsyncSleep::new(sleeper),
+                    "easy async retry builder requires sleep before await",
+                ),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a, F, Fut, T, E> EasyAsyncRetryBuilderWithStats<'a, F, Fut, T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    #[must_use]
+    pub fn sleep<SleepImpl>(
+        self,
+        sleeper: SleepImpl,
+    ) -> EasyAsyncRetryRunnerWithStats<'a, F, Fut, T, E>
+    where
+        SleepImpl: Sleeper + 'a,
+        SleepImpl::Sleep: 'a,
+    {
+        EasyAsyncRetryRunnerWithStats {
+            inner: self.inner.sleep(sleeper).inner.with_stats(),
         }
     }
 }

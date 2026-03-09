@@ -284,12 +284,21 @@ assert_eq!(stats.attempts, 1);
 
 - `RetryPolicy<S, W, P>`: reusable retry configuration.
 - `RetryExt` / `AsyncRetryExt`: start from closures and function pointers.
+- `retry_easy()` / `retry_async_easy()`: `alloc`-backed convenience entry
+  points with smaller builder types.
 - `stop`: `attempts`, `elapsed`, `before_elapsed`, `never`.
 - `wait`: `fixed`, `linear`, `exponential`, plus composition.
 - `on`: `any_error`, `error`, `ok`, `result`.
 - `SyncRetry` / `AsyncRetry`: execution builders with lifecycle hooks.
 - `RetryError<E, T>` / `RetryResult<T, E>`: terminal outcomes and alias.
 - `RetryStats`: aggregate execution stats via `.with_stats()`.
+
+If you want a simpler owned builder type in type annotations or compiler
+output, use the easy entry points. They box their internal strategies and
+hooks, which trades some zero-cost generic plumbing for a smaller public type.
+The sync easy path is available with `alloc` and `std`. The async easy path is
+available with `alloc`, still requires `.sleep(...)`, and does not expose
+`.cancel_on(...)` yet.
 
 If you prefer concise imports:
 
