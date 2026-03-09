@@ -321,6 +321,64 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     }
 }
 
+/// Generates `#[cfg(feature = "alloc")]` hook-chaining methods for a builder.
+///
+/// Produces `before_attempt`, `after_attempt`, and `on_exit` methods that
+/// delegate to `self.map_hooks(|h| h.chain_*(hook))`.
+macro_rules! impl_alloc_hook_chain {
+    (
+        impl[$($gen:tt)*] $Builder:ty
+        $(where { $($wc:tt)* })? =>
+        before_attempt -> { $($ba:tt)* },
+        after_attempt -> { $($aa:tt)* },
+        on_exit -> { $($ox:tt)* } $(,)?
+    ) => {
+        #[cfg(feature = "alloc")]
+        // Intentional: hook chaining preserves type-state and avoids runtime
+        // indirection; signatures are long but mechanically structured.
+        #[allow(clippy::type_complexity)]
+        impl<$($gen)*> $Builder
+        $(where $($wc)*)?
+        {
+            /// Appends a before-attempt hook.
+            #[must_use]
+            pub fn before_attempt<Hook>(
+                self,
+                hook: Hook,
+            ) -> $($ba)*
+            where
+                Hook: FnMut(&BeforeAttemptState),
+            {
+                self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
+            }
+
+            /// Appends an after-attempt hook.
+            #[must_use]
+            pub fn after_attempt<Hook>(
+                self,
+                hook: Hook,
+            ) -> $($aa)*
+            where
+                Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+            {
+                self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
+            }
+
+            /// Appends an on-exit hook.
+            #[must_use]
+            pub fn on_exit<Hook>(
+                self,
+                hook: Hook,
+            ) -> $($ox)*
+            where
+                Hook: for<'a> FnMut(&ExitState<'a, T, E>),
+            {
+                self.map_hooks(|hooks| hooks.chain_on_exit(hook))
+            }
+        }
+    };
+}
+
 mod execution;
 mod ext;
 mod time;

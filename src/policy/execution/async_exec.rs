@@ -13,7 +13,7 @@ use crate::policy::HookChain;
 use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
-use crate::state::{BeforeAttemptState, ExitState};
+use crate::state::{AttemptState, BeforeAttemptState, ExitState};
 use crate::stats::RetryStats;
 use crate::stop::Stop;
 use crate::wait::Wait;
@@ -328,100 +328,13 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
-// Intentional: hook chaining APIs preserve compile-time type-state for no-alloc
-// and zero-cost execution; signatures are verbose but mechanically constrained.
-#[allow(clippy::type_complexity)]
-impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl_alloc_hook_chain! {
+    impl['policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C]
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
-{
-    /// Appends a before-attempt hook.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryWithBeforeHook<
-        'policy,
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
-    where
-        Hook: FnMut(&BeforeAttemptState),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
-    }
-
-    /// Appends an after-attempt hook.
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryWithAfterHook<
-        'policy,
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
-    where
-        Hook: for<'a> FnMut(&crate::AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-    }
-
-    /// Appends an on-exit hook.
-    #[must_use]
-    pub fn on_exit<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryWithOnExitHook<
-        'policy,
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_on_exit(hook))
-    }
+    where { F: FnMut() -> Fut, Fut: Future<Output = Result<T, E>>, C: Canceler } =>
+    before_attempt -> { AsyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
+    after_attempt -> { AsyncRetryWithAfterHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
+    on_exit -> { AsyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
 }
 
 #[cfg(not(feature = "alloc"))]
@@ -480,7 +393,7 @@ where
         hook: Hook,
     ) -> AsyncRetry<'policy, S, W, P, BA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
-        Hook: for<'a> FnMut(&crate::AttemptState<'a, T, E>),
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
         self.map_hooks(|hooks| hooks.set_after_attempt(hook))
     }

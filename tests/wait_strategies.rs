@@ -202,6 +202,14 @@ fn exponential_base_infinity_clamped_to_1() {
     assert_eq!(w.next_wait(&state), BASE);
 }
 
+#[test]
+fn exponential_base_nan_clamped_to_1() {
+    let mut w = wait::exponential(BASE).base(f64::NAN);
+    let state = make_state(3);
+    // NAN is not finite, so it should be clamped to base 1.0 (constant initial delay).
+    assert_eq!(w.next_wait(&state), BASE);
+}
+
 // ---------------------------------------------------------------------------
 // 3.5: .cap(max)
 // ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ let result = RetryPolicy::new()
           .cap(Duration::from_secs(5)))
     .when(on::error(|e: &HttpError| e.status().is_server_error()))
     .retry_async(|| client.get("/api/data"))
-    .before_sleep(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
+    .after_attempt(|s| tracing::warn!(attempt = s.attempt, "retrying request"))
     .sleep(tokio())
     .await?;
 
@@ -232,13 +232,13 @@ impl RetryState {
     ) -> Self;
 }
 
-// Passed to: after_attempt, before_sleep hooks
+// Passed to: after_attempt hook
 #[non_exhaustive]
 pub struct AttemptState<'a, T, E> {
     pub attempt: u32,             // 1-indexed; the attempt that just completed
     pub outcome: &'a Result<T, E>,
     pub elapsed: Option<Duration>,
-    pub next_delay: Duration,     // populated after Wait::next_wait; zero in other hooks
+    pub next_delay: Option<Duration>, // Some(delay) when retrying, None for terminal attempts
     pub total_wait: Duration,
 }
 
@@ -247,7 +247,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
         attempt: u32,
         outcome: &'a Result<T, E>,
         elapsed: Option<Duration>,
-        next_delay: Duration,
+        next_delay: Option<Duration>,
         total_wait: Duration,
     ) -> Self;
 }
@@ -389,7 +389,7 @@ pattern and are also `#[non_exhaustive]`.
 
 **1.8** `RetryState` is passed by shared reference to `Stop::should_stop` and
 `Wait::next_wait`. `AttemptState` is passed to `after_attempt` and
-`before_sleep` hooks. `BeforeAttemptState` is passed to `before_attempt`.
+`after_attempt` hook. `BeforeAttemptState` is passed to `before_attempt`.
 `ExitState` is passed to `on_exit`. `Predicate::should_retry` receives
 `&Result<T, E>` directly. During normal execution these state types are
 constructed by the retry engine. For tests, examples, and custom strategy
@@ -526,8 +526,8 @@ unparameterized `RetryPolicy` type defaults to this safe configuration.
 `.wait(w: impl Wait)`, `.when(p: impl Predicate)`, and
 `.elapsed_clock(clock: fn() -> Duration)`. Each method consumes and returns
 `Self`. Hook builder methods (`.before_attempt(f)`, `.after_attempt(f)`,
-`.before_sleep(f)`, `.on_exit(f)`) are provided on `SyncRetry` and `AsyncRetry`
-instead of on `RetryPolicy`.
+`.on_exit(f)`) are provided on `SyncRetry` and `AsyncRetry` instead of on
+`RetryPolicy`.
 
 **5.3** The generic parameters of `RetryPolicy<S, W, P>` carry the concrete stop, wait, and predicate types. Calling `.stop(new_stop)` replaces the `S` type parameter, producing `RetryPolicy<NewStop, W, P>`. This preserves zero-cost abstraction for statically known policies.
 
@@ -538,14 +538,15 @@ instead of on `RetryPolicy`.
 **5.6** `SyncRetry::call() -> Result<T, RetryError<E, T>>` executes the retry
 loop synchronously. The loop:
   1. Calls `op()`.
-  2. Evaluates the predicate; if predicate says do not retry, returns the
-     current outcome immediately (`Ok(value)` or
-     `Err(RetryError::PredicateRejected { ... })`).
+  2. Evaluates the predicate; if predicate says do not retry, fires
+     `after_attempt` with `next_delay = None` and returns the current outcome
+     immediately (`Ok(value)` or `Err(RetryError::PredicateRejected { ... })`).
   3. Calls `Wait::next_wait` to compute the delay.
   4. Evaluates the stop condition with `state.next_delay` populated; if stop
-     fires, returns `Err(RetryError::Exhausted { ... })` for `Err` outcomes or
+     fires, fires `after_attempt` with `next_delay = None` and returns
+     `Err(RetryError::Exhausted { ... })` for `Err` outcomes or
      `Err(RetryError::ConditionNotMet { ... })` for retried `Ok` outcomes.
-  5. Fires `before_sleep` hook with current `AttemptState`.
+  5. Fires `after_attempt` with `next_delay = Some(delay)`.
   6. Calls the sleep function with the computed delay.
   7. Increments attempt counter and repeats.
 
@@ -554,8 +555,9 @@ loop synchronously. The loop:
 **5.8** `RetryPolicy::retry` calls `Stop::reset` and `Wait::reset` at the start of each invocation, before the first attempt. This ensures a policy can be applied to multiple sequential operations without carrying state from a prior run.
 
 **5.9** Hook callbacks are configured on `SyncRetry` and `AsyncRetry`.
-`before_attempt` accepts `FnMut(&BeforeAttemptState)`. `after_attempt` and
-`before_sleep` accept `FnMut(&AttemptState<'_, T, E>)`. `on_exit` accepts
+`before_attempt` accepts `FnMut(&BeforeAttemptState)`. `after_attempt` accepts
+`FnMut(&AttemptState<'_, T, E>)` where `next_delay` is `Some(delay)` when
+retrying or `None` for terminal attempts. `on_exit` accepts
 `FnMut(&ExitState<'_, T, E>)`. All hooks have no return value. Panics in hooks
 propagate normally.
 
@@ -589,27 +591,30 @@ and `canceler.cancel()` so cancellation can interrupt sleeping attempts.
 returns a function pointer compatible with `.sleep(...)`.
 
 **6.8** Hook callbacks in async execution are synchronous:
-`before_attempt` receives `&BeforeAttemptState`, `after_attempt` and
-`before_sleep` receive `&AttemptState<'_, T, E>`, and `on_exit` receives
-`&ExitState<'_, T, E>`. Async hooks are not supported. Rationale: async
-closures are not yet stable in Rust; adding them now would require boxing and
-add complexity disproportionate to the benefit.
+`before_attempt` receives `&BeforeAttemptState`, `after_attempt` receives
+`&AttemptState<'_, T, E>`, and `on_exit` receives `&ExitState<'_, T, E>`.
+Async hooks are not supported. Rationale: async closures are not yet stable in
+Rust; adding them now would require boxing and add complexity disproportionate
+to the benefit.
 
 ---
 
 ## Iteration 7: Callbacks and Hooks
 
-**7.1** Four hook points are defined on execution builders (`SyncRetry` and
-`AsyncRetry`): `before_attempt`, `after_attempt`, `before_sleep`, and
-`on_exit`. `before_attempt` accepts `FnMut(&BeforeAttemptState)`.
-`after_attempt` and `before_sleep` accept `FnMut(&AttemptState<'_, T, E>)`.
-`on_exit` accepts `FnMut(&ExitState<'_, T, E>)`.
+**7.1** Three hook points are defined on execution builders (`SyncRetry` and
+`AsyncRetry`): `before_attempt`, `after_attempt`, and `on_exit`.
+`before_attempt` accepts `FnMut(&BeforeAttemptState)`. `after_attempt` accepts
+`FnMut(&AttemptState<'_, T, E>)`. `on_exit` accepts
+`FnMut(&ExitState<'_, T, E>)`.
 
 **7.2** `before_attempt` fires before `op()` is called on each attempt. It receives `BeforeAttemptState` with the attempt number about to execute, elapsed time, and cumulative sleep time. It does not have access to the previous attempt's outcome.
 
-**7.3** `after_attempt` fires after `op()` returns and after the predicate is evaluated, but before the stop condition is checked. It receives the full `AttemptState` including the outcome.
-
-**7.4** `before_sleep` fires after the stop condition has been checked and failed to stop (i.e., we have decided to retry). At this point `AttemptState.next_delay` is populated with the duration we are about to sleep.
+**7.3** `after_attempt` fires after every attempt. It receives the full
+`AttemptState` including the outcome. `next_delay` is `Some(delay)` when the
+engine will retry (after stop condition check passes), and `None` for terminal
+attempts (predicate accepted, stop condition fired, or first-attempt success).
+This unified hook replaces the former separate `after_attempt` and
+`before_sleep` hooks.
 
 **7.5** `on_exit` fires once when the retry loop terminates for any reason:
 success, stop condition, predicate acceptance, or cancellation (when iteration
@@ -617,7 +622,7 @@ success, stop condition, predicate acceptance, or cancellation (when iteration
 context and a `StopReason`. `ExitState.outcome` is `None` only when
 cancellation fires before the first attempt.
 
-**7.6** Multiple hook callbacks of the same kind can be registered. They fire in registration order. Builder method `.before_sleep(f)` appends to an internal list rather than replacing.
+**7.6** Multiple hook callbacks of the same kind can be registered. They fire in registration order. Builder method `.after_attempt(f)` appends to an internal list rather than replacing.
 
 **7.7** When the `alloc` feature is inactive, each hook slot holds at most one callback. Attempting to register a second callback of the same kind is a compile-time error (not a runtime panic). This is enforced by the type system: the no-alloc hook setter methods are only available when the corresponding hook type parameter is `()`, so calling the setter once replaces `()` with a concrete type and the method disappears.
 
@@ -757,7 +762,7 @@ It no longer carries hook type parameters. The current
 `RetryPolicy<S, W, P, BA, AA, BS, OE>` signature becomes `RetryPolicy<S, W, P>`.
 
 **12.2** Hook builder methods (`.before_attempt(f)`, `.after_attempt(f)`,
-`.before_sleep(f)`, `.on_exit(f)`) move to `SyncRetry` and `AsyncRetry`. They
+`.on_exit(f)`) move to `SyncRetry` and `AsyncRetry`. They
 are chained between `.retry(op)` / `.retry_async(op)` and the terminal method
 (`.call()` / `.await`):
 

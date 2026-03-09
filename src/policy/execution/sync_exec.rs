@@ -263,48 +263,12 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
-// Intentional: hook chaining keeps full type-state and zero-cost generics.
-// The long return types reflect that design, rather than accidental complexity.
-#[allow(clippy::type_complexity)]
-impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
-    SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
-{
-    /// Appends a before-attempt hook.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
-    where
-        Hook: FnMut(&BeforeAttemptState),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
-    }
-
-    /// Appends an after-attempt hook.
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-    }
-
-    /// Appends an on-exit hook.
-    #[must_use]
-    pub fn on_exit<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_on_exit(hook))
-    }
+impl_alloc_hook_chain! {
+    impl['policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C]
+    SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C> =>
+    before_attempt -> { SyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> },
+    after_attempt -> { SyncRetryWithAfterHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> },
+    on_exit -> { SyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> },
 }
 
 #[cfg(not(feature = "alloc"))]

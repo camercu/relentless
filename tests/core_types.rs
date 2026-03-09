@@ -638,6 +638,79 @@ fn retry_error_display_includes_meaningful_content() {
     );
 }
 
+/// 1.10: Display for PredicateRejected with Ok value says "predicate rejected result".
+#[test]
+fn retry_error_display_predicate_rejected_ok_value() {
+    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::PredicateRejected {
+        last: Ok(42),
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: Some(ARBITRARY_DURATION),
+    };
+
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("predicate rejected result"),
+        "PredicateRejected with Ok should say 'predicate rejected result': {msg}"
+    );
+    assert!(
+        msg.contains("42"),
+        "Display should include the Ok value: {msg}"
+    );
+}
+
+/// 1.10: Display for PredicateRejected with Err value says "predicate rejected error".
+#[test]
+fn retry_error_display_predicate_rejected_err_value() {
+    let err: tenacious::RetryError<String> = tenacious::RetryError::PredicateRejected {
+        last: Err("bad request".to_string()),
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: None,
+    };
+
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("predicate rejected error"),
+        "PredicateRejected with Err should say 'predicate rejected error': {msg}"
+    );
+    assert!(
+        msg.contains("bad request"),
+        "Display should include the error message: {msg}"
+    );
+}
+
+/// 1.10: Display for Cancelled covers all three branches (Err, Ok, None).
+#[test]
+fn retry_error_display_cancelled_variants() {
+    // Cancelled with Err
+    let err: tenacious::RetryError<String> = tenacious::RetryError::Cancelled {
+        last: Some(Err("in flight".to_string())),
+        attempts: ARBITRARY_ATTEMPT_COUNT,
+        total_elapsed: Some(ARBITRARY_DURATION),
+    };
+    let msg = format!("{}", err);
+    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
+    assert!(msg.contains("in flight"), "Should include the error: {msg}");
+
+    // Cancelled with Ok
+    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::Cancelled {
+        last: Some(Ok(99)),
+        attempts: 2,
+        total_elapsed: None,
+    };
+    let msg = format!("{}", err);
+    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
+    assert!(msg.contains("99"), "Should include the Ok value: {msg}");
+
+    // Cancelled before first attempt (None)
+    let err: tenacious::RetryError<String> = tenacious::RetryError::Cancelled {
+        last: None,
+        attempts: 0,
+        total_elapsed: None,
+    };
+    let msg = format!("{}", err);
+    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
+}
+
 /// 1.10: RetryError implements std::error::Error when std is active and E: Error + 'static.
 #[test]
 #[cfg(feature = "std")]

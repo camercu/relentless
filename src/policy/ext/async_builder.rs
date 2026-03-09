@@ -491,52 +491,13 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
-// Intentional: hook chaining preserves type-state and avoids runtime
-// indirection; signatures are long but mechanically structured.
-#[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl_alloc_hook_chain! {
+    impl[S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C]
     AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
-{
-    /// Appends a before-attempt hook.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
-    where
-        Hook: FnMut(&BeforeAttemptState),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
-    }
-
-    /// Appends an after-attempt hook.
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-    }
-
-    /// Appends an on-exit hook.
-    #[must_use]
-    pub fn on_exit<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_on_exit(hook))
-    }
+    where { F: FnMut() -> Fut, Fut: Future<Output = Result<T, E>>, C: Canceler } =>
+    before_attempt -> { AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
+    after_attempt -> { AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
+    on_exit -> { AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
 }
 
 #[allow(private_bounds)]

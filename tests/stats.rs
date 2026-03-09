@@ -258,6 +258,44 @@ fn sync_stop_reason_success_for_custom_predicate_on_ok() {
 }
 
 #[test]
+fn sync_stop_reason_success_for_result_predicate_on_ok() {
+    // on::result() with a predicate that retries on Err, accepts on Ok.
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .when(on::result(|r: &Result<i32, &str>| r.is_err()));
+
+    let (result, stats) = policy
+        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(stats.attempts, 1);
+    // Ok accepted by result-based predicate still reports Success.
+    assert_eq!(stats.stop_reason, StopReason::Success);
+}
+
+#[test]
+fn sync_stop_reason_success_for_error_predicate_on_ok() {
+    // on::error() only retries matching errors; Ok values are accepted immediately.
+    let mut policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .when(on::error(|e: &&str| *e == "retryable"));
+
+    let (result, stats) = policy
+        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(stats.attempts, 1);
+    // Ok outcome with an error-only predicate still reports Success.
+    assert_eq!(stats.stop_reason, StopReason::Success);
+}
+
+#[test]
 fn sync_stop_reason_predicate_accepted_when_error_rejected() {
     // on::error() rejects "fatal" errors — predicate says "don't retry this".
     let mut policy = RetryPolicy::new()
