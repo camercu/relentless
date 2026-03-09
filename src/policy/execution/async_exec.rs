@@ -10,7 +10,9 @@ use crate::compat::Duration;
 use crate::error::RetryError;
 #[cfg(feature = "alloc")]
 use crate::policy::HookChain;
-use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+use crate::policy::{
+    AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, PolicyHandle, RetryPolicy,
+};
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
@@ -27,6 +29,299 @@ use crate::policy::time::ElapsedTracker;
 /// [`Sleeper`] before the future can be polled.
 #[doc(hidden)]
 pub struct NoAsyncSleep;
+
+pin_project! {
+    pub(crate) struct AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+        C: Canceler,
+    {
+        policy: Policy,
+        hooks: ExecutionHooks<BA, AA, OX>,
+        op: F,
+        sleeper: SleepImpl,
+        canceler: C,
+        last_result: Option<Result<T, E>>,
+        #[pin]
+        phase: AsyncPhase<Fut, SleepFut, C::Cancel>,
+        attempt: u32,
+        total_wait: Duration,
+        collect_stats: bool,
+        final_stats: Option<RetryStats>,
+        elapsed_tracker: ElapsedTracker,
+        // Owned builders may receive stateful stop/wait strategies that need a
+        // fresh reset when execution actually begins. Borrowed retry futures
+        // already reset their policy before constructing the core.
+        reset_policy_before_run: bool,
+        _marker: PhantomData<fn() -> (T, E)>,
+    }
+}
+
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    pub(crate) fn new(
+        policy: Policy,
+        hooks: ExecutionHooks<BA, AA, OX>,
+        op: F,
+        sleeper: SleepImpl,
+        canceler: C,
+        elapsed_tracker: ElapsedTracker,
+        reset_policy_before_run: bool,
+    ) -> Self {
+        Self {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result: None,
+            phase: AsyncPhase::ReadyToStartAttempt,
+            attempt: 1,
+            total_wait: Duration::ZERO,
+            collect_stats: false,
+            final_stats: None,
+            elapsed_tracker,
+            reset_policy_before_run,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn map_hooks<NewBA, NewAA, NewOX>(
+        self,
+        map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
+    ) -> AsyncRetryCore<Policy, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C> {
+        let Self {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            ..
+        } = self;
+        AsyncRetryCore {
+            policy,
+            hooks: map(hooks),
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn map_policy<NewPolicy>(
+        self,
+        map: impl FnOnce(Policy) -> NewPolicy,
+    ) -> AsyncRetryCore<NewPolicy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
+        let Self {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            ..
+        } = self;
+        AsyncRetryCore {
+            policy: map(policy),
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn with_stats(mut self) -> Self {
+        self.collect_stats = true;
+        self
+    }
+
+    pub(crate) fn poll<S, W, P>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        completed_type_name: &'static str,
+    ) -> Poll<Result<T, RetryError<E, T>>>
+    where
+        Policy: PolicyHandle<S, W, P>,
+        S: Stop,
+        W: Wait,
+        P: Predicate<T, E>,
+        BA: BeforeAttemptHook,
+        AA: AttemptHook<T, E>,
+        OX: ExitHook<T, E>,
+        SleepImpl: Sleeper<Sleep = SleepFut>,
+        SleepFut: Future<Output = ()>,
+    {
+        let mut this = self.project();
+
+        if *this.reset_policy_before_run {
+            let elapsed_clock = {
+                let policy = this.policy.policy_mut();
+                policy.stop.reset();
+                policy.wait.reset();
+                policy.meta.elapsed_clock
+            };
+            *this.elapsed_tracker = ElapsedTracker::new(elapsed_clock);
+            *this.reset_policy_before_run = false;
+        }
+
+        let policy = this.policy.policy_mut();
+        poll_async_loop(
+            cx,
+            policy,
+            &mut *this.hooks,
+            &mut *this.op,
+            &*this.sleeper,
+            &*this.canceler,
+            &mut *this.last_result,
+            this.phase.as_mut(),
+            &mut *this.attempt,
+            &mut *this.total_wait,
+            *this.collect_stats,
+            &mut *this.final_stats,
+            this.elapsed_tracker,
+            completed_type_name,
+        )
+    }
+
+    pub(crate) fn take_final_stats(self: Pin<&mut Self>) -> Option<RetryStats> {
+        self.project().final_stats.take()
+    }
+}
+
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, C>
+    AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, (), C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    pub(crate) fn with_sleeper<NewSleep>(
+        self,
+        sleeper: NewSleep,
+        unreachable_message: &'static str,
+    ) -> AsyncRetryCore<Policy, BA, AA, OX, F, Fut, NewSleep, T, E, NewSleep::Sleep, C>
+    where
+        NewSleep: Sleeper,
+    {
+        let Self {
+            policy,
+            hooks,
+            op,
+            canceler,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            ..
+        } = self;
+        AsyncRetryCore {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase: remap_no_sleep_phase(phase, unreachable_message),
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    pub(crate) fn with_canceler<NewC>(
+        self,
+        canceler: NewC,
+        unreachable_message: &'static str,
+    ) -> AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC>
+    where
+        NewC: Canceler,
+    {
+        let Self {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            last_result,
+            phase,
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            ..
+        } = self;
+        AsyncRetryCore {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            canceler,
+            last_result,
+            phase: remap_no_sleep_phase(phase, unreachable_message),
+            attempt,
+            total_wait,
+            collect_stats,
+            final_stats,
+            elapsed_tracker,
+            reset_policy_before_run,
+            _marker: PhantomData,
+        }
+    }
+}
 
 pin_project! {
     /// Async retry execution object.
@@ -58,20 +353,8 @@ pin_project! {
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
-        policy: &'policy mut RetryPolicy<S, W, P>,
-        hooks: ExecutionHooks<BA, AA, OX>,
-        op: F,
-        sleeper: SleepImpl,
-        canceler: C,
-        last_result: Option<Result<T, E>>,
         #[pin]
-        phase: AsyncPhase<Fut, SleepFut, C::Cancel>,
-        attempt: u32,
-        total_wait: Duration,
-        collect_stats: bool,
-        final_stats: Option<RetryStats>,
-        elapsed_tracker: ElapsedTracker,
-        _marker: PhantomData<fn() -> (T, E)>,
+        inner: AsyncRetryCore<&'policy mut RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
     }
 }
 
@@ -151,35 +434,9 @@ where
         map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
     ) -> AsyncRetry<'policy, S, W, P, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C>
     {
-        let AsyncRetry {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            ..
-        } = self;
+        let AsyncRetry { inner } = self;
         AsyncRetry {
-            policy,
-            hooks: map(hooks),
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            _marker: PhantomData,
+            inner: inner.map_hooks(map),
         }
     }
 }
@@ -256,20 +513,9 @@ where
     where
         NewSleep: Sleeper,
     {
+        let AsyncRetry { inner } = self;
         AsyncRetry {
-            policy: self.policy,
-            hooks: self.hooks,
-            op: self.op,
-            sleeper,
-            canceler: self.canceler,
-            last_result: self.last_result,
-            phase: remap_no_sleep_phase(self.phase, "NoAsyncSleep cannot create sleeping futures"),
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
+            inner: inner.with_sleeper(sleeper, "NoAsyncSleep cannot create sleeping futures"),
         }
     }
 }
@@ -287,23 +533,12 @@ where
         self,
         canceler: NewC,
     ) -> AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
+        let AsyncRetry { inner } = self;
         AsyncRetry {
-            policy: self.policy,
-            hooks: self.hooks,
-            op: self.op,
-            sleeper: self.sleeper,
-            canceler,
-            last_result: self.last_result,
-            phase: remap_no_sleep_phase(
-                self.phase,
+            inner: inner.with_canceler(
+                canceler,
                 "cancel_on cannot observe a sleeping phase before polling",
             ),
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            _marker: PhantomData,
         }
     }
 }
@@ -322,9 +557,12 @@ where
     pub fn with_stats(
         self,
     ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
-        let mut inner = self;
-        inner.collect_stats = true;
-        AsyncRetryWithStats { inner }
+        let AsyncRetry { inner } = self;
+        AsyncRetryWithStats {
+            inner: AsyncRetry {
+                inner: inner.with_stats(),
+            },
+        }
     }
 }
 
@@ -449,23 +687,7 @@ where
     type Output = Result<T, RetryError<E, T>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        poll_async_loop(
-            cx,
-            &mut **this.policy,
-            &mut *this.hooks,
-            &mut *this.op,
-            &*this.sleeper,
-            &*this.canceler,
-            &mut *this.last_result,
-            this.phase.as_mut(),
-            &mut *this.attempt,
-            &mut *this.total_wait,
-            *this.collect_stats,
-            &mut *this.final_stats,
-            this.elapsed_tracker,
-            "AsyncRetry",
-        )
+        self.project().inner.poll::<S, W, P>(cx, "AsyncRetry")
     }
 }
 
@@ -496,8 +718,8 @@ where
                     .inner
                     .as_mut()
                     .project()
-                    .final_stats
-                    .take()
+                    .inner
+                    .take_final_stats()
                     .expect("async retry completed without final stats");
                 Poll::Ready((result, stats))
             }
@@ -524,19 +746,15 @@ where
         self.wait.reset();
         let elapsed_tracker = ElapsedTracker::new(self.meta.elapsed_clock);
         AsyncRetry {
-            policy: self,
-            hooks: ExecutionHooks::new(),
-            op,
-            sleeper: NoAsyncSleep,
-            canceler: NeverCancel,
-            last_result: None,
-            phase: AsyncPhase::ReadyToStartAttempt,
-            attempt: 1,
-            total_wait: Duration::ZERO,
-            collect_stats: false,
-            final_stats: None,
-            elapsed_tracker,
-            _marker: PhantomData,
+            inner: AsyncRetryCore::new(
+                self,
+                ExecutionHooks::new(),
+                op,
+                NoAsyncSleep,
+                NeverCancel,
+                elapsed_tracker,
+                false,
+            ),
         }
     }
 }

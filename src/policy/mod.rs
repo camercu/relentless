@@ -321,6 +321,23 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     }
 }
 
+/// Internal abstraction over owned and borrowed policy storage.
+pub(crate) trait PolicyHandle<S, W, P> {
+    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P>;
+}
+
+impl<S, W, P> PolicyHandle<S, W, P> for RetryPolicy<S, W, P> {
+    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P> {
+        self
+    }
+}
+
+impl<S, W, P> PolicyHandle<S, W, P> for &mut RetryPolicy<S, W, P> {
+    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P> {
+        self
+    }
+}
+
 /// Generates `#[cfg(feature = "alloc")]` hook-chaining methods for a builder.
 ///
 /// Produces `before_attempt`, `after_attempt`, and `on_exit` methods that

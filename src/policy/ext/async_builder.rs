@@ -1,18 +1,16 @@
 use core::future::Future;
-use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use crate::compat::Duration;
 use pin_project_lite::pin_project;
 
-use super::super::execution::common::{AsyncPhase, poll_async_loop, remap_no_sleep_phase};
+use super::super::execution::async_exec::{AsyncRetryCore, NoAsyncSleep};
 use super::super::time::ElapsedTracker;
 use super::super::{
     AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain, RetryPolicy,
 };
 use crate::cancel::{Canceler, NeverCancel};
-use crate::policy::execution::async_exec::NoAsyncSleep;
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState};
@@ -84,20 +82,15 @@ where
         let policy = RetryPolicy::default();
         let elapsed_tracker = ElapsedTracker::new(policy.meta.elapsed_clock);
         AsyncRetryBuilder {
-            policy,
-            hooks: ExecutionHooks::new(),
-            op: self,
-            sleeper: NoAsyncSleep,
-            canceler: NeverCancel,
-            last_result: None,
-            phase: AsyncPhase::ReadyToStartAttempt,
-            attempt: 1,
-            total_wait: Duration::ZERO,
-            collect_stats: false,
-            final_stats: None,
-            elapsed_tracker,
-            started: false,
-            _marker: PhantomData,
+            inner: AsyncRetryCore::new(
+                policy,
+                ExecutionHooks::new(),
+                self,
+                NoAsyncSleep,
+                NeverCancel,
+                elapsed_tracker,
+                true,
+            ),
         }
     }
 }
@@ -129,21 +122,8 @@ pin_project! {
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
-        policy: RetryPolicy<S, W, P>,
-        hooks: ExecutionHooks<BA, AA, OX>,
-        op: F,
-        sleeper: SleepImpl,
-        canceler: C,
-        last_result: Option<Result<T, E>>,
         #[pin]
-        phase: AsyncPhase<Fut, SleepFut, C::Cancel>,
-        attempt: u32,
-        total_wait: Duration,
-        collect_stats: bool,
-        final_stats: Option<RetryStats>,
-        elapsed_tracker: ElapsedTracker,
-        started: bool,
-        _marker: PhantomData<fn() -> (T, E)>,
+        inner: AsyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
     }
 }
 
@@ -202,37 +182,9 @@ where
         self,
         map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
     ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            ..
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy,
-            hooks: map(hooks),
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.map_hooks(map),
         }
     }
 
@@ -242,37 +194,9 @@ where
         self,
         stop: NewStop,
     ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: _,
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy: policy.stop(stop),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.map_policy(|policy| policy.stop(stop)),
         }
     }
 
@@ -282,37 +206,9 @@ where
         self,
         wait: NewWait,
     ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: _,
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy: policy.wait(wait),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.map_policy(|policy| policy.wait(wait)),
         }
     }
 
@@ -323,74 +219,18 @@ where
         predicate: NewPredicate,
     ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: _,
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy: policy.when(predicate),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.map_policy(|policy| policy.when(predicate)),
         }
     }
 
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
     #[must_use]
     pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            ..
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy: policy.elapsed_clock(clock),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.map_policy(|policy| policy.elapsed_clock(clock)),
         }
     }
 
@@ -399,9 +239,12 @@ where
     pub fn with_stats(
         self,
     ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
-        let mut inner = self;
-        inner.collect_stats = true;
-        AsyncRetryBuilderWithStats { inner }
+        let AsyncRetryBuilder { inner } = self;
+        AsyncRetryBuilderWithStats {
+            inner: AsyncRetryBuilder {
+                inner: inner.with_stats(),
+            },
+        }
     }
 }
 
@@ -422,36 +265,9 @@ where
     where
         NewSleep: Sleeper,
     {
-        let Self {
-            policy,
-            hooks,
-            op,
-            canceler,
-            last_result,
-            phase,
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            ..
-        } = self;
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            last_result,
-            phase: remap_no_sleep_phase(phase, "NoAsyncSleep cannot create sleeping futures"),
-            attempt,
-            total_wait,
-            collect_stats,
-            final_stats,
-            elapsed_tracker,
-            started,
-            _marker: PhantomData,
+            inner: inner.with_sleeper(sleeper, "NoAsyncSleep cannot create sleeping futures"),
         }
     }
 }
@@ -469,24 +285,12 @@ where
         self,
         canceler: NewC,
     ) -> AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
+        let AsyncRetryBuilder { inner } = self;
         AsyncRetryBuilder {
-            policy: self.policy,
-            hooks: self.hooks,
-            op: self.op,
-            sleeper: self.sleeper,
-            canceler,
-            last_result: self.last_result,
-            phase: remap_no_sleep_phase(
-                self.phase,
+            inner: inner.with_canceler(
+                canceler,
                 "cancel_on cannot observe a sleeping phase before polling",
             ),
-            attempt: self.attempt,
-            total_wait: self.total_wait,
-            collect_stats: self.collect_stats,
-            final_stats: self.final_stats,
-            elapsed_tracker: self.elapsed_tracker,
-            started: self.started,
-            _marker: PhantomData,
         }
     }
 }
@@ -519,31 +323,9 @@ where
     type Output = Result<T, RetryError<E, T>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-
-        if !*this.started {
-            this.policy.stop.reset();
-            this.policy.wait.reset();
-            *this.elapsed_tracker = ElapsedTracker::new(this.policy.meta.elapsed_clock);
-            *this.started = true;
-        }
-
-        poll_async_loop(
-            cx,
-            &mut *this.policy,
-            &mut *this.hooks,
-            &mut *this.op,
-            &*this.sleeper,
-            &*this.canceler,
-            &mut *this.last_result,
-            this.phase.as_mut(),
-            &mut *this.attempt,
-            &mut *this.total_wait,
-            *this.collect_stats,
-            &mut *this.final_stats,
-            this.elapsed_tracker,
-            "AsyncRetryBuilder",
-        )
+        self.project()
+            .inner
+            .poll::<S, W, P>(cx, "AsyncRetryBuilder")
     }
 }
 
@@ -574,8 +356,8 @@ where
                     .inner
                     .as_mut()
                     .project()
-                    .final_stats
-                    .take()
+                    .inner
+                    .take_final_stats()
                     .expect("async retry builder completed without final stats");
                 Poll::Ready((result, stats))
             }

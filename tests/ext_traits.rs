@@ -7,7 +7,9 @@ use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use tenacious::{AsyncRetryExt, RetryError, RetryExt, RetryPolicy, StopReason, on, stop, wait};
+use tenacious::{
+    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, Stop, StopReason, Wait, on, stop, wait,
+};
 
 const MAX_ATTEMPTS: u32 = 3;
 const SUCCESS_VALUE: i32 = 42;
@@ -16,8 +18,43 @@ const WAIT_DURATION: Duration = Duration::from_millis(1);
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
 const DEFAULT_WAIT_SEQUENCE: [Duration; 2] = [DEFAULT_INITIAL_WAIT, DEFAULT_SECOND_WAIT];
+const STATEFUL_STOP_THRESHOLD: u32 = 2;
+const DIRTY_STOP_COUNT: u32 = 1;
+const DIRTY_WAIT_COUNT: u32 = 1;
+const RESET_WAIT_DURATION: Duration = Duration::from_millis(1);
 
 fn instant_sleep(_dur: Duration) {}
+
+struct StatefulStop {
+    consultations: u32,
+    threshold: u32,
+}
+
+impl Stop for StatefulStop {
+    fn should_stop(&mut self, _state: &tenacious::RetryState) -> bool {
+        self.consultations = self.consultations.saturating_add(1);
+        self.consultations >= self.threshold
+    }
+
+    fn reset(&mut self) {
+        self.consultations = 0;
+    }
+}
+
+struct StatefulWait {
+    calls: u32,
+}
+
+impl Wait for StatefulWait {
+    fn next_wait(&mut self, _state: &tenacious::RetryState) -> Duration {
+        self.calls = self.calls.saturating_add(1);
+        Duration::from_millis(u64::from(self.calls))
+    }
+
+    fn reset(&mut self) {
+        self.calls = 0;
+    }
+}
 
 #[test]
 fn retry_ext_closure_form_retries_until_success() {
@@ -100,6 +137,39 @@ fn retry_ext_with_stats_reports_attempts() {
     ));
     assert_eq!(stats.attempts, 2);
     assert_eq!(attempts.get(), 2);
+}
+
+#[test]
+fn retry_ext_resets_stateful_stop_and_wait_before_execution() {
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+    let sleeps = Rc::new(RefCell::new(Vec::new()));
+    let sleeps_ref = Rc::clone(&sleeps);
+
+    let result = (move || {
+        attempts_ref.set(attempts_ref.get().saturating_add(1));
+        Err::<i32, &str>(ERROR_VALUE)
+    })
+    .retry()
+    .stop(StatefulStop {
+        consultations: DIRTY_STOP_COUNT,
+        threshold: STATEFUL_STOP_THRESHOLD,
+    })
+    .wait(StatefulWait {
+        calls: DIRTY_WAIT_COUNT,
+    })
+    .sleep(move |dur| sleeps_ref.borrow_mut().push(dur))
+    .call();
+
+    assert!(matches!(
+        result,
+        Err(RetryError::Exhausted {
+            attempts: STATEFUL_STOP_THRESHOLD,
+            ..
+        })
+    ));
+    assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
+    assert_eq!(*sleeps.borrow(), vec![RESET_WAIT_DURATION]);
 }
 
 #[test]
@@ -432,6 +502,43 @@ mod async_tests {
             Err(RetryError::Exhausted { attempts: 2, .. })
         ));
         assert_eq!(stats.attempts, 2);
+    }
+
+    #[test]
+    fn async_retry_ext_resets_stateful_stop_and_wait_before_execution() {
+        let attempts = Rc::new(Cell::new(0_u32));
+        let attempts_ref = Rc::clone(&attempts);
+        let sleeps = Rc::new(RefCell::new(Vec::new()));
+        let sleeps_ref = Rc::clone(&sleeps);
+
+        let result = block_on(
+            (move || {
+                attempts_ref.set(attempts_ref.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+            })
+            .retry_async()
+            .stop(StatefulStop {
+                consultations: DIRTY_STOP_COUNT,
+                threshold: STATEFUL_STOP_THRESHOLD,
+            })
+            .wait(StatefulWait {
+                calls: DIRTY_WAIT_COUNT,
+            })
+            .sleep(move |dur| {
+                sleeps_ref.borrow_mut().push(dur);
+                ready(())
+            }),
+        );
+
+        assert!(matches!(
+            result,
+            Err(RetryError::Exhausted {
+                attempts: STATEFUL_STOP_THRESHOLD,
+                ..
+            })
+        ));
+        assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
+        assert_eq!(*sleeps.borrow(), vec![RESET_WAIT_DURATION]);
     }
 
     #[test]

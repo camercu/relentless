@@ -1,9 +1,6 @@
-use core::marker::PhantomData;
-
 #[cfg(feature = "alloc")]
 use super::super::HookChain;
-use super::super::execution::common::execute_sync_loop;
-use super::super::execution::sync_exec::{NoSyncSleep, SyncSleep};
+use super::super::execution::sync_exec::{NoSyncSleep, SyncRetryCore, SyncSleep};
 use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::cancel::{Canceler, NeverCancel};
 use crate::compat::Duration;
@@ -69,12 +66,14 @@ where
         NeverCancel,
     > {
         SyncRetryBuilder {
-            policy: RetryPolicy::default(),
-            hooks: ExecutionHooks::new(),
-            op: self,
-            sleeper: NoSyncSleep,
-            canceler: NeverCancel,
-            _marker: PhantomData,
+            inner: SyncRetryCore::new(
+                RetryPolicy::default(),
+                ExecutionHooks::new(),
+                self,
+                NoSyncSleep,
+                NeverCancel,
+                true,
+            ),
         }
     }
 }
@@ -93,12 +92,7 @@ fn _sync_retry_builder_requires_sleep_in_no_std() {}
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
 pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
-    policy: RetryPolicy<S, W, P>,
-    hooks: ExecutionHooks<BA, AA, OX>,
-    op: F,
-    sleeper: SleepFn,
-    canceler: C,
-    _marker: PhantomData<fn() -> (T, E)>,
+    inner: SyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
 }
 
 /// Owned sync retry builder wrapper that returns statistics.
@@ -125,21 +119,8 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
         self,
         map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
     ) -> SyncRetryBuilder<S, W, P, NewBA, NewAA, NewOX, F, SleepFn, T, E, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy,
-            hooks: map(hooks),
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.map_hooks(map),
         }
     }
 
@@ -149,21 +130,8 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
         self,
         stop: NewStop,
     ) -> SyncRetryBuilder<NewStop, W, P, BA, AA, OX, F, SleepFn, T, E, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy: policy.stop(stop),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.map_policy(|policy| policy.stop(stop)),
         }
     }
 
@@ -173,21 +141,8 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
         self,
         wait: NewWait,
     ) -> SyncRetryBuilder<S, NewWait, P, BA, AA, OX, F, SleepFn, T, E, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy: policy.wait(wait),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.map_policy(|policy| policy.wait(wait)),
         }
     }
 
@@ -197,42 +152,16 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
         self,
         predicate: NewPredicate,
     ) -> SyncRetryBuilder<S, W, NewPredicate, BA, AA, OX, F, SleepFn, T, E, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy: policy.when(predicate),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.map_policy(|policy| policy.when(predicate)),
         }
     }
 
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
     #[must_use]
     pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
-        let Self {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy: policy.elapsed_clock(clock),
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.map_policy(|policy| policy.elapsed_clock(clock)),
         }
     }
 
@@ -242,20 +171,8 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
         self,
         sleeper: NewSleep,
     ) -> SyncRetryBuilder<S, W, P, BA, AA, OX, F, NewSleep, T, E, C> {
-        let Self {
-            policy,
-            hooks,
-            op,
-            canceler,
-            ..
-        } = self;
         SyncRetryBuilder {
-            policy,
-            hooks,
-            op,
-            sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.with_sleeper(sleeper),
         }
     }
 }
@@ -359,12 +276,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         canceler: NewC,
     ) -> SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, NewC> {
         SyncRetryBuilder {
-            policy: self.policy,
-            hooks: self.hooks,
-            op: self.op,
-            sleeper: self.sleeper,
-            canceler,
-            _marker: PhantomData,
+            inner: self.inner.with_canceler(canceler),
         }
     }
 }
@@ -395,17 +307,9 @@ where
     }
 
     fn execute<const COLLECT_STATS: bool>(
-        mut self,
+        self,
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
-        self.policy.stop.reset();
-        self.policy.wait.reset();
-        execute_sync_loop::<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, COLLECT_STATS>(
-            &mut self.policy,
-            &mut self.hooks,
-            &mut self.op,
-            &mut self.sleeper,
-            &self.canceler,
-        )
+        self.inner.execute::<S, W, P, COLLECT_STATS>()
     }
 }
 
