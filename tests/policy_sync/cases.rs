@@ -188,12 +188,12 @@ fn when_builder_configures_predicate() {
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::PredicateRejected { last, attempts, .. }) => {
+        Err(RetryError::NonRetryableError { last, attempts, .. }) => {
             assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }
         other => panic!(
-            "expected PredicateRejected with attempts=1, got {:?}",
+            "expected NonRetryableError with attempts=1, got {:?}",
             other
         ),
     }
@@ -607,7 +607,7 @@ fn on_exit_hook_fires_when_stop_triggers() {
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(exit_reason.get(), Some(StopReason::StopCondition));
+    assert_eq!(exit_reason.get(), Some(StopReason::StopStrategyTriggered));
 }
 
 #[test]
@@ -731,7 +731,7 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
 
 #[test]
 fn predicate_rejects_err_means_immediate_return() {
-    // If predicate says "don't retry this error", return PredicateRejected with attempts=1.
+    // If predicate says "don't retry this error", return NonRetryableError with attempts=1.
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(on::error(|e: &&str| *e == "retryable"));
@@ -747,12 +747,12 @@ fn predicate_rejects_err_means_immediate_return() {
 
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::PredicateRejected { last, attempts, .. }) => {
+        Err(RetryError::NonRetryableError { last, attempts, .. }) => {
             assert_eq!(last, Err("fatal"));
             assert_eq!(attempts, 1);
         }
         other => panic!(
-            "expected PredicateRejected with attempts=1, got {:?}",
+            "expected NonRetryableError with attempts=1, got {:?}",
             other
         ),
     }

@@ -45,8 +45,8 @@ fn exit_state_from<'a, T, E>(
 
 #[derive(Clone, Copy)]
 enum TerminalOutcomeKind {
-    PredicateAccepted,
-    StopCondition,
+    AcceptedOutcome,
+    StopStrategyTriggered,
 }
 
 fn maybe_stats(
@@ -119,8 +119,8 @@ where
     OX: ExitHook<T, E>,
 {
     let reason = match outcome_kind {
-        TerminalOutcomeKind::PredicateAccepted => stop_reason_for_predicate_accept(&outcome),
-        TerminalOutcomeKind::StopCondition => StopReason::StopCondition,
+        TerminalOutcomeKind::AcceptedOutcome => stop_reason_for_accepted_outcome(&outcome),
+        TerminalOutcomeKind::StopStrategyTriggered => StopReason::StopStrategyTriggered,
     };
 
     let stats = maybe_stats(
@@ -139,15 +139,15 @@ where
     }
 
     let result = match outcome_kind {
-        TerminalOutcomeKind::PredicateAccepted => match outcome {
+        TerminalOutcomeKind::AcceptedOutcome => match outcome {
             Ok(value) => Ok(value),
-            Err(error) => Err(RetryError::PredicateRejected {
+            Err(error) => Err(RetryError::NonRetryableError {
                 last: Err(error),
                 attempts: retry_state.attempt,
                 total_elapsed: retry_state.elapsed,
             }),
         },
-        TerminalOutcomeKind::StopCondition => match outcome {
+        TerminalOutcomeKind::StopStrategyTriggered => match outcome {
             Err(error) => Err(RetryError::Exhausted {
                 last: Err(error),
                 attempts: retry_state.attempt,
@@ -333,7 +333,7 @@ where
             &retry_state,
             outcome,
             collect_stats,
-            TerminalOutcomeKind::PredicateAccepted,
+            TerminalOutcomeKind::AcceptedOutcome,
         );
     }
 
@@ -346,7 +346,7 @@ where
             &retry_state,
             outcome,
             collect_stats,
-            TerminalOutcomeKind::StopCondition,
+            TerminalOutcomeKind::StopStrategyTriggered,
         );
     }
 
@@ -604,10 +604,10 @@ where
     }
 }
 
-fn stop_reason_for_predicate_accept<T, E>(outcome: &Result<T, E>) -> StopReason {
+fn stop_reason_for_accepted_outcome<T, E>(outcome: &Result<T, E>) -> StopReason {
     if outcome.is_ok() {
         StopReason::Success
     } else {
-        StopReason::PredicateAccepted
+        StopReason::NonRetryableError
     }
 }

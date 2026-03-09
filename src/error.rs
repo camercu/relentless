@@ -42,12 +42,12 @@ pub enum RetryError<E, T = ()> {
         total_elapsed: Option<Duration>,
     },
 
-    /// The predicate rejected an `Err` outcome, so retrying stopped immediately.
+    /// The latest `Err` outcome was non-retryable, so retrying stopped immediately.
     ///
     /// This occurs when using a custom predicate (for example `on::error`) that
     /// classifies some errors as non-retryable.
-    PredicateRejected {
-        /// The rejected attempt outcome. In normal usage this is `Err(E)`.
+    NonRetryableError {
+        /// The non-retryable attempt outcome. In normal usage this is `Err(E)`.
         last: Result<T, E>,
         /// Total number of attempts made.
         attempts: u32,
@@ -121,19 +121,19 @@ impl<E: fmt::Display, T: fmt::Debug> fmt::Display for RetryError<E, T> {
                     attempts, total_elapsed, error
                 ),
             },
-            RetryError::PredicateRejected {
+            RetryError::NonRetryableError {
                 last,
                 attempts,
                 total_elapsed,
             } => match last {
                 Err(error) => write!(
                     f,
-                    "predicate rejected error after {} attempt(s) (elapsed: {:?}): {}",
+                    "non-retryable error after {} attempt(s) (elapsed: {:?}): {}",
                     attempts, total_elapsed, error
                 ),
                 Ok(value) => write!(
                     f,
-                    "predicate rejected result after {} attempt(s) (elapsed: {:?}): last value = {:?}",
+                    "non-retryable result after {} attempt(s) (elapsed: {:?}): last value = {:?}",
                     attempts, total_elapsed, value
                 ),
             },
@@ -171,7 +171,7 @@ where
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             RetryError::Exhausted { last, .. }
-            | RetryError::PredicateRejected { last, .. }
+            | RetryError::NonRetryableError { last, .. }
             | RetryError::ConditionNotMet { last, .. } => match last {
                 Err(error) => Some(error as _),
                 _ => None,

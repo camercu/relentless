@@ -119,12 +119,12 @@ fn on_exit_fires_once_with_final_state() {
 
     assert_eq!(
         *exits.borrow(),
-        vec![(MAX_ATTEMPTS, true, StopReason::StopCondition)]
+        vec![(MAX_ATTEMPTS, true, StopReason::StopStrategyTriggered)]
     );
 }
 
 #[test]
-fn on_exit_reports_predicate_accepted_reason() {
+fn on_exit_reports_non_retryable_error_reason() {
     let reasons: RefCell<Vec<StopReason>> = RefCell::new(Vec::new());
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -138,7 +138,7 @@ fn on_exit_reports_predicate_accepted_reason() {
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(*reasons.borrow(), vec![StopReason::PredicateAccepted]);
+    assert_eq!(*reasons.borrow(), vec![StopReason::NonRetryableError]);
 }
 
 #[cfg(feature = "alloc")]

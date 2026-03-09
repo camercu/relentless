@@ -258,9 +258,9 @@ stop strategy, and cancellation.
 | Final condition | Return value | `StopReason` | `after_attempt.next_delay` on final attempt | `ExitState.outcome` |
 | --- | --- | --- | --- | --- |
 | Accepted `Ok(T)` | `Ok(T)` | `Success` | `None` | `Some(&Ok(T))` |
-| Predicate accepts `Err(E)` as terminal | `Err(RetryError::PredicateRejected)` | `PredicateAccepted` | `None` | `Some(&Err(E))` |
-| Stop fires on retrying `Err(E)` | `Err(RetryError::Exhausted)` | `StopCondition` | `None` | `Some(&Err(E))` |
-| Stop fires on retrying `Ok(T)` | `Err(RetryError::ConditionNotMet)` | `StopCondition` | `None` | `Some(&Ok(T))` |
+| Predicate accepts `Err(E)` as terminal | `Err(RetryError::NonRetryableError)` | `NonRetryableError` | `None` | `Some(&Err(E))` |
+| Stop fires on retrying `Err(E)` | `Err(RetryError::Exhausted)` | `StopStrategyTriggered` | `None` | `Some(&Err(E))` |
+| Stop fires on retrying `Ok(T)` | `Err(RetryError::ConditionNotMet)` | `StopStrategyTriggered` | `None` | `Some(&Ok(T))` |
 | Cancelled before first attempt | `Err(RetryError::Cancelled)` | `Cancelled` | not fired | `None` |
 | Cancelled after a completed attempt | `Err(RetryError::Cancelled)` | `Cancelled` | not fired for cancellation itself | `Some(&last_result)` |
 

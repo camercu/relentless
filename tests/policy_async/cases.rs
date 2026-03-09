@@ -428,7 +428,7 @@ fn async_hooks_fire_in_expected_places() {
     assert_eq!(*after_attempt, vec![1, 2, 3]);
     assert_eq!(
         exit_reason.get(),
-        Some(tenacious::StopReason::StopCondition)
+        Some(tenacious::StopReason::StopStrategyTriggered)
     );
 }
 
@@ -452,7 +452,7 @@ fn async_on_exit_reports_success_reason() {
 }
 
 #[test]
-fn async_on_exit_reports_predicate_accepted_reason() {
+fn async_on_exit_reports_non_retryable_error_reason() {
     let exit_reason = Rc::new(Cell::new(None));
     let exit_reason_ref = Rc::clone(&exit_reason);
     let mut policy = RetryPolicy::new()
@@ -468,10 +468,10 @@ fn async_on_exit_reports_predicate_accepted_reason() {
             .sleep(RecordingSleeper::new()),
     );
 
-    assert!(matches!(result, Err(RetryError::PredicateRejected { .. })));
+    assert!(matches!(result, Err(RetryError::NonRetryableError { .. })));
     assert_eq!(
         exit_reason.get(),
-        Some(tenacious::StopReason::PredicateAccepted)
+        Some(tenacious::StopReason::NonRetryableError)
     );
 }
 

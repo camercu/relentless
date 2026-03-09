@@ -498,7 +498,7 @@ fn exit_state_has_required_fields() {
         Some(&outcome),
         retry_state.elapsed,
         retry_state.total_wait,
-        tenacious::StopReason::StopCondition,
+        tenacious::StopReason::StopStrategyTriggered,
     );
 
     assert_eq!(state.attempt, 2);
@@ -510,7 +510,7 @@ fn exit_state_has_required_fields() {
     );
     assert_eq!(state.elapsed, None);
     assert_eq!(state.total_wait, Duration::ZERO);
-    assert_eq!(state.reason, tenacious::StopReason::StopCondition);
+    assert_eq!(state.reason, tenacious::StopReason::StopStrategyTriggered);
 }
 
 // ---------------------------------------------------------------------------
@@ -540,15 +540,15 @@ fn retry_error_exhausted_variant() {
 }
 
 #[test]
-fn retry_error_predicate_rejected_variant() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::PredicateRejected {
+fn retry_error_non_retryable_error_variant() {
+    let err: tenacious::RetryError<String> = tenacious::RetryError::NonRetryableError {
         last: Err("fatal".to_string()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
     };
 
     match err {
-        tenacious::RetryError::PredicateRejected {
+        tenacious::RetryError::NonRetryableError {
             ref last,
             attempts,
             total_elapsed,
@@ -557,7 +557,7 @@ fn retry_error_predicate_rejected_variant() {
             assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
             assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
         }
-        _ => panic!("expected PredicateRejected variant"),
+        _ => panic!("expected NonRetryableError variant"),
     }
 }
 
@@ -638,10 +638,10 @@ fn retry_error_display_includes_meaningful_content() {
     );
 }
 
-/// 1.10: Display for PredicateRejected with Ok value says "predicate rejected result".
+/// 1.10: Display for NonRetryableError with Ok value says "non-retryable result".
 #[test]
-fn retry_error_display_predicate_rejected_ok_value() {
-    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::PredicateRejected {
+fn retry_error_display_non_retryable_error_ok_value() {
+    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::NonRetryableError {
         last: Ok(42),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: Some(ARBITRARY_DURATION),
@@ -649,8 +649,8 @@ fn retry_error_display_predicate_rejected_ok_value() {
 
     let msg = format!("{}", err);
     assert!(
-        msg.contains("predicate rejected result"),
-        "PredicateRejected with Ok should say 'predicate rejected result': {msg}"
+        msg.contains("non-retryable result"),
+        "NonRetryableError with Ok should say 'non-retryable result': {msg}"
     );
     assert!(
         msg.contains("42"),
@@ -658,10 +658,10 @@ fn retry_error_display_predicate_rejected_ok_value() {
     );
 }
 
-/// 1.10: Display for PredicateRejected with Err value says "predicate rejected error".
+/// 1.10: Display for NonRetryableError with Err value says "non-retryable error".
 #[test]
-fn retry_error_display_predicate_rejected_err_value() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::PredicateRejected {
+fn retry_error_display_non_retryable_error_err_value() {
+    let err: tenacious::RetryError<String> = tenacious::RetryError::NonRetryableError {
         last: Err("bad request".to_string()),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
@@ -669,8 +669,8 @@ fn retry_error_display_predicate_rejected_err_value() {
 
     let msg = format!("{}", err);
     assert!(
-        msg.contains("predicate rejected error"),
-        "PredicateRejected with Err should say 'predicate rejected error': {msg}"
+        msg.contains("non-retryable error"),
+        "NonRetryableError with Err should say 'non-retryable error': {msg}"
     );
     assert!(
         msg.contains("bad request"),
@@ -747,12 +747,12 @@ fn retry_error_condition_not_met_source_is_none() {
     );
 }
 
-/// source() returns Some(inner) for PredicateRejected.
+/// source() returns Some(inner) for NonRetryableError.
 #[test]
 #[cfg(feature = "std")]
-fn retry_error_predicate_rejected_source_is_inner_error() {
+fn retry_error_non_retryable_error_source_is_inner_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
-    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::PredicateRejected {
+    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::NonRetryableError {
         last: Err(inner),
         attempts: ARBITRARY_ATTEMPT_COUNT,
         total_elapsed: None,
@@ -761,7 +761,7 @@ fn retry_error_predicate_rejected_source_is_inner_error() {
     let dyn_err: &dyn std::error::Error = &err;
     assert!(
         dyn_err.source().is_some(),
-        "PredicateRejected should chain to the inner error via source()"
+        "NonRetryableError should chain to the inner error via source()"
     );
 }
 

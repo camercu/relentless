@@ -212,7 +212,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
     );
     assert_eq!(
         *exit_calls.borrow(),
-        vec![(MAX_ATTEMPTS, true, StopReason::StopCondition)]
+        vec![(MAX_ATTEMPTS, true, StopReason::StopStrategyTriggered)]
     );
 }
 
@@ -236,7 +236,7 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
 }
 
 #[test]
-fn retry_ext_predicate_rejected_returns_error_immediately() {
+fn retry_ext_non_retryable_error_returns_immediately() {
     let result = (|| Err::<i32, &str>(ERROR_VALUE))
         .retry()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -246,7 +246,7 @@ fn retry_ext_predicate_rejected_returns_error_immediately() {
 
     assert!(matches!(
         result,
-        Err(RetryError::PredicateRejected {
+        Err(RetryError::NonRetryableError {
             last: Err(ERROR_VALUE),
             attempts: 1,
             ..
@@ -483,7 +483,7 @@ mod async_tests {
         );
         assert_eq!(
             *exit_calls.borrow(),
-            vec![(MAX_ATTEMPTS, true, StopReason::StopCondition)]
+            vec![(MAX_ATTEMPTS, true, StopReason::StopStrategyTriggered)]
         );
     }
 

@@ -3,7 +3,7 @@
 //! These tests verify:
 //! - `.with_stats()` on SyncRetry/AsyncRetry changes return type (8.1)
 //! - `RetryStats` struct fields: attempts, total_elapsed, total_wait, stop_reason (8.2)
-//! - `StopReason` variants: Success, StopCondition, PredicateAccepted (8.3)
+//! - `StopReason` variants: Success, StopStrategyTriggered, NonRetryableError (8.3)
 //! - Stats accumulated inside the execution engine (8.4)
 //! - `total_elapsed` is `Some` when std active (8.5, verified implicitly)
 //! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq (8.6)
@@ -197,7 +197,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
         Duration::from_millis(10) + Duration::from_millis(20) + Duration::from_millis(40);
     assert_eq!(stats.attempts, num_attempts);
     assert_eq!(stats.total_wait, expected_wait);
-    assert_eq!(stats.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ fn sync_stop_reason_success_with_default_predicate() {
 }
 
 #[test]
-fn sync_stop_reason_stop_condition_on_exhaustion() {
+fn sync_stop_reason_stop_strategy_triggered_on_exhaustion() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
@@ -235,7 +235,7 @@ fn sync_stop_reason_stop_condition_on_exhaustion() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    assert_eq!(stats.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn sync_stop_reason_success_for_error_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_predicate_accepted_when_error_rejected() {
+fn sync_stop_reason_non_retryable_error_when_error_rejected() {
     // on::error() rejects "fatal" errors — predicate says "don't retry this".
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -308,14 +308,14 @@ fn sync_stop_reason_predicate_accepted_when_error_rejected() {
         .with_stats()
         .call();
 
-    // Predicate rejected the error, so we get PredicateAccepted (not StopCondition).
-    assert!(matches!(result, Err(RetryError::PredicateRejected { .. })));
+    // The error is non-retryable, so we don't report a stop-strategy exit.
+    assert!(matches!(result, Err(RetryError::NonRetryableError { .. })));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::PredicateAccepted);
+    assert_eq!(stats.stop_reason, StopReason::NonRetryableError);
 }
 
 #[test]
-fn sync_stop_reason_stop_condition_on_condition_not_met() {
+fn sync_stop_reason_stop_strategy_triggered_on_condition_not_met() {
     // Using on::ok() to retry while value is negative. Stop fires before we get a positive.
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -334,7 +334,7 @@ fn sync_stop_reason_stop_condition_on_condition_not_met() {
         }
         other => panic!("expected ConditionNotMet, got {:?}", other),
     }
-    assert_eq!(stats.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
 }
 
@@ -344,7 +344,7 @@ fn sync_stop_reason_stop_condition_on_condition_not_met() {
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_stop_reason_stop_condition_on_exhaustion() {
+fn async_stop_reason_stop_strategy_triggered_on_exhaustion() {
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
@@ -361,7 +361,7 @@ fn async_stop_reason_stop_condition_on_exhaustion() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    assert_eq!(stats.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
 }
 
 #[test]
@@ -400,7 +400,7 @@ fn async_stop_reason_condition_not_met() {
         result,
         Err(RetryError::ConditionNotMet { last: Ok(-1), .. })
     ));
-    assert_eq!(stats.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
 }
 
@@ -517,9 +517,12 @@ fn stop_reason_implements_debug_clone_copy_eq() {
     assert!(debug.contains("Success"), "Debug output: {debug}");
 
     // All three variants
-    assert_ne!(StopReason::Success, StopReason::StopCondition);
-    assert_ne!(StopReason::StopCondition, StopReason::PredicateAccepted);
-    assert_ne!(StopReason::Success, StopReason::PredicateAccepted);
+    assert_ne!(StopReason::Success, StopReason::StopStrategyTriggered);
+    assert_ne!(
+        StopReason::StopStrategyTriggered,
+        StopReason::NonRetryableError
+    );
+    assert_ne!(StopReason::Success, StopReason::NonRetryableError);
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +542,7 @@ fn sync_stats_are_fresh_after_policy_reuse() {
         .with_stats()
         .call();
     assert_eq!(stats1.attempts, MAX_ATTEMPTS);
-    assert_eq!(stats1.stop_reason, StopReason::StopCondition);
+    assert_eq!(stats1.stop_reason, StopReason::StopStrategyTriggered);
 
     // Second invocation: succeed on first attempt.
     let (result2, stats2) = policy

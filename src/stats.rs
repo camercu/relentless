@@ -16,7 +16,7 @@ use crate::compat::Duration;
 ///     .with_stats()
 ///     .call();
 ///
-/// assert_eq!(stats.stop_reason, StopReason::StopCondition);
+/// assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -27,9 +27,9 @@ pub enum StopReason {
     /// or `on::result(...)`, not only the default predicate.
     Success,
     /// A stop strategy fired and terminated retries.
-    StopCondition,
-    /// A predicate terminated retries on an `Err` outcome before stop fired.
-    PredicateAccepted,
+    StopStrategyTriggered,
+    /// The loop terminated because the latest `Err` outcome was non-retryable.
+    NonRetryableError,
     /// An external cancellation signal interrupted the retry loop.
     Cancelled,
 }

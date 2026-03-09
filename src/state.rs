@@ -134,7 +134,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 ///
 /// This contains the last attempt's outcome (when available) and termination
 /// reason, and fires once whenever retry execution exits (success, stop
-/// condition, predicate acceptance, or cancellation).
+/// strategy triggered, non-retryable error, or cancellation).
 ///
 /// `outcome` is `None` only when cancellation happens before the first attempt
 /// starts. In all other exit paths, it is `Some(&Result<T, E>)`.
@@ -145,7 +145,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 /// use tenacious::{ExitState, StopReason};
 ///
 /// fn on_exit(state: &ExitState<i32, String>) {
-///     if state.reason == StopReason::StopCondition {
+///     if state.reason == StopReason::StopStrategyTriggered {
 ///         println!("stopped on attempt {}", state.attempt);
 ///     }
 /// }
