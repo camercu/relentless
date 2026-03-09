@@ -82,6 +82,28 @@ pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
 pub type PolicySyncRetryBuilder<S, W, P, F, T, E> =
     SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, NeverCancel>;
 
+/// Alias for the default owned sync retry builder-with-stats returned by
+/// calling `.with_stats()` on [`RetryExt::retry`].
+pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E, C = NeverCancel> =
+    SyncRetryBuilderWithStats<
+        stop::StopAfterAttempts,
+        wait::WaitExponential,
+        on::AnyError,
+        (),
+        (),
+        (),
+        F,
+        SleepFn,
+        T,
+        E,
+        C,
+    >;
+
+/// Alias for the owned sync retry builder-with-stats returned by calling
+/// `.with_stats()` on [`RetryPolicy::retry_clone`].
+pub type PolicySyncRetryBuilderWithStats<S, W, P, F, SleepFn, T, E, C = NeverCancel> =
+    SyncRetryBuilderWithStats<S, W, P, (), (), (), F, SleepFn, T, E, C>;
+
 impl<S, W, P> RetryPolicy<S, W, P>
 where
     S: Stop,

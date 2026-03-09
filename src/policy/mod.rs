@@ -431,6 +431,7 @@ pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks
 pub use execution::sync_exec::{SyncRetry, SyncRetryWithStats};
 pub use ext::{
     AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
-    DefaultSyncRetryBuilder, PolicyAsyncRetryBuilder, PolicySyncRetryBuilder, RetryExt,
-    SyncRetryBuilder, SyncRetryBuilderWithStats,
+    DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
+    PolicyAsyncRetryBuilder, PolicyAsyncRetryBuilderWithStats, PolicySyncRetryBuilder,
+    PolicySyncRetryBuilderWithStats, RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats,
 };

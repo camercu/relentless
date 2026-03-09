@@ -94,6 +94,47 @@ pub type DefaultAsyncRetryBuilder<F, Fut, T, E> = AsyncRetryBuilder<
 pub type PolicyAsyncRetryBuilder<S, W, P, F, Fut, T, E> =
     AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E, (), NeverCancel>;
 
+/// Alias for the default owned async retry builder-with-stats returned by
+/// calling `.with_stats()` on [`AsyncRetryExt::retry_async`].
+pub type DefaultAsyncRetryBuilderWithStats<
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut = (),
+    C = NeverCancel,
+> = AsyncRetryBuilderWithStats<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    on::AnyError,
+    (),
+    (),
+    (),
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut,
+    C,
+>;
+
+/// Alias for the owned async retry builder-with-stats returned by calling
+/// `.with_stats()` on [`RetryPolicy::retry_async_clone`].
+pub type PolicyAsyncRetryBuilderWithStats<
+    S,
+    W,
+    P,
+    F,
+    Fut,
+    SleepImpl,
+    T,
+    E,
+    SleepFut = (),
+    C = NeverCancel,
+> = AsyncRetryBuilderWithStats<S, W, P, (), (), (), F, Fut, SleepImpl, T, E, SleepFut, C>;
+
 impl<S, W, P> RetryPolicy<S, W, P>
 where
     S: Stop,

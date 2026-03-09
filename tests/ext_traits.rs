@@ -99,6 +99,22 @@ fn default_sync_retry_builder_alias_is_nameable_from_crate_root() {
 }
 
 #[test]
+fn default_sync_retry_builder_with_stats_alias_is_nameable_from_crate_root() {
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
+    type SleepFn = fn(Duration);
+    type Builder =
+        tenacious::DefaultSyncRetryBuilderWithStats<SyncWorkFn, SleepFn, i32, &'static str>;
+
+    let typed: Builder = (do_work as SyncWorkFn)
+        .retry()
+        .sleep(instant_sleep as SleepFn)
+        .with_stats();
+    let (result, stats) = typed.call();
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(stats.attempts, 1);
+}
+
+#[test]
 fn retry_ext_uses_default_policy_when_not_overridden() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
@@ -402,6 +418,10 @@ mod async_tests {
         ready(Ok(SUCCESS_VALUE))
     }
 
+    fn ready_sleep(_dur: Duration) -> core::future::Ready<()> {
+        ready(())
+    }
+
     #[test]
     fn async_retry_ext_retries_until_success() {
         let attempts = Rc::new(Cell::new(0_u32));
@@ -466,6 +486,31 @@ mod async_tests {
         let result: Result<i32, RetryError<&str, i32>> =
             block_on(typed.sleep(|_dur: Duration| async {}));
         assert_eq!(result, Ok(SUCCESS_VALUE));
+    }
+
+    #[test]
+    fn default_async_retry_builder_with_stats_alias_is_nameable_from_crate_root() {
+        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
+        type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
+        type SleepFn = fn(Duration) -> core::future::Ready<()>;
+        type SleepFuture = core::future::Ready<()>;
+        type Builder = tenacious::DefaultAsyncRetryBuilderWithStats<
+            AsyncWorkFn,
+            AsyncWork,
+            SleepFn,
+            i32,
+            &'static str,
+            SleepFuture,
+        >;
+
+        let typed: Builder = (do_async_work as AsyncWorkFn)
+            .retry_async()
+            .sleep(ready_sleep as SleepFn)
+            .with_stats();
+        let (result, stats): (Result<i32, RetryError<&str, i32>>, tenacious::RetryStats) =
+            block_on(typed);
+        assert_eq!(result, Ok(SUCCESS_VALUE));
+        assert_eq!(stats.attempts, 1);
     }
 
     #[test]

@@ -76,10 +76,11 @@ pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryWithStats};
 pub use policy::{
     AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
-    PolicyAsyncRetryBuilder,
+    DefaultAsyncRetryBuilderWithStats, PolicyAsyncRetryBuilder, PolicyAsyncRetryBuilderWithStats,
 };
 pub use policy::{
-    DefaultSyncRetryBuilder, PolicySyncRetryBuilder, RetryExt, SyncRetry, SyncRetryBuilder,
+    DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats, PolicySyncRetryBuilder,
+    PolicySyncRetryBuilderWithStats, RetryExt, SyncRetry, SyncRetryBuilder,
     SyncRetryBuilderWithStats, SyncRetryWithStats,
 };
 pub use predicate::{Predicate, PredicateExt};
