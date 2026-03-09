@@ -51,7 +51,7 @@ fn exit_state_from<'a, T, E>(
 
 #[derive(Clone, Copy)]
 enum TerminalOutcomeKind {
-    PredicateAccepted { predicate_is_default: bool },
+    PredicateAccepted,
     StopCondition,
 }
 
@@ -125,9 +125,7 @@ where
     OX: ExitHook<T, E>,
 {
     let reason = match outcome_kind {
-        TerminalOutcomeKind::PredicateAccepted {
-            predicate_is_default,
-        } => stop_reason_for_predicate_accept(&outcome, predicate_is_default),
+        TerminalOutcomeKind::PredicateAccepted => stop_reason_for_predicate_accept(&outcome),
         TerminalOutcomeKind::StopCondition => StopReason::StopCondition,
     };
 
@@ -147,7 +145,7 @@ where
     }
 
     let result = match outcome_kind {
-        TerminalOutcomeKind::PredicateAccepted { .. } => match outcome {
+        TerminalOutcomeKind::PredicateAccepted => match outcome {
             Ok(value) => Ok(value),
             Err(error) => Err(RetryError::PredicateRejected {
                 last: Err(error),
@@ -347,9 +345,7 @@ where
             &retry_state,
             outcome,
             collect_stats,
-            TerminalOutcomeKind::PredicateAccepted {
-                predicate_is_default: policy.meta.predicate_is_default,
-            },
+            TerminalOutcomeKind::PredicateAccepted,
         );
     }
 
@@ -487,14 +483,7 @@ where
 
 #[cfg(feature = "alloc")]
 pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
-    #[cfg(any(debug_assertions, feature = "strict-futures"))]
     panic!("{type_name} polled after completion");
-
-    #[cfg(all(not(debug_assertions), not(feature = "strict-futures")))]
-    {
-        let _ = type_name;
-        Poll::Pending
-    }
 }
 
 #[cfg(feature = "alloc")]
@@ -629,10 +618,7 @@ where
     }
 }
 
-fn stop_reason_for_predicate_accept<T, E>(
-    outcome: &Result<T, E>,
-    _predicate_is_default: bool,
-) -> StopReason {
+fn stop_reason_for_predicate_accept<T, E>(outcome: &Result<T, E>) -> StopReason {
     if outcome.is_ok() {
         StopReason::Success
     } else {

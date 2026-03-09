@@ -123,12 +123,8 @@ pub fn exponential(initial: Duration) -> WaitExponential {
 }
 
 #[cfg(feature = "serde")]
-fn deserialize_exponential_base(base: f64) -> Result<f64, &'static str> {
-    if !base.is_finite() {
-        return Err("wait::exponential base must be finite");
-    }
-
-    Ok(clamp_exponential_base(base))
+fn deserialize_exponential_base(base: f64) -> f64 {
+    clamp_exponential_base(base)
 }
 
 impl WaitExponential {
@@ -183,8 +179,7 @@ impl<'de> serde::Deserialize<'de> for WaitExponential {
         }
 
         let serialized = SerializedWaitExponential::deserialize(deserializer)?;
-        let base =
-            deserialize_exponential_base(serialized.base).map_err(serde::de::Error::custom)?;
+        let base = deserialize_exponential_base(serialized.base);
         Ok(exponential(serialized.initial).base(base))
     }
 }
@@ -198,15 +193,15 @@ mod serde_validation_tests {
     const SUBUNIT_BASE: f64 = 0.5;
 
     #[test]
-    fn deserialize_exponential_base_rejects_non_finite() {
-        let result = deserialize_exponential_base(NON_FINITE_BASE);
-        assert!(result.is_err());
+    fn deserialize_exponential_base_clamps_non_finite() {
+        let base = deserialize_exponential_base(NON_FINITE_BASE);
+        assert_eq!(base, 1.0);
     }
 
     #[test]
     fn deserialize_exponential_base_clamps_subunit_values() {
-        let mut strategy = exponential(ARBITRARY_INITIAL_WAIT)
-            .base(deserialize_exponential_base(SUBUNIT_BASE).expect("base should parse"));
+        let mut strategy =
+            exponential(ARBITRARY_INITIAL_WAIT).base(deserialize_exponential_base(SUBUNIT_BASE));
         let first = strategy.next_wait(&RetryState::new(1, None, Duration::ZERO, Duration::ZERO));
         let second = strategy.next_wait(&RetryState::new(2, None, Duration::ZERO, Duration::ZERO));
         assert_eq!(first, second);

@@ -330,9 +330,7 @@ pin_project! {
     /// sleeper with `.sleep(...)`, then `.await` the returned future.
     ///
     /// `AsyncRetry` is a single-use future. Polling after completion is
-    /// misuse: debug builds panic. Release builds return `Poll::Pending`
-    /// unless the `strict-futures` feature is enabled, in which case they
-    /// also panic.
+    /// misuse and always panics.
     ///
     /// # Examples
     ///

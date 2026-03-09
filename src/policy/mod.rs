@@ -27,18 +27,16 @@ type ElapsedClockFn = fn() -> Duration;
 
 #[derive(Debug, Clone, Copy)]
 struct PolicyMeta {
-    predicate_is_default: bool,
     elapsed_clock: Option<ElapsedClockFn>,
 }
 
 impl PartialEq for PolicyMeta {
     fn eq(&self, other: &Self) -> bool {
-        self.predicate_is_default == other.predicate_is_default
-            && match (self.elapsed_clock, other.elapsed_clock) {
-                (Some(left), Some(right)) => core::ptr::fn_addr_eq(left, right),
-                (None, None) => true,
-                _ => false,
-            }
+        match (self.elapsed_clock, other.elapsed_clock) {
+            (Some(left), Some(right)) => core::ptr::fn_addr_eq(left, right),
+            (None, None) => true,
+            _ => false,
+        }
     }
 }
 
@@ -95,11 +93,10 @@ where
     where
         Ser: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("RetryPolicy", 4)?;
+        let mut state = serializer.serialize_struct("RetryPolicy", 3)?;
         state.serialize_field("stop", &self.stop)?;
         state.serialize_field("wait", &self.wait)?;
         state.serialize_field("predicate", &self.predicate)?;
-        state.serialize_field("predicate_is_default", &self.meta.predicate_is_default)?;
         state.end()
     }
 }
@@ -126,8 +123,6 @@ where
             stop: S,
             wait: W,
             predicate: P,
-            #[serde(default)]
-            predicate_is_default: bool,
         }
 
         let serialized = SerializedRetryPolicy::deserialize(deserializer)?;
@@ -136,7 +131,6 @@ where
             wait: serialized.wait,
             predicate: serialized.predicate,
             meta: PolicyMeta {
-                predicate_is_default: serialized.predicate_is_default,
                 elapsed_clock: None,
             },
         })
@@ -203,7 +197,6 @@ impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError> {
             wait: wait::fixed(Duration::ZERO),
             predicate: on::any_error(),
             meta: PolicyMeta {
-                predicate_is_default: true,
                 elapsed_clock: None,
             },
         })
@@ -217,7 +210,6 @@ impl Default for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on:
             wait: wait::exponential(DEFAULT_INITIAL_WAIT),
             predicate: on::any_error(),
             meta: PolicyMeta {
-                predicate_is_default: true,
                 elapsed_clock: None,
             },
         })
@@ -261,10 +253,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
             stop,
             wait,
             predicate,
-            meta: PolicyMeta {
-                predicate_is_default: false,
-                ..meta
-            },
+            meta,
         })
     }
 

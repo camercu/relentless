@@ -21,7 +21,8 @@ std = ["alloc", "embassy-time?/std"]
 #        Box<dyn Predicate>, and type-erased policy storage.
 alloc = []
 
-# Runtime-specific async sleep implementations.
+# Runtime-specific async sleep implementations. Multiple adapters can be
+# enabled together; callers choose explicitly at `.sleep(...)`.
 tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]
 gloo-timers-sleep = ["dep:gloo-timers"]
@@ -29,7 +30,6 @@ futures-timer-sleep = ["dep:futures-timer", "std"]
 tokio-cancel = ["dep:tokio-util"]
 jitter = ["dep:rand"]
 serde = ["dep:serde"]
-strict-futures = []
 
 [dependencies]
 pin-project-lite = "0.2"

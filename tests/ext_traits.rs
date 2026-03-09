@@ -657,51 +657,8 @@ mod async_tests {
         ));
     }
 
-    #[cfg(debug_assertions)]
     #[test]
-    fn async_retry_ext_repoll_after_completion_panics_in_debug() {
-        let mut retry = Box::pin(
-            (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
-                .retry_async()
-                .stop(stop::attempts(1))
-                .sleep(|_dur| ready(())),
-        );
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-
-        let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
-        assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
-
-        let second_poll = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = Future::poll(Pin::as_mut(&mut retry), &mut cx);
-        }));
-        assert!(second_poll.is_err());
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[test]
-    #[cfg(not(feature = "strict-futures"))]
-    fn async_retry_ext_repoll_after_completion_is_pending_in_release() {
-        let mut retry = Box::pin(
-            (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
-                .retry_async()
-                .stop(stop::attempts(1))
-                .sleep(|_dur| ready(())),
-        );
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-
-        let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
-        assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
-
-        let second_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
-        assert_eq!(second_poll, Poll::Pending);
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[test]
-    #[cfg(feature = "strict-futures")]
-    fn async_retry_ext_repoll_after_completion_panics_with_strict_feature() {
+    fn async_retry_ext_repoll_after_completion_panics() {
         let mut retry = Box::pin(
             (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
                 .retry_async()

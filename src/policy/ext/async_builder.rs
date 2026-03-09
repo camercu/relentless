@@ -113,9 +113,8 @@ fn _async_retry_builder_requires_sleep_before_await() {}
 pin_project! {
     /// Owned async retry builder created from [`AsyncRetryExt::retry_async`].
     ///
-    /// This future is single-use. Polling after completion is misuse:
-    /// debug builds panic, and release builds return `Poll::Pending` unless
-    /// `strict-futures` is enabled, in which case they also panic.
+    /// This future is single-use. Polling after completion is misuse and
+    /// always panics.
     pub struct AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,

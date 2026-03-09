@@ -131,9 +131,10 @@ std = ["alloc"]
 #        Not required when using concrete generic types.
 alloc = []
 
-# Runtime-specific async sleep implementations. Exactly zero or one should be
-# activated per binary. All are no_std-compatible except tokio-sleep and
-# futures-timer-sleep.
+# Runtime-specific async sleep implementations. Multiple adapters may be
+# enabled in the same crate build. The crate never auto-selects one; callers
+# choose the runtime explicitly at each `.sleep(...)` call site. All are
+# no_std-compatible except tokio-sleep and futures-timer-sleep.
 tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]
 gloo-timers-sleep = ["dep:gloo-timers"]
@@ -150,10 +151,6 @@ jitter = ["dep:rand"]
 # serde: enables Serialize/Deserialize on RetryPolicy and strategy types,
 #        allowing policy configuration from files or environment.
 serde = ["dep:serde"]
-
-# strict-futures: panic on AsyncRetry repoll-after-completion in all builds.
-#                 Without this feature, release builds return Poll::Pending.
-strict-futures = []
 ```
 
 `#![no_std]` is unconditional in `lib.rs`. The `std` and `alloc` features gate `extern crate std` and `extern crate alloc` respectively. Internal imports use a facade module (`src/compat.rs`) that re-exports from `core`/`alloc`/`std` depending on active features, keeping conditional compilation out of the main logic.
@@ -188,13 +185,17 @@ Built-in wait strategies compose with `+` (`WaitCombine`) and `.chain(other, aft
 
 ```rust
 pub trait Predicate<T, E> {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool;
+    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool;
 }
 ```
 
 Built-in predicates compose with `|` and `&`.
 
-Because `T` and `E` are type parameters on the trait rather than on the method, predicates are typed to a specific operation's return type. The `on::error` and `on::result` factory functions produce typed predicates. Predicates are also blanket-implemented for `Fn(&Result<T, E>) -> bool`.
+Because `T` and `E` are type parameters on the trait rather than on the
+method, predicates are typed to a specific operation's return type. The
+`on::error` and `on::result` factory functions produce typed predicates.
+Predicates are also blanket-implemented for `FnMut(&Result<T, E>) -> bool`,
+which permits stateful closures when needed.
 
 #### `Sleeper` — how to delay
 
@@ -339,9 +340,20 @@ The sync engine is a plain loop. It calls `op()`, consults `Stop` and `Predicate
 
 **Async:** `policy.retry_async(|| async { op() }).sleep(tokio::time::sleep).await?`
 
-The async engine is an `async fn` (or equivalently a hand-written `Future` state machine). Between attempts it `.await`s the sleep future. The sleep function is accepted as a generic `impl Sleeper`, which the blanket impl covers for closures. No executor is required beyond `core::future::Future` machinery.
+The async engine is a hand-written `Future` state machine. Between attempts it
+polls the configured sleep future. The sleep function is accepted as a generic
+`impl Sleeper`, which the blanket impl covers for closures. No executor is
+required beyond `core::future::Future` machinery.
 
-Both paths share all stop/wait/predicate/hook logic. The only difference is whether sleep is blocking or async.
+Both paths share the same transition logic:
+
+1. Call the operation.
+2. Evaluate the predicate. If it accepts the outcome, terminate immediately.
+3. Compute the next wait duration.
+4. Evaluate the stop strategy with `state.next_delay` populated.
+5. Fire retry hooks and sleep only when another attempt will run.
+
+The only execution difference is whether that sleep is blocking or async.
 
 Iteration 13 adds cancellation checks to both loops (poll-based for sync,
 sleep-racing for async). See that iteration for the amended loop descriptions.
@@ -354,7 +366,13 @@ All business logic (stop strategies, wait strategies, predicate composition, pol
 
 - **Sync tests:** real `std::thread::sleep` is avoided; tests inject a no-op or recording sleep closure. Elapsed-based stop strategies are tested via `std::thread::sleep` for necessary timing and by constructing `RetryState` directly for deterministic assertions.
 - **Async tests:** a minimal executor via `core::task` polling (no external runtime dependency in tests). Async retry correctness shares the same transition logic as sync.
-- **no_std compile test:** CI builds with `--target thumbv7m-none-eabi --no-default-features` and checks `wasm32-unknown-unknown` with `--features alloc,gloo-timers-sleep` to confirm the crate compiles without std. Runtime behavior is not tested on these targets.
+- **Target-specific adapter checks:** CI builds `thumbv7m-none-eabi` with
+  `--no-default-features` and checks `wasm32-unknown-unknown` with
+  `--features alloc,gloo-timers-sleep` to confirm the crate compiles without
+  std. Runtime-specific sleep adapters are validated only on targets that can
+  actually link and drive them. For example, Tokio and futures-timer can be
+  executed on host tests, while Embassy support is compile-tested on generic
+  hosts and runtime-tested only in an Embassy-capable environment.
 - **Composition tests:** seeded property-style tests verify that `StopAny(a, b).should_stop()` equals `a.should_stop() || b.should_stop()` and analogous invariants for `Wait` and `Predicate` composition, over generated input sets with reproducible seeds.
 
 Error paths that are genuinely difficult to trigger in real conditions (for
@@ -569,14 +587,16 @@ propagate normally.
 
 **6.1** `RetryPolicy::retry_async(op: F) -> AsyncRetry` where `F: FnMut() -> Fut, Fut: Future<Output = Result<T, E>>` begins configuring an async retry execution.
 
-**6.2** `AsyncRetry::sleep(s: impl Sleeper) -> AsyncRetry` sets the sleep implementation. This is required; there is no default async sleep even when a runtime feature is active. Rationale: in async contexts, the correct runtime is always knowable at the call site and implicit selection would silently break in multi-runtime binaries.
+**6.2** `AsyncRetry::sleep(s: impl Sleeper) -> AsyncRetry` sets the sleep
+implementation. This is required; there is no default async sleep even when a
+runtime feature is active. Rationale: in async contexts, the correct runtime
+is knowable at the call site, and implicit selection would silently break in
+mixed-runtime builds.
 
 **6.3** `AsyncRetry` implements `Future<Output = Result<T, RetryError<E, T>>>`
 and can be `.await`ed directly.
 
-Polling an `AsyncRetry` after it has completed is misuse: debug builds panic.
-Release builds return `Poll::Pending` unless the `strict-futures` feature is
-enabled, in which case they also panic.
+Polling an `AsyncRetry` after it has completed is misuse and always panics.
 
 **6.4** The async execution loop follows the same logic as the sync loop
 (5.6), replacing the blocking sleep call with an async sleep future. When a
@@ -1001,7 +1021,8 @@ return closures compatible with `.sleep(...)`:
 
 - `sleep::tokio()` (requires `tokio-sleep`) — equivalent to the current
   runtime sleep adapter for Tokio
-- `sleep::embassy()` (requires `embassy-sleep`)
+- `sleep::embassy()` (requires `embassy-sleep`) — intended for Embassy-capable
+  targets rather than generic host execution
 - `sleep::gloo()` (requires `gloo-timers-sleep`)
 - `sleep::futures_timer()` (requires `futures-timer-sleep`)
 

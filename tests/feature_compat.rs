@@ -153,7 +153,6 @@ fn retry_policy_serialization_omits_hooks() {
     assert!(object.contains_key("stop"));
     assert!(object.contains_key("wait"));
     assert!(object.contains_key("predicate"));
-    assert!(object.contains_key("predicate_is_default"));
     assert!(!object.contains_key("elapsed_clock"));
     assert!(!object.contains_key("before_attempt"));
     assert!(!object.contains_key("after_attempt"));
