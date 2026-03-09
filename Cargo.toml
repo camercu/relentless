@@ -15,7 +15,7 @@ default = ["std"]
 
 # std: enables std::thread::sleep for sync execution, Instant for elapsed tracking,
 #      std::error::Error impl on RetryError, and std-gated sleep impls.
-std = ["alloc"]
+std = ["alloc", "embassy-time?/std"]
 
 # alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
 #        Box<dyn Predicate>, and type-erased policy storage.
@@ -36,7 +36,7 @@ pin-project-lite = "0.2"
 tokio = { version = "1", default-features = false, features = [
   "time",
 ], optional = true }
-embassy-time = { version = "0.3", optional = true }
+embassy-time = { version = "0.3", default-features = false, optional = true }
 futures-timer = { version = "3", optional = true }
 rand = { version = "0.8", default-features = false, features = [
   "small_rng",
@@ -47,11 +47,6 @@ serde = { version = "1", default-features = false, features = [
 tokio-util = { version = "0.7", default-features = false, optional = true }
 
 [dev-dependencies]
-# Satisfies embassy-time driver symbols when running crate-local
-# all-features test/lint commands on host targets.
-embassy-time = { version = "0.3", default-features = false, features = [
-  "mock-driver",
-] }
 serde_json = "1"
 stats_alloc = "0.1"
 
