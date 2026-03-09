@@ -91,6 +91,7 @@ where
 fn _sync_retry_builder_requires_sleep_in_no_std() {}
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
+#[allow(clippy::type_complexity)]
 pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     inner: SyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
 }

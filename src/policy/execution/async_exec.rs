@@ -233,6 +233,7 @@ where
     Fut: Future<Output = Result<T, E>>,
     C: Canceler,
 {
+    #[allow(clippy::type_complexity)]
     pub(crate) fn with_sleeper<NewSleep>(
         self,
         sleeper: NewSleep,

@@ -57,7 +57,13 @@ test-stable:
     cargo {{stable_toolchain}} test --all-targets
 
 test-no-default:
-    cargo test --no-default-features
+    cargo test --no-default-features --tests
+
+test-doc-no-default:
+    RUSTDOCFLAGS="-D warnings" cargo test --no-default-features --doc
+
+test-doc-no-default-strict:
+    RUSTFLAGS="{{warning_flags}}" RUSTDOCFLAGS="-D warnings" cargo test --no-default-features --doc
 
 test-no-default-strict:
     RUSTFLAGS="{{warning_flags}}" cargo test --no-default-features
@@ -101,6 +107,6 @@ pre-commit: fmt-check lint-typos
 
 pre-push: lint-clippy test
 
-ci: fmt-check lint test-strict test-no-default-strict doc-strict check-no-std-strict check-wasm-strict bench-no-run-strict
+ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict bench-no-run-strict
 
 ci-stable: build-stable test-stable lint-clippy-stable

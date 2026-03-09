@@ -18,10 +18,11 @@ default = ["std"]
 std = ["alloc", "embassy-time?/std"]
 
 # alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
-#        Box<dyn Predicate>, and type-erased policy storage.
+#        Box<dyn Predicate>, type-erased policy storage, Arc-based cancelers,
+#        and multiple hooks per hook point. Async retry itself does not require it.
 alloc = []
 
-# Runtime-specific async sleep implementations. Multiple adapters can be
+# Runtime-specific async sleep helper constructors. Multiple adapters can be
 # enabled together; callers choose explicitly at `.sleep(...)`.
 tokio-sleep = ["dep:tokio", "std"]
 embassy-sleep = ["dep:embassy-time"]

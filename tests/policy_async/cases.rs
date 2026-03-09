@@ -1,5 +1,4 @@
 //! Acceptance tests for Async Execution (Spec items 6.1–6.8).
-#![cfg(all(feature = "alloc", feature = "std"))]
 //!
 //! These tests verify:
 //! - `RetryPolicy::retry_async(op)` configures async retry (6.1)
@@ -362,8 +361,10 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
 
 #[test]
 fn async_before_elapsed_uses_computed_next_delay_before_sleeping() {
+    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
     let mut policy = RetryPolicy::new()
         .stop(stop::before_elapsed(BEFORE_ELAPSED_DEADLINE))
+        .elapsed_clock(async_elapsed_clock_millis)
         .wait(wait::fixed(BEFORE_ELAPSED_WAIT));
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);

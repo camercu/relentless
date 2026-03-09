@@ -226,6 +226,7 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E, C>
 ///     .sleep(|_dur| {});
 /// let _ = retry.call();
 /// ```
+#[allow(clippy::type_complexity)]
 pub struct SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     inner: SyncRetryCore<&'policy mut RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
 }

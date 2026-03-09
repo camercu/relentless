@@ -5,21 +5,15 @@ use crate::error::RetryError;
 use crate::policy::time::ElapsedTracker;
 use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::predicate::Predicate;
-#[cfg(feature = "alloc")]
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
 use crate::stop::Stop;
 use crate::wait::Wait;
-#[cfg(feature = "alloc")]
 use core::future::Future;
-#[cfg(feature = "alloc")]
 use core::pin::Pin;
-#[cfg(feature = "alloc")]
 use core::task::Context;
-#[cfg(feature = "alloc")]
 use core::task::Poll;
-#[cfg(feature = "alloc")]
 use pin_project_lite::pin_project;
 
 fn attempt_state_from<'a, T, E>(
@@ -170,7 +164,6 @@ where
     AttemptTransition::Finished { result, stats }
 }
 
-#[cfg(feature = "alloc")]
 fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
     mut phase: Pin<&mut AsyncPhase<Fut, SleepFut, CancelFut>>,
     final_stats: &mut Option<RetryStats>,
@@ -182,7 +175,6 @@ fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
     Poll::Ready(result)
 }
 
-#[cfg(feature = "alloc")]
 #[allow(clippy::too_many_arguments)]
 fn finish_cancelled_async_poll<BA, AA, OX, T, E, Fut, SleepFut, CancelFut>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
@@ -219,7 +211,6 @@ pub(super) enum AttemptTransition<T, E> {
     },
 }
 
-#[cfg(feature = "alloc")]
 pin_project! {
     #[project = AsyncPhaseProj]
 pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
@@ -238,7 +229,6 @@ pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
     }
 }
 
-#[cfg(feature = "alloc")]
 pub(crate) enum AsyncOperationPoll<T, E> {
     Pending,
     Finished {
@@ -251,7 +241,6 @@ pub(crate) enum AsyncOperationPoll<T, E> {
     },
 }
 
-#[cfg(feature = "alloc")]
 pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, OldCancelFut, NewSleepFut, NewCancelFut>(
     phase: AsyncPhase<Fut, OldSleepFut, OldCancelFut>,
     unreachable_message: &'static str,
@@ -276,7 +265,6 @@ pub(crate) fn fire_before_attempt<BA, AA, OX>(
     hooks.before_attempt.call(&before_state);
 }
 
-#[cfg(feature = "alloc")]
 // Intentional: this helper wires all state-machine inputs in one place to keep
 // async retry transition logic shared between policy and extension builders.
 #[allow(clippy::too_many_arguments)]
@@ -481,12 +469,10 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
     panic!("{type_name} polled after completion");
 }
 
-#[cfg(feature = "alloc")]
 // Intentional: this is the shared async state-machine engine used by both
 // policy-based and extension-trait async retry futures.
 #[allow(clippy::too_many_arguments)]

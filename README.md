@@ -29,6 +29,9 @@ cargo add tenacious
 ```
 
 Optional runtime adapters and feature flags are in [`Cargo.toml`](./Cargo.toml).
+Async retry does not require the crate's `alloc` feature. `alloc` is only
+needed for boxed policies, `Arc<AtomicBool>` cancellation, and registering
+multiple hooks of the same kind on one execution builder.
 
 If you want to contribute, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
@@ -140,7 +143,9 @@ let final_status = policy.retry(|| fetch_export_status(&client)).call().unwrap()
 
 ### 4) Use the same model in async code
 
-`retry_async` uses the same stop/wait/predicate model as sync retries.
+`retry_async` uses the same stop/wait/predicate model as sync retries. Async
+execution always requires an explicit sleeper. The example below uses Tokio, so
+it requires the `tokio-sleep` feature.
 
 ```rust
 use core::time::Duration;

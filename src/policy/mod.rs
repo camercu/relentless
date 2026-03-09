@@ -388,12 +388,10 @@ macro_rules! impl_alloc_hook_chain {
 mod execution;
 mod ext;
 mod time;
-#[cfg(feature = "alloc")]
 pub use execution::async_exec::{AsyncRetry, AsyncRetryWithStats};
 #[cfg(feature = "alloc")]
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
 pub use execution::sync_exec::{SyncRetry, SyncRetryWithStats};
-#[cfg(feature = "alloc")]
 pub use ext::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
 pub use ext::{RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats};

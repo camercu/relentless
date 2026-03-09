@@ -5,11 +5,11 @@ use core::task::{Context, Poll};
 use crate::compat::Duration;
 use pin_project_lite::pin_project;
 
+#[cfg(feature = "alloc")]
+use super::super::HookChain;
 use super::super::execution::async_exec::{AsyncRetryCore, NoAsyncSleep};
 use super::super::time::ElapsedTracker;
-use super::super::{
-    AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain, RetryPolicy,
-};
+use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::cancel::{Canceler, NeverCancel};
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
@@ -95,7 +95,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 #[doc(hidden)]
 /// ```compile_fail
 /// use core::future::ready;
@@ -301,6 +300,69 @@ impl_alloc_hook_chain! {
     before_attempt -> { AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
     after_attempt -> { AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
     on_exit -> { AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryBuilder<S, W, P, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    /// Sets the sole before-attempt hook (no-alloc mode).
+    #[must_use]
+    pub fn before_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryBuilder<S, W, P, Hook, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    where
+        Hook: FnMut(&BeforeAttemptState),
+    {
+        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryBuilder<S, W, P, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    /// Sets the sole after-attempt hook (no-alloc mode).
+    #[must_use]
+    pub fn after_attempt<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryBuilder<S, W, P, BA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    where
+        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
+    {
+        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryBuilder<S, W, P, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut, C>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+    C: Canceler,
+{
+    /// Sets the sole on-exit hook (no-alloc mode).
+    #[must_use]
+    pub fn on_exit<Hook>(
+        self,
+        hook: Hook,
+    ) -> AsyncRetryBuilder<S, W, P, BA, AA, Hook, F, Fut, SleepImpl, T, E, SleepFut, C>
+    where
+        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
+    {
+        self.map_hooks(|hooks| hooks.set_on_exit(hook))
+    }
 }
 
 #[allow(private_bounds)]

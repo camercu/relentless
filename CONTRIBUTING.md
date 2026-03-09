@@ -5,6 +5,11 @@ checks used by the repository. Use it when you set up a new clone, install Git
 hooks, or want to understand which commands are part of the normal development
 loop.
 
+`README.md` is the project overview and quick-start guide.
+[docs/SPEC.md](./docs/SPEC.md) is the normative behavior and public-API
+contract. Keep behavior changes aligned with the spec, and keep workflow and
+CI guidance in this document rather than in the spec.
+
 ## Development environment
 
 `tenacious` uses a pinned Rust toolchain and a pinned Nix shell so contributors

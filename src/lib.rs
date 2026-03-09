@@ -69,9 +69,7 @@ pub use error::{RetryError, RetryResult};
 #[cfg(feature = "alloc")]
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
-#[cfg(feature = "alloc")]
 pub use policy::{AsyncRetry, AsyncRetryWithStats};
-#[cfg(feature = "alloc")]
 pub use policy::{AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt};
 pub use policy::{
     RetryExt, SyncRetry, SyncRetryBuilder, SyncRetryBuilderWithStats, SyncRetryWithStats,
@@ -102,7 +100,6 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 /// assert!(matches!(result, Err(RetryError::Exhausted { attempts: 3, .. })));
 /// ```
 pub mod prelude {
-    #[cfg(feature = "alloc")]
     pub use crate::AsyncRetryExt;
     pub use crate::on::{any_error, error, ok, until_ready};
     pub use crate::sleep::Sleeper;
