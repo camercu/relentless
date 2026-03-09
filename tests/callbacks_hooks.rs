@@ -72,21 +72,29 @@ fn after_attempt_runs_after_predicate_evaluation() {
 }
 
 #[test]
-fn before_sleep_fires_after_stop_check_with_next_delay_populated() {
-    let seen: RefCell<Vec<(u32, Duration)>> = RefCell::new(Vec::new());
+fn after_attempt_receives_next_delay_for_retryable_attempts() {
+    let seen: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
-        .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
             seen.borrow_mut().push((state.attempt, state.next_delay));
         })
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(*seen.borrow(), vec![(1, WAIT_DURATION), (2, WAIT_DURATION)]);
+    // Attempts 1 and 2 will retry (next_delay=Some), attempt 3 is terminal (next_delay=None).
+    assert_eq!(
+        *seen.borrow(),
+        vec![
+            (1, Some(WAIT_DURATION)),
+            (2, Some(WAIT_DURATION)),
+            (3, None),
+        ]
+    );
 }
 
 #[test]

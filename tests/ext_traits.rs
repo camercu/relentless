@@ -105,8 +105,7 @@ fn retry_ext_with_stats_reports_attempts() {
 #[test]
 fn retry_ext_hooks_match_policy_hook_points() {
     let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let before_sleep_calls: RefCell<Vec<(u32, Duration)>> = RefCell::new(Vec::new());
+    let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
     let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
     let _ = (|| Err::<i32, _>(ERROR_VALUE))
@@ -115,10 +114,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
         .wait(wait::fixed(WAIT_DURATION))
         .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
         .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
-            after_calls.borrow_mut().push(state.attempt);
-        })
-        .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
-            before_sleep_calls
+            after_calls
                 .borrow_mut()
                 .push((state.attempt, state.next_delay));
         })
@@ -136,10 +132,13 @@ fn retry_ext_hooks_match_policy_hook_points() {
         .call();
 
     assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-    assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
     assert_eq!(
-        *before_sleep_calls.borrow(),
-        vec![(1, WAIT_DURATION), (2, WAIT_DURATION)]
+        *after_calls.borrow(),
+        vec![
+            (1, Some(WAIT_DURATION)),
+            (2, Some(WAIT_DURATION)),
+            (3, None),
+        ]
     );
     assert_eq!(
         *exit_calls.borrow(),
@@ -376,8 +375,7 @@ mod async_tests {
     #[test]
     fn async_retry_ext_hooks_match_policy_hook_points() {
         let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-        let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-        let before_sleep_calls: RefCell<Vec<(u32, Duration)>> = RefCell::new(Vec::new());
+        let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
         let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
         let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
@@ -386,10 +384,7 @@ mod async_tests {
             .wait(wait::fixed(WAIT_DURATION))
             .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
             .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
-                after_calls.borrow_mut().push(state.attempt);
-            })
-            .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
-                before_sleep_calls
+                after_calls
                     .borrow_mut()
                     .push((state.attempt, state.next_delay));
             })
@@ -408,10 +403,13 @@ mod async_tests {
         let _ = block_on(future);
 
         assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-        assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
         assert_eq!(
-            *before_sleep_calls.borrow(),
-            vec![(1, WAIT_DURATION), (2, WAIT_DURATION)]
+            *after_calls.borrow(),
+            vec![
+                (1, Some(WAIT_DURATION)),
+                (2, Some(WAIT_DURATION)),
+                (3, None),
+            ]
         );
         assert_eq!(
             *exit_calls.borrow(),

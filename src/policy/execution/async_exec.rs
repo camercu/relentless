@@ -52,14 +52,14 @@ pin_project! {
     ///     .sleep(|_dur: Duration| async {});
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
         policy: &'policy mut RetryPolicy<S, W, P>,
-        hooks: ExecutionHooks<BA, AA, BS, OX>,
+        hooks: ExecutionHooks<BA, AA, OX>,
         op: F,
         sleeper: SleepImpl,
         canceler: C,
@@ -106,25 +106,24 @@ pin_project! {
     ///     .with_stats();
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
         #[pin]
-        inner: AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
+        inner: AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
     }
 }
 
-type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E> = AsyncRetry<
+type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E> = AsyncRetry<
     'policy,
     S,
     W,
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     Fut,
@@ -134,11 +133,11 @@ type AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T,
     <SleepImpl as Sleeper>::Sleep,
 >;
 
-type AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> =
-    AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
+type AsyncRetryStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> =
+    AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -147,26 +146,11 @@ where
     // Intentional: this helper preserves type-state hook tracking and avoids
     // runtime indirection, which necessarily yields a long generic return type.
     #[allow(clippy::type_complexity)]
-    fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
+    fn map_hooks<NewBA, NewAA, NewOX>(
         self,
-        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-    ) -> AsyncRetry<
-        'policy,
-        S,
-        W,
-        P,
-        NewBA,
-        NewAA,
-        NewBS,
-        NewOX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-    > {
+        map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
+    ) -> AsyncRetry<'policy, S, W, P, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    {
         let AsyncRetry {
             policy,
             hooks,
@@ -208,7 +192,6 @@ type AsyncRetryWithBeforeHook<
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     Fut,
@@ -218,23 +201,7 @@ type AsyncRetryWithBeforeHook<
     SleepFut,
     C,
     Hook,
-> = AsyncRetry<
-    'policy,
-    S,
-    W,
-    P,
-    HookChain<BA, Hook>,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+> = AsyncRetry<'policy, S, W, P, HookChain<BA, Hook>, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
 #[cfg(feature = "alloc")]
 type AsyncRetryWithAfterHook<
@@ -244,7 +211,6 @@ type AsyncRetryWithAfterHook<
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     Fut,
@@ -254,59 +220,7 @@ type AsyncRetryWithAfterHook<
     SleepFut,
     C,
     Hook,
-> = AsyncRetry<
-    'policy,
-    S,
-    W,
-    P,
-    BA,
-    HookChain<AA, Hook>,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
-
-#[cfg(feature = "alloc")]
-type AsyncRetryWithBeforeSleepHook<
-    'policy,
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
-    Hook,
-> = AsyncRetry<
-    'policy,
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    HookChain<BS, Hook>,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+> = AsyncRetry<'policy, S, W, P, BA, HookChain<AA, Hook>, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
 #[cfg(feature = "alloc")]
 type AsyncRetryWithOnExitHook<
@@ -316,7 +230,6 @@ type AsyncRetryWithOnExitHook<
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     Fut,
@@ -326,26 +239,10 @@ type AsyncRetryWithOnExitHook<
     SleepFut,
     C,
     Hook,
-> = AsyncRetry<
-    'policy,
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    HookChain<OX, Hook>,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+> = AsyncRetry<'policy, S, W, P, BA, AA, HookChain<OX, Hook>, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, ()>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -355,7 +252,7 @@ where
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> AsyncRetryWithSleep<'policy, S, W, P, BA, AA, BS, OX, F, Fut, NewSleep, T, E>
+    ) -> AsyncRetryWithSleep<'policy, S, W, P, BA, AA, OX, F, Fut, NewSleep, T, E>
     where
         NewSleep: Sleeper,
     {
@@ -377,8 +274,8 @@ where
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -389,7 +286,7 @@ where
     pub fn cancel_on<NewC: Canceler>(
         self,
         canceler: NewC,
-    ) -> AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
+    ) -> AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
         AsyncRetry {
             policy: self.policy,
             hooks: self.hooks,
@@ -411,8 +308,8 @@ where
     }
 }
 
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -424,8 +321,7 @@ where
     #[allow(clippy::type_complexity)]
     pub fn with_stats(
         self,
-    ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    {
+    ) -> AsyncRetryStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
         let mut inner = self;
         inner.collect_stats = true;
         AsyncRetryWithStats { inner }
@@ -436,8 +332,8 @@ where
 // Intentional: hook chaining APIs preserve compile-time type-state for no-alloc
 // and zero-cost execution; signatures are verbose but mechanically constrained.
 #[allow(clippy::type_complexity)]
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -455,7 +351,6 @@ where
         P,
         BA,
         AA,
-        BS,
         OX,
         F,
         Fut,
@@ -484,7 +379,6 @@ where
         P,
         BA,
         AA,
-        BS,
         OX,
         F,
         Fut,
@@ -501,35 +395,6 @@ where
         self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
     }
 
-    /// Appends a before-sleep hook.
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryWithBeforeSleepHook<
-        'policy,
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
-    where
-        Hook: for<'a> FnMut(&crate::AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_sleep(hook))
-    }
-
     /// Appends an on-exit hook.
     #[must_use]
     pub fn on_exit<Hook>(
@@ -542,7 +407,6 @@ where
         P,
         BA,
         AA,
-        BS,
         OX,
         F,
         Fut,
@@ -561,8 +425,8 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, (), AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -583,7 +447,7 @@ where
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncRetry<'policy, S, W, P, Hook, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    ) -> AsyncRetry<'policy, S, W, P, Hook, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -592,8 +456,8 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, (), BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -614,7 +478,7 @@ where
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncRetry<'policy, S, W, P, BA, Hook, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    ) -> AsyncRetry<'policy, S, W, P, BA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         Hook: for<'a> FnMut(&crate::AttemptState<'a, T, E>),
     {
@@ -623,39 +487,8 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, AA, (), OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
-{
-    /// Sets the sole before-sleep hook (no-alloc mode).
-    ///
-    /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
-    ///
-    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry_async(|| async { Err::<(), _>("fail") })
-    ///     .before_sleep(|_state| {})
-    ///     .before_sleep(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetry<'policy, S, W, P, BA, AA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    where
-        Hook: for<'a> FnMut(&crate::AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_before_sleep(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<'policy, S, W, P, BA, AA, BS, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetry<'policy, S, W, P, BA, AA, BS, (), F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetry<'policy, S, W, P, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -676,7 +509,7 @@ where
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncRetry<'policy, S, W, P, BA, AA, BS, Hook, F, Fut, SleepImpl, T, E, SleepFut, C>
+    ) -> AsyncRetry<'policy, S, W, P, BA, AA, Hook, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -685,15 +518,14 @@ where
 }
 
 #[allow(private_bounds)]
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
-    for AsyncRetry<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+    for AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
@@ -725,15 +557,14 @@ where
 }
 
 #[allow(private_bounds)]
-impl<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
-    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+    for AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
@@ -771,7 +602,7 @@ where
     pub fn retry_async<T, E, F, Fut>(
         &mut self,
         op: F,
-    ) -> AsyncRetry<'_, S, W, P, (), (), (), (), F, Fut, NoAsyncSleep, T, E>
+    ) -> AsyncRetry<'_, S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,

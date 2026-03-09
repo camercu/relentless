@@ -49,7 +49,6 @@ where
         (),
         (),
         (),
-        (),
         Self,
         Fut,
         NoAsyncSleep,
@@ -71,7 +70,6 @@ where
         stop::StopAfterAttempts,
         wait::WaitExponential,
         on::AnyError,
-        (),
         (),
         (),
         (),
@@ -125,14 +123,14 @@ pin_project! {
     /// This future is single-use. Polling after completion is misuse:
     /// debug builds panic, and release builds return `Poll::Pending` unless
     /// `strict-futures` is enabled, in which case they also panic.
-    pub struct AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
         policy: RetryPolicy<S, W, P>,
-        hooks: ExecutionHooks<BA, AA, BS, OX>,
+        hooks: ExecutionHooks<BA, AA, OX>,
         op: F,
         sleeper: SleepImpl,
         canceler: C,
@@ -151,24 +149,23 @@ pin_project! {
 
 pin_project! {
     /// Owned async retry builder wrapper that returns statistics.
-    pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
         C: Canceler,
     {
         #[pin]
-        inner: AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
+        inner: AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
     }
 }
 
-type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C> = AsyncRetryBuilder<
+type AsyncBuilderWithSleep<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, C> = AsyncRetryBuilder<
     S,
     W,
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     Fut,
@@ -180,156 +177,31 @@ type AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C> 
 >;
 
 #[cfg(feature = "alloc")]
-type AsyncBuilderWithBeforeHook<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
-    Hook,
-> = AsyncRetryBuilder<
-    S,
-    W,
-    P,
-    HookChain<BA, Hook>,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+type AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> =
+    AsyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
 #[cfg(feature = "alloc")]
-type AsyncBuilderWithAfterHook<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
-    Hook,
-> = AsyncRetryBuilder<
-    S,
-    W,
-    P,
-    BA,
-    HookChain<AA, Hook>,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+type AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> =
+    AsyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, OX, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
 #[cfg(feature = "alloc")]
-type AsyncBuilderWithBeforeSleepHook<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
-    Hook,
-> = AsyncRetryBuilder<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    HookChain<BS, Hook>,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
-
-#[cfg(feature = "alloc")]
-type AsyncBuilderWithOnExitHook<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    OX,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
-    Hook,
-> = AsyncRetryBuilder<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    BS,
-    HookChain<OX, Hook>,
-    F,
-    Fut,
-    SleepImpl,
-    T,
-    E,
-    SleepFut,
-    C,
->;
+type AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> =
+    AsyncRetryBuilder<S, W, P, BA, AA, HookChain<OX, Hook>, F, Fut, SleepImpl, T, E, SleepFut, C>;
 
 // Intentional: hook/type-state plumbing keeps full static guarantees and
 // zero-cost generics, which naturally yields long concrete return types.
 #[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
     C: Canceler,
 {
-    fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
+    fn map_hooks<NewBA, NewAA, NewOX>(
         self,
-        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-    ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    {
+        map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
+    ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut, C> {
         let Self {
             policy,
             hooks,
@@ -369,8 +241,7 @@ where
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    {
+    ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
         let Self {
             policy,
             hooks,
@@ -410,8 +281,7 @@ where
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    {
+    ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
         let Self {
             policy,
             hooks,
@@ -451,7 +321,7 @@ where
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     {
         let Self {
             policy,
@@ -528,16 +398,15 @@ where
     #[must_use]
     pub fn with_stats(
         self,
-    ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    {
+    ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> {
         let mut inner = self;
         inner.collect_stats = true;
         AsyncRetryBuilderWithStats { inner }
     }
 }
 
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, C>
-    AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, (), C>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, C>
+    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, (), C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -549,7 +418,7 @@ where
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> AsyncBuilderWithSleep<S, W, P, BA, AA, BS, OX, F, Fut, NewSleep, T, E, C>
+    ) -> AsyncBuilderWithSleep<S, W, P, BA, AA, OX, F, Fut, NewSleep, T, E, C>
     where
         NewSleep: Sleeper,
     {
@@ -587,8 +456,8 @@ where
     }
 }
 
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -599,7 +468,7 @@ where
     pub fn cancel_on<NewC: Canceler>(
         self,
         canceler: NewC,
-    ) -> AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
+    ) -> AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
         AsyncRetryBuilder {
             policy: self.policy,
             hooks: self.hooks,
@@ -626,8 +495,8 @@ where
 // Intentional: hook chaining preserves type-state and avoids runtime
 // indirection; signatures are long but mechanically structured.
 #[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -638,23 +507,7 @@ where
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncBuilderWithBeforeHook<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
+    ) -> AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -666,55 +519,11 @@ where
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncBuilderWithAfterHook<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
+    ) -> AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
         self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-    }
-
-    /// Appends a before-sleep hook.
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncBuilderWithBeforeSleepHook<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_sleep(hook))
     }
 
     /// Appends an on-exit hook.
@@ -722,23 +531,7 @@ where
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> AsyncBuilderWithOnExitHook<
-        S,
-        W,
-        P,
-        BA,
-        AA,
-        BS,
-        OX,
-        F,
-        Fut,
-        SleepImpl,
-        T,
-        E,
-        SleepFut,
-        C,
-        Hook,
-    >
+    ) -> AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -747,15 +540,14 @@ where
 }
 
 #[allow(private_bounds)]
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
-    for AsyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+    for AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -795,15 +587,14 @@ where
 }
 
 #[allow(private_bounds)]
-impl<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
-    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
+impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> Future
+    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,

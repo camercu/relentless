@@ -443,13 +443,13 @@ fn attempt_state_has_flat_fields_and_outcome() {
         retry_state.attempt,
         &outcome,
         retry_state.elapsed,
-        retry_state.next_delay,
+        Some(retry_state.next_delay),
         retry_state.total_wait,
     );
 
     assert_eq!(state.attempt, 1);
     assert_eq!(*state.outcome, Ok(42));
-    assert_eq!(state.next_delay, Duration::ZERO);
+    assert_eq!(state.next_delay, Some(Duration::ZERO));
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn attempt_state_with_err_outcome() {
         retry_state.attempt,
         &outcome,
         retry_state.elapsed,
-        retry_state.next_delay,
+        Some(retry_state.next_delay),
         retry_state.total_wait,
     );
 

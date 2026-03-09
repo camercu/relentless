@@ -25,12 +25,13 @@ use pin_project_lite::pin_project;
 fn attempt_state_from<'a, T, E>(
     retry_state: &RetryState,
     outcome: &'a Result<T, E>,
+    next_delay: Option<Duration>,
 ) -> AttemptState<'a, T, E> {
     AttemptState::new(
         retry_state.attempt,
         outcome,
         retry_state.elapsed,
-        retry_state.next_delay,
+        next_delay,
         retry_state.total_wait,
     )
 }
@@ -73,8 +74,8 @@ fn maybe_stats(
     }
 }
 
-fn finish_cancelled<T, E, BA, AA, BS, OX>(
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+fn finish_cancelled<T, E, BA, AA, OX>(
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     last_result: Option<Result<T, E>>,
     attempts: u32,
     total_wait: Duration,
@@ -112,14 +113,15 @@ where
     )
 }
 
-fn finish_terminal_transition<BA, AA, BS, OX, T, E>(
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+fn finish_terminal_transition<BA, AA, OX, T, E>(
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     retry_state: &RetryState,
     outcome: Result<T, E>,
     collect_stats: bool,
     outcome_kind: TerminalOutcomeKind,
 ) -> AttemptTransition<T, E>
 where
+    AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
     let reason = match outcome_kind {
@@ -138,7 +140,8 @@ where
     );
 
     {
-        let attempt_state = attempt_state_from(retry_state, &outcome);
+        let attempt_state = attempt_state_from(retry_state, &outcome, None);
+        hooks.after_attempt.call(&attempt_state);
         let exit_state = exit_state_from(&attempt_state, reason);
         hooks.on_exit.call(&exit_state);
     }
@@ -183,8 +186,8 @@ fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
 
 #[cfg(feature = "alloc")]
 #[allow(clippy::too_many_arguments)]
-fn finish_cancelled_async_poll<BA, AA, BS, OX, T, E, Fut, SleepFut, CancelFut>(
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+fn finish_cancelled_async_poll<BA, AA, OX, T, E, Fut, SleepFut, CancelFut>(
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     last_result: &mut Option<Result<T, E>>,
     attempts: u32,
     total_wait: Duration,
@@ -263,8 +266,8 @@ pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, OldCancelFut, NewSleepFut, 
     }
 }
 
-pub(crate) fn fire_before_attempt<BA, AA, BS, OX>(
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+pub(crate) fn fire_before_attempt<BA, AA, OX>(
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
     total_wait: Duration,
@@ -279,11 +282,11 @@ pub(crate) fn fire_before_attempt<BA, AA, BS, OX>(
 // Intentional: this helper wires all state-machine inputs in one place to keep
 // async retry transition logic shared between policy and extension builders.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn poll_operation_future<S, W, P, BA, AA, BS, OX, Fut, T, E>(
+pub(crate) fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
     op_future: Pin<&mut Fut>,
     cx: &mut Context<'_>,
     policy: &mut RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed_tracker: &ElapsedTracker,
     total_wait: Duration,
@@ -294,7 +297,6 @@ where
     W: Wait,
     P: Predicate<T, E>,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     Fut: Future<Output = Result<T, E>>,
 {
@@ -323,9 +325,9 @@ where
     }
 }
 
-pub(super) fn process_attempt_transition<S, W, P, BA, AA, BS, OX, T, E>(
+pub(super) fn process_attempt_transition<S, W, P, BA, AA, OX, T, E>(
     policy: &mut RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
     mut retry_state: RetryState,
     collect_stats: bool,
@@ -335,14 +337,9 @@ where
     W: Wait,
     P: Predicate<T, E>,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
     let should_retry = policy.predicate.should_retry(&outcome);
-    {
-        let attempt_state = attempt_state_from(&retry_state, &outcome);
-        hooks.after_attempt.call(&attempt_state);
-    }
 
     if !should_retry {
         return finish_terminal_transition(
@@ -370,8 +367,8 @@ where
     }
 
     {
-        let attempt_state = attempt_state_from(&retry_state, &outcome);
-        hooks.before_sleep.call(&attempt_state);
+        let attempt_state = attempt_state_from(&retry_state, &outcome, Some(next_delay));
+        hooks.after_attempt.call(&attempt_state);
     }
 
     AttemptTransition::Sleep {
@@ -380,9 +377,9 @@ where
     }
 }
 
-pub(super) fn transition_from_outcome<S, W, P, BA, AA, BS, OX, T, E>(
+pub(super) fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     policy: &mut RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
     attempt: u32,
     elapsed: Option<Duration>,
@@ -394,7 +391,6 @@ where
     W: Wait,
     P: Predicate<T, E>,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
     let retry_state = RetryState::new(attempt, elapsed, Duration::ZERO, total_wait);
@@ -408,7 +404,6 @@ pub(crate) fn execute_sync_loop<
     P,
     BA,
     AA,
-    BS,
     OX,
     F,
     SleepFn,
@@ -418,7 +413,7 @@ pub(crate) fn execute_sync_loop<
     const COLLECT_STATS: bool,
 >(
     policy: &mut RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &mut SleepFn,
     canceler: &C,
@@ -429,7 +424,6 @@ where
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
@@ -507,10 +501,10 @@ pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
 // Intentional: this is the shared async state-machine engine used by both
 // policy-based and extension-trait async retry futures.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn poll_async_loop<S, W, P, BA, AA, BS, OX, F, Fut, SleepImpl, T, E, SleepFut, C>(
+pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>(
     cx: &mut Context<'_>,
     policy: &mut RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, BS, OX>,
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &SleepImpl,
     canceler: &C,
@@ -529,7 +523,6 @@ where
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,

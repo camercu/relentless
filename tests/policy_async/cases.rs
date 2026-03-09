@@ -139,23 +139,8 @@ fn retry_async_executes_when_sleeper_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity)]
-    fn assert_nameable<S, W, P, BA, AA, BS, OE, F, Fut, SleepImpl, T, E, SleepFut>(
-        retry: tenacious::AsyncRetry<
-            '_,
-            S,
-            W,
-            P,
-            BA,
-            AA,
-            BS,
-            OE,
-            F,
-            Fut,
-            SleepImpl,
-            T,
-            E,
-            SleepFut,
-        >,
+    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
+        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
     ) where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -451,13 +436,11 @@ fn async_before_elapsed_uses_computed_next_delay_before_sleeping() {
 fn async_hooks_fire_in_expected_places() {
     let before_attempt_calls = Rc::new(RefCell::new(Vec::new()));
     let after_attempt_calls = Rc::new(RefCell::new(Vec::new()));
-    let before_sleep_calls = Rc::new(RefCell::new(Vec::new()));
     let exit_reason = Rc::new(Cell::new(None));
     let sleeper = RecordingSleeper::new();
 
     let before_attempt_ref = Rc::clone(&before_attempt_calls);
     let after_attempt_ref = Rc::clone(&after_attempt_calls);
-    let before_sleep_ref = Rc::clone(&before_sleep_calls);
     let exit_reason_ref = Rc::clone(&exit_reason);
 
     let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
@@ -471,9 +454,6 @@ fn async_hooks_fire_in_expected_places() {
             .after_attempt(move |state: &tenacious::AttemptState<'_, i32, &str>| {
                 after_attempt_ref.borrow_mut().push(state.attempt);
             })
-            .before_sleep(move |state: &tenacious::AttemptState<'_, i32, &str>| {
-                before_sleep_ref.borrow_mut().push(state.attempt);
-            })
             .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.reason));
             })
@@ -482,11 +462,9 @@ fn async_hooks_fire_in_expected_places() {
 
     let before_attempt = before_attempt_calls.borrow();
     let after_attempt = after_attempt_calls.borrow();
-    let before_sleep = before_sleep_calls.borrow();
 
     assert_eq!(*before_attempt, vec![1, 2, 3]);
     assert_eq!(*after_attempt, vec![1, 2, 3]);
-    assert_eq!(*before_sleep, vec![1, 2]);
     assert_eq!(
         exit_reason.get(),
         Some(tenacious::StopReason::StopCondition)

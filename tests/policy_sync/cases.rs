@@ -6,7 +6,7 @@
 //! - SyncRetry via .retry(op).call() (5.5, 5.6)
 //! - RetryPolicy is Clone when constituents are Clone (5.7)
 //! - Reset on each .retry() invocation (5.8)
-//! - Hook callbacks: before_attempt, after_attempt, before_sleep, on_exit (5.9, 12.4)
+//! - Hook callbacks: before_attempt, after_attempt, on_exit (5.9, 12.4)
 //! - Sleep function requirement (5.10)
 
 use core::cell::Cell;
@@ -256,7 +256,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let retry = policy
         .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep);
-    let typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    let typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
@@ -566,23 +566,32 @@ fn after_attempt_hook_fires_after_each_attempt() {
 }
 
 #[test]
-fn before_sleep_hook_fires_before_each_sleep() {
-    let hook_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
+    let hook_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
     let mut policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
         .retry(|| Err::<i32, _>("fail"))
-        .before_sleep(|state: &tenacious::AttemptState<i32, &str>| {
-            hook_calls.borrow_mut().push(state.attempt);
+        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+            hook_calls
+                .borrow_mut()
+                .push((state.attempt, state.next_delay));
         })
         .sleep(instant_sleep)
         .call();
 
     let calls = hook_calls.borrow();
-    // 3 attempts = 2 sleeps = 2 before_sleep calls.
-    assert_eq!(*calls, vec![1, 2]);
+    // Attempts 1,2 retry (Some), attempt 3 terminal (None).
+    assert_eq!(
+        *calls,
+        vec![
+            (1, Some(WAIT_DURATION)),
+            (2, Some(WAIT_DURATION)),
+            (3, None),
+        ]
+    );
 }
 
 #[test]

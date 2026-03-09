@@ -41,7 +41,6 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
         (),
         (),
         (),
-        (),
         Self,
         NoSyncSleep,
         T,
@@ -60,7 +59,6 @@ where
         stop::StopAfterAttempts,
         wait::WaitExponential,
         on::AnyError,
-        (),
         (),
         (),
         (),
@@ -94,9 +92,9 @@ where
 fn _sync_retry_builder_requires_sleep_in_no_std() {}
 
 /// Owned sync retry builder created from [`RetryExt::retry`].
-pub struct SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
+pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
     policy: RetryPolicy<S, W, P>,
-    hooks: ExecutionHooks<BA, AA, BS, OX>,
+    hooks: ExecutionHooks<BA, AA, OX>,
     op: F,
     sleeper: SleepFn,
     canceler: C,
@@ -104,33 +102,29 @@ pub struct SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = Never
 }
 
 /// Owned sync retry builder wrapper that returns statistics.
-pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C = NeverCancel> {
-    inner: SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>,
+pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
+    inner: SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>,
 }
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
-    SyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, BS, OX, F, SleepFn, T, E, C>;
+type SyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
-    SyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, BS, OX, F, SleepFn, T, E, C>;
+type SyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, OX, F, SleepFn, T, E, C>;
 
 #[cfg(feature = "alloc")]
-type SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
-    SyncRetryBuilder<S, W, P, BA, AA, HookChain<BS, Hook>, OX, F, SleepFn, T, E, C>;
+type SyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook> =
+    SyncRetryBuilder<S, W, P, BA, AA, HookChain<OX, Hook>, F, SleepFn, T, E, C>;
 
-#[cfg(feature = "alloc")]
-type SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook> =
-    SyncRetryBuilder<S, W, P, BA, AA, BS, HookChain<OX, Hook>, F, SleepFn, T, E, C>;
-
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
 {
-    fn map_hooks<NewBA, NewAA, NewBS, NewOX>(
+    fn map_hooks<NewBA, NewAA, NewOX>(
         self,
-        map: impl FnOnce(ExecutionHooks<BA, AA, BS, OX>) -> ExecutionHooks<NewBA, NewAA, NewBS, NewOX>,
-    ) -> SyncRetryBuilder<S, W, P, NewBA, NewAA, NewBS, NewOX, F, SleepFn, T, E, C> {
+        map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
+    ) -> SyncRetryBuilder<S, W, P, NewBA, NewAA, NewOX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
@@ -154,7 +148,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> SyncRetryBuilder<NewStop, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
+    ) -> SyncRetryBuilder<NewStop, W, P, BA, AA, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
@@ -178,7 +172,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> SyncRetryBuilder<S, NewWait, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
+    ) -> SyncRetryBuilder<S, NewWait, P, BA, AA, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
@@ -202,7 +196,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> SyncRetryBuilder<S, W, NewPredicate, BA, AA, BS, OX, F, SleepFn, T, E, C> {
+    ) -> SyncRetryBuilder<S, W, NewPredicate, BA, AA, OX, F, SleepFn, T, E, C> {
         let Self {
             policy,
             hooks,
@@ -247,7 +241,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn sleep<NewSleep>(
         self,
         sleeper: NewSleep,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, NewSleep, T, E, C> {
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, OX, F, NewSleep, T, E, C> {
         let Self {
             policy,
             hooks,
@@ -270,15 +264,15 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 // Intentional: hook chaining preserves type-state and avoids runtime
 // indirection; signatures are long but mechanically structured.
 #[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
 {
     /// Appends a before-attempt hook.
     #[must_use]
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithBeforeHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
+    ) -> SyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -290,23 +284,11 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithAfterHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
+    ) -> SyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
         self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-    }
-
-    /// Appends a before-sleep hook.
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncBuilderWithBeforeSleepHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.chain_before_sleep(hook))
     }
 
     /// Appends an on-exit hook.
@@ -314,7 +296,7 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncBuilderWithOnExitHook<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, Hook>
+    ) -> SyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, Hook>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -323,8 +305,8 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, (), AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, (), AA, OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole before-attempt hook (no-alloc mode).
     ///
@@ -341,7 +323,7 @@ impl<S, W, P, AA, BS, OX, F, SleepFn, T, E, C>
     pub fn before_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, Hook, AA, BS, OX, F, SleepFn, T, E, C>
+    ) -> SyncRetryBuilder<S, W, P, Hook, AA, OX, F, SleepFn, T, E, C>
     where
         Hook: FnMut(&BeforeAttemptState),
     {
@@ -350,8 +332,8 @@ impl<S, W, P, AA, BS, OX, F, SleepFn, T, E, C>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, (), BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, (), OX, F, SleepFn, T, E, C>
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
     ///
@@ -368,7 +350,7 @@ impl<S, W, P, BA, BS, OX, F, SleepFn, T, E, C>
     pub fn after_attempt<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, Hook, BS, OX, F, SleepFn, T, E, C>
+    ) -> SyncRetryBuilder<S, W, P, BA, Hook, OX, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
     {
@@ -377,35 +359,8 @@ impl<S, W, P, BA, BS, OX, F, SleepFn, T, E, C>
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, AA, (), OX, F, SleepFn, T, E, C>
-{
-    /// Sets the sole before-sleep hook (no-alloc mode).
-    ///
-    /// ```compile_fail
-    /// use tenacious::{RetryExt, stop};
-    ///
-    /// let _ = (|| Err::<(), _>("fail"))
-    ///     .retry()
-    ///     .stop(stop::attempts(1))
-    ///     .before_sleep(|_state| {})
-    ///     .before_sleep(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn before_sleep<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, Hook, OX, F, SleepFn, T, E, C>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_before_sleep(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, BS, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, (), F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, (), F, SleepFn, T, E, C>
 {
     /// Sets the sole on-exit hook (no-alloc mode).
     ///
@@ -422,7 +377,7 @@ impl<S, W, P, BA, AA, BS, F, SleepFn, T, E, C>
     pub fn on_exit<Hook>(
         self,
         hook: Hook,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, Hook, F, SleepFn, T, E, C>
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, Hook, F, SleepFn, T, E, C>
     where
         Hook: for<'a> FnMut(&ExitState<'a, T, E>),
     {
@@ -430,15 +385,15 @@ impl<S, W, P, BA, AA, BS, F, SleepFn, T, E, C>
     }
 }
 
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NeverCancel>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
+    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, NeverCancel>
 {
     /// Attaches a canceler that is checked before each attempt and after each sleep.
     #[must_use]
     pub fn cancel_on<NewC: Canceler>(
         self,
         canceler: NewC,
-    ) -> SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, NewC> {
+    ) -> SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, NewC> {
         SyncRetryBuilder {
             policy: self.policy,
             hooks: self.hooks,
@@ -451,15 +406,14 @@ impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E>
 }
 
 #[allow(private_bounds)]
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilder<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,
@@ -472,9 +426,7 @@ where
 
     /// Executes the sync retry loop and returns aggregate statistics.
     #[must_use]
-    pub fn with_stats(
-        self,
-    ) -> SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C> {
+    pub fn with_stats(self) -> SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> {
         SyncRetryBuilderWithStats { inner: self }
     }
 
@@ -483,7 +435,7 @@ where
     ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
         self.policy.stop.reset();
         self.policy.wait.reset();
-        execute_sync_loop::<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C, COLLECT_STATS>(
+        execute_sync_loop::<S, W, P, BA, AA, OX, F, SleepFn, T, E, C, COLLECT_STATS>(
             &mut self.policy,
             &mut self.hooks,
             &mut self.op,
@@ -494,15 +446,14 @@ where
 }
 
 #[allow(private_bounds)]
-impl<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
-    SyncRetryBuilderWithStats<S, W, P, BA, AA, BS, OX, F, SleepFn, T, E, C>
+impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
+    SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
 where
     S: Stop,
     W: Wait,
     P: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
-    BS: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: FnMut() -> Result<T, E>,
     SleepFn: SyncSleep,

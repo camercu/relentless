@@ -63,12 +63,13 @@ impl RetryState {
     }
 }
 
-/// Read-only context passed to [`Predicate::should_retry`](crate::Predicate::should_retry)
-/// and the `after_attempt` and `before_sleep` hooks.
+/// Read-only context passed to the `after_attempt` hook.
 ///
 /// This contains the attempt outcome plus timing/counting fields for the
-/// completed attempt, mirroring the execution context needed by predicates and
-/// hooks.
+/// completed attempt. The `next_delay` field tells whether a retry will
+/// happen: `Some(delay)` means the engine will sleep for `delay` before
+/// the next attempt, while `None` means this was a terminal attempt
+/// (predicate accepted, stop condition fired, or first-attempt success).
 ///
 /// This struct is constructed internally by the execution engine and passed by
 /// shared reference. For tests and custom integrations, use
@@ -99,8 +100,11 @@ pub struct AttemptState<'a, T, E> {
     pub elapsed: Option<Duration>,
 
     /// The delay that will be applied before the next attempt.
-    /// Populated after `Wait::next_wait` runs; zero in earlier hook points.
-    pub next_delay: Duration,
+    ///
+    /// `Some(delay)` when a retry will happen (the engine will sleep for
+    /// `delay`). `None` when this is a terminal attempt — predicate
+    /// accepted, stop condition fired, or first-attempt success.
+    pub next_delay: Option<Duration>,
 
     /// Cumulative time spent sleeping across all previous attempts.
     pub total_wait: Duration,
@@ -113,7 +117,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
         attempt: u32,
         outcome: &'a Result<T, E>,
         elapsed: Option<Duration>,
-        next_delay: Duration,
+        next_delay: Option<Duration>,
         total_wait: Duration,
     ) -> Self {
         Self {

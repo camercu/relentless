@@ -157,7 +157,7 @@ fn retry_policy_serialization_omits_hooks() {
     assert!(!object.contains_key("elapsed_clock"));
     assert!(!object.contains_key("before_attempt"));
     assert!(!object.contains_key("after_attempt"));
-    assert!(!object.contains_key("before_sleep"));
+    // before_sleep hook was merged into after_attempt (next_delay is now Option<Duration>).
     assert!(!object.contains_key("on_exit"));
 }
 
