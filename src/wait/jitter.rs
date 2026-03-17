@@ -39,7 +39,7 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 ///
 /// let mut strategy = wait::fixed(Duration::from_millis(50))
 ///     .jitter(Duration::from_millis(10));
-/// let state = RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
+/// let state = RetryState::new(1, None);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));

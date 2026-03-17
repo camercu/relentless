@@ -21,7 +21,7 @@
 //!     .cap(Duration::from_millis(15))
 //!     .chain(wait::fixed(Duration::from_millis(50)), 2);
 //!
-//! let state = RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
+//! let state = RetryState::new(3, None);
 //! assert_eq!(strategy.next_wait(&state), Duration::from_millis(50));
 //! ```
 //!
@@ -73,31 +73,32 @@ pub use error::{RetryError, RetryResult};
 #[cfg(feature = "alloc")]
 pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
-pub use policy::{AsyncRetry, AsyncRetryWithStats};
-pub use policy::{
-    AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
-    DefaultAsyncRetryBuilderWithStats, PolicyAsyncRetryBuilder, PolicyAsyncRetryBuilderWithStats,
-};
-pub use policy::{
-    DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats, PolicySyncRetryBuilder,
-    PolicySyncRetryBuilderWithStats, RetryExt, SyncRetry, SyncRetryBuilder,
-    SyncRetryBuilderWithStats, SyncRetryWithStats,
-};
-#[cfg(feature = "alloc")]
-pub use policy::{
-    EasyAsyncRetryBuilder, EasyAsyncRetryBuilderWithStats, EasyAsyncRetryRunner,
-    EasyAsyncRetryRunnerWithStats,
-};
-#[cfg(all(feature = "alloc", feature = "std"))]
-pub use policy::{EasySyncRetryBuilder, EasySyncRetryBuilderWithStats};
+pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
+pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use predicate::{Predicate, PredicateExt};
 pub use sleep::Sleeper;
-pub use state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
+pub use state::{AttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
-pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopConfigError, StopExt};
+pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopExt};
 #[cfg(feature = "jitter")]
 pub use wait::WaitJitter;
 pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
+
+/// Advanced builder types and aliases.
+///
+/// This module contains the full type-state builder matrix (default/policy
+/// aliases and with-stats variants.
+/// Keep imports explicit when you need these names in signatures:
+/// `use tenacious::builders::DefaultSyncRetryBuilder`.
+pub mod builders {
+    pub use crate::policy::{
+        AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
+        DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder,
+        DefaultSyncRetryBuilderWithStats, PolicyAsyncRetryBuilder,
+        PolicyAsyncRetryBuilderWithStats, PolicySyncRetryBuilder, PolicySyncRetryBuilderWithStats,
+        SyncRetryBuilder, SyncRetryBuilderWithStats,
+    };
+}
 
 /// Common traits and constructors for ergonomic imports.
 ///
@@ -124,13 +125,13 @@ pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
 ///     .when(any_error());
 ///
 /// let result = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
-/// assert!(matches!(result, Err(RetryError::Exhausted { attempts: 3, .. })));
+/// assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 /// ```
 pub mod prelude {
     pub use crate::AsyncRetryExt;
     pub use crate::on::{any_error, error, ok, result};
     pub use crate::sleep::Sleeper;
-    pub use crate::stop::{attempts, before_elapsed, elapsed, never};
+    pub use crate::stop::{attempts, elapsed, never};
     pub use crate::wait::{exponential, fixed, linear};
     pub use crate::{
         Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryResult,

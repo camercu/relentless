@@ -1,21 +1,21 @@
-use crate::state::{AttemptState, BeforeAttemptState, ExitState};
+use crate::state::{AttemptState, ExitState, RetryState};
 
 /// Hook callback shape for the `before_attempt` hook.
 #[doc(hidden)]
 pub(crate) trait BeforeAttemptHook {
     /// Invokes the hook.
-    fn call(&mut self, state: &BeforeAttemptState);
+    fn call(&mut self, state: &RetryState);
 }
 
 impl BeforeAttemptHook for () {
-    fn call(&mut self, _state: &BeforeAttemptState) {}
+    fn call(&mut self, _state: &RetryState) {}
 }
 
 impl<F> BeforeAttemptHook for F
 where
-    F: FnMut(&BeforeAttemptState),
+    F: FnMut(&RetryState),
 {
-    fn call(&mut self, state: &BeforeAttemptState) {
+    fn call(&mut self, state: &RetryState) {
         (self)(state);
     }
 }
@@ -82,7 +82,7 @@ where
     First: BeforeAttemptHook,
     Second: BeforeAttemptHook,
 {
-    fn call(&mut self, state: &BeforeAttemptState) {
+    fn call(&mut self, state: &RetryState) {
         self.first.call(state);
         self.second.call(state);
     }

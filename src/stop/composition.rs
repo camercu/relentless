@@ -1,5 +1,5 @@
 use super::Stop;
-use super::strategies::{StopAfterAttempts, StopAfterElapsed, StopBeforeElapsed, StopNever};
+use super::strategies::{StopAfterAttempts, StopAfterElapsed, StopNever};
 use crate::state::RetryState;
 use core::ops::{BitAnd, BitOr};
 
@@ -165,9 +165,4 @@ macro_rules! impl_stop_ops {
     };
 }
 
-impl_stop_ops!(
-    StopAfterAttempts,
-    StopAfterElapsed,
-    StopBeforeElapsed,
-    StopNever
-);
+impl_stop_ops!(StopAfterAttempts, StopAfterElapsed, StopNever);

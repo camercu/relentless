@@ -19,7 +19,7 @@ use super::math::{
 /// use core::time::Duration;
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100));
-/// # let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +53,7 @@ impl Wait for WaitFixed {
 /// use core::time::Duration;
 ///
 /// let mut w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
-/// # let state = tenacious::RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(3, None);
 /// // 100ms + (3-1)*50ms = 200ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
@@ -97,7 +97,7 @@ impl Wait for WaitLinear {
 /// use core::time::Duration;
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100));
-/// # let state = tenacious::RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(3, None);
 /// // 100ms * 2^2 = 400ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```
@@ -202,8 +202,8 @@ mod serde_validation_tests {
     fn deserialize_exponential_base_clamps_subunit_values() {
         let mut strategy =
             exponential(ARBITRARY_INITIAL_WAIT).base(deserialize_exponential_base(SUBUNIT_BASE));
-        let first = strategy.next_wait(&RetryState::new(1, None, Duration::ZERO, Duration::ZERO));
-        let second = strategy.next_wait(&RetryState::new(2, None, Duration::ZERO, Duration::ZERO));
+        let first = strategy.next_wait(&RetryState::new(1, None));
+        let second = strategy.next_wait(&RetryState::new(2, None));
         assert_eq!(first, second);
     }
 }

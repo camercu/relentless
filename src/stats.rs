@@ -1,6 +1,7 @@
 //! Retry execution statistics.
 
 use crate::compat::Duration;
+use core::fmt;
 
 /// Why a retry loop terminated.
 ///
@@ -9,29 +10,36 @@ use crate::compat::Duration;
 /// ```
 /// use tenacious::{RetryPolicy, StopReason, stop};
 ///
-/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let (_result, stats) = policy
-///     .retry(|| Err::<(), _>("fail"))
+///     .retry(|_| Err::<(), _>("fail"))
 ///     .sleep(|_dur| {})
 ///     .with_stats()
 ///     .call();
 ///
-/// assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+/// assert_eq!(stats.stop_reason, StopReason::Exhausted);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StopReason {
-    /// The retry loop terminated with an accepted `Ok` outcome.
-    ///
-    /// This includes acceptance under custom predicates such as `on::ok(...)`
-    /// or `on::result(...)`, not only the default predicate.
-    Success,
-    /// A stop strategy fired and terminated retries.
-    StopStrategyTriggered,
-    /// The loop terminated because the latest `Err` outcome was non-retryable.
-    NonRetryableError,
+    /// The predicate accepted the outcome (did not request retry).
+    /// Covers both predicate-accepted `Ok` (returned as `Ok(T)`) and
+    /// predicate-accepted `Err` (returned as `RetryError::Rejected`).
+    Accepted,
+    /// The stop strategy fired while the predicate still wanted to retry.
+    Exhausted,
     /// An external cancellation signal interrupted the retry loop.
     Cancelled,
+}
+
+impl fmt::Display for StopReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StopReason::Accepted => f.write_str("accepted"),
+            StopReason::Exhausted => f.write_str("retries exhausted"),
+            StopReason::Cancelled => f.write_str("cancelled"),
+        }
+    }
 }
 
 /// Aggregate statistics for a completed retry execution.
@@ -42,11 +50,11 @@ pub enum StopReason {
 /// use tenacious::{RetryPolicy, RetryStats, stop, wait};
 /// use core::time::Duration;
 ///
-/// let mut policy = RetryPolicy::new()
+/// let policy = RetryPolicy::new()
 ///     .stop(stop::attempts(3))
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 /// let (_result, stats): (Result<(), _>, RetryStats) = policy
-///     .retry(|| Err::<(), _>("fail"))
+///     .retry(|_| Err::<(), _>("fail"))
 ///     .sleep(|_dur| {})
 ///     .with_stats()
 ///     .call();

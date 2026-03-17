@@ -16,7 +16,7 @@ use crate::policy::{
 };
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
-use crate::state::{AttemptState, BeforeAttemptState, ExitState};
+use crate::state::{AttemptState, ExitState, RetryState};
 use crate::stats::RetryStats;
 use crate::stop::Stop;
 use crate::wait::Wait;
@@ -178,7 +178,7 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         completed_type_name: &'static str,
-    ) -> Poll<Result<T, RetryError<E, T>>>
+    ) -> Poll<Result<T, RetryError<T, E>>>
     where
         Policy: PolicyHandle<S, W, P>,
         S: Stop,
@@ -625,7 +625,7 @@ where
         hook: Hook,
     ) -> AsyncRetry<'policy, S, W, P, Hook, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     where
-        Hook: FnMut(&BeforeAttemptState),
+        Hook: FnMut(&RetryState),
     {
         self.map_hooks(|hooks| hooks.set_before_attempt(hook))
     }
@@ -709,7 +709,7 @@ where
     SleepFut: Future<Output = ()> + 'policy,
     C: Canceler,
 {
-    type Output = Result<T, RetryError<E, T>>;
+    type Output = Result<T, RetryError<T, E>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.project().inner.poll::<S, W, P>(cx, "AsyncRetry")
@@ -732,7 +732,7 @@ where
     SleepFut: Future<Output = ()> + 'policy,
     C: Canceler,
 {
-    type Output = (Result<T, RetryError<E, T>>, RetryStats);
+    type Output = (Result<T, RetryError<T, E>>, RetryStats);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();

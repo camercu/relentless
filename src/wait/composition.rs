@@ -21,7 +21,7 @@ use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
 ///     .cap(Duration::from_millis(500));
-/// # let state = tenacious::RetryState::new(10, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(10, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +55,7 @@ impl<W: Wait> Wait for WaitCapped<W> {
 ///
 /// let mut w = wait::fixed(Duration::from_millis(100))
 ///     + wait::fixed(Duration::from_millis(50));
-/// # let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,7 +107,7 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 ///
 /// let mut w = wait::exponential(Duration::from_millis(100))
 ///     .chain(wait::fixed(Duration::from_secs(5)), 3);
-/// # let state = tenacious::RetryState::new(4, None, Duration::ZERO, Duration::ZERO);
+/// # let state = tenacious::RetryState::new(4, None);
 /// // Attempt 4 > 3, so uses the fixed fallback.
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```

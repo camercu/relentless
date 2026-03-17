@@ -15,11 +15,6 @@
 //!   [`RetryPolicy::default()`] and own the policy immediately. Use those for
 //!   one-off operations where you want to configure retries inline from the
 //!   operation itself.
-//! - [`crate::RetryExt::retry_easy`] and
-//!   [`crate::AsyncRetryExt::retry_async_easy`] provide `alloc`-backed
-//!   convenience builders with erased internal strategy types. Use those when
-//!   smaller public types and simpler type annotations matter more than
-//!   keeping every strategy and hook fully generic.
 //!
 //! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
 //! keeps the reusable policy focused on stop, wait, predicate, and clock
@@ -394,7 +389,7 @@ macro_rules! impl_alloc_hook_chain {
                 hook: Hook,
             ) -> $($ba)*
             where
-                Hook: FnMut(&BeforeAttemptState),
+                Hook: FnMut(&RetryState),
             {
                 self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
             }
@@ -440,10 +435,3 @@ pub use ext::{
     PolicyAsyncRetryBuilder, PolicyAsyncRetryBuilderWithStats, PolicySyncRetryBuilder,
     PolicySyncRetryBuilderWithStats, RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats,
 };
-#[cfg(feature = "alloc")]
-pub use ext::{
-    EasyAsyncRetryBuilder, EasyAsyncRetryBuilderWithStats, EasyAsyncRetryRunner,
-    EasyAsyncRetryRunnerWithStats,
-};
-#[cfg(all(feature = "alloc", feature = "std"))]
-pub use ext::{EasySyncRetryBuilder, EasySyncRetryBuilderWithStats};

@@ -155,7 +155,7 @@ pub struct OkPredicate<F> {
 ///
 /// If the stop strategy fires while `ok(...)` is still asking for another
 /// attempt, execution terminates with
-/// [`RetryError::ConditionNotMet`](crate::RetryError::ConditionNotMet).
+/// [`RetryError::Exhausted`](crate::RetryError::Exhausted).
 ///
 /// For polling flows:
 /// - use `ok(|value| !is_ready(value))` when any `Err` should stop immediately

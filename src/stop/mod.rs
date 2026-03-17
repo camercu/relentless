@@ -13,8 +13,7 @@ mod strategies;
 
 pub use composition::{StopAll, StopAny};
 pub use strategies::{
-    NeedsStop, StopAfterAttempts, StopAfterElapsed, StopBeforeElapsed, StopConfigError, StopNever,
-    attempts, attempts_checked, before_elapsed, elapsed, never,
+    NeedsStop, StopAfterAttempts, StopAfterElapsed, StopNever, attempts, elapsed, never,
 };
 
 /// Determines when the retry loop should stop.

@@ -81,7 +81,7 @@ pub trait Wait {
 /// .cap(Duration::from_millis(25))
 /// .chain(wait::fixed(Duration::from_millis(30)), 2);
 ///
-/// let state = RetryState::new(3, None, Duration::ZERO, Duration::ZERO);
+/// let state = RetryState::new(3, None);
 /// assert_eq!(strategy.next_wait(&state), Duration::from_millis(30));
 /// ```
 pub trait WaitExt: Wait + Sized {

@@ -11,7 +11,7 @@ use crate::policy::{
     AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, PolicyHandle, RetryPolicy,
 };
 use crate::predicate::Predicate;
-use crate::state::{AttemptState, BeforeAttemptState, ExitState};
+use crate::state::{AttemptState, ExitState, RetryState};
 use crate::stats::RetryStats;
 use crate::stop::Stop;
 use crate::wait::Wait;
@@ -176,7 +176,7 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E, C>
 
     pub(crate) fn execute<S, W, P, const COLLECT_STATS: bool>(
         mut self,
-    ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>)
+    ) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
     where
         Policy: PolicyHandle<S, W, P>,
         S: Stop,
@@ -353,7 +353,7 @@ where
     C: Canceler,
 {
     /// Executes the retry loop synchronously.
-    pub fn call(self) -> Result<T, RetryError<E, T>> {
+    pub fn call(self) -> Result<T, RetryError<T, E>> {
         self.execute::<false>().0
     }
 
@@ -367,7 +367,7 @@ where
 
     fn execute<const COLLECT_STATS: bool>(
         self,
-    ) -> (Result<T, RetryError<E, T>>, Option<RetryStats>) {
+    ) -> (Result<T, RetryError<T, E>>, Option<RetryStats>) {
         self.inner.execute::<S, W, P, COLLECT_STATS>()
     }
 }
@@ -387,7 +387,7 @@ where
     C: Canceler,
 {
     /// Executes the retry loop synchronously and returns `(result, stats)`.
-    pub fn call(self) -> (Result<T, RetryError<E, T>>, RetryStats) {
+    pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats) {
         let (result, stats) = self.inner.execute::<true>();
         (result, stats.expect("sync retry completed without stats"))
     }
@@ -422,7 +422,7 @@ impl<'policy, S, W, P, AA, OX, F, SleepFn, T, E, C>
         hook: Hook,
     ) -> SyncRetry<'policy, S, W, P, Hook, AA, OX, F, SleepFn, T, E, C>
     where
-        Hook: FnMut(&BeforeAttemptState),
+        Hook: FnMut(&RetryState),
     {
         self.map_hooks(|hooks| hooks.set_before_attempt(hook))
     }

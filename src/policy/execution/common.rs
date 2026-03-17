@@ -6,7 +6,7 @@ use crate::policy::time::ElapsedTracker;
 use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
-use crate::state::{AttemptState, BeforeAttemptState, ExitState, RetryState};
+use crate::state::{AttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
 use crate::stop::Stop;
 use crate::wait::Wait;
@@ -23,23 +23,21 @@ fn attempt_state_from<'a, T, E>(
 ) -> AttemptState<'a, T, E> {
     AttemptState::new(
         retry_state.attempt,
-        outcome,
         retry_state.elapsed,
+        outcome,
         next_delay,
-        retry_state.total_wait,
     )
 }
 
 fn exit_state_from<'a, T, E>(
     attempt_state: &AttemptState<'a, T, E>,
-    reason: StopReason,
+    stop_reason: StopReason,
 ) -> ExitState<'a, T, E> {
     ExitState::new(
         attempt_state.attempt,
-        Some(attempt_state.outcome),
         attempt_state.elapsed,
-        attempt_state.total_wait,
-        reason,
+        Some(attempt_state.outcome),
+        stop_reason,
     )
 }
 
@@ -75,7 +73,7 @@ fn finish_cancelled<T, E, BA, AA, OX>(
     total_wait: Duration,
     collect_stats: bool,
     elapsed_tracker: &ElapsedTracker,
-) -> (Result<T, RetryError<E, T>>, Option<RetryStats>)
+) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
 where
     OX: ExitHook<T, E>,
 {
@@ -90,27 +88,20 @@ where
 
     let exit_state = ExitState::new(
         attempts,
-        last_result.as_ref(),
         elapsed,
-        total_wait,
+        last_result.as_ref(),
         StopReason::Cancelled,
     );
     hooks.on_exit.call(&exit_state);
 
-    (
-        Err(RetryError::Cancelled {
-            last: last_result,
-            attempts,
-            total_elapsed: elapsed,
-        }),
-        stats,
-    )
+    (Err(RetryError::Cancelled { last: last_result }), stats)
 }
 
 fn finish_terminal_transition<BA, AA, OX, T, E>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     retry_state: &RetryState,
     outcome: Result<T, E>,
+    total_wait: Duration,
     collect_stats: bool,
     outcome_kind: TerminalOutcomeKind,
 ) -> AttemptTransition<T, E>
@@ -119,15 +110,15 @@ where
     OX: ExitHook<T, E>,
 {
     let reason = match outcome_kind {
-        TerminalOutcomeKind::AcceptedOutcome => stop_reason_for_accepted_outcome(&outcome),
-        TerminalOutcomeKind::StopStrategyTriggered => StopReason::StopStrategyTriggered,
+        TerminalOutcomeKind::AcceptedOutcome => StopReason::Accepted,
+        TerminalOutcomeKind::StopStrategyTriggered => StopReason::Exhausted,
     };
 
     let stats = maybe_stats(
         collect_stats,
         retry_state.attempt,
         retry_state.elapsed,
-        retry_state.total_wait,
+        total_wait,
         reason,
     );
 
@@ -141,24 +132,9 @@ where
     let result = match outcome_kind {
         TerminalOutcomeKind::AcceptedOutcome => match outcome {
             Ok(value) => Ok(value),
-            Err(error) => Err(RetryError::NonRetryableError {
-                last: Err(error),
-                attempts: retry_state.attempt,
-                total_elapsed: retry_state.elapsed,
-            }),
+            Err(error) => Err(RetryError::Rejected { last: error }),
         },
-        TerminalOutcomeKind::StopStrategyTriggered => match outcome {
-            Err(error) => Err(RetryError::Exhausted {
-                last: Err(error),
-                attempts: retry_state.attempt,
-                total_elapsed: retry_state.elapsed,
-            }),
-            Ok(last) => Err(RetryError::ConditionNotMet {
-                last: Ok(last),
-                attempts: retry_state.attempt,
-                total_elapsed: retry_state.elapsed,
-            }),
-        },
+        TerminalOutcomeKind::StopStrategyTriggered => Err(RetryError::Exhausted { last: outcome }),
     };
 
     AttemptTransition::Finished { result, stats }
@@ -167,9 +143,9 @@ where
 fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
     mut phase: Pin<&mut AsyncPhase<Fut, SleepFut, CancelFut>>,
     final_stats: &mut Option<RetryStats>,
-    result: Result<T, RetryError<E, T>>,
+    result: Result<T, RetryError<T, E>>,
     stats: Option<RetryStats>,
-) -> Poll<Result<T, RetryError<E, T>>> {
+) -> Poll<Result<T, RetryError<T, E>>> {
     *final_stats = stats;
     phase.set(AsyncPhase::Finished);
     Poll::Ready(result)
@@ -185,7 +161,7 @@ fn finish_cancelled_async_poll<BA, AA, OX, T, E, Fut, SleepFut, CancelFut>(
     elapsed_tracker: &ElapsedTracker,
     phase: Pin<&mut AsyncPhase<Fut, SleepFut, CancelFut>>,
     final_stats: &mut Option<RetryStats>,
-) -> Poll<Result<T, RetryError<E, T>>>
+) -> Poll<Result<T, RetryError<T, E>>>
 where
     OX: ExitHook<T, E>,
 {
@@ -202,7 +178,7 @@ where
 
 pub(super) enum AttemptTransition<T, E> {
     Finished {
-        result: Result<T, RetryError<E, T>>,
+        result: Result<T, RetryError<T, E>>,
         stats: Option<RetryStats>,
     },
     Sleep {
@@ -232,7 +208,7 @@ pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
 pub(crate) enum AsyncOperationPoll<T, E> {
     Pending,
     Finished {
-        result: Result<T, RetryError<E, T>>,
+        result: Result<T, RetryError<T, E>>,
         stats: Option<RetryStats>,
     },
     Sleep {
@@ -257,11 +233,10 @@ pub(crate) fn fire_before_attempt<BA, AA, OX>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
-    total_wait: Duration,
 ) where
     BA: BeforeAttemptHook,
 {
-    let before_state = BeforeAttemptState::new(attempt, elapsed, total_wait);
+    let before_state = RetryState::new(attempt, elapsed);
     hooks.before_attempt.call(&before_state);
 }
 
@@ -315,7 +290,8 @@ pub(super) fn process_attempt_transition<S, W, P, BA, AA, OX, T, E>(
     policy: &mut RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
-    mut retry_state: RetryState,
+    retry_state: RetryState,
+    total_wait: Duration,
     collect_stats: bool,
 ) -> AttemptTransition<T, E>
 where
@@ -332,19 +308,20 @@ where
             hooks,
             &retry_state,
             outcome,
+            total_wait,
             collect_stats,
             TerminalOutcomeKind::AcceptedOutcome,
         );
     }
 
     let next_delay = policy.wait.next_wait(&retry_state);
-    retry_state.next_delay = next_delay;
 
     if policy.stop.should_stop(&retry_state) {
         return finish_terminal_transition(
             hooks,
             &retry_state,
             outcome,
+            total_wait,
             collect_stats,
             TerminalOutcomeKind::StopStrategyTriggered,
         );
@@ -377,9 +354,16 @@ where
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
-    let retry_state = RetryState::new(attempt, elapsed, Duration::ZERO, total_wait);
+    let retry_state = RetryState::new(attempt, elapsed);
 
-    process_attempt_transition(policy, hooks, outcome, retry_state, collect_stats)
+    process_attempt_transition(
+        policy,
+        hooks,
+        outcome,
+        retry_state,
+        total_wait,
+        collect_stats,
+    )
 }
 
 pub(crate) fn execute_sync_loop<
@@ -401,7 +385,7 @@ pub(crate) fn execute_sync_loop<
     op: &mut F,
     sleeper: &mut SleepFn,
     canceler: &C,
-) -> (Result<T, RetryError<E, T>>, Option<RetryStats>)
+) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
 where
     S: Stop,
     W: Wait,
@@ -431,7 +415,7 @@ where
             );
         }
 
-        fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), total_wait);
+        fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
 
         let outcome = (op)();
         match transition_from_outcome(
@@ -491,7 +475,7 @@ pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, Slee
     final_stats: &mut Option<RetryStats>,
     elapsed_tracker: &ElapsedTracker,
     completed_type_name: &'static str,
-) -> Poll<Result<T, RetryError<E, T>>>
+) -> Poll<Result<T, RetryError<T, E>>>
 where
     S: Stop,
     W: Wait,
@@ -528,7 +512,7 @@ where
 
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
-                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed(), *total_wait);
+                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed());
 
                 phase.set(AsyncPhase::PollingOperation { op_future: (op)() });
             }
@@ -601,13 +585,5 @@ where
                 return poll_after_completion(completed_type_name);
             }
         }
-    }
-}
-
-fn stop_reason_for_accepted_outcome<T, E>(outcome: &Result<T, E>) -> StopReason {
-    if outcome.is_ok() {
-        StopReason::Success
-    } else {
-        StopReason::NonRetryableError
     }
 }
