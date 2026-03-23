@@ -15,10 +15,10 @@ use super::math::{
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::fixed(Duration::from_millis(100));
+/// let w = wait::fixed(Duration::from_millis(100));
 /// # let state = tenacious::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
@@ -35,7 +35,7 @@ pub fn fixed(dur: Duration) -> WaitFixed {
 }
 
 impl Wait for WaitFixed {
-    fn next_wait(&mut self, _state: &RetryState) -> Duration {
+    fn next_wait(&self, _state: &RetryState) -> Duration {
         self.duration
     }
 }
@@ -49,10 +49,10 @@ impl Wait for WaitFixed {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
+/// let w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
 /// # let state = tenacious::RetryState::new(3, None);
 /// // 100ms + (3-1)*50ms = 200ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
@@ -73,7 +73,7 @@ pub fn linear(initial: Duration, increment: Duration) -> WaitLinear {
 }
 
 impl Wait for WaitLinear {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         let multiplier = state.attempt.saturating_sub(1);
         let step = saturating_duration_mul(self.increment, multiplier);
         self.initial.saturating_add(step)
@@ -87,16 +87,16 @@ impl Wait for WaitLinear {
 /// at [`Duration::MAX`].
 ///
 /// Use [`.base(f)`](WaitExponential::base) to change the multiplier and
-/// [`.cap(max)`](super::WaitExt::cap) to clamp the result.
+/// [`.cap(max)`](super::Wait::cap) to clamp the result.
 ///
 /// # Examples
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::exponential(Duration::from_millis(100));
+/// let w = wait::exponential(Duration::from_millis(100));
 /// # let state = tenacious::RetryState::new(3, None);
 /// // 100ms * 2^2 = 400ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
@@ -141,11 +141,8 @@ impl WaitExponential {
 }
 
 impl Wait for WaitExponential {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         let exponent = state.attempt.saturating_sub(1);
-        // Avoid relying on `f64::powi`, which is not available in all no_std
-        // environments. Exponentiation by squaring is O(log n) and saturates
-        // to infinity on overflow.
         let multiplier = pow_nonnegative_f64(self.base, exponent);
         saturating_duration_mul_f64(self.initial, multiplier)
     }
@@ -200,7 +197,7 @@ mod serde_validation_tests {
 
     #[test]
     fn deserialize_exponential_base_clamps_subunit_values() {
-        let mut strategy =
+        let strategy =
             exponential(ARBITRARY_INITIAL_WAIT).base(deserialize_exponential_base(SUBUNIT_BASE));
         let first = strategy.next_wait(&RetryState::new(1, None));
         let second = strategy.next_wait(&RetryState::new(2, None));

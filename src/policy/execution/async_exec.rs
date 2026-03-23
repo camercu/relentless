@@ -6,7 +6,7 @@ use core::task::{Context, Poll};
 
 use pin_project_lite::pin_project;
 
-use crate::cancel::{Canceler, NeverCancel};
+use crate::cancel::{AsyncCanceler, CancelNever};
 use crate::compat::Duration;
 use crate::error::RetryError;
 #[cfg(feature = "alloc")]
@@ -32,11 +32,11 @@ use crate::policy::time::ElapsedTracker;
 pub struct NoAsyncSleep;
 
 pin_project! {
-    pub(crate) struct AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub(crate) struct AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = CancelNever>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
-        C: Canceler,
+        C: AsyncCanceler,
     {
         policy: Policy,
         hooks: ExecutionHooks<BA, AA, OX>,
@@ -51,10 +51,7 @@ pin_project! {
         collect_stats: bool,
         final_stats: Option<RetryStats>,
         elapsed_tracker: ElapsedTracker,
-        // Owned builders may receive stateful stop/wait strategies that need a
-        // fresh reset when execution actually begins. Borrowed retry futures
-        // already reset their policy before constructing the core.
-        reset_policy_before_run: bool,
+        timeout: Option<Duration>,
         _marker: PhantomData<fn() -> (T, E)>,
     }
 }
@@ -62,9 +59,9 @@ pin_project! {
 impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     pub(crate) fn new(
         policy: Policy,
@@ -73,7 +70,6 @@ where
         sleeper: SleepImpl,
         canceler: C,
         elapsed_tracker: ElapsedTracker,
-        reset_policy_before_run: bool,
     ) -> Self {
         Self {
             policy,
@@ -88,7 +84,7 @@ where
             collect_stats: false,
             final_stats: None,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout: None,
             _marker: PhantomData,
         }
     }
@@ -110,7 +106,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             ..
         } = self;
         AsyncRetryCore {
@@ -126,7 +122,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             _marker: PhantomData,
         }
     }
@@ -148,7 +144,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             ..
         } = self;
         AsyncRetryCore {
@@ -164,9 +160,28 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             _marker: PhantomData,
         }
+    }
+
+    pub(crate) fn set_elapsed_clock(mut self, clock: fn() -> Duration) -> Self {
+        self.elapsed_tracker = ElapsedTracker::new(Some(clock));
+        self
+    }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn set_elapsed_clock_fn(
+        mut self,
+        clock: crate::compat::Box<dyn Fn() -> Duration>,
+    ) -> Self {
+        self.elapsed_tracker = ElapsedTracker::new_boxed(clock);
+        self
+    }
+
+    pub(crate) fn set_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
     }
 
     pub(crate) fn with_stats(mut self) -> Self {
@@ -192,18 +207,7 @@ where
     {
         let mut this = self.project();
 
-        if *this.reset_policy_before_run {
-            let elapsed_clock = {
-                let policy = this.policy.policy_mut();
-                policy.stop.reset();
-                policy.wait.reset();
-                policy.meta.elapsed_clock
-            };
-            *this.elapsed_tracker = ElapsedTracker::new(elapsed_clock);
-            *this.reset_policy_before_run = false;
-        }
-
-        let policy = this.policy.policy_mut();
+        let policy = this.policy.policy_ref();
         poll_async_loop(
             cx,
             policy,
@@ -218,6 +222,7 @@ where
             *this.collect_stats,
             &mut *this.final_stats,
             this.elapsed_tracker,
+            *this.timeout,
             completed_type_name,
         )
     }
@@ -230,9 +235,9 @@ where
 impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, C>
     AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, (), C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     #[allow(clippy::type_complexity)]
     pub(crate) fn with_sleeper<NewSleep>(
@@ -255,7 +260,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             ..
         } = self;
         AsyncRetryCore {
@@ -271,16 +276,16 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             _marker: PhantomData,
         }
     }
 }
 
 impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+    AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, CancelNever>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
     pub(crate) fn with_canceler<NewC>(
@@ -289,7 +294,7 @@ where
         unreachable_message: &'static str,
     ) -> AsyncRetryCore<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC>
     where
-        NewC: Canceler,
+        NewC: AsyncCanceler,
     {
         let Self {
             policy,
@@ -303,7 +308,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             ..
         } = self;
         AsyncRetryCore {
@@ -319,7 +324,7 @@ where
             collect_stats,
             final_stats,
             elapsed_tracker,
-            reset_policy_before_run,
+            timeout,
             _marker: PhantomData,
         }
     }
@@ -340,30 +345,30 @@ pin_project! {
     /// use tenacious::RetryPolicy;
     /// use core::time::Duration;
     ///
-    /// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
     /// let retry = policy
-    ///     .retry_async(|| async { Ok::<u32, &str>(1) })
+    ///     .retry_async(|_| async { Ok::<u32, &str>(1) })
     ///     .before_attempt(|_state| {})
     ///     .sleep(|_dur: Duration| async {});
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = CancelNever>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
-        C: Canceler,
+        C: AsyncCanceler,
     {
         #[pin]
-        inner: AsyncRetryCore<&'policy mut RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
+        inner: AsyncRetryCore<&'policy RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
     }
 }
 
 impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
     for AsyncRetry<'_, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncRetry").finish_non_exhaustive()
@@ -375,9 +380,9 @@ where
 /// ```compile_fail
 /// use tenacious::{RetryPolicy, stop};
 ///
-/// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+/// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let _ = async {
-///     let _ = policy.retry_async(|| async { Ok::<(), &str>(()) }).await;
+///     let _ = policy.retry_async(|_| async { Ok::<(), &str>(()) }).await;
 /// };
 /// ```
 #[allow(dead_code)]
@@ -394,18 +399,18 @@ pin_project! {
     /// use tenacious::RetryPolicy;
     /// use core::time::Duration;
     ///
-    /// let mut policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
     /// let retry = policy
-    ///     .retry_async(|| async { Ok::<u32, &str>(1) })
+    ///     .retry_async(|_| async { Ok::<u32, &str>(1) })
     ///     .sleep(|_dur: Duration| async {})
     ///     .with_stats();
     /// let _ = retry;
     /// ```
-    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = NeverCancel>
+    pub struct AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = (), C = CancelNever>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
-        C: Canceler,
+        C: AsyncCanceler,
     {
         #[pin]
         inner: AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>,
@@ -415,9 +420,9 @@ pin_project! {
 impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C> fmt::Debug
     for AsyncRetryWithStats<'_, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncRetryWithStats")
@@ -447,9 +452,9 @@ type AsyncRetryStats<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, Slee
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     // Intentional: this helper preserves type-state hook tracking and avoids
     // runtime indirection, which necessarily yields a long generic return type.
@@ -462,6 +467,34 @@ where
         let AsyncRetry { inner } = self;
         AsyncRetry {
             inner: inner.map_hooks(map),
+        }
+    }
+
+    /// Configures a custom elapsed clock for elapsed-based stop conditions.
+    #[must_use]
+    pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
+        let AsyncRetry { inner } = self;
+        AsyncRetry {
+            inner: inner.set_elapsed_clock(clock),
+        }
+    }
+
+    /// Configures a custom elapsed clock from a boxed closure.
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    pub fn elapsed_clock_fn(self, clock: impl Fn() -> Duration + 'static) -> Self {
+        let AsyncRetry { inner } = self;
+        AsyncRetry {
+            inner: inner.set_elapsed_clock_fn(crate::compat::Box::new(clock)),
+        }
+    }
+
+    /// Sets a wall-clock deadline for the entire retry execution.
+    #[must_use]
+    pub fn timeout(self, dur: Duration) -> Self {
+        let AsyncRetry { inner } = self;
+        AsyncRetry {
+            inner: inner.set_timeout(dur),
         }
     }
 }
@@ -526,7 +559,7 @@ type AsyncRetryWithOnExitHook<
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
     /// Sets the async sleep implementation.
@@ -546,15 +579,15 @@ where
 }
 
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NeverCancel>
+    AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, CancelNever>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
     /// Attaches a canceler that is checked before each attempt and after each sleep.
     #[must_use]
     #[allow(clippy::type_complexity)]
-    pub fn cancel_on<NewC: Canceler>(
+    pub fn cancel_on<NewC: AsyncCanceler>(
         self,
         canceler: NewC,
     ) -> AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, NewC> {
@@ -571,9 +604,9 @@ where
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     /// Wraps this async retry with statistics collection.
     #[must_use]
@@ -594,7 +627,7 @@ where
 impl_alloc_hook_chain! {
     impl['policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C]
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
-    where { F: FnMut() -> Fut, Fut: Future<Output = Result<T, E>>, C: Canceler } =>
+    where { F: FnMut(RetryState) -> Fut, Fut: Future<Output = Result<T, E>>, C: AsyncCanceler } =>
     before_attempt -> { AsyncRetryWithBeforeHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
     after_attempt -> { AsyncRetryWithAfterHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
     on_exit -> { AsyncRetryWithOnExitHook<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C, Hook> },
@@ -604,18 +637,18 @@ impl_alloc_hook_chain! {
 impl<'policy, S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetry<'policy, S, W, P, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     /// Sets the sole before-attempt hook (no-alloc mode).
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
     ///
-    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
-    ///     .retry_async(|| async { Err::<(), _>("fail") })
+    ///     .retry_async(|_| async { Err::<(), _>("fail") })
     ///     .before_attempt(|_state| {})
     ///     .before_attempt(|_state| {});
     /// ```
@@ -635,18 +668,18 @@ where
 impl<'policy, S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetry<'policy, S, W, P, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     /// Sets the sole after-attempt hook (no-alloc mode).
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
     ///
-    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
-    ///     .retry_async(|| async { Err::<(), _>("fail") })
+    ///     .retry_async(|_| async { Err::<(), _>("fail") })
     ///     .after_attempt(|_state| {})
     ///     .after_attempt(|_state| {});
     /// ```
@@ -666,18 +699,18 @@ where
 impl<'policy, S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut, C>
     AsyncRetry<'policy, S, W, P, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut, C>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>>,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     /// Sets the sole on-exit hook (no-alloc mode).
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
     ///
-    /// let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
-    ///     .retry_async(|| async { Err::<(), _>("fail") })
+    ///     .retry_async(|_| async { Err::<(), _>("fail") })
     ///     .on_exit(|_state| {})
     ///     .on_exit(|_state| {});
     /// ```
@@ -703,11 +736,11 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()> + 'policy,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     type Output = Result<T, RetryError<T, E>>;
 
@@ -726,11 +759,11 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut() -> Fut,
+    F: FnMut(RetryState) -> Fut,
     Fut: Future<Output = Result<T, E>> + 'policy,
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()> + 'policy,
-    C: Canceler,
+    C: AsyncCanceler,
 {
     type Output = (Result<T, RetryError<T, E>>, RetryStats);
 
@@ -758,27 +791,36 @@ where
     W: Wait,
 {
     /// Begins configuring async retry execution.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tenacious::{RetryPolicy, stop};
+    /// use core::time::Duration;
+    ///
+    /// let policy = RetryPolicy::new().stop(stop::attempts(3));
+    /// let retry = policy
+    ///     .retry_async(|_| async { Ok::<u32, &str>(1) })
+    ///     .sleep(|_dur: Duration| async {});
+    /// let _ = retry;
+    /// ```
     #[must_use]
     pub fn retry_async<T, E, F, Fut>(
-        &mut self,
+        &self,
         op: F,
     ) -> AsyncRetry<'_, S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E>
     where
-        F: FnMut() -> Fut,
+        F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        self.stop.reset();
-        self.wait.reset();
-        let elapsed_tracker = ElapsedTracker::new(self.meta.elapsed_clock);
         AsyncRetry {
             inner: AsyncRetryCore::new(
                 self,
                 ExecutionHooks::new(),
                 op,
                 NoAsyncSleep,
-                NeverCancel,
-                elapsed_tracker,
-                false,
+                CancelNever,
+                ElapsedTracker::new(None),
             ),
         }
     }

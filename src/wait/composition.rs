@@ -16,15 +16,15 @@ use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::exponential(Duration::from_millis(100))
+/// let w = wait::exponential(Duration::from_millis(100))
 ///     .cap(Duration::from_millis(500));
 /// # let state = tenacious::RetryState::new(10, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCapped<W> {
     pub(super) inner: W,
@@ -32,12 +32,8 @@ pub struct WaitCapped<W> {
 }
 
 impl<W: Wait> Wait for WaitCapped<W> {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         self.inner.next_wait(state).min(self.max)
-    }
-
-    fn reset(&mut self) {
-        self.inner.reset();
     }
 }
 
@@ -50,15 +46,15 @@ impl<W: Wait> Wait for WaitCapped<W> {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::fixed(Duration::from_millis(100))
+/// let w = wait::fixed(Duration::from_millis(100))
 ///     + wait::fixed(Duration::from_millis(50));
 /// # let state = tenacious::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCombine<A, B> {
     left: A,
@@ -74,15 +70,10 @@ impl<A, B> WaitCombine<A, B> {
 }
 
 impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         let left = self.left.next_wait(state);
         let right = self.right.next_wait(state);
         left.saturating_add(right)
-    }
-
-    fn reset(&mut self) {
-        self.left.reset();
-        self.right.reset();
     }
 }
 
@@ -102,16 +93,16 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 ///
 /// ```
 /// use tenacious::wait;
-/// use tenacious::{Wait, WaitExt};
+/// use tenacious::Wait;
 /// use core::time::Duration;
 ///
-/// let mut w = wait::exponential(Duration::from_millis(100))
+/// let w = wait::exponential(Duration::from_millis(100))
 ///     .chain(wait::fixed(Duration::from_secs(5)), 3);
 /// # let state = tenacious::RetryState::new(4, None);
 /// // Attempt 4 > 3, so uses the fixed fallback.
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitChain<A, B> {
     first: A,
@@ -133,17 +124,12 @@ impl<A, B> WaitChain<A, B> {
 }
 
 impl<A: Wait, B: Wait> Wait for WaitChain<A, B> {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         if state.attempt <= self.after {
             self.first.next_wait(state)
         } else {
             self.second.next_wait(state)
         }
-    }
-
-    fn reset(&mut self) {
-        self.first.reset();
-        self.second.reset();
     }
 }
 

@@ -3,19 +3,20 @@ use core::fmt;
 #[cfg(feature = "alloc")]
 use super::super::HookChain;
 use super::super::execution::sync_exec::{NoSyncSleep, SyncRetryCore, SyncSleep};
+use super::super::time::ElapsedTracker;
 use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
-use crate::cancel::{Canceler, NeverCancel};
+use crate::cancel::{CancelNever, Canceler};
 use crate::compat::Duration;
 use crate::predicate::Predicate;
 use crate::state::{AttemptState, ExitState, RetryState};
 use crate::{
-    RetryError, RetryStats, on,
+    RetryError, RetryStats, predicate,
     stop::{self, Stop},
     wait::{self, Wait},
 };
 
 /// Extension trait to start sync retries directly from a closure/function.
-pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
+pub trait RetryExt<T, E>: FnMut(RetryState) -> Result<T, E> + Sized {
     /// Starts an owned sync retry builder from [`RetryPolicy::default()`].
     ///
     /// This means extension-based retries default to:
@@ -30,7 +31,7 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// ```
     /// use tenacious::RetryExt;
     ///
-    /// let _ = (|| Ok::<(), &str>(()))
+    /// let _ = (|_| Ok::<(), &str>(()))
     ///     .retry()
     ///     .sleep(|_| {})
     ///     .call();
@@ -40,7 +41,7 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
 
 impl<T, E, F> RetryExt<T, E> for F
 where
-    F: FnMut() -> Result<T, E> + Sized,
+    F: FnMut(RetryState) -> Result<T, E> + Sized,
 {
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E> {
         SyncRetryBuilder {
@@ -49,8 +50,8 @@ where
                 ExecutionHooks::new(),
                 self,
                 NoSyncSleep,
-                NeverCancel,
-                true,
+                CancelNever,
+                ElapsedTracker::new(None),
             ),
         }
     }
@@ -63,7 +64,7 @@ where
 pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
     stop::StopAfterAttempts,
     wait::WaitExponential,
-    on::AnyError,
+    predicate::PredicateAnyError,
     (),
     (),
     (),
@@ -71,24 +72,16 @@ pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
     NoSyncSleep,
     T,
     E,
-    NeverCancel,
+    CancelNever,
 >;
-
-/// Alias for the owned sync retry builder returned by
-/// [`RetryPolicy::retry_clone`].
-///
-/// This keeps the policy strategy types visible while hiding the initial hook,
-/// sleeper, and canceler plumbing from user-facing type signatures.
-pub type PolicySyncRetryBuilder<S, W, P, F, T, E> =
-    SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, NeverCancel>;
 
 /// Alias for the default owned sync retry builder-with-stats returned by
 /// calling `.with_stats()` on [`RetryExt::retry`].
-pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E, C = NeverCancel> =
+pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E, C = CancelNever> =
     SyncRetryBuilderWithStats<
         stop::StopAfterAttempts,
         wait::WaitExponential,
-        on::AnyError,
+        predicate::PredicateAnyError,
         (),
         (),
         (),
@@ -99,62 +92,12 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E, C = NeverCancel> =
         C,
     >;
 
-/// Alias for the owned sync retry builder-with-stats returned by calling
-/// `.with_stats()` on [`RetryPolicy::retry_clone`].
-pub type PolicySyncRetryBuilderWithStats<S, W, P, F, SleepFn, T, E, C = NeverCancel> =
-    SyncRetryBuilderWithStats<S, W, P, (), (), (), F, SleepFn, T, E, C>;
-
-impl<S, W, P> RetryPolicy<S, W, P>
-where
-    S: Stop,
-    W: Wait,
-    Self: Clone,
-{
-    /// Starts an owned sync retry builder by cloning this policy.
-    ///
-    /// This is the mutability-free counterpart to [`RetryPolicy::retry`]. It
-    /// is useful when you keep a shared template policy and want each
-    /// execution to own an independent copy of the stop, wait, and predicate
-    /// state.
-    ///
-    /// In `std` builds, calling `.sleep(...)` remains optional. In non-`std`
-    /// builds, configure `.sleep(...)` before `.call()`.
-    ///
-    /// ```
-    /// use tenacious::{RetryPolicy, stop};
-    ///
-    /// let template = RetryPolicy::new().stop(stop::attempts(2));
-    /// let result = template
-    ///     .retry_clone(|| Err::<(), _>("fail"))
-    ///     .sleep(|_dur| {})
-    ///     .call();
-    ///
-    /// assert!(result.is_err());
-    /// ```
-    #[must_use]
-    pub fn retry_clone<T, E, F>(&self, op: F) -> PolicySyncRetryBuilder<S, W, P, F, T, E>
-    where
-        F: FnMut() -> Result<T, E>,
-    {
-        SyncRetryBuilder {
-            inner: SyncRetryCore::new(
-                self.clone(),
-                ExecutionHooks::new(),
-                op,
-                NoSyncSleep,
-                NeverCancel,
-                true,
-            ),
-        }
-    }
-}
-
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 /// ```compile_fail
 /// use tenacious::RetryExt;
 ///
-/// let _ = (|| Err::<(), &str>("fail"))
+/// let _ = (|_| Err::<(), &str>("fail"))
 ///     .retry()
 ///     .call();
 /// ```
@@ -169,7 +112,7 @@ fn _sync_retry_builder_requires_sleep_in_no_std() {}
 /// use core::time::Duration;
 /// use tenacious::{RetryExt, stop};
 ///
-/// let retry = (|| Ok::<u32, &str>(1))
+/// let retry = (|_| Ok::<u32, &str>(1))
 ///     .retry()
 ///     .stop(stop::attempts(2))
 ///     .sleep(|_dur: Duration| {});
@@ -177,8 +120,24 @@ fn _sync_retry_builder_requires_sleep_in_no_std() {}
 /// let _ = retry;
 /// ```
 #[allow(clippy::type_complexity)]
-pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
+pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = CancelNever> {
     inner: SyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E, C>,
+}
+
+impl<S, W, P, F, T, E> SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E, CancelNever> {
+    /// Creates a builder from an owned policy and operation.
+    pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
+        SyncRetryBuilder {
+            inner: SyncRetryCore::new(
+                policy,
+                ExecutionHooks::new(),
+                op,
+                NoSyncSleep,
+                CancelNever,
+                ElapsedTracker::new(None),
+            ),
+        }
+    }
 }
 
 impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
@@ -197,14 +156,14 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C> fmt::Debug
 /// use core::time::Duration;
 /// use tenacious::RetryExt;
 ///
-/// let retry = (|| Ok::<u32, &str>(1))
+/// let retry = (|_| Ok::<u32, &str>(1))
 ///     .retry()
 ///     .sleep(|_dur: Duration| {})
 ///     .with_stats();
 ///
 /// let _ = retry;
 /// ```
-pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = NeverCancel> {
+pub struct SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E, C = CancelNever> {
     inner: SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>,
 }
 
@@ -278,7 +237,37 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E, C>
     #[must_use]
     pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
         SyncRetryBuilder {
-            inner: self.inner.map_policy(|policy| policy.elapsed_clock(clock)),
+            inner: self.inner.set_elapsed_clock(clock),
+        }
+    }
+
+    /// Configures a custom elapsed clock from a boxed closure.
+    ///
+    /// This variant supports closures with captures for test clocks and
+    /// runtime state. Requires the `alloc` feature.
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    pub fn elapsed_clock_fn(self, clock: impl Fn() -> Duration + 'static) -> Self {
+        SyncRetryBuilder {
+            inner: self
+                .inner
+                .set_elapsed_clock_fn(crate::compat::Box::new(clock)),
+        }
+    }
+
+    /// Sets a wall-clock deadline for the entire retry execution.
+    ///
+    /// Timeout combines two behaviors:
+    /// 1. Implicitly ORs `stop::elapsed(dur)` into the effective stop strategy.
+    /// 2. Clamps each sleep delay to the remaining budget.
+    ///
+    /// With `std`, the Instant clock is used automatically. Without `std`,
+    /// requires `.elapsed_clock()` or `.elapsed_clock_fn()` to be configured;
+    /// otherwise timeout has no effect.
+    #[must_use]
+    pub fn timeout(self, dur: Duration) -> Self {
+        SyncRetryBuilder {
+            inner: self.inner.set_timeout(dur),
         }
     }
 
@@ -311,7 +300,7 @@ impl<S, W, P, AA, OX, F, SleepFn, T, E, C>
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|| Err::<(), _>("fail"))
+    /// let _ = (|_| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .before_attempt(|_state| {})
@@ -338,7 +327,7 @@ impl<S, W, P, BA, OX, F, SleepFn, T, E, C>
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|| Err::<(), _>("fail"))
+    /// let _ = (|_| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .after_attempt(|_state| {})
@@ -365,7 +354,7 @@ impl<S, W, P, BA, AA, F, SleepFn, T, E, C>
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|| Err::<(), _>("fail"))
+    /// let _ = (|_| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .on_exit(|_state| {})
@@ -384,7 +373,7 @@ impl<S, W, P, BA, AA, F, SleepFn, T, E, C>
 }
 
 impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
-    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, NeverCancel>
+    SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E, CancelNever>
 {
     /// Attaches a canceler that is checked before each attempt and after each sleep.
     #[must_use]
@@ -408,7 +397,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut() -> Result<T, E>,
+    F: FnMut(RetryState) -> Result<T, E>,
     SleepFn: SyncSleep,
     C: Canceler,
 {
@@ -440,7 +429,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut() -> Result<T, E>,
+    F: FnMut(RetryState) -> Result<T, E>,
     SleepFn: SyncSleep,
     C: Canceler,
 {

@@ -22,7 +22,7 @@ use crate::compat::Duration;
 /// }
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RetryState {
     /// The 1-indexed attempt number.
     ///
@@ -62,7 +62,7 @@ impl RetryState {
 /// }
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct AttemptState<'a, T, E> {
     /// The 1-indexed attempt number that just completed.
     pub attempt: u32,
@@ -121,7 +121,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 /// }
 /// ```
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExitState<'a, T, E> {
     /// The number of completed attempts. `0` only when cancelled before
     /// the first attempt.

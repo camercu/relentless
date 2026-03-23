@@ -19,9 +19,9 @@ use core::ops::{BitAnd, BitOr};
 /// use tenacious::stop;
 ///
 /// // Stop after 5 attempts OR after 30 seconds, whichever comes first.
-/// let mut s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
+/// let s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAny<A, B> {
     left: A,
@@ -44,15 +44,10 @@ impl<A: Stop, B: Stop> Stop for StopAny<A, B> {
     ///
     /// Both constituents are always evaluated (no short-circuit) so that
     /// stateful strategies on either side receive every call.
-    fn should_stop(&mut self, state: &RetryState) -> bool {
+    fn should_stop(&self, state: &RetryState) -> bool {
         let left = self.left.should_stop(state);
         let right = self.right.should_stop(state);
         left || right
-    }
-
-    fn reset(&mut self) {
-        self.left.reset();
-        self.right.reset();
     }
 }
 
@@ -88,9 +83,9 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 /// use tenacious::stop;
 ///
 /// // Stop only when BOTH conditions are true.
-/// let mut s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
+/// let s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAll<A, B> {
     left: A,
@@ -113,15 +108,10 @@ impl<A: Stop, B: Stop> Stop for StopAll<A, B> {
     ///
     /// Both constituents are always evaluated (no short-circuit) so that
     /// stateful strategies on either side receive every call.
-    fn should_stop(&mut self, state: &RetryState) -> bool {
+    fn should_stop(&self, state: &RetryState) -> bool {
         let left = self.left.should_stop(state);
         let right = self.right.should_stop(state);
         left && right
-    }
-
-    fn reset(&mut self) {
-        self.left.reset();
-        self.right.reset();
     }
 }
 

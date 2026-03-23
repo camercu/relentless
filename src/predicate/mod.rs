@@ -1,16 +1,108 @@
-//! Built-in retry predicate factories and composition.
+//! Predicate trait and built-in retry predicate factories.
 //!
-//! This module provides the default retry predicates:
+//! This module provides the [`Predicate`] trait and the default retry predicates:
 //! - [`any_error`] retries on any `Err`.
 //! - [`error`] retries on selected errors.
 //! - [`result`] retries based on the full `Result<T, E>`.
 //! - [`ok`] retries on selected `Ok` values and treats any `Err` as terminal.
 //!
 //! Predicates compose with `|` ([`PredicateAny`]) and `&` ([`PredicateAll`]).
-//! Named combinators are also available via [`crate::PredicateExt`].
 
-use crate::predicate::Predicate;
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use core::ops::{BitAnd, BitOr};
+
+// ---------------------------------------------------------------------------
+// Trait
+// ---------------------------------------------------------------------------
+
+/// Examines the outcome of an operation and decides whether to retry.
+///
+/// `T` and `E` are type parameters on the trait, meaning each predicate is
+/// typed to a specific operation's return type.
+///
+/// Composition methods are provided directly on the trait with
+/// `where Self: Sized` bounds.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::Predicate;
+///
+/// struct RetryOnError;
+///
+/// impl Predicate<String, &str> for RetryOnError {
+///     fn should_retry(&self, outcome: &Result<String, &str>) -> bool {
+///         outcome.is_err()
+///     }
+/// }
+/// ```
+pub trait Predicate<T, E> {
+    /// Returns `true` if the retry loop should retry based on this outcome.
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool;
+
+    /// Returns a predicate that retries when either side retries.
+    #[must_use]
+    fn or<P: Predicate<T, E>>(self, other: P) -> PredicateAny<Self, P>
+    where
+        Self: Sized,
+    {
+        PredicateAny::new(self, other)
+    }
+
+    /// Returns a predicate that retries only when both sides retry.
+    #[must_use]
+    fn and<P: Predicate<T, E>>(self, other: P) -> PredicateAll<Self, P>
+    where
+        Self: Sized,
+    {
+        PredicateAll::new(self, other)
+    }
+}
+
+/// Blanket implementation allowing any `Fn(&Result<T, E>) -> bool` to serve
+/// as a [`Predicate`]. This enables inline closure use:
+///
+/// ```
+/// use tenacious::Predicate;
+///
+/// let pred = |outcome: &Result<i32, &str>| outcome.is_err();
+/// let err: Result<i32, &str> = Err("boom");
+/// assert!(pred.should_retry(&err));
+/// ```
+impl<T, E, F> Predicate<T, E> for F
+where
+    F: Fn(&Result<T, E>) -> bool,
+{
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        (self)(outcome)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + '_> {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        (**self).should_retry(outcome)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + '_> {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        (**self).should_retry(outcome)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        (**self).should_retry(outcome)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in predicate types and constructors
+// ---------------------------------------------------------------------------
 
 /// Predicate that retries on any error.
 ///
@@ -19,24 +111,24 @@ use core::ops::{BitAnd, BitOr};
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::any_error();
+/// let predicate = predicate::any_error();
 /// let outcome: Result<u32, &str> = Err("boom");
 /// assert!(predicate.should_retry(&outcome));
 /// ```
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AnyError;
+pub struct PredicateAnyError;
 
 /// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
 #[must_use]
-pub fn any_error() -> AnyError {
-    AnyError
+pub fn any_error() -> PredicateAnyError {
+    PredicateAnyError
 }
 
-impl<T, E> Predicate<T, E> for AnyError {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+impl<T, E> Predicate<T, E> for PredicateAnyError {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         outcome.is_err()
     }
 }
@@ -48,9 +140,9 @@ impl<T, E> Predicate<T, E> for AnyError {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::error(|err: &&str| *err == "retryable");
+/// let predicate = predicate::error(|err: &&str| *err == "retryable");
 /// let retryable: Result<u32, &str> = Err("retryable");
 /// let fatal: Result<u32, &str> = Err("fatal");
 ///
@@ -59,22 +151,22 @@ impl<T, E> Predicate<T, E> for AnyError {
 /// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ErrorPredicate<F> {
+pub struct PredicateError<F> {
     matcher: F,
 }
 
 /// Produces a predicate that retries when `outcome` is `Err(e)` and
 /// `matcher(e)` returns `true`.
 #[must_use]
-pub fn error<F>(matcher: F) -> ErrorPredicate<F> {
-    ErrorPredicate { matcher }
+pub fn error<F>(matcher: F) -> PredicateError<F> {
+    PredicateError { matcher }
 }
 
-impl<T, E, F> Predicate<T, E> for ErrorPredicate<F>
+impl<T, E, F> Predicate<T, E> for PredicateError<F>
 where
     F: Fn(&E) -> bool,
 {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         match outcome {
             Ok(_) => false,
             Err(error) => (self.matcher)(error),
@@ -89,9 +181,9 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::result(|outcome: &Result<u32, &str>| {
+/// let predicate = predicate::result(|outcome: &Result<u32, &str>| {
 ///     matches!(outcome, Ok(value) if *value < 10)
 /// });
 ///
@@ -100,21 +192,21 @@ where
 /// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ResultPredicate<F> {
+pub struct PredicateResult<F> {
     matcher: F,
 }
 
 /// Produces a predicate that retries when `matcher(outcome)` returns `true`.
 #[must_use]
-pub fn result<F>(matcher: F) -> ResultPredicate<F> {
-    ResultPredicate { matcher }
+pub fn result<F>(matcher: F) -> PredicateResult<F> {
+    PredicateResult { matcher }
 }
 
-impl<T, E, F> Predicate<T, E> for ResultPredicate<F>
+impl<T, E, F> Predicate<T, E> for PredicateResult<F>
 where
     F: Fn(&Result<T, E>) -> bool,
 {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         (self.matcher)(outcome)
     }
 }
@@ -134,16 +226,16 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::ok(|value: &u32| *value < 3);
+/// let predicate = predicate::ok(|value: &u32| *value < 3);
 ///
 /// assert!(predicate.should_retry(&Ok::<u32, &str>(2)));
 /// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
 /// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct OkPredicate<F> {
+pub struct PredicateOk<F> {
     matcher: F,
 }
 
@@ -162,21 +254,25 @@ pub struct OkPredicate<F> {
 /// - combine it with [`error`] when only selected errors are retryable
 /// - use [`result`] when the retry decision needs the full `Result<T, E>`
 #[must_use]
-pub fn ok<F>(matcher: F) -> OkPredicate<F> {
-    OkPredicate { matcher }
+pub fn ok<F>(matcher: F) -> PredicateOk<F> {
+    PredicateOk { matcher }
 }
 
-impl<T, E, F> Predicate<T, E> for OkPredicate<F>
+impl<T, E, F> Predicate<T, E> for PredicateOk<F>
 where
     F: Fn(&T) -> bool,
 {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         match outcome {
             Ok(value) => (self.matcher)(value),
             Err(_) => false,
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Composition types
+// ---------------------------------------------------------------------------
 
 /// Composite predicate that retries when **either** predicate retries.
 ///
@@ -185,14 +281,14 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
-/// assert!(predicate.should_retry(&Err("retryable")));
-/// assert!(predicate.should_retry(&Ok(1)));
-/// assert!(!predicate.should_retry(&Ok(5)));
+/// let p = predicate::error(|err: &&str| *err == "retryable") | predicate::ok(|value: &u32| *value < 2);
+/// assert!(p.should_retry(&Err("retryable")));
+/// assert!(p.should_retry(&Ok(1)));
+/// assert!(!p.should_retry(&Ok(5)));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAny<A, B> {
     left: A,
@@ -212,7 +308,7 @@ where
     A: Predicate<T, E>,
     B: Predicate<T, E>,
 {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         self.left.should_retry(outcome) || self.right.should_retry(outcome)
     }
 }
@@ -224,15 +320,15 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, on};
+/// use tenacious::{Predicate, predicate};
 ///
-/// let mut predicate = on::result(|outcome: &Result<u32, &str>| outcome.is_err())
-///     & on::error(|err: &&str| *err == "retryable");
+/// let p = predicate::result(|outcome: &Result<u32, &str>| outcome.is_err())
+///     & predicate::error(|err: &&str| *err == "retryable");
 ///
-/// assert!(predicate.should_retry(&Err("retryable")));
-/// assert!(!predicate.should_retry(&Err("fatal")));
+/// assert!(p.should_retry(&Err("retryable")));
+/// assert!(!p.should_retry(&Err("fatal")));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAll<A, B> {
     left: A,
@@ -252,7 +348,7 @@ where
     A: Predicate<T, E>,
     B: Predicate<T, E>,
 {
-    fn should_retry(&mut self, outcome: &Result<T, E>) -> bool {
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
         self.left.should_retry(outcome) && self.right.should_retry(outcome)
     }
 }
@@ -261,11 +357,7 @@ where
 // Predicate composition operator impls
 // ---------------------------------------------------------------------------
 
-/// Generates `BitOr` / `BitAnd` operator impls and inherent `or()` / `and()`
-/// combinator methods for a predicate type.
-///
-/// Each invocation takes `($ty:ty $(, $param:ident)*)` where `$param` lists
-/// any generic parameters the type carries (e.g. `F` for `ErrorPredicate<F>`).
+/// Generates `BitOr` / `BitAnd` operator impls for a predicate type.
 macro_rules! impl_predicate_ops {
     ($ty:ty $(, $param:ident)*) => {
         impl<$($param,)* Rhs> BitOr<Rhs> for $ty {
@@ -283,26 +375,12 @@ macro_rules! impl_predicate_ops {
                 PredicateAll::new(self, rhs)
             }
         }
-
-        impl<$($param,)*> $ty {
-            /// Returns a predicate that retries when either side retries.
-            #[must_use]
-            pub fn or<Rhs>(self, rhs: Rhs) -> PredicateAny<Self, Rhs> {
-                PredicateAny::new(self, rhs)
-            }
-
-            /// Returns a predicate that retries only when both sides retry.
-            #[must_use]
-            pub fn and<Rhs>(self, rhs: Rhs) -> PredicateAll<Self, Rhs> {
-                PredicateAll::new(self, rhs)
-            }
-        }
     };
 }
 
-impl_predicate_ops!(AnyError);
-impl_predicate_ops!(ErrorPredicate<F>, F);
-impl_predicate_ops!(ResultPredicate<F>, F);
-impl_predicate_ops!(OkPredicate<F>, F);
+impl_predicate_ops!(PredicateAnyError);
+impl_predicate_ops!(PredicateError<F>, F);
+impl_predicate_ops!(PredicateResult<F>, F);
+impl_predicate_ops!(PredicateOk<F>, F);
 impl_predicate_ops!(PredicateAny<A, B>, A, B);
 impl_predicate_ops!(PredicateAll<A, B>, A, B);

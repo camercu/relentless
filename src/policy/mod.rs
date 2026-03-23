@@ -3,14 +3,8 @@
 //! This module exposes three related entry-point families:
 //!
 //! - [`RetryPolicy::retry`] and [`RetryPolicy::retry_async`] borrow a policy by
-//!   `&mut self`. Use these when you want one reusable policy value whose
-//!   stateful `Stop` and `Wait` strategies are reset and reused in place across
-//!   sequential executions.
-//! - [`RetryPolicy::retry_clone`] and
-//!   [`RetryPolicy::retry_async_clone`] take `&self` and clone the policy into
-//!   an owned execution builder. Use these when you want to keep a shared
-//!   template policy and start independent retry executions without taking a
-//!   mutable borrow of the original value.
+//!   `&self`. All core traits use `&self` receivers, so policies are freely
+//!   reusable across sequential executions without mutation.
 //! - [`crate::RetryExt`] and [`crate::AsyncRetryExt`] start from
 //!   [`RetryPolicy::default()`] and own the policy immediately. Use those for
 //!   one-off operations where you want to configure retries inline from the
@@ -22,7 +16,7 @@
 //! local to a specific execution.
 
 use crate::compat::Duration;
-use crate::on;
+use crate::predicate;
 #[cfg(feature = "alloc")]
 use crate::predicate::Predicate;
 use crate::stop;
@@ -43,26 +37,6 @@ const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 /// Default initial backoff used by the safe policy constructor.
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
-/// Function pointer type used to supply elapsed time in no_std or custom runtimes.
-type ElapsedClockFn = fn() -> Duration;
-
-#[derive(Debug, Clone, Copy)]
-struct PolicyMeta {
-    elapsed_clock: Option<ElapsedClockFn>,
-}
-
-impl PartialEq for PolicyMeta {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.elapsed_clock, other.elapsed_clock) {
-            (Some(left), Some(right)) => core::ptr::fn_addr_eq(left, right),
-            (None, None) => true,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for PolicyMeta {}
-
 /// Reusable retry configuration.
 ///
 /// `RetryPolicy` stores retry strategies and can be reused across multiple
@@ -70,10 +44,9 @@ impl Eq for PolicyMeta {}
 /// `AsyncRetry` builders.
 ///
 /// Construction options:
-/// - [`RetryPolicy::new`] starts with `NeedsStop` and intentionally blocks
-///   execution until `.stop(...)` is configured.
-/// - [`Default::default`] returns a fully configured safe policy
-///   (`attempts(3)` plus `exponential(100ms)`).
+/// - [`RetryPolicy::new`] returns a safe default policy: `attempts(3)`,
+///   `exponential(100ms)`, `any_error()`.
+/// - [`Default::default`] delegates to `new()`.
 ///
 /// # Examples
 ///
@@ -81,26 +54,11 @@ impl Eq for PolicyMeta {}
 /// use tenacious::{RetryPolicy, stop, wait};
 /// use core::time::Duration;
 ///
-/// let mut policy = RetryPolicy::new()
+/// let policy = RetryPolicy::new()
 ///     .stop(stop::attempts(3))
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 ///
-/// let _ = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
-/// ```
-///
-/// When you need shared-template reuse without taking `&mut self`, clone into
-/// an owned execution:
-///
-/// ```
-/// use tenacious::{RetryPolicy, stop};
-///
-/// let template = RetryPolicy::new().stop(stop::attempts(3));
-/// let result = template
-///     .retry_clone(|| Err::<(), _>("fail"))
-///     .sleep(|_dur| {})
-///     .call();
-///
-/// assert!(result.is_err());
+/// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_dur| {}).call();
 /// ```
 ///
 /// ```compile_fail
@@ -111,11 +69,14 @@ impl Eq for PolicyMeta {}
 ///     .before_attempt(|_state| {});
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetryPolicy<S = stop::StopAfterAttempts, W = wait::WaitExponential, P = on::AnyError> {
+pub struct RetryPolicy<
+    S = stop::StopAfterAttempts,
+    W = wait::WaitExponential,
+    P = predicate::PredicateAnyError,
+> {
     stop: S,
     wait: W,
     predicate: P,
-    meta: PolicyMeta,
 }
 
 #[cfg(feature = "serde")]
@@ -137,12 +98,6 @@ where
     }
 }
 
-/// # Serde round-trip note
-///
-/// The `elapsed_clock` function pointer is not serializable and is dropped
-/// during serialization. Deserialized policies always have `elapsed_clock`
-/// set to `None`. If you rely on a custom clock, re-apply it after
-/// deserialization via [`RetryPolicy::elapsed_clock`].
 #[cfg(feature = "serde")]
 impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P>
 where
@@ -166,199 +121,210 @@ where
             stop: serialized.stop,
             wait: serialized.wait,
             predicate: serialized.predicate,
-            meta: PolicyMeta {
-                elapsed_clock: None,
-            },
         })
     }
 }
 
-/// Type-erased retry policy for runtime-configured storage.
-///
-/// This alias is available when `alloc` is enabled and erases stop/wait/predicate
-/// concrete types into trait objects.
-///
-/// # Examples
-///
-/// ```
-/// use tenacious::{BoxedRetryPolicy, RetryPolicy, stop};
-///
-/// let _policy: BoxedRetryPolicy<i32, &'static str> =
-///     RetryPolicy::new().stop(stop::attempts(3)).boxed();
-/// ```
-#[cfg(feature = "alloc")]
-pub type BoxedRetryPolicy<T, E> =
-    RetryPolicy<Box<dyn Stop>, Box<dyn Wait>, Box<dyn Predicate<T, E>>>;
-
-struct PolicyParts<S, W, P> {
-    stop: S,
-    wait: W,
-    predicate: P,
-    meta: PolicyMeta,
-}
-
-fn build_policy<S, W, P>(parts: PolicyParts<S, W, P>) -> RetryPolicy<S, W, P> {
-    RetryPolicy {
-        stop: parts.stop,
-        wait: parts.wait,
-        predicate: parts.predicate,
-        meta: parts.meta,
-    }
-}
-
-impl RetryPolicy<stop::NeedsStop, wait::WaitFixed, on::AnyError> {
-    /// Creates an unconfigured policy with no stop strategy selected yet.
+impl RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::PredicateAnyError> {
+    /// Creates a policy with safe defaults: `attempts(3)`, `exponential(100ms)`,
+    /// `any_error()`.
     ///
-    /// This constructor sets zero wait and the default retry predicate
-    /// (`on::any_error()`), but requires calling `.stop(...)` before retry
-    /// execution methods are available.
-    ///
-    /// ```compile_fail
+    /// ```
     /// use tenacious::RetryPolicy;
     ///
-    /// let mut policy = RetryPolicy::new();
-    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
-    /// ```
-    ///
-    /// ```
-    /// use tenacious::{RetryPolicy, stop};
-    ///
-    /// let mut policy = RetryPolicy::new().stop(stop::attempts(3));
-    /// let _ = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// let policy = RetryPolicy::new();
+    /// let _ = policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
     /// ```
     #[must_use]
     pub fn new() -> Self {
-        build_policy(PolicyParts {
-            stop: stop::NeedsStop,
-            wait: wait::fixed(Duration::ZERO),
-            predicate: on::any_error(),
-            meta: PolicyMeta {
-                elapsed_clock: None,
-            },
-        })
+        RetryPolicy {
+            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            predicate: predicate::any_error(),
+        }
     }
 }
 
-impl Default for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, on::AnyError> {
+impl Default
+    for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::PredicateAnyError>
+{
     fn default() -> Self {
-        build_policy(PolicyParts {
-            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
-            predicate: on::any_error(),
-            meta: PolicyMeta {
-                elapsed_clock: None,
-            },
-        })
+        Self::new()
     }
 }
 
 impl<S, W, P> RetryPolicy<S, W, P> {
-    fn decompose(self) -> (S, W, P, PolicyMeta) {
-        (self.stop, self.wait, self.predicate, self.meta)
-    }
-
     /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P> {
-        let (_, wait, predicate, meta) = self.decompose();
-        build_policy(PolicyParts {
+        RetryPolicy {
             stop,
-            wait,
-            predicate,
-            meta,
-        })
+            wait: self.wait,
+            predicate: self.predicate,
+        }
     }
 
     /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P> {
-        let (stop, _, predicate, meta) = self.decompose();
-        build_policy(PolicyParts {
-            stop,
+        RetryPolicy {
+            stop: self.stop,
             wait,
-            predicate,
-            meta,
-        })
+            predicate: self.predicate,
+        }
     }
 
     /// Replaces the retry predicate.
     #[must_use]
     pub fn when<NewPredicate>(self, predicate: NewPredicate) -> RetryPolicy<S, W, NewPredicate> {
-        let (stop, wait, _, meta) = self.decompose();
-        build_policy(PolicyParts {
-            stop,
-            wait,
+        RetryPolicy {
+            stop: self.stop,
+            wait: self.wait,
             predicate,
-            meta,
-        })
+        }
     }
 
     /// Converts this policy into a type-erased boxed variant.
     #[cfg(feature = "alloc")]
     #[must_use]
-    pub fn boxed<T, E>(self) -> BoxedRetryPolicy<T, E>
+    pub fn boxed<T, E>(
+        self,
+    ) -> RetryPolicy<
+        Box<dyn Stop + Send + 'static>,
+        Box<dyn Wait + Send + 'static>,
+        Box<dyn Predicate<T, E> + Send + 'static>,
+    >
     where
-        S: Stop + 'static,
-        W: Wait + 'static,
-        P: Predicate<T, E> + 'static,
+        S: Stop + Send + 'static,
+        W: Wait + Send + 'static,
+        P: Predicate<T, E> + Send + 'static,
     {
-        let (stop, wait, predicate, meta) = self.decompose();
-        build_policy(PolicyParts {
-            stop: Box::new(stop),
-            wait: Box::new(wait),
-            predicate: Box::new(predicate),
-            meta,
-        })
+        RetryPolicy {
+            stop: Box::new(self.stop),
+            wait: Box::new(self.wait),
+            predicate: Box::new(self.predicate),
+        }
     }
+}
 
-    /// Sets a custom elapsed-time clock used for stop strategies and stats.
+impl<S, W, P> RetryPolicy<S, W, P>
+where
+    S: stop::Stop + Clone,
+    W: wait::Wait + Clone,
+{
+    /// Begins configuring sync polling execution.
     ///
-    /// The provided function should return a monotonically increasing duration.
-    /// Elapsed is computed as `clock() - clock_at_start` with saturating math.
+    /// The predicate is set to retry when `ready` returns `false` on `Ok`
+    /// values. All `Err` values terminate immediately.
     ///
-    /// The clock is a bare `fn()` pointer rather than a generic or boxed closure
-    /// so that `RetryPolicy` remains `Copy` and `'static` without allocation.
-    /// This means the clock cannot capture state directly. For test clocks that
-    /// need mutation, use a `static AtomicU64` (or similar) that the `fn()`
-    /// reads:
+    /// # Examples
     ///
     /// ```
-    /// use core::sync::atomic::{AtomicU64, Ordering};
+    /// use tenacious::{RetryPolicy, stop};
+    ///
+    /// let policy = RetryPolicy::new().stop(stop::attempts(3));
+    /// let result = policy
+    ///     .poll_until(|_| Ok::<u32, &str>(42), |v| *v == 42)
+    ///     .sleep(|_| {})
+    ///     .call();
+    /// assert_eq!(result.unwrap(), 42);
+    /// ```
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn poll_until<T, E, F, R>(
+        &self,
+        op: F,
+        ready: R,
+    ) -> ext::SyncRetryBuilder<
+        S,
+        W,
+        predicate::PredicateOk<impl Fn(&T) -> bool>,
+        (),
+        (),
+        (),
+        F,
+        execution::sync_exec::NoSyncSleep,
+        T,
+        E,
+        crate::cancel::CancelNever,
+    >
+    where
+        F: FnMut(crate::state::RetryState) -> Result<T, E>,
+        R: Fn(&T) -> bool,
+    {
+        let new_policy = RetryPolicy {
+            stop: self.stop.clone(),
+            wait: self.wait.clone(),
+            predicate: predicate::ok(move |v: &T| !ready(v)),
+        };
+        ext::SyncRetryBuilder::from_policy(new_policy, op)
+    }
+
+    /// Begins configuring async polling execution.
+    ///
+    /// The predicate is set to retry when `ready` returns `false` on `Ok`
+    /// values. All `Err` values terminate immediately.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tenacious::RetryPolicy;
     /// use core::time::Duration;
     ///
-    /// static MILLIS: AtomicU64 = AtomicU64::new(0);
-    ///
-    /// fn test_clock() -> Duration {
-    ///     Duration::from_millis(MILLIS.load(Ordering::Relaxed))
-    /// }
+    /// let policy = RetryPolicy::new();
+    /// let retry = policy
+    ///     .poll_until_async(|_| async { Ok::<u32, &str>(42) }, |v| *v == 42)
+    ///     .sleep(|_dur: Duration| async {});
+    /// let _ = retry;
     /// ```
     #[must_use]
-    pub fn elapsed_clock(mut self, clock: ElapsedClockFn) -> Self {
-        self.meta.elapsed_clock = Some(clock);
-        self
-    }
-
-    /// Clears any custom elapsed-time clock and restores default behavior.
-    #[must_use]
-    pub fn clear_elapsed_clock(mut self) -> Self {
-        self.meta.elapsed_clock = None;
-        self
+    #[allow(clippy::type_complexity)]
+    pub fn poll_until_async<T, E, F, Fut, R>(
+        &self,
+        op: F,
+        ready: R,
+    ) -> ext::AsyncRetryBuilder<
+        S,
+        W,
+        predicate::PredicateOk<impl Fn(&T) -> bool>,
+        (),
+        (),
+        (),
+        F,
+        Fut,
+        execution::async_exec::NoAsyncSleep,
+        T,
+        E,
+        (),
+        crate::cancel::CancelNever,
+    >
+    where
+        F: FnMut(crate::state::RetryState) -> Fut,
+        Fut: core::future::Future<Output = Result<T, E>>,
+        R: Fn(&T) -> bool,
+    {
+        let new_policy = RetryPolicy {
+            stop: self.stop.clone(),
+            wait: self.wait.clone(),
+            predicate: predicate::ok(move |v: &T| !ready(v)),
+        };
+        ext::AsyncRetryBuilder::from_policy(new_policy, op)
     }
 }
 
 /// Internal abstraction over owned and borrowed policy storage.
 pub(crate) trait PolicyHandle<S, W, P> {
-    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P>;
+    fn policy_ref(&self) -> &RetryPolicy<S, W, P>;
 }
 
 impl<S, W, P> PolicyHandle<S, W, P> for RetryPolicy<S, W, P> {
-    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P> {
+    fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
         self
     }
 }
 
-impl<S, W, P> PolicyHandle<S, W, P> for &mut RetryPolicy<S, W, P> {
-    fn policy_mut(&mut self) -> &mut RetryPolicy<S, W, P> {
+impl<S, W, P> PolicyHandle<S, W, P> for &RetryPolicy<S, W, P> {
+    fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
         self
     }
 }
@@ -424,14 +390,14 @@ macro_rules! impl_alloc_hook_chain {
 mod execution;
 mod ext;
 mod time;
-pub use execution::async_exec::{AsyncRetry, AsyncRetryWithStats};
+pub use execution::async_exec::{AsyncRetry, AsyncRetryWithStats, NoAsyncSleep};
 #[cfg(feature = "alloc")]
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
+pub use execution::sync_exec::NoSyncSleep;
 pub use execution::sync_exec::{SyncRetry, SyncRetryWithStats};
 pub use ext::{
     AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
     DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
-    PolicyAsyncRetryBuilder, PolicyAsyncRetryBuilderWithStats, PolicySyncRetryBuilder,
-    PolicySyncRetryBuilderWithStats, RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats,
+    RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats,
 };

@@ -1,8 +1,8 @@
 //! Wait trait and built-in wait strategies.
 //!
 //! Wait strategies determine the delay between retry attempts. They compose
-//! with `+` ([`WaitCombine`]) or [`.add()`](WaitExt::add), and chain via
-//! [`.chain()`](WaitChain).
+//! with `+` ([`WaitCombine`]) or [`.add()`](Wait::add), and chain via
+//! [`.chain()`](Wait::chain).
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
@@ -18,7 +18,9 @@ mod jitter;
 
 pub use composition::{WaitCapped, WaitChain, WaitCombine};
 #[cfg(feature = "jitter")]
-pub use jitter::WaitJitter;
+pub use jitter::decorrelated_jitter;
+#[cfg(feature = "jitter")]
+pub use jitter::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
 pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed, linear};
 
 /// Computes the delay duration between retry attempts.
@@ -27,6 +29,9 @@ pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed,
 /// [`Duration`] representing how long to wait before the next attempt.
 /// The state contains only timing and counting fields - wait strategies
 /// never need to inspect the operation's outcome.
+///
+/// Composition and builder methods are provided directly on the trait with
+/// `where Self: Sized` bounds.
 ///
 /// # Examples
 ///
@@ -37,63 +42,30 @@ pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed,
 /// struct FixedDelay(Duration);
 ///
 /// impl Wait for FixedDelay {
-///     fn next_wait(&mut self, _state: &RetryState) -> Duration {
+///     fn next_wait(&self, _state: &RetryState) -> Duration {
 ///         self.0
 ///     }
 /// }
 /// ```
 pub trait Wait {
     /// Returns the duration to wait before the next retry attempt.
-    fn next_wait(&mut self, state: &RetryState) -> Duration;
+    fn next_wait(&self, state: &RetryState) -> Duration;
 
-    /// Resets internal state so the strategy can be reused across independent
-    /// retry loops. The default implementation is a no-op.
-    fn reset(&mut self) {}
-}
-
-/// Extension methods for any [`Wait`] strategy.
-///
-/// This trait enables fluent composition for custom wait strategies that
-/// implement [`Wait`], not only the built-in wait types in this module.
-///
-/// # Examples
-///
-/// ```
-/// use core::time::Duration;
-/// use tenacious::{RetryState, Wait, WaitExt, wait};
-///
-/// #[derive(Clone, Copy)]
-/// struct StepWait {
-///     base: Duration,
-/// }
-///
-/// impl Wait for StepWait {
-///     fn next_wait(&mut self, state: &RetryState) -> Duration {
-///         self.base
-///             .checked_mul(state.attempt)
-///             .unwrap_or(Duration::MAX)
-///     }
-/// }
-///
-/// let mut strategy = StepWait {
-///     base: Duration::from_millis(10),
-/// }
-/// .cap(Duration::from_millis(25))
-/// .chain(wait::fixed(Duration::from_millis(30)), 2);
-///
-/// let state = RetryState::new(3, None);
-/// assert_eq!(strategy.next_wait(&state), Duration::from_millis(30));
-/// ```
-pub trait WaitExt: Wait + Sized {
     /// Clamps the computed wait to at most `max`.
     #[must_use]
-    fn cap(self, max: Duration) -> WaitCapped<Self> {
+    fn cap(self, max: Duration) -> WaitCapped<Self>
+    where
+        Self: Sized,
+    {
         WaitCapped { inner: self, max }
     }
 
     /// Switches to `other` after `after` attempts.
     #[must_use]
-    fn chain<W2>(self, other: W2, after: u32) -> WaitChain<Self, W2> {
+    fn chain<W2: Wait>(self, other: W2, after: u32) -> WaitChain<Self, W2>
+    where
+        Self: Sized,
+    {
         WaitChain::new(self, other, after)
     }
 
@@ -101,9 +73,9 @@ pub trait WaitExt: Wait + Sized {
     ///
     /// Equivalent to `self + other`.
     #[must_use]
-    fn add<W2>(self, other: W2) -> WaitCombine<Self, W2>
+    fn add<W2: Wait>(self, other: W2) -> WaitCombine<Self, W2>
     where
-        W2: Wait,
+        Self: Sized,
     {
         WaitCombine::new(self, other)
     }
@@ -111,23 +83,44 @@ pub trait WaitExt: Wait + Sized {
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.
     #[cfg(feature = "jitter")]
     #[must_use]
-    fn jitter(self, max_jitter: Duration) -> WaitJitter<Self> {
+    fn jitter(self, max_jitter: Duration) -> WaitJitter<Self>
+    where
+        Self: Sized,
+    {
         WaitJitter::new(self, max_jitter)
     }
-}
 
-impl<W> WaitExt for W where W: Wait + Sized {}
+    /// Replaces the computed delay with a random value in `[0, base]`.
+    ///
+    /// This is the "Full Jitter" strategy from the AWS Architecture Blog.
+    #[cfg(feature = "jitter")]
+    #[must_use]
+    fn full_jitter(self) -> WaitFullJitter<Self>
+    where
+        Self: Sized,
+    {
+        WaitFullJitter::new(self)
+    }
+
+    /// Keeps half the computed delay and jitters the other half.
+    ///
+    /// This is the "Equal Jitter" strategy from the AWS Architecture Blog.
+    #[cfg(feature = "jitter")]
+    #[must_use]
+    fn equal_jitter(self) -> WaitEqualJitter<Self>
+    where
+        Self: Sized,
+    {
+        WaitEqualJitter::new(self)
+    }
+}
 
 #[cfg(feature = "alloc")]
 impl<W> Wait for Box<W>
 where
     W: Wait + ?Sized,
 {
-    fn next_wait(&mut self, state: &RetryState) -> Duration {
+    fn next_wait(&self, state: &RetryState) -> Duration {
         (**self).next_wait(state)
-    }
-
-    fn reset(&mut self) {
-        (**self).reset();
     }
 }

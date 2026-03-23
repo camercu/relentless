@@ -12,7 +12,7 @@ use crate::state::RetryState;
 /// use tenacious::Stop;
 /// use tenacious::stop;
 ///
-/// let mut s = stop::attempts(3);
+/// let s = stop::attempts(3);
 /// # let state = tenacious::RetryState::new(3, None);
 /// assert!(s.should_stop(&state));
 /// ```
@@ -35,7 +35,7 @@ pub fn attempts(max: u32) -> StopAfterAttempts {
 }
 
 impl Stop for StopAfterAttempts {
-    fn should_stop(&mut self, state: &RetryState) -> bool {
+    fn should_stop(&self, state: &RetryState) -> bool {
         state.attempt >= self.max
     }
 }
@@ -87,7 +87,7 @@ impl<'de> serde::Deserialize<'de> for StopAfterAttempts {
 /// use tenacious::Stop;
 /// use tenacious::stop;
 ///
-/// let mut s = stop::elapsed(Duration::from_secs(30));
+/// let s = stop::elapsed(Duration::from_secs(30));
 /// # let state = tenacious::RetryState::new(1, Some(Duration::from_secs(31)));
 /// assert!(s.should_stop(&state));
 /// ```
@@ -106,7 +106,7 @@ pub fn elapsed(deadline: Duration) -> StopAfterElapsed {
 }
 
 impl Stop for StopAfterElapsed {
-    fn should_stop(&mut self, state: &RetryState) -> bool {
+    fn should_stop(&self, state: &RetryState) -> bool {
         state
             .elapsed
             .is_some_and(|elapsed| elapsed >= self.deadline)
@@ -124,11 +124,11 @@ impl Stop for StopAfterElapsed {
 /// use tenacious::Stop;
 /// use tenacious::stop;
 ///
-/// let mut s = stop::never();
+/// let s = stop::never();
 /// # let state = tenacious::RetryState::new(u32::MAX, None);
 /// assert!(!s.should_stop(&state));
 /// ```
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopNever;
 
@@ -139,14 +139,7 @@ pub fn never() -> StopNever {
 }
 
 impl Stop for StopNever {
-    fn should_stop(&mut self, _state: &RetryState) -> bool {
+    fn should_stop(&self, _state: &RetryState) -> bool {
         false
     }
 }
-
-/// Marker indicating no stop strategy has been configured.
-///
-/// This type intentionally does **not** implement [`Stop`], so retry
-/// execution methods are unavailable until a concrete stop strategy is set.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NeedsStop;

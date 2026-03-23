@@ -7,17 +7,17 @@
 //!
 //! ```
 //! use core::time::Duration;
-//! use tenacious::{RetryState, Wait, WaitExt, wait};
+//! use tenacious::{RetryState, Wait, wait};
 //!
 //! struct CustomWait(Duration);
 //!
 //! impl Wait for CustomWait {
-//!     fn next_wait(&mut self, _state: &RetryState) -> Duration {
+//!     fn next_wait(&self, _state: &RetryState) -> Duration {
 //!         self.0
 //!     }
 //! }
 //!
-//! let mut strategy = CustomWait(Duration::from_millis(20))
+//! let strategy = CustomWait(Duration::from_millis(20))
 //!     .cap(Duration::from_millis(15))
 //!     .chain(wait::fixed(Duration::from_millis(50)), 2);
 //!
@@ -35,7 +35,7 @@
 //! use core::time::Duration;
 //! use tenacious::{RetryExt, stop, wait};
 //!
-//! let result = (|| Err::<u32, &str>("transient"))
+//! let result = (|_state| Err::<u32, &str>("transient"))
 //!     .retry()
 //!     .stop(stop::attempts(3))
 //!     .wait(wait::fixed(Duration::from_millis(5)))
@@ -58,9 +58,8 @@ mod compat;
 
 pub mod cancel;
 mod error;
-pub mod on;
 mod policy;
-mod predicate;
+pub mod predicate;
 pub mod sleep;
 mod state;
 mod stats;
@@ -68,21 +67,148 @@ pub mod stop;
 pub mod wait;
 
 // Re-export core public types at the crate root (spec 10.1).
-pub use cancel::{Canceler, NeverCancel};
+pub use cancel::{AsyncCanceler, CancelNever, Canceler, PolledCanceler};
 pub use error::{RetryError, RetryResult};
-#[cfg(feature = "alloc")]
-pub use policy::BoxedRetryPolicy;
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
-pub use predicate::{Predicate, PredicateExt};
+pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
-pub use stop::{NeedsStop, Stop, StopAll, StopAny, StopExt};
+pub use stop::{Stop, StopAll, StopAny};
+pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine};
 #[cfg(feature = "jitter")]
-pub use wait::WaitJitter;
-pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine, WaitExt};
+pub use wait::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
+
+/// Sync retry with default policy.
+///
+/// Creates a [`SyncRetryBuilder`](builders::SyncRetryBuilder) using
+/// [`RetryPolicy::new()`] defaults: `attempts(3)`, `exponential(100ms)`,
+/// `any_error()`.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{retry, stop};
+///
+/// let result = retry(|_| Ok::<u32, &str>(42))
+///     .stop(stop::attempts(1))
+///     .sleep(|_| {})
+///     .call();
+/// assert_eq!(result.unwrap(), 42);
+/// ```
+pub fn retry<F, T, E>(op: F) -> builders::DefaultSyncRetryBuilder<F, T, E>
+where
+    F: FnMut(RetryState) -> Result<T, E>,
+{
+    op.retry()
+}
+
+/// Async retry with default policy.
+///
+/// Creates an [`AsyncRetryBuilder`](builders::AsyncRetryBuilder) using
+/// [`RetryPolicy::new()`] defaults.
+///
+/// # Examples
+///
+/// ```
+/// use core::time::Duration;
+/// use tenacious::retry_async;
+///
+/// let retry = retry_async(|_| async { Ok::<u32, &str>(42) })
+///     .sleep(|_dur: Duration| async {});
+/// let _ = retry;
+/// ```
+pub fn retry_async<F, T, E, Fut>(op: F) -> builders::DefaultAsyncRetryBuilder<F, Fut, T, E>
+where
+    F: FnMut(RetryState) -> Fut,
+    Fut: core::future::Future<Output = Result<T, E>>,
+{
+    op.retry_async()
+}
+
+/// Sync polling with default policy.
+///
+/// Returns a builder with the predicate set to retry when `ready` returns
+/// `false` on `Ok` values. All `Err` values terminate immediately.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{poll_until, stop};
+///
+/// let result = poll_until(|_| Ok::<u32, &str>(42), |v| *v == 42)
+///     .stop(stop::attempts(1))
+///     .sleep(|_| {})
+///     .call();
+/// assert_eq!(result.unwrap(), 42);
+/// ```
+#[allow(clippy::type_complexity)]
+pub fn poll_until<F, T, E, R>(
+    op: F,
+    ready: R,
+) -> builders::SyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    predicate::PredicateOk<impl Fn(&T) -> bool>,
+    (),
+    (),
+    (),
+    F,
+    policy::NoSyncSleep,
+    T,
+    E,
+    cancel::CancelNever,
+>
+where
+    F: FnMut(RetryState) -> Result<T, E>,
+    R: Fn(&T) -> bool,
+{
+    op.retry().when(predicate::ok(move |v: &T| !ready(v)))
+}
+
+/// Async polling with default policy.
+///
+/// Returns a builder with the predicate set to retry when `ready` returns
+/// `false` on `Ok` values. All `Err` values terminate immediately.
+///
+/// # Examples
+///
+/// ```
+/// use core::time::Duration;
+/// use tenacious::poll_until_async;
+///
+/// let retry = poll_until_async(|_| async { Ok::<u32, &str>(42) }, |v| *v == 42)
+///     .sleep(|_dur: Duration| async {});
+/// let _ = retry;
+/// ```
+#[allow(clippy::type_complexity)]
+pub fn poll_until_async<F, T, E, Fut, R>(
+    op: F,
+    ready: R,
+) -> builders::AsyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    predicate::PredicateOk<impl Fn(&T) -> bool>,
+    (),
+    (),
+    (),
+    F,
+    Fut,
+    policy::NoAsyncSleep,
+    T,
+    E,
+    (),
+    cancel::CancelNever,
+>
+where
+    F: FnMut(RetryState) -> Fut,
+    Fut: core::future::Future<Output = Result<T, E>>,
+    R: Fn(&T) -> bool,
+{
+    op.retry_async().when(predicate::ok(move |v: &T| !ready(v)))
+}
 
 /// Advanced builder types and aliases.
 ///
@@ -94,9 +220,7 @@ pub mod builders {
     pub use crate::policy::{
         AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
         DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder,
-        DefaultSyncRetryBuilderWithStats, PolicyAsyncRetryBuilder,
-        PolicyAsyncRetryBuilderWithStats, PolicySyncRetryBuilder, PolicySyncRetryBuilderWithStats,
-        SyncRetryBuilder, SyncRetryBuilderWithStats,
+        DefaultSyncRetryBuilderWithStats, SyncRetryBuilder, SyncRetryBuilderWithStats,
     };
 }
 
@@ -107,7 +231,7 @@ pub mod builders {
 /// built-in stop, wait, and predicate constructors that appear most often in
 /// retry chains.
 ///
-/// It does not export the `cancel`, `on`, `sleep`, `stop`, or `wait` modules
+/// It does not export the `cancel`, `predicate`, `sleep`, `stop`, or `wait` modules
 /// themselves, and it leaves runtime-specific sleep helpers such as
 /// `sleep::tokio()` on their modules. That keeps
 /// `use tenacious::prelude::*;` useful for day-to-day call sites without
@@ -119,22 +243,22 @@ pub mod builders {
 /// use tenacious::prelude::*;
 /// use core::time::Duration;
 ///
-/// let mut policy = RetryPolicy::new()
+/// let policy = RetryPolicy::new()
 ///     .stop(attempts(3) | elapsed(Duration::from_secs(1)))
 ///     .wait(exponential(Duration::from_millis(10)))
 ///     .when(any_error());
 ///
-/// let result = policy.retry(|| Err::<(), _>("fail")).sleep(|_dur| {}).call();
+/// let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_dur| {}).call();
 /// assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 /// ```
 pub mod prelude {
     pub use crate::AsyncRetryExt;
-    pub use crate::on::{any_error, error, ok, result};
+    pub use crate::predicate::{any_error, error, ok, result};
     pub use crate::sleep::Sleeper;
     pub use crate::stop::{attempts, elapsed, never};
     pub use crate::wait::{exponential, fixed, linear};
     pub use crate::{
-        Canceler, Predicate, PredicateExt, RetryError, RetryExt, RetryPolicy, RetryResult,
-        RetryStats, Stop, StopExt, StopReason, Wait, WaitExt,
+        Canceler, Predicate, RetryError, RetryExt, RetryPolicy, RetryResult, RetryStats, Stop,
+        StopReason, Wait,
     };
 }
