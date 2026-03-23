@@ -10,18 +10,18 @@ development workflow, or historical migration steps.
 `tenacious` is a Rust library for retrying fallible operations and polling for
 conditions. It models retries with three composable parts:
 
-- `Stop`: when to stop retrying
-- `Wait`: how long to wait between attempts
 - `Predicate`: which outcomes should retry
+- `Wait`: how long to wait between attempts
+- `Stop`: when to stop retrying
 
 The same model applies to sync and async execution. Policies are reusable, hook
 callbacks are configured per execution, and the crate supports `std`,
 `no_std`, `wasm32`, and embedded-oriented environments.
 
-Polling for a condition is a first-class operation alongside retrying errors.
-Dedicated entry points (`poll_until`, `poll_until_async`) accept a readiness
-predicate using natural logic (returns `true` when done), eliminating the
-double-negation required when composing predicates manually.
+Polling for a condition is expressed with `.until()`, which accepts a predicate
+using natural "done when true" logic. `.when()` provides the direct form:
+"retry when this predicate is true." Both set the same predicate slot;
+`.until(p)` wraps `p` in a `PredicateUntil` inverter. See Predicate for details.
 
 ## Support matrix
 
@@ -34,10 +34,9 @@ top of that base.
 |Sync retry with explicit `.sleep(...)`  |yes        |yes    |yes  |
 |Sync retry with implicit default sleeper|no         |no     |yes  |
 |Async retry with explicit `.sleep(...)` |yes        |yes    |yes  |
-|Free function entry points              |yes        |yes    |yes  |
+|Free functions and extension traits     |yes        |yes    |yes  |
 |Single hook per hook point              |yes        |yes    |yes  |
 |Multiple appended hooks per hook point  |no         |yes    |yes  |
-|`Arc<AtomicBool>` canceler              |no         |yes    |yes  |
 |Closure-based elapsed clock             |no         |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
 
@@ -47,12 +46,11 @@ Runtime adapter helpers are feature-gated separately:
 - `embassy`: `sleep::embassy()`
 - `gloo-timers`: `sleep::gloo()` on `wasm32`
 - `futures-timer`: `sleep::futures_timer()`
-- `tokio-cancel`: `CancellationToken` async canceler support
 - `jitter`: jitter strategies and `Wait` jitter decorator methods
 
 `alloc` is not required for async retry itself. It is required only for
-`Arc<AtomicBool>`, closure-based elapsed clocks, and registering more than one
-hook of the same kind on a single execution builder.
+closure-based elapsed clocks and registering more than one hook of the same
+kind on a single execution builder.
 
 ## Core abstractions
 
@@ -151,9 +149,8 @@ Wait strategies only compute `Duration`. They do not sleep directly.
 (or any other mechanism reduces the delay to zero), sleep is skipped entirely
 — no sleep call is made and no async yield occurs. This makes
 `wait::fixed(Duration::ZERO)` a valid "no delay" strategy for tight polling
-loops. All other loop behavior (hooks, stop checks, cancellation checks)
-proceeds normally. This rule is referenced by the Timeout section and the loop
-pseudocode (step 12).
+loops. All other loop behavior (hooks, stop checks) proceeds normally. This
+rule is referenced by the Timeout section and the loop pseudocode (step 10).
 
 ### Jitter strategies
 
@@ -255,15 +252,25 @@ Built-in predicate constructors:
 - `predicate::result(f: impl Fn(&Result<T, E>) -> bool) -> PredicateResult<F>`:
   retries when `f` returns `true`
 
-Polling is expressed with the existing predicate combinators:
+**`when` vs `until`.** The predicate is set on the policy or execution
+builder via either `.when(p)` or `.until(p)`. Both set the same predicate
+slot; the last call wins.
 
-- use `predicate::ok(|value| !is_ready(value))` when `Err` should terminate
-- combine `predicate::error(is_retryable)` with `predicate::ok(...)` when
-  selected errors should also retry
-- use `predicate::result(...)` when the retry decision needs the full
-  `Result<T, E>`
-- use the `poll_until` / `poll_until_async` entry points (see Execution model)
-  for the common case where errors terminate
+- `.when(p)` retries while `p.should_retry()` returns `true`.
+- `.until(p)` retries until `p.should_retry()` returns `true` — i.e., it
+  wraps `p` in `PredicateUntil`, which negates `should_retry()` results.
+
+`.when()` is natural for error-based retry:
+`.when(error(|e| e.is_transient()))` reads "retry when transient error."
+`.until()` is natural for polling: `.until(ok(|s| s.is_ready()))` reads "retry
+until ready."
+
+When using `.until(ok(f))`, errors are retried by default because `ok(f)`
+returns `false` for all `Err` values, and `until` inverts that to `true`
+(retry). This is the expected behavior for a retry-first API — the user
+reached for `retry()`, so errors are retriable by default. Users who want
+specific errors to terminate during polling compose explicitly:
+`.until(ok(|s| s.is_ready()).or(error(|e| e.is_fatal())))`.
 
 `Predicate` is blanket-implemented for `Fn(&Result<T, E>) -> bool`. Named
 predicate types (`PredicateAnyError`, `PredicateError<F>`, `PredicateOk<F>`,
@@ -326,7 +333,7 @@ pub struct AttemptState<'a, T, E> {
     /// Outcome of the just-completed attempt.
     pub outcome: &'a Result<T, E>,
     /// Delay before the next attempt, or `None` when this is the final
-    /// attempt (stop fired, predicate accepted, or cancellation).
+    /// attempt (stop fired or predicate accepted).
     pub next_delay: Option<Duration>,
 }
 ```
@@ -334,13 +341,12 @@ pub struct AttemptState<'a, T, E> {
 ```rust
 /// State passed to the on_exit hook.
 pub struct ExitState<'a, T, E> {
-    /// Number of completed attempts. `0` only when cancelled before
-    /// the first attempt.
+    /// 1-indexed number of completed attempts. Always >= 1.
     pub attempt: u32,
     /// Wall-clock time since retry execution started, or `None`.
     pub elapsed: Option<Duration>,
-    /// `None` only when cancelled before the first attempt.
-    pub outcome: Option<&'a Result<T, E>>,
+    /// Outcome of the final attempt.
+    pub outcome: &'a Result<T, E>,
     /// Why the retry loop terminated.
     pub stop_reason: StopReason,
 }
@@ -366,7 +372,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
     pub fn new(
         attempt: u32,
         elapsed: Option<Duration>,
-        outcome: Option<&'a Result<T, E>>,
+        outcome: &'a Result<T, E>,
         stop_reason: StopReason,
     ) -> Self;
 }
@@ -393,13 +399,9 @@ Field meanings:
 - `attempt` is 1-indexed for completed or about-to-start attempts
 - `elapsed` is `None` when no elapsed clock is available
 - `AttemptState.next_delay` is `None` on the final attempt; `Some(delay)` means
-  another attempt is intended but cancellation during sleep may prevent it
-- `ExitState.attempt` is always the number of completed attempts, regardless of
-  where termination was detected
-- `ExitState.outcome` is `None` only when cancellation happens before the first
-  attempt
-- cancellation before the first attempt records `attempt = 0` in terminal
-  artifacts (`RetryError::Cancelled`, `RetryStats`, and `ExitState`)
+  another attempt will follow after the delay
+- `ExitState.attempt` is always the number of completed attempts
+- `ExitState.outcome` is always the outcome of the final attempt
 
 ## Error types
 
@@ -420,11 +422,6 @@ pub enum RetryError<T, E> {
     /// The predicate accepted an `Err` outcome as terminal (did not
     /// request retry).
     Rejected { last: E },
-    /// Cancellation was detected.
-    Cancelled {
-        /// `None` when cancelled before the first attempt.
-        last: Option<Result<T, E>>,
-    },
 }
 ```
 
@@ -433,21 +430,20 @@ pub enum RetryError<T, E> {
 Accessor methods:
 
 - `last() -> Option<&Result<T, E>>`: the final `Result<T, E>` if the variant
-  carries one; returns `Some` for `Exhausted` and `Cancelled` (when an attempt
-  completed), `None` for `Rejected` (which stores only `E`) and `Cancelled`
-  before the first attempt
+  carries one; returns `Some` for `Exhausted`, `None` for `Rejected` (which
+  stores only `E`)
 - `into_last() -> Option<Result<T, E>>`: consuming version with the same
   `None` cases as `last()`
 - `last_error() -> Option<&E>`: the final `E` if the variant carries one;
-  returns `Some` for `Rejected`, for `Exhausted` when the last outcome is
-  `Err`, and for `Cancelled` when the last outcome is `Err`; `None` otherwise
+  returns `Some` for `Rejected` and for `Exhausted` when the last outcome is
+  `Err`; `None` otherwise
 - `into_last_error() -> Option<E>`: consuming version
 - `stop_reason() -> StopReason`: the termination reason as a typed enum
 
 Display: `RetryError` implements `Display` when `E: Display`. Display output
 is lowercase, without trailing punctuation, following the pattern
 `{variant}: {error}`. Examples: `retries exhausted: connection refused`,
-`rejected: invalid argument`, `cancelled`.
+`rejected: invalid argument`.
 
 `RetryError` implements `std::error::Error` when `std` is active and
 `E: std::error::Error + 'static`, `T: fmt::Debug + 'static`.
@@ -462,13 +458,11 @@ pub enum StopReason {
     Accepted,
     /// The stop strategy fired while the predicate still wanted to retry.
     Exhausted,
-    /// Cancellation was detected.
-    Cancelled,
 }
 ```
 
 `StopReason` implements `Display` with lowercase labels: `"accepted"`,
-`"retries exhausted"`, `"cancelled"`.
+`"retries exhausted"`.
 
 Mapping from `RetryError` to `StopReason`:
 
@@ -477,23 +471,20 @@ Mapping from `RetryError` to `StopReason`:
 |Predicate accepts `Ok(T)`             |(not an error)        |`Accepted`  |
 |Predicate accepts `Err(E)` as terminal|`Rejected { last: E }`|`Accepted`  |
 |Stop fires while retrying             |`Exhausted`           |`Exhausted` |
-|Cancelled                             |`Cancelled`           |`Cancelled` |
 
 ### RetryStats
 
 ```rust
 pub struct RetryStats {
-    /// Completed attempts. `0` only when cancelled before the first
-    /// attempt.
+    /// Completed attempts. Always >= 1.
     pub attempts: u32,
     /// Wall-clock time from retry execution start until terminal exit,
     /// or `None` when no clock is available.
     pub total_elapsed: Option<Duration>,
-    /// Sum of delays for retries that reached the sleep phase (step 11
+    /// Sum of delays for retries that reached the sleep phase (step 9
     /// onward). This is requested wait budget, not measured sleep time.
     /// Includes zero-duration delays (which skip actual sleep). Excludes
-    /// delays computed but preempted by stop or cancellation at steps
-    /// 8–10.
+    /// delays computed but preempted by stop at steps 7–8.
     pub total_wait: Duration,
     /// Why the retry loop terminated.
     pub stop_reason: StopReason,
@@ -528,11 +519,21 @@ they are inferred at the call site when the operation is provided.
 
 Builder methods:
 
-- `.stop(s: impl Stop) -> RetryPolicy<S2, W, P>`
-- `.wait(w: impl Wait) -> RetryPolicy<S, W2, P>`
 - `.when(p: impl Predicate<T, E>) -> RetryPolicy<S, W, P2>`
+- `.until(p: impl Predicate<T, E>) -> RetryPolicy<S, W, P2>`
+- `.wait(w: impl Wait) -> RetryPolicy<S, W2, P>`
+- `.stop(s: impl Stop) -> RetryPolicy<S2, W, P>`
 - `.boxed() -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, Box<dyn Predicate<T, E> + Send + 'static>>`
   with `alloc`
+
+`.when(p)` and `.until(p)` both set the predicate. `.when(p)` stores `p`
+directly. `.until(p)` wraps `p` in `PredicateUntil<P>`, which negates
+`should_retry()` results. The last call wins; they do not compose with each
+other.
+
+> This follows the same type-level composition pattern as `StopAny`,
+> `WaitCapped`, and other combinator types. `PredicateUntil` is listed in the
+> combinator type opacity section — users should not name it directly.
 
 `RetryPolicy` is `Clone` when its components are `Clone`. Because all trait
 methods use `&self`, policies are freely shareable without interior mutability.
@@ -547,20 +548,8 @@ supports hook configuration and terminal execution. The operation receives
 
 `RetryPolicy::retry_async(op)` borrows `&self` and returns
 `AsyncRetryBuilder`, which supports hook configuration, sleeper configuration,
-canceler configuration, and terminal execution. The operation receives
-`RetryState` by value on each invocation.
-
-`RetryPolicy::poll_until(op, ready)` borrows `&self` and returns
-`SyncRetryBuilder` with the predicate set to
-`predicate::ok(move |v| !ready(v))`. This sets the predicate unconditionally;
-any previously configured predicate (including the default) is replaced. This
-provides a natural polling entry point where `ready` returns `true` when the
-condition is met. All `Err` values terminate immediately. Users who need to
-retry selected errors during polling should use `retry(op)` with manually
-composed predicates instead.
-
-`RetryPolicy::poll_until_async(op, ready)` is the async equivalent. The same
-predicate replacement applies.
+and terminal execution. The operation receives `RetryState` by value on each
+invocation.
 
 Because `Stop`, `Wait`, and `Predicate` all use `&self`, the policy holds no
 mutable state. Multiple concurrent retry loops can share the same policy
@@ -580,67 +569,94 @@ where F: FnMut(RetryState) -> Result<T, E>;
 /// Async retry with default policy.
 pub fn retry_async<F, T, E, Fut>(op: F) -> AsyncRetryBuilder<...>
 where F: FnMut(RetryState) -> Fut, Fut: Future<Output = Result<T, E>>;
-
-/// Sync polling with default policy.
-pub fn poll_until<F, T, E>(
-    op: F,
-    ready: impl Fn(&T) -> bool,
-) -> SyncRetryBuilder<...>
-where F: FnMut(RetryState) -> Result<T, E>;
-
-/// Async polling with default policy.
-pub fn poll_until_async<F, T, E, Fut>(
-    op: F,
-    ready: impl Fn(&T) -> bool,
-) -> AsyncRetryBuilder<...>
-where F: FnMut(RetryState) -> Fut, Fut: Future<Output = Result<T, E>>;
 ```
 
-Free functions are a complete alternative entry point to `RetryPolicy`. They
-produce the same builder types with the same behavior.
+Free functions accept `FnMut(RetryState) -> ...`, giving the operation access
+to attempt number and elapsed time.
+
+### Extension traits
+
+`RetryExt` and `AsyncRetryExt` provide method-call syntax for closures and
+functions that return `Result`. They use the same defaults as
+`RetryPolicy::new()`.
+
+```rust
+pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
+    fn retry(self) -> SyncRetryBuilder<...>;
+}
+
+pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
+where Fut: Future<Output = Result<T, E>>
+{
+    fn retry_async(self) -> AsyncRetryBuilder<...>;
+}
+```
+
+Both traits have blanket implementations for all matching closures and function
+pointers. The operation does not receive `RetryState`; the closure is wrapped
+internally as `move |_| op()`.
+
+> Extension traits are the convenience path for one-shot retry with minimal
+> ceremony. Use the free functions `retry()` / `retry_async()` when the
+> operation needs access to `RetryState`.
 
 Usage:
 
 ```rust
-use tenacious::{retry, poll_until, retry_async, poll_until_async};
+use tenacious::{retry, retry_async, RetryExt, AsyncRetryExt};
+use tenacious::{stop, wait, sleep};
+use tenacious::predicate::{any_error, error, ok};
 
-// Retry (ignore state)
-retry(|_| fetch_data()).call()?;
+// Ext: one-shot retry with zero config
+(|| fetch_data()).retry().call()?;
 
-// Retry with attempt-aware timeout
+// Ext: one-shot with builder config
+(|| fetch_data()).retry()
+    .when(error(|e| e.is_transient()))
+    .wait(wait::exponential(Duration::from_millis(200)))
+    .stop(stop::attempts(5))
+    .call()?;
+
+// Ext: one-shot async
+(|| fetch_data()).retry_async()
+    .sleep(sleep::tokio())
+    .await?;
+
+// Ext: polling
+(|| check_status()).retry()
+    .until(ok(|s| s.is_complete()))
+    .wait(wait::fixed(Duration::from_secs(1)))
+    .stop(stop::attempts(20))
+    .call()?;
+
+// Free function: operation needs attempt state
 retry(|state| {
     let timeout = Duration::from_secs(state.attempt as u64 * 2);
     fetch_data_with_timeout(timeout)
 })
 .stop(stop::attempts(5))
-.wait(wait::exponential(Duration::from_millis(200)))
 .call()?;
 
-// Poll
-poll_until(|_| check_status(), |s| s.is_complete()).call()?;
-
-// Async retry
-retry_async(|_| fetch_data())
-    .sleep(sleep::tokio())
-    .await?;
-
-// Async poll
-poll_until_async(|_| check_status(), |s| s.is_complete())
-    .sleep(sleep::tokio())
-    .await?;
+// Free function: async with attempt state
+retry_async(|state| async move {
+    let timeout = Duration::from_secs(state.attempt as u64 * 2);
+    fetch_data_with_timeout(timeout).await
+})
+.sleep(sleep::tokio())
+.await?;
 ```
 
 ### Builder method signatures
 
 `SyncRetryBuilder` and `AsyncRetryBuilder` are generic over `S: Stop`,
-`W: Wait`, `P: Predicate<T, E>`, and (for async) `Sl: Sleeper`,
-`C: AsyncCanceler`.
+`W: Wait`, `P: Predicate<T, E>`, and (for async) `Sl: Sleeper`.
 
 #### Strategy overrides
 
-- `.stop(s: impl Stop) -> ...Builder<S2, W, P, ...>`
-- `.wait(w: impl Wait) -> ...Builder<S, W2, P, ...>`
 - `.when(p: impl Predicate<T, E>) -> ...Builder<S, W, P2, ...>`
+- `.until(p: impl Predicate<T, E>) -> ...Builder<S, W, P2, ...>`
+- `.wait(w: impl Wait) -> ...Builder<S, W2, P, ...>`
+- `.stop(s: impl Stop) -> ...Builder<S2, W, P, ...>`
 
 #### Timing
 
@@ -660,13 +676,10 @@ Sync-only:
 - `.sleep(f: impl FnMut(Duration)) -> ...Builder<...>` — sets the blocking
   sleep function; the closure is stored in the builder and called once per
   sleep; must be `Send` when the builder is `Send`
-- `.canceler(c: impl Canceler) -> ...Builder<S, W, P, C2>` — sets the sync
-  canceler
 
 Async-only:
 
-- `.sleep(sl: impl Sleeper) -> ...Builder<S, W, P, Sl2, C>`
-- `.canceler(c: impl AsyncCanceler) -> ...Builder<S, W, P, Sl, C2>`
+- `.sleep(sl: impl Sleeper) -> ...Builder<S, W, P, Sl2>`
 
 #### Hooks
 
@@ -696,36 +709,23 @@ The sync loop performs these steps:
 ```
 attempt = 1
 loop:
-    1.  Check cancellation. If cancelled, terminate.
-    2.  Fire `before_attempt` with RetryState { attempt }.
-    3.  Call the user operation with RetryState { attempt }.
-    4.  Evaluate the predicate.
-    5.  If the predicate does not retry:
+    1.  Fire `before_attempt` with RetryState { attempt }.
+    2.  Call the user operation with RetryState { attempt }.
+    3.  Evaluate the predicate.
+    4.  If the predicate does not retry:
         a. Fire `after_attempt` with next_delay = None.
         b. Terminate.
-    6.  Compute the next wait duration via Wait::next_wait.
-    7.  If timeout is configured and elapsed is Some, clamp delay to
+    5.  Compute the next wait duration via Wait::next_wait.
+    6.  If timeout is configured and elapsed is Some, clamp delay to
         max(0, timeout - elapsed). (See Timeout.)
-    8.  Evaluate the stop strategy.
-    9.  If stop fires:
+    7.  Evaluate the stop strategy.
+    8.  If stop fires:
         a. Fire `after_attempt` with next_delay = None.
         b. Terminate.
-    10. Check cancellation. If cancelled:
-        a. Fire `after_attempt` with next_delay = None.
-        b. Terminate.
-    11. Fire `after_attempt` with next_delay = Some(delay).
-    12. If delay > zero, sleep for the computed delay.
-    13. attempt += 1, continue to step 1.
+    9.  Fire `after_attempt` with next_delay = Some(delay).
+    10. If delay > zero, sleep for the computed delay.
+    11. attempt += 1, continue to step 1.
 ```
-
-Step 1 catches cancellation before the first attempt. Step 10 catches
-cancellation set by hooks or concurrent code before committing to a
-potentially long sleep. Cancellation is checked before `after_attempt` on
-non-terminal attempts so that the hook receives a truthful `next_delay` for
-all termination paths detected before sleep. Cancellation during sleep
-(caught at step 1 of the next iteration) is the one path where the last
-`after_attempt` will have fired with `Some(delay)` despite no further
-attempt running.
 
 ### Async execution
 
@@ -744,10 +744,7 @@ The async future is single-use:
 - it is directly awaitable via `IntoFuture`
 - polling after completion always panics
 
-The async loop uses the same transition order as sync execution. During the
-sleep phase it polls both the sleep future and `AsyncCanceler::cancel()`, so
-wake-driven cancelers can interrupt sleep promptly. When cancellation wins the
-race against sleep, the sleep future is dropped.
+The async loop uses the same transition order as sync execution.
 
 ### Statistics
 
@@ -765,47 +762,28 @@ Statistics are accessed via:
 
 ## Termination semantics
 
-Retry termination is defined by the final accepted outcome, the predicate, the
-stop strategy, and cancellation.
+Retry termination is defined by the final accepted outcome, the predicate, and
+the stop strategy.
 
 ### Termination table
 
-|Final condition                       |Return value                |`StopReason`|`ExitState.outcome` |
-|--------------------------------------|----------------------------|------------|--------------------|
-|Predicate accepts `Ok(T)`             |`Ok(T)`                     |`Accepted`  |`Some(&Ok(T))`      |
-|Predicate accepts `Err(E)` as terminal|`Err(RetryError::Rejected)` |`Accepted`  |`Some(&Err(E))`     |
-|Stop fires while retrying             |`Err(RetryError::Exhausted)`|`Exhausted` |`Some(&last_result)`|
-|Cancelled before first attempt        |`Err(RetryError::Cancelled)`|`Cancelled` |`None`              |
-|Cancelled before sleep (step 10)      |`Err(RetryError::Cancelled)`|`Cancelled` |`Some(&last_result)`|
-|Cancelled during or after sleep       |`Err(RetryError::Cancelled)`|`Cancelled` |`Some(&last_result)`|
-
-### `after_attempt` on final attempts
-
-On all terminal paths where termination is detected before `after_attempt`
-fires (predicate accepts, stop fires, cancellation at step 10), `after_attempt`
-fires with `next_delay = None` before the loop terminates.
-
-When cancellation occurs during or after sleep, the last `after_attempt` will
-have already fired with `next_delay = Some(delay)` at step 11. No additional
-`after_attempt` fires for the cancellation itself.
-
-When the cancelled-before-first-attempt path is taken, `after_attempt` does not
-fire at all (no attempt completed).
+|Final condition                       |Return value                |`StopReason`|`ExitState.outcome`|
+|--------------------------------------|----------------------------|------------|-------------------|
+|Predicate accepts `Ok(T)`             |`Ok(T)`                     |`Accepted`  |`&Ok(T)`           |
+|Predicate accepts `Err(E)` as terminal|`Err(RetryError::Rejected)` |`Accepted`  |`&Err(E)`          |
+|Stop fires while retrying             |`Err(RetryError::Exhausted)`|`Exhausted` |`&last_result`     |
 
 ### Additional guarantees
 
 - `after_attempt` fires after every completed attempt, including the final one
-- `next_delay = None` guarantees that this is the final attempt;
-  `next_delay = Some(delay)` means a sleep of `delay` is scheduled and another
-  attempt is intended, but cancellation during sleep may prevent it from
-  starting
+- on the final attempt, `after_attempt` fires with `next_delay = None`
+- `next_delay = Some(delay)` means another attempt will follow after the delay
 - predicate evaluation always happens before stop evaluation
 - stop evaluation always happens after wait computation
 - `Exhausted` carries `last: Result<T, E>` — callers match on the inner
   `Result` to distinguish exhausted-error from unmet-condition cases
 - `RetryResult<T, E>` is `Result<T, RetryError<T, E>>`
-- `ExitState.attempt` is always the number of completed attempts, regardless of
-  where termination was detected
+- `ExitState.attempt` is always the number of completed attempts (>= 1)
 
 ## Hooks
 
@@ -839,73 +817,77 @@ Panic behavior:
 - if a panic is caught by the caller via `catch_unwind`, `RetryStats` and
   `on_exit` are not recoverable; the execution is in an indeterminate state
 
-## Cancellation
+## Cancellation guidance
 
-Cancellation is split into sync and async traits.
+The crate does not provide a built-in cancellation mechanism. Async callers use
+standard Rust future cancellation; sync callers use `.timeout()` or in-closure
+checks.
 
-### Canceler (sync)
+### Async cancellation
+
+Dropping the retry future at any `.await` point cleanly terminates the retry
+loop. Standard patterns work as expected:
 
 ```rust
-pub trait Canceler {
-    fn is_cancelled(&self) -> bool;
+// Timeout
+tokio::time::timeout(Duration::from_secs(30),
+    (|| fetch_data()).retry_async().sleep(sleep::tokio())
+).await??;
+
+// Select
+tokio::select! {
+    result = (|| fetch_data()).retry_async().sleep(sleep::tokio()) => {
+        handle(result?);
+    }
+    _ = shutdown_signal() => {
+        log::info!("cancelled");
+    }
 }
 ```
 
-### AsyncCanceler (async)
+When the retry future is dropped, `on_exit` does not fire. This is the same
+behavior as panics and is consistent with the Rust async cancellation model.
+Callers who need guaranteed cleanup should use `Drop` impls on their own types,
+not retry hooks.
+
+### Sync cancellation
+
+For deadline-based cancellation, use `.timeout(dur)`:
 
 ```rust
-pub trait AsyncCanceler: Canceler {
-    type Cancel: Future<Output = ()>;
-    fn cancel(&self) -> Self::Cancel;
-}
+(|| fetch_data()).retry()
+    .timeout(Duration::from_secs(30))
+    .call()?;
 ```
 
-Sync retry uses `C: Canceler`. Async retry uses `C: AsyncCanceler`.
-
-> This split ensures that poll-based cancelers (which cannot wake during sleep)
-> produce a type error when passed to async retry, rather than silently
-> degrading to checkpoint-only detection.
-
-Provided cancelers:
-
-- `cancel::never()` / `CancelNever`: implements both `Canceler` and
-  `AsyncCanceler`
-- `&AtomicBool`: implements `Canceler` only
-- `Arc<AtomicBool>` with `alloc`: implements `Canceler` only
-- `tokio_util::sync::CancellationToken` with `tokio-cancel`: implements both
-  `Canceler` and `AsyncCanceler`
-
-### PolledCanceler adapter
-
-For users who genuinely want poll-based cancellation in async contexts
-(accepting checkpoint-only detection), a wrapper is provided:
+For flag-based cancellation (e.g., Ctrl-C), check the flag inside the
+operation closure:
 
 ```rust
-/// Wraps a sync-only `Canceler` for use in async contexts.
-/// Cancellation is detected only at attempt boundaries, not during sleep.
-pub struct PolledCanceler<C: Canceler>(pub C);
+let cancelled = Arc::new(AtomicBool::new(false));
+
+// Set `cancelled` from a signal handler or another thread.
+
+retry(|_| {
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(MyError::Cancelled);
+    }
+    do_work()
+})
+.stop(stop::attempts(100))
+.call()?;
 ```
 
-`PolledCanceler` implements `AsyncCanceler` by returning a permanently pending
-future from `cancel()`. Cancellation is detected only at checkpoints (before
-each attempt and after each sleep completes).
+This provides cancellation at attempt boundaries. The cancel error flows
+through the normal predicate: with the default `any_error()`, it is retried
+like any other error, so the flag must remain set. With a selective predicate
+like `.when(error(|e| e.is_transient()))`, non-transient cancel errors
+terminate immediately as `RetryError::Rejected`.
 
-> This makes the degradation from wake-based to poll-based detection explicit
-> and opt-in.
-
-`Canceler` contract for custom implementations:
-
-- `is_cancelled()` reports whether cancellation has been requested
-- `AsyncCanceler::cancel()` must not resolve before cancellation is requested
-- once cancellation is requested, implementations should continue to report a
-  cancelled state for the remainder of that execution
-
-Cancellation guarantees:
-
-- it is checked before every attempt (step 1)
-- it is checked after stop/predicate evaluation and before sleeping (step 10)
-- async retries additionally race sleep against `AsyncCanceler::cancel()`
-- the crate never interrupts a user operation that is already running
+> The crate does not interrupt operations or sleeps mid-execution. Sync sleep
+> (`std::thread::sleep`) is inherently uninterruptible. The maximum latency
+> between flag-set and termination is one sleep duration plus one operation
+> execution time. `.timeout()` bounds sleep duration via delay clamping.
 
 ## Thread safety
 
@@ -916,17 +898,16 @@ following are `Send`:
 - the operation's returned `Future`
 - `T` and `E`
 - `Sleeper::Sleep`
-- `AsyncCanceler::Cancel`
 - all registered hooks
 
 Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
-`Predicate`, `Sleeper`, `Canceler`, `AsyncCanceler`). Concrete execution types
-derive `Send`/`Sync` from their components via standard auto-trait rules.
+`Predicate`, `Sleeper`). Concrete execution types derive `Send`/`Sync` from
+their components via standard auto-trait rules.
 
 Sync execution types are `Send` when their components are `Send`. No `Sync`
 bound is required on any execution type because execution is driven by a single
-owner (`.call()` for sync, `poll()` for async).
+owner (`.call()` for sync, `Future::poll()` for async).
 
 The crate includes compile-time tests asserting that `RetryPolicy` with default
 type parameters is `Send + Sync`, that `AsyncRetryBuilder` is `Send` when all
@@ -995,9 +976,9 @@ entire retry execution. It combines two behaviors:
    `.stop()`, or the default. For example,
    `.stop(stop::attempts(5)).timeout(Duration::from_secs(30))` produces an
    effective stop of `stop::attempts(5).or(stop::elapsed(30s))`.
-2. After computing the wait duration (step 6), if `elapsed` is `Some`, clamps
+1. After computing the wait duration (step 5), if `elapsed` is `Some`, clamps
    the delay to the remaining budget:
-   `delay = min(delay, max(0, timeout - elapsed))` (step 7). When `elapsed` is
+   `delay = min(delay, max(0, timeout - elapsed))` (step 6). When `elapsed` is
    `None`, the clamp is skipped (no budget can be computed).
 
 When the clamped delay is zero, sleep is skipped entirely per the zero-duration
@@ -1087,7 +1068,6 @@ Types:
 - `RetryStats`, `StopReason`
 - `RetryState`, `AttemptState`, `ExitState`
 - `SyncRetryBuilder`, `AsyncRetryBuilder`
-- `PolledCanceler`
 
 Traits:
 
@@ -1096,15 +1076,14 @@ Traits:
   `.full_jitter()`, `.equal_jitter()` with `jitter`)
 - `Predicate` (includes `.or()`, `.and()` as provided methods)
 - `Sleeper`
-- `Canceler`
-- `AsyncCanceler`
+- `RetryExt` (blanket-implemented for `FnMut() -> Result<T, E>`)
+- `AsyncRetryExt` (blanket-implemented for
+  `FnMut() -> Fut where Fut: Future<Output = Result<T, E>>`)
 
 Free functions:
 
 - `retry`
 - `retry_async`
-- `poll_until`
-- `poll_until_async`
 
 ### Module exports
 
@@ -1127,12 +1106,7 @@ Free functions:
 
 - constructors: `any_error`, `error`, `ok`, `result`
 - types: `PredicateAnyError`, `PredicateError`, `PredicateOk`,
-  `PredicateResult`, `PredicateAny`, `PredicateAll`
-
-`cancel` module:
-
-- constructors: `never`
-- types: `CancelNever`
+  `PredicateResult`, `PredicateAny`, `PredicateAll`, `PredicateUntil`
 
 `sleep` module:
 
@@ -1141,10 +1115,10 @@ Free functions:
 ### Combinator type opacity
 
 Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
-`PredicateAny`, `PredicateAll`, etc.) are public for technical reasons (they
-appear in return types of composition methods), but users should not name them
-in function signatures. Use `impl Stop`, `impl Wait`, or
-`impl Predicate<T, E>` instead.
+`PredicateAny`, `PredicateAll`, `PredicateUntil`, etc.) are public for technical
+reasons (they appear in return types of composition methods and `.until()`),
+but users should not name them in function signatures. Use `impl Stop`,
+`impl Wait`, or `impl Predicate<T, E>` instead.
 
 > Combinator type names may change in minor releases.
 
@@ -1162,15 +1136,13 @@ Composite types derive traits conditionally on their type parameters.
 |`RetryStats`           |yes    |yes   |yes        |yes |—     |—        |—         |
 |`StopReason`           |yes    |yes   |yes        |yes |yes   |—        |yes       |
 |`RetryError<T,E>`      |T,E    |—     |T,E        |T,E |—     |—        |E: Display|
-|`CancelNever`          |yes    |yes   |yes        |yes |yes   |yes      |—         |
-|`PolledCanceler<C>`    |C      |C     |C          |C   |C     |—        |—         |
 |All stop strategy types|yes    |yes   |yes        |yes |—     |—        |—         |
 |All wait strategy types|yes    |yes   |yes        |yes |—     |—        |—         |
 |All predicate types    |F      |—     |—          |—   |—     |—        |—         |
 |Combinator types (A,B) |A,B    |—     |—          |—   |—     |—        |—         |
 
-Cells with type names (e.g. "T,E" or "F" or "A,B" or "C") indicate the trait
-is implemented conditionally when those components implement the trait.
+Cells with type names (e.g. "T,E" or "F" or "A,B") indicate the trait is
+implemented conditionally when those components implement the trait.
 
 `RetryStats` and `StopReason` do not implement `Default` because there is no
 meaningful default `StopReason`.
