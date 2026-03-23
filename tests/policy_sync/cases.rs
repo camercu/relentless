@@ -13,7 +13,7 @@ use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
-use tenacious::{RetryError, RetryExt, RetryPolicy, StopReason};
+use tenacious::{RetryError, RetryPolicy, StopReason};
 use tenacious::{predicate, stop, wait};
 
 // ---------------------------------------------------------------------------

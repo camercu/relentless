@@ -327,10 +327,6 @@ impl StopAfterConsultations {
             count: Cell::new(0),
         }
     }
-
-    fn consultation_count(&self) -> u32 {
-        self.count.get()
-    }
 }
 
 impl Stop for StopAfterConsultations {

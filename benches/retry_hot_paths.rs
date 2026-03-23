@@ -30,22 +30,22 @@ fn run_case(name: &str, mut case: impl FnMut()) {
 }
 
 fn sync_success_first_attempt() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result = policy
-        .retry(|| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
     black_box(result).expect("success path benchmark must succeed");
 }
 
 fn sync_retry_until_success() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
     let mut attempts = 0_u32;
 
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             attempts = attempts.saturating_add(1);
             if attempts < MAX_ATTEMPTS {
                 Err::<i32, &str>(ERROR_VALUE)
@@ -59,11 +59,11 @@ fn sync_retry_until_success() {
 }
 
 fn sync_retry_exhausted_with_wait() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(FIXED_WAIT));
     let result = policy
-        .retry(|| Err::<i32, &str>(ERROR_VALUE))
+        .retry(|_| Err::<i32, &str>(ERROR_VALUE))
         .sleep(instant_sleep)
         .call();
     let _ = black_box(result);

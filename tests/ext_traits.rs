@@ -20,9 +20,6 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
 const DEFAULT_WAIT_SEQUENCE: [Duration; 2] = [DEFAULT_INITIAL_WAIT, DEFAULT_SECOND_WAIT];
 const STATEFUL_STOP_THRESHOLD: u32 = 2;
-const DIRTY_STOP_COUNT: u32 = 1;
-const DIRTY_WAIT_COUNT: u32 = 1;
-const RESET_WAIT_DURATION: Duration = Duration::from_millis(1);
 
 fn instant_sleep(_dur: Duration) {}
 
@@ -178,7 +175,7 @@ fn retry_ext_stateful_stop_and_wait_work() {
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
-    assert_eq!(*sleeps.borrow(), vec![RESET_WAIT_DURATION]);
+    assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
 }
 
 #[test]
@@ -574,7 +571,7 @@ mod async_tests {
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
-        assert_eq!(*sleeps.borrow(), vec![RESET_WAIT_DURATION]);
+        assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
     }
 
     #[test]

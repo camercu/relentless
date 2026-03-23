@@ -152,7 +152,7 @@ fn async_retry_execution_is_allocation_free_after_warmup() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
-    let mut run_once = || {
+    let run_once = || {
         let call_count = Cell::new(0_u32);
         block_on(
             policy

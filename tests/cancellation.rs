@@ -48,7 +48,7 @@ impl Canceler for CancelOnCheck {
 #[test]
 fn sync_cancel_before_first_attempt() {
     let flag = AtomicBool::new(true); // pre-set
-    let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+    let policy = RetryPolicy::new().stop(stop::attempts(5));
     let result = policy
         .retry(|_| Err::<(), _>("fail"))
         .sleep(instant_sleep)
@@ -67,7 +67,7 @@ fn sync_cancel_before_first_attempt() {
 fn sync_cancel_after_first_attempt() {
     let flag = AtomicBool::new(false);
     let call_count = Cell::new(0u32);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -111,7 +111,7 @@ fn sync_cancellation_does_not_interrupt_running_operation() {
                 .expect("cancellation coordinator should release operation");
         });
 
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -140,7 +140,7 @@ fn sync_cancellation_does_not_interrupt_running_operation() {
 
 #[test]
 fn sync_no_cancel_normal_success() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(3));
+    let policy = RetryPolicy::new().stop(stop::attempts(3));
     let result = policy
         .retry(|_| Ok::<_, &str>(42))
         .sleep(instant_sleep)
@@ -153,7 +153,7 @@ fn sync_no_cancel_normal_success() {
 #[test]
 fn stats_reports_cancelled_reason() {
     let flag = AtomicBool::new(true);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+    let policy = RetryPolicy::new().stop(stop::attempts(5));
     let (result, stats): (Result<(), _>, RetryStats) = policy
         .retry(|_| Err::<(), _>("fail"))
         .sleep(instant_sleep)
@@ -199,7 +199,7 @@ fn on_exit_fires_with_cancelled_reason() {
     let exit_reason = Cell::new(None);
     let exit_attempt = Cell::new(0_u32);
     let exit_has_outcome = Cell::new(false);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -230,7 +230,7 @@ fn on_exit_fires_when_cancelled_before_first_attempt() {
     let exit_calls = Cell::new(0_u32);
     let exit_attempt = Cell::new(99_u32);
     let exit_has_outcome = Cell::new(true);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+    let policy = RetryPolicy::new().stop(stop::attempts(5));
 
     let result = policy
         .retry(|_| Err::<(), _>("fail"))
@@ -256,7 +256,7 @@ fn on_exit_fires_when_cancelled_between_attempts() {
     let exit_attempt = Cell::new(0_u32);
     let exit_has_err_outcome = Cell::new(false);
     let call_count = Cell::new(0_u32);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -289,7 +289,7 @@ fn on_exit_fires_when_cancelled_between_attempts() {
 #[test]
 fn cancelled_last_result_preserves_ok_value_in_polling_mode() {
     let flag = AtomicBool::new(false);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(1)))
         .when(tenacious::predicate::ok(|_value: &i32| true));
@@ -458,7 +458,7 @@ mod async_tests {
     #[test]
     fn async_cancel_before_first_attempt() {
         let flag = AtomicBool::new(true);
-        let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+        let policy = RetryPolicy::new().stop(stop::attempts(5));
         let result = block_on(
             policy
                 .retry_async(|_| async { Err::<(), _>("fail") })
@@ -481,7 +481,7 @@ mod async_tests {
         let exit_reason = Cell::new(None);
         let exit_attempt = Cell::new(0_u32);
         let exit_has_outcome = Cell::new(false);
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -526,7 +526,7 @@ mod async_tests {
         let poll_count_for_op = Rc::clone(&op_poll_count);
         let completed_for_op = Rc::clone(&op_completed);
 
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -554,7 +554,7 @@ mod async_tests {
     #[test]
     fn async_stats_reports_cancelled() {
         let flag = AtomicBool::new(true);
-        let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+        let policy = RetryPolicy::new().stop(stop::attempts(5));
         let (result, stats) = block_on(
             policy
                 .retry_async(|_| async { Err::<(), _>("fail") })
@@ -601,7 +601,7 @@ mod async_tests {
         let exit_calls = Cell::new(0_u32);
         let exit_attempt = Cell::new(99_u32);
         let exit_has_outcome = Cell::new(true);
-        let mut policy = RetryPolicy::new().stop(stop::attempts(5));
+        let policy = RetryPolicy::new().stop(stop::attempts(5));
 
         let result = block_on(
             policy
@@ -628,7 +628,7 @@ mod async_tests {
         let exit_attempt = Cell::new(0_u32);
         let exit_has_err_outcome = Cell::new(false);
         let call_count = Cell::new(0_u32);
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -662,7 +662,7 @@ mod async_tests {
     #[test]
     fn async_cancelled_last_result_preserves_ok_value_in_polling_mode() {
         let flag = AtomicBool::new(false);
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)))
             .when(tenacious::predicate::ok(|_value: &i32| true));
@@ -688,7 +688,7 @@ mod async_tests {
         let canceler = CancelViaFuture::new(CANCEL_READY_AFTER_POLLS);
         let canceler_for_assert = canceler.clone();
         let call_count = Cell::new(0_u32);
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
@@ -718,7 +718,7 @@ mod async_tests {
         let token = tokio_util::sync::CancellationToken::new();
         let token_for_sleep = token.clone();
         let call_count = Cell::new(0_u32);
-        let mut policy = RetryPolicy::new()
+        let policy = RetryPolicy::new()
             .stop(stop::attempts(5))
             .wait(wait::fixed(Duration::from_millis(1)));
 
