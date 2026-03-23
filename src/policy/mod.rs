@@ -187,6 +187,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     /// Converts this policy into a type-erased boxed variant.
     #[cfg(feature = "alloc")]
     #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn boxed<T, E>(
         self,
     ) -> RetryPolicy<

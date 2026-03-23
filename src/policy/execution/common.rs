@@ -345,6 +345,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
