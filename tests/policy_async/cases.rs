@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use tenacious::{RetryError, RetryPolicy};
-use tenacious::{on, sleep::Sleeper, stop, wait};
+use tenacious::{predicate, sleep::Sleeper, stop, wait};
 
 // ---------------------------------------------------------------------------
 // Test constants
@@ -40,12 +40,6 @@ const ASYNC_CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
 
 /// Simulated operation runtime increment for custom-clock tests.
 const ASYNC_CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-
-/// Deadline for conservative before-elapsed stop tests.
-const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
-
-/// Wait used in conservative before-elapsed stop tests.
-const BEFORE_ELAPSED_WAIT: Duration = Duration::from_millis(50);
 
 /// Arbitrary success value used across tests.
 const SUCCESS_VALUE: i32 = 42;
@@ -114,11 +108,11 @@ fn async_elapsed_clock_millis() -> Duration {
 
 #[test]
 fn retry_async_executes_when_sleeper_is_set() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let sleeper = RecordingSleeper::new();
 
     let call_count = Rc::new(Cell::new(0_u32));
-    let future = policy.retry_async(|| {
+    let future = policy.retry_async(|_| {
         let call_count = Rc::clone(&call_count);
         call_count.set(call_count.get().saturating_add(1));
         async move {
@@ -130,7 +124,7 @@ fn retry_async_executes_when_sleeper_is_set() {
         }
     });
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(future.sleep(sleeper.clone()));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(future.sleep(sleeper.clone()));
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
 }
@@ -138,23 +132,24 @@ fn retry_async_executes_when_sleeper_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity)]
-    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
-        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
+    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut, C>(
+        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut, C>,
     ) where
-        F: FnMut() -> Fut,
+        F: FnMut(tenacious::RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
+        C: tenacious::cancel::AsyncCanceler,
     {
         let _ = retry;
     }
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
-        .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+        .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
         .sleep(|_dur: Duration| async {});
     assert_nameable(retry);
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(|_dur: Duration| async {}),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -162,22 +157,22 @@ fn async_retry_type_is_nameable_from_crate_root() {
 
 #[test]
 fn async_retry_is_directly_awaitable() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
     let sleeper = RecordingSleeper::new();
     let async_retry = policy
-        .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+        .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
         .sleep(sleeper);
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(async_retry);
+    let result: Result<i32, RetryError<i32, &str>> = block_on(async_retry);
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 #[test]
 fn async_retry_repoll_after_completion_panics() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
     let mut retry = Box::pin(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(|_dur: Duration| async {}),
     );
     let waker = noop_waker();
@@ -193,15 +188,15 @@ fn async_retry_repoll_after_completion_panics() {
 }
 
 #[test]
-fn retry_async_clone_starts_owned_execution_without_mut_borrowing_template() {
+fn retry_async_borrows_policy_immutably() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Rc::new(Cell::new(0_u32));
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async_clone(|| {
+            .retry_async(|_| {
                 let call_count = Rc::clone(&call_count);
                 call_count.set(call_count.get().saturating_add(1));
                 async move { Err::<i32, &str>(ERROR_VALUE) }
@@ -209,10 +204,7 @@ fn retry_async_clone_starts_owned_execution_without_mut_borrowing_template() {
             .sleep(|_dur: Duration| async {}),
     );
 
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 2, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(call_count.get(), 2);
 }
 
@@ -222,61 +214,59 @@ fn retry_async_clone_starts_owned_execution_without_mut_borrowing_template() {
 
 #[test]
 fn async_retry_returns_exhausted_on_persistent_errors() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let sleeper = RecordingSleeper::new();
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .sleep(sleeper),
     );
 
     match result {
-        Err(RetryError::Exhausted { last, attempts, .. }) => {
+        Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Err(ERROR_VALUE));
-            assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected Exhausted, got {:?}", other),
     }
 }
 
 #[test]
-fn async_retry_returns_condition_not_met_for_ok_exhaustion() {
-    let mut policy = RetryPolicy::new()
+fn async_retry_returns_exhausted_for_ok_exhaustion() {
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|value: &i32| *value < 0));
+        .when(predicate::ok(|value: &i32| *value < 0));
     let sleeper = RecordingSleeper::new();
 
     let result = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(-1) })
+            .retry_async(|_| async { Ok::<i32, &str>(-1) })
             .sleep(sleeper),
     );
 
     match result {
-        Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
+        Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Ok(-1));
-            assert_eq!(attempts, MAX_ATTEMPTS);
         }
-        other => panic!("expected ConditionNotMet, got {:?}", other),
+        other => panic!("expected Exhausted, got {:?}", other),
     }
 }
 
 #[test]
 fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .when(
-            on::error(|error: &&str| *error == ERROR_VALUE)
-                | on::ok(|value: &i32| *value < SUCCESS_VALUE),
+            predicate::error(|error: &&str| *error == ERROR_VALUE)
+                | predicate::ok(|value: &i32| *value < SUCCESS_VALUE),
         );
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 let current = call_count.get().saturating_add(1);
                 call_count.set(current);
                 async move {
@@ -297,13 +287,13 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
 #[test]
 fn async_sleep_receives_wait_strategy_delays() {
     let sleeper = RecordingSleeper::new();
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
-    let _result: Result<i32, RetryError<&str, i32>> = block_on(
+    let _result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .sleep(sleeper.clone()),
     );
 
@@ -323,14 +313,14 @@ fn async_sleep_receives_wait_strategy_delays() {
 fn async_predicate_is_evaluated_before_stop() {
     // attempts(1) would stop immediately if checked first.
     // Predicate accepts this Ok, so result must be returned.
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
-        .when(on::ok(|value: &i32| *value < 0));
+        .when(predicate::ok(|value: &i32| *value < 0));
     let sleeper = RecordingSleeper::new();
 
     let result = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(sleeper),
     );
 
@@ -339,13 +329,13 @@ fn async_predicate_is_evaluated_before_stop() {
 
 #[test]
 fn async_default_predicate_behaves_like_any_error() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async { Err::<i32, &str>(ERROR_VALUE) }
             })
@@ -359,15 +349,13 @@ fn async_default_predicate_behaves_like_any_error() {
 #[test]
 fn async_custom_elapsed_clock_counts_operation_runtime() {
     ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
-    let mut policy = RetryPolicy::new()
-        .stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE))
-        .elapsed_clock(async_elapsed_clock_millis);
+    let policy = RetryPolicy::new().stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE));
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
                     ASYNC_ELAPSED_CLOCK_MILLIS
@@ -375,42 +363,41 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
                     Err::<i32, &str>("slow failure")
                 }
             })
+            .elapsed_clock(async_elapsed_clock_millis)
             .sleep(sleeper.clone()),
     );
 
     assert_eq!(call_count.get(), 1);
     assert!(sleeper.calls.borrow().is_empty());
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 #[test]
-fn async_before_elapsed_uses_computed_next_delay_before_sleeping() {
+fn async_elapsed_stop_triggers_after_deadline() {
     ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
-    let mut policy = RetryPolicy::new()
-        .stop(stop::before_elapsed(BEFORE_ELAPSED_DEADLINE))
-        .elapsed_clock(async_elapsed_clock_millis)
-        .wait(wait::fixed(BEFORE_ELAPSED_WAIT));
+    let policy = RetryPolicy::new()
+        .stop(stop::elapsed(Duration::from_millis(5)))
+        .wait(wait::fixed(Duration::from_millis(1)));
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
-                async { Err::<i32, &str>("would exceed budget") }
+                async {
+                    // Advance clock past the deadline on the first attempt
+                    ASYNC_ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+                    Err::<i32, &str>("would exceed budget")
+                }
             })
+            .elapsed_clock(async_elapsed_clock_millis)
             .sleep(sleeper.clone()),
     );
 
     assert_eq!(call_count.get(), 1);
     assert!(sleeper.calls.borrow().is_empty());
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 // ---------------------------------------------------------------------------
@@ -428,11 +415,11 @@ fn async_hooks_fire_in_expected_places() {
     let after_attempt_ref = Rc::clone(&after_attempt_calls);
     let exit_reason_ref = Rc::clone(&exit_reason);
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let _result: Result<i32, RetryError<&str, i32>> = block_on(
+    let _result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .before_attempt(move |state| {
                 before_attempt_ref.borrow_mut().push(state.attempt);
             })
@@ -440,7 +427,7 @@ fn async_hooks_fire_in_expected_places() {
                 after_attempt_ref.borrow_mut().push(state.attempt);
             })
             .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.reason));
+                exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(sleeper),
     );
@@ -450,64 +437,58 @@ fn async_hooks_fire_in_expected_places() {
 
     assert_eq!(*before_attempt, vec![1, 2, 3]);
     assert_eq!(*after_attempt, vec![1, 2, 3]);
-    assert_eq!(
-        exit_reason.get(),
-        Some(tenacious::StopReason::StopStrategyTriggered)
-    );
+    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Exhausted));
 }
 
 #[test]
 fn async_on_exit_reports_success_reason() {
     let exit_reason = Rc::new(Cell::new(None));
     let exit_reason_ref = Rc::clone(&exit_reason);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.reason));
+                exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(RecordingSleeper::new()),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Success));
+    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Accepted));
 }
 
 #[test]
 fn async_on_exit_reports_non_retryable_error_reason() {
     let exit_reason = Rc::new(Cell::new(None));
     let exit_reason_ref = Rc::clone(&exit_reason);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|err: &&str| *err == "retryable"));
+        .when(predicate::error(|err: &&str| *err == "retryable"));
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>("fatal") })
+            .retry_async(|_| async { Err::<i32, &str>("fatal") })
             .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.reason));
+                exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(RecordingSleeper::new()),
     );
 
-    assert!(matches!(result, Err(RetryError::NonRetryableError { .. })));
-    assert_eq!(
-        exit_reason.get(),
-        Some(tenacious::StopReason::NonRetryableError)
-    );
+    assert!(matches!(result, Err(RetryError::Rejected { .. })));
+    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Accepted));
 }
 
 #[test]
 fn async_hooks_are_per_call_and_do_not_persist() {
     let exit_calls = Rc::new(Cell::new(0_u32));
     let exit_calls_ref = Rc::clone(&exit_calls);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let _ = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .on_exit(move |_state: &tenacious::ExitState<'_, i32, &str>| {
                 exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
             })
@@ -517,7 +498,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 
     let _ = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .sleep(RecordingSleeper::new()),
     );
     assert_eq!(exit_calls.get(), 1);
@@ -531,10 +512,10 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 #[test]
 fn tokio_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(sleep_fn),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -544,10 +525,10 @@ fn tokio_sleep_helper_is_available() {
 #[test]
 fn embassy_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(sleep_fn),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -557,10 +538,10 @@ fn embassy_sleep_helper_is_available() {
 #[test]
 fn gloo_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(sleep_fn),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -570,10 +551,10 @@ fn gloo_sleep_helper_is_available() {
 #[test]
 fn futures_timer_sleep_helper_is_available() {
     let sleep_fn: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(sleep_fn),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));

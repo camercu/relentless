@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 use std::env;
-use tenacious::{Predicate, Stop, Wait, WaitExt, on, stop, wait};
+use tenacious::{Predicate, Stop, Wait, predicate, stop, wait};
 
 #[path = "support/property_seed.rs"]
 mod property_seed;
@@ -72,9 +72,10 @@ fn make_state(state: &mut u64) -> tenacious::RetryState {
     } else {
         None
     };
-    let next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
+    // Consume the extra random values to keep the stream in sync
+    let _next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
 
-    tenacious::RetryState::new(attempt, elapsed, next_delay, Duration::ZERO)
+    tenacious::RetryState::new(attempt, elapsed)
 }
 
 #[test]
@@ -88,13 +89,13 @@ fn stop_composition_matches_boolean_algebra() {
         let deadline = Duration::from_millis(bounded_u64(&mut seed, MAX_DEADLINE_MILLIS));
         let sample = sample_index + SAMPLE_INDEX_OFFSET;
 
-        let mut left = stop::attempts(max_attempts);
-        let mut right = stop::before_elapsed(deadline);
+        let left = stop::attempts(max_attempts);
+        let right = stop::elapsed(deadline);
         let left_value = left.should_stop(&state);
         let right_value = right.should_stop(&state);
 
-        let mut either = stop::attempts(max_attempts) | stop::before_elapsed(deadline);
-        let mut both = stop::attempts(max_attempts) & stop::before_elapsed(deadline);
+        let either = stop::attempts(max_attempts) | stop::elapsed(deadline);
+        let both = stop::attempts(max_attempts) & stop::elapsed(deadline);
 
         assert_eq!(
             either.should_stop(&state),
@@ -128,12 +129,12 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
         let fallback = Duration::from_millis(bounded_u64(&mut seed, MAX_INITIAL_WAIT_MILLIS));
         let sample = sample_index + SAMPLE_INDEX_OFFSET;
 
-        let mut left = wait::linear(initial, increment);
-        let mut right = wait::fixed(fallback);
+        let left = wait::linear(initial, increment);
+        let right = wait::fixed(fallback);
         let left_value = left.next_wait(&state);
         let right_value = right.next_wait(&state);
 
-        let mut combined = wait::linear(initial, increment) + wait::fixed(fallback);
+        let combined = wait::linear(initial, increment) + wait::fixed(fallback);
         assert_eq!(
             combined.next_wait(&state),
             left_value.saturating_add(right_value),
@@ -143,7 +144,7 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
             sample
         );
 
-        let mut capped = wait::linear(initial, increment).cap(cap);
+        let capped = wait::linear(initial, increment).cap(cap);
         assert!(
             capped.next_wait(&state) <= cap,
             "repro: {}={:#018x}; sample={}; invariant=wait-cap",
@@ -152,7 +153,7 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
             sample
         );
 
-        let mut chained =
+        let chained =
             wait::linear(initial, increment).chain(wait::fixed(fallback), CHAIN_SWITCH_ATTEMPT);
         let expected = if state.attempt <= CHAIN_SWITCH_ATTEMPT {
             wait::linear(initial, increment).next_wait(&state)
@@ -184,15 +185,15 @@ fn predicate_composition_matches_boolean_algebra() {
         };
         let sample = sample_index + SAMPLE_INDEX_OFFSET;
 
-        let mut left = on::error(|err: &u32| err % 2 == 0);
-        let mut right = on::ok(|value: &u32| *value < OK_THRESHOLD);
+        let left = predicate::error(|err: &u32| err % 2 == 0);
+        let right = predicate::ok(|value: &u32| *value < OK_THRESHOLD);
         let left_value = left.should_retry(&outcome);
         let right_value = right.should_retry(&outcome);
 
-        let mut either =
-            on::error(|err: &u32| err % 2 == 0) | on::ok(|value: &u32| *value < OK_THRESHOLD);
-        let mut both =
-            on::error(|err: &u32| err % 2 == 0) & on::ok(|value: &u32| *value < OK_THRESHOLD);
+        let either = predicate::error(|err: &u32| err % 2 == 0)
+            | predicate::ok(|value: &u32| *value < OK_THRESHOLD);
+        let both = predicate::error(|err: &u32| err % 2 == 0)
+            & predicate::ok(|value: &u32| *value < OK_THRESHOLD);
 
         assert_eq!(
             either.should_retry(&outcome),

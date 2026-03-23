@@ -1,7 +1,7 @@
-//! Ergonomics tests for `WaitExt` on custom wait strategies.
+//! Ergonomics tests for `Wait` trait provided methods on custom wait strategies.
 
 use core::time::Duration;
-use tenacious::{Wait, WaitExt, wait};
+use tenacious::{Wait, wait};
 
 const ARBITRARY_BASE_WAIT: Duration = Duration::from_millis(10);
 const ARBITRARY_INCREMENT_WAIT: Duration = Duration::from_millis(5);
@@ -19,7 +19,7 @@ struct StepWait {
 }
 
 impl Wait for StepWait {
-    fn next_wait(&mut self, state: &tenacious::RetryState) -> Duration {
+    fn next_wait(&self, state: &tenacious::RetryState) -> Duration {
         let step = self
             .increment
             .checked_mul(state.attempt.saturating_sub(1))
@@ -29,12 +29,12 @@ impl Wait for StepWait {
 }
 
 fn state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
+    tenacious::RetryState::new(attempt, None)
 }
 
 #[test]
 fn custom_wait_supports_cap_and_chain_via_wait_ext() {
-    let mut strategy = StepWait {
+    let strategy = StepWait {
         base: ARBITRARY_BASE_WAIT,
         increment: ARBITRARY_INCREMENT_WAIT,
     }
@@ -54,7 +54,7 @@ fn custom_wait_supports_cap_and_chain_via_wait_ext() {
 #[cfg(feature = "jitter")]
 #[test]
 fn custom_wait_supports_jitter_via_wait_ext() {
-    let mut strategy = StepWait {
+    let strategy = StepWait {
         base: ARBITRARY_BASE_WAIT,
         increment: ARBITRARY_INCREMENT_WAIT,
     }

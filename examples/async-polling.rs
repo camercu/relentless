@@ -3,7 +3,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use std::sync::Arc;
-use tenacious::{RetryError, RetryPolicy, on, stop, wait};
+use tenacious::{RetryError, RetryPolicy, predicate, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 4;
 const WAIT_DURATION: Duration = Duration::from_millis(25);
@@ -13,11 +13,11 @@ fn main() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION))
-        .when(on::ok(|status: &&str| *status != "ready"));
+        .when(predicate::ok(|status: &&str| *status != "ready"));
 
     let result: Result<&'static str, RetryError<&'static str, &'static str>> = block_on(
         policy
-            .retry_async_clone(|| {
+            .retry_async(|_| {
                 attempts.set(attempts.get().saturating_add(1));
                 ready(Ok(if attempts.get() < MAX_ATTEMPTS {
                     "pending"
@@ -25,7 +25,7 @@ fn main() {
                     "ready"
                 }))
             })
-            .sleep(|_dur| ready(())),
+            .sleep(|_dur: Duration| ready(())),
     );
 
     assert_eq!(result, Ok("ready"));

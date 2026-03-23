@@ -77,19 +77,19 @@ fn min_allocated_during(mut operation: impl FnMut()) -> (usize, usize) {
 #[test]
 fn concrete_sync_retry_execution_is_allocation_free() {
     let _guard = allocation_test_guard();
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
     // Warm up one run to avoid one-time initialization noise.
     let _ = policy
-        .retry(|| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
 
     let (min_allocations, min_bytes) = min_allocated_during(|| {
         let _ = policy
-            .retry(|| Err::<i32, &str>(ERROR_VALUE))
+            .retry(|_| Err::<i32, &str>(ERROR_VALUE))
             .sleep(instant_sleep)
             .call();
     });
@@ -117,19 +117,19 @@ fn boxed_policy_construction_performs_heap_allocation() {
 #[test]
 fn boxed_sync_retry_execution_is_allocation_free_after_warmup() {
     let _guard = allocation_test_guard();
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .boxed::<i32, &str>();
 
     let _ = policy
-        .retry(|| Err::<i32, &str>(ERROR_VALUE))
+        .retry(|_| Err::<i32, &str>(ERROR_VALUE))
         .sleep(instant_sleep)
         .call();
 
     let (min_allocations, min_bytes) = min_allocated_during(|| {
         let _ = policy
-            .retry(|| Err::<i32, &str>(ERROR_VALUE))
+            .retry(|_| Err::<i32, &str>(ERROR_VALUE))
             .sleep(instant_sleep)
             .call();
     });
@@ -148,7 +148,7 @@ fn boxed_sync_retry_execution_is_allocation_free_after_warmup() {
 #[test]
 fn async_retry_execution_is_allocation_free_after_warmup() {
     let _guard = allocation_test_guard();
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
@@ -156,7 +156,7 @@ fn async_retry_execution_is_allocation_free_after_warmup() {
         let call_count = Cell::new(0_u32);
         block_on(
             policy
-                .retry_async(|| {
+                .retry_async(|_| {
                     let call_count_ref = &call_count;
                     call_count_ref.set(call_count_ref.get().saturating_add(1));
                     async move {

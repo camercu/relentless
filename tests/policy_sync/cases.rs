@@ -13,8 +13,8 @@ use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
-use tenacious::{RetryError, RetryPolicy, StopReason};
-use tenacious::{on, stop, wait};
+use tenacious::{RetryError, RetryExt, RetryPolicy, StopReason};
+use tenacious::{predicate, stop, wait};
 
 // ---------------------------------------------------------------------------
 // Test constants
@@ -40,18 +40,6 @@ const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
 
 /// Simulated operation runtime increment for custom-clock tests.
 const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-
-/// Attempt fallback used when custom elapsed is disabled.
-#[cfg(not(feature = "std"))]
-const CUSTOM_CLOCK_ATTEMPT_FALLBACK: u32 = 2;
-
-/// Deadline for conservative before-elapsed stop tests.
-#[cfg(feature = "std")]
-const BEFORE_ELAPSED_DEADLINE: Duration = Duration::from_millis(30);
-
-/// Wait used in conservative before-elapsed stop tests.
-#[cfg(feature = "std")]
-const BEFORE_ELAPSED_WAIT: Duration = Duration::from_millis(50);
 
 /// Short wait used by policy-storage ergonomics tests.
 const STORAGE_POLICY_WAIT: Duration = Duration::from_millis(1);
@@ -80,11 +68,11 @@ fn elapsed_clock_millis() -> Duration {
 
 #[test]
 fn new_policy_retries_on_any_error_by_default() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
@@ -97,10 +85,10 @@ fn new_policy_retries_on_any_error_by_default() {
 
 #[test]
 fn new_policy_accepts_ok_immediately() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let result = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
 
@@ -108,20 +96,20 @@ fn new_policy_accepts_ok_immediately() {
 }
 
 #[test]
-fn new_policy_has_zero_wait_by_default() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+fn new_policy_has_exponential_wait_by_default() {
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(recording_sleep(&sleeps))
         .call();
 
     let recorded = sleeps.borrow();
     assert_eq!(recorded.len(), (MAX_ATTEMPTS - 1) as usize);
-    for dur in recorded.iter() {
-        assert_eq!(*dur, Duration::ZERO);
-    }
+    // Default wait is exponential starting at 100ms.
+    assert_eq!(recorded[0], Duration::from_millis(100));
+    assert_eq!(recorded[1], Duration::from_millis(200));
 }
 
 // ---------------------------------------------------------------------------
@@ -130,11 +118,11 @@ fn new_policy_has_zero_wait_by_default() {
 
 #[test]
 fn stop_builder_configures_stop_strategy() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
@@ -146,13 +134,13 @@ fn stop_builder_configures_stop_strategy() {
 
 #[test]
 fn wait_builder_configures_wait_strategy() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(WAIT_DURATION));
     let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(recording_sleep(&sleeps))
         .call();
 
@@ -161,14 +149,14 @@ fn wait_builder_configures_wait_strategy() {
 
 #[test]
 fn when_builder_configures_predicate() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|e: &&str| *e == "retryable"));
+        .when(predicate::error(|e: &&str| *e == "retryable"));
 
     // Retryable error: should retry until exhausted.
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("retryable")
         })
@@ -180,7 +168,7 @@ fn when_builder_configures_predicate() {
     // Non-retryable error: should NOT retry, returns immediately.
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fatal")
         })
@@ -188,26 +176,23 @@ fn when_builder_configures_predicate() {
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::NonRetryableError { last, attempts, .. }) => {
-            assert_eq!(last, Err("fatal"));
-            assert_eq!(attempts, 1);
+        Err(RetryError::Rejected { last }) => {
+            assert_eq!(last, "fatal");
         }
-        other => panic!(
-            "expected NonRetryableError with attempts=1, got {:?}",
-            other
-        ),
+        other => panic!("expected Rejected with last=\"fatal\", got {:?}", other),
     }
 }
 
 #[test]
 fn policy_is_easy_to_store_via_three_type_params() {
-    type DbPolicy = RetryPolicy<stop::StopAfterAttempts, wait::WaitFixed, on::AnyError>;
+    type DbPolicy =
+        RetryPolicy<stop::StopAfterAttempts, wait::WaitFixed, predicate::PredicateAnyError>;
 
     struct Service {
         retry: DbPolicy,
     }
 
-    let mut service = Service {
+    let service = Service {
         retry: RetryPolicy::new()
             .stop(stop::attempts(2))
             .wait(wait::fixed(STORAGE_POLICY_WAIT)),
@@ -215,7 +200,7 @@ fn policy_is_easy_to_store_via_three_type_params() {
 
     let result = service
         .retry
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
 
@@ -223,24 +208,21 @@ fn policy_is_easy_to_store_via_three_type_params() {
 }
 
 #[test]
-fn retry_clone_starts_owned_execution_without_mut_borrowing_template() {
+fn retry_borrows_policy_without_mut() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(STORAGE_POLICY_WAIT));
     let call_count = Cell::new(0_u32);
 
     let result = policy
-        .retry_clone(|| {
+        .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
         .sleep(instant_sleep)
         .call();
 
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 2, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(call_count.get(), 2);
 }
 
@@ -250,13 +232,13 @@ fn retry_clone_starts_owned_execution_without_mut_borrowing_template() {
 
 #[test]
 fn retry_succeeds_after_transient_failures() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
             if n < MAX_ATTEMPTS {
@@ -274,9 +256,9 @@ fn retry_succeeds_after_transient_failures() {
 
 #[test]
 fn sync_retry_type_is_nameable_from_crate_root() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep);
     let typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
@@ -284,17 +266,16 @@ fn sync_retry_type_is_nameable_from_crate_root() {
 
 #[test]
 fn retry_returns_exhausted_when_all_attempts_fail() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let result = policy
-        .retry(|| Err::<i32, _>("always fails"))
+        .retry(|_| Err::<i32, _>("always fails"))
         .sleep(instant_sleep)
         .call();
 
     match result {
-        Err(RetryError::Exhausted { last, attempts, .. }) => {
+        Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Err("always fails"));
-            assert_eq!(attempts, MAX_ATTEMPTS);
         }
         other => panic!("expected Exhausted, got {:?}", other),
     }
@@ -305,12 +286,12 @@ fn retry_predicate_evaluated_before_stop() {
     // Spec 5.6 step 2: predicate is checked before stop.
     // If predicate says "accept this outcome", return immediately even if
     // stop hasn't fired yet.
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|v: &i32| *v < 0)); // retry on negative Ok values
+        .when(predicate::ok(|v: &i32| *v < 0)); // retry on negative Ok values
 
     let result = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE)) // positive => predicate accepts
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE)) // positive => predicate accepts
         .sleep(instant_sleep)
         .call();
 
@@ -320,11 +301,11 @@ fn retry_predicate_evaluated_before_stop() {
 #[test]
 fn retry_with_never_stop_still_returns_on_ok() {
     // stop::never() means never stop, but predicate still accepts Ok.
-    let mut policy = RetryPolicy::new().stop(stop::never());
+    let policy = RetryPolicy::new().stop(stop::never());
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
             if n < 3 {
@@ -342,11 +323,11 @@ fn retry_with_never_stop_still_returns_on_ok() {
 
 #[test]
 fn default_policy_retries_three_times() {
-    let mut policy = RetryPolicy::default();
+    let policy = RetryPolicy::default();
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
@@ -359,11 +340,11 @@ fn default_policy_retries_three_times() {
 
 #[test]
 fn unparameterized_retry_policy_default_is_safe_policy() {
-    let mut policy: RetryPolicy = RetryPolicy::default();
+    let policy: RetryPolicy = RetryPolicy::default();
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
@@ -376,11 +357,11 @@ fn unparameterized_retry_policy_default_is_safe_policy() {
 
 #[test]
 fn default_policy_uses_exponential_backoff() {
-    let mut policy = RetryPolicy::default();
+    let policy = RetryPolicy::default();
     let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(recording_sleep(&sleeps))
         .call();
 
@@ -397,12 +378,12 @@ fn default_policy_uses_exponential_backoff() {
 #[test]
 fn sleep_function_receives_computed_delay() {
     let sleep_durations: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(|dur| sleep_durations.borrow_mut().push(dur))
         .call();
 
@@ -418,12 +399,12 @@ fn sleep_function_receives_computed_delay() {
 fn exponential_wait_increases_sleep_durations() {
     let sleep_durations: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
     let initial = Duration::from_millis(10);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(4))
         .wait(wait::exponential(initial));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(|dur| sleep_durations.borrow_mut().push(dur))
         .call();
 
@@ -444,10 +425,10 @@ fn policy_is_clone() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
-    let mut policy2 = policy.clone();
+    let policy2 = policy.clone();
 
     let result = policy2
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -456,14 +437,14 @@ fn policy_is_clone() {
 #[cfg(feature = "alloc")]
 #[test]
 fn boxed_policy_erases_strategy_types() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .boxed::<i32, &str>();
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
@@ -480,43 +461,37 @@ fn boxed_policy_erases_strategy_types() {
 
 #[test]
 fn policy_resets_between_retry_invocations() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
     // First use: exhaust all attempts.
     let result = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .sleep(instant_sleep)
         .call();
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 3, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 
     // Second use: should work again with fresh state (reset happened).
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail again")
         })
         .sleep(instant_sleep)
         .call();
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 3, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 #[test]
 fn hooks_are_per_call_and_do_not_persist_across_retries() {
     let before_calls = Cell::new(0_u32);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(2));
+    let policy = RetryPolicy::new().stop(stop::attempts(2));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .before_attempt(|_state| {
             before_calls.set(before_calls.get().saturating_add(1));
         })
@@ -525,7 +500,7 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
     assert_eq!(before_calls.get(), 2);
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail again"))
+        .retry(|_| Err::<i32, _>("fail again"))
         .sleep(instant_sleep)
         .call();
     assert_eq!(
@@ -542,10 +517,10 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
 #[test]
 fn before_attempt_hook_fires_before_each_attempt() {
     let hook_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .before_attempt(|state| {
             hook_calls.borrow_mut().push(state.attempt);
         })
@@ -559,11 +534,11 @@ fn before_attempt_hook_fires_before_each_attempt() {
 #[test]
 fn after_attempt_hook_fires_after_each_attempt() {
     let hook_results: RefCell<Vec<(u32, bool)>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
-        .retry(|| {
+        .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
             if n < MAX_ATTEMPTS {
@@ -590,12 +565,12 @@ fn after_attempt_hook_fires_after_each_attempt() {
 #[test]
 fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
     let hook_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
             hook_calls
                 .borrow_mut()
@@ -619,33 +594,33 @@ fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
 #[test]
 fn on_exit_hook_fires_when_stop_triggers() {
     let exit_reason = Cell::new(None);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-            exit_reason.set(Some(state.reason));
+            exit_reason.set(Some(state.stop_reason));
         })
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(exit_reason.get(), Some(StopReason::StopStrategyTriggered));
+    assert_eq!(exit_reason.get(), Some(StopReason::Exhausted));
 }
 
 #[test]
 fn on_exit_hook_fires_on_success() {
     let exit_reason = Cell::new(None);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-            exit_reason.set(Some(state.reason));
+            exit_reason.set(Some(state.stop_reason));
         })
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(exit_reason.get(), Some(StopReason::Success));
+    assert_eq!(exit_reason.get(), Some(StopReason::Accepted));
 }
 
 // ---------------------------------------------------------------------------
@@ -656,11 +631,11 @@ fn on_exit_hook_fires_on_success() {
 #[cfg(feature = "std")]
 fn std_feature_provides_default_sleep() {
     // When std is active, .call() should work without explicit .sleep().
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(Duration::from_millis(1)));
 
-    let result = policy.retry(|| Ok::<_, &str>(SUCCESS_VALUE)).call();
+    let result = policy.retry(|_| Ok::<_, &str>(SUCCESS_VALUE)).call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
@@ -671,11 +646,11 @@ fn std_feature_provides_default_sleep() {
 
 #[test]
 fn retry_with_single_attempt_calls_op_once() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
@@ -687,11 +662,11 @@ fn retry_with_single_attempt_calls_op_once() {
 
 #[test]
 fn retry_succeeds_on_first_attempt() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Ok::<_, &str>(SUCCESS_VALUE)
         })
@@ -703,39 +678,38 @@ fn retry_succeeds_on_first_attempt() {
 }
 
 #[test]
-fn condition_not_met_returned_for_ok_predicate_exhaustion() {
-    // When using on::ok() and stop fires while Ok values keep failing predicate.
-    let mut policy = RetryPolicy::new()
+fn exhausted_returned_for_ok_predicate_exhaustion() {
+    // When using predicate::ok() and stop fires while Ok values keep failing predicate.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|v: &i32| *v < 0)); // retry while Ok value is negative
+        .when(predicate::ok(|v: &i32| *v < 0)); // retry while Ok value is negative
 
     let result = policy
-        .retry(|| Ok::<_, &str>(-1_i32)) // always returns Ok(-1), predicate says retry
+        .retry(|_| Ok::<_, &str>(-1_i32)) // always returns Ok(-1), predicate says retry
         .sleep(instant_sleep)
         .call();
 
     match result {
-        Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
+        Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Ok(-1));
-            assert_eq!(attempts, MAX_ATTEMPTS);
         }
-        other => panic!("expected ConditionNotMet, got {:?}", other),
+        other => panic!("expected Exhausted, got {:?}", other),
     }
 }
 
 #[test]
 fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .when(
-            on::error(|error: &&str| *error == "transient")
-                | on::ok(|value: &i32| *value < SUCCESS_VALUE),
+            predicate::error(|error: &&str| *error == "transient")
+                | predicate::ok(|value: &i32| *value < SUCCESS_VALUE),
         );
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             let next_call = call_count.get().saturating_add(1);
             call_count.set(next_call);
             match next_call {
@@ -753,14 +727,14 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
 
 #[test]
 fn predicate_rejects_err_means_immediate_return() {
-    // If predicate says "don't retry this error", return NonRetryableError with attempts=1.
-    let mut policy = RetryPolicy::new()
+    // If predicate says "don't retry this error", return Rejected.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|e: &&str| *e == "retryable"));
+        .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let call_count = Cell::new(0_u32);
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fatal")
         })
@@ -769,14 +743,10 @@ fn predicate_rejects_err_means_immediate_return() {
 
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::NonRetryableError { last, attempts, .. }) => {
-            assert_eq!(last, Err("fatal"));
-            assert_eq!(attempts, 1);
+        Err(RetryError::Rejected { last }) => {
+            assert_eq!(last, "fatal");
         }
-        other => panic!(
-            "expected NonRetryableError with attempts=1, got {:?}",
-            other
-        ),
+        other => panic!("expected Rejected with last=\"fatal\", got {:?}", other),
     }
 }
 
@@ -784,92 +754,19 @@ fn predicate_rejects_err_means_immediate_return() {
 fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
     ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
 
-    let mut policy = RetryPolicy::new()
-        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE))
-        .elapsed_clock(elapsed_clock_millis);
+    let policy = RetryPolicy::new().stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE));
     let call_count = Cell::new(0_u32);
 
     let result = policy
-        .retry(|| {
+        .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
             Err::<i32, _>("clocked failure")
         })
-        .sleep(instant_sleep)
-        .call();
-
-    assert_eq!(call_count.get(), 1);
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
-    ));
-}
-
-#[test]
-#[cfg(not(feature = "std"))]
-fn clear_elapsed_clock_disables_custom_elapsed_source_without_std() {
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
-    let mut with_clock = RetryPolicy::new()
-        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE) | stop::attempts(CUSTOM_CLOCK_ATTEMPT_FALLBACK))
-        .elapsed_clock(elapsed_clock_millis);
-
-    let with_clock_result = with_clock
-        .retry(|| {
-            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
-            Err::<i32, _>("clocked failure")
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    assert!(matches!(
-        with_clock_result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
-    ));
-
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
-    let mut cleared_clock = RetryPolicy::new()
-        .stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE) | stop::attempts(CUSTOM_CLOCK_ATTEMPT_FALLBACK))
         .elapsed_clock(elapsed_clock_millis)
-        .clear_elapsed_clock();
-
-    let cleared_result = cleared_clock
-        .retry(|| {
-            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
-            Err::<i32, _>("clocked failure")
-        })
         .sleep(instant_sleep)
         .call();
 
-    assert!(matches!(
-        cleared_result,
-        Err(RetryError::Exhausted {
-            attempts: CUSTOM_CLOCK_ATTEMPT_FALLBACK,
-            ..
-        })
-    ));
-}
-
-#[test]
-#[cfg(feature = "std")]
-fn before_elapsed_uses_computed_next_delay_before_sleeping() {
-    let mut policy = RetryPolicy::new()
-        .stop(stop::before_elapsed(BEFORE_ELAPSED_DEADLINE))
-        .wait(wait::fixed(BEFORE_ELAPSED_WAIT));
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
-    let call_count = Cell::new(0_u32);
-
-    let result = policy
-        .retry(|| {
-            call_count.set(call_count.get().saturating_add(1));
-            Err::<i32, _>("would exceed budget")
-        })
-        .sleep(recording_sleep(&sleeps))
-        .call();
-
     assert_eq!(call_count.get(), 1);
-    assert!(sleeps.borrow().is_empty());
-    assert!(matches!(
-        result,
-        Err(RetryError::Exhausted { attempts: 1, .. })
-    ));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }

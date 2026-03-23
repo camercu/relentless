@@ -3,7 +3,7 @@
 //! These tests verify:
 //! - `.with_stats()` on SyncRetry/AsyncRetry changes return type (8.1)
 //! - `RetryStats` struct fields: attempts, total_elapsed, total_wait, stop_reason (8.2)
-//! - `StopReason` variants: Success, StopStrategyTriggered, NonRetryableError (8.3)
+//! - `StopReason` variants: Accepted, Exhausted, Cancelled (8.3)
 //! - Stats accumulated inside the execution engine (8.4)
 //! - `total_elapsed` is `Some` when std active (8.5, verified implicitly)
 //! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq (8.6)
@@ -21,7 +21,7 @@ use std::rc::Rc;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use std::sync::Arc;
 use tenacious::{RetryError, RetryPolicy};
-use tenacious::{RetryStats, StopReason, on, stop, wait};
+use tenacious::{RetryStats, StopReason, predicate, stop, wait};
 
 // ---------------------------------------------------------------------------
 // Test constants
@@ -87,13 +87,13 @@ impl tenacious::Sleeper for InstantSleeper {
 
 #[test]
 fn sync_with_stats_returns_result_and_stats() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
     let call_count = Cell::new(0_u32);
 
     let (result, stats) = policy
-        .retry(|| {
+        .retry(|_| {
             let n = call_count.get().saturating_add(1);
             call_count.set(n);
             if n < MAX_ATTEMPTS {
@@ -116,20 +116,20 @@ fn sync_with_stats_returns_result_and_stats() {
     assert!(stats.total_elapsed.is_some());
     #[cfg(not(feature = "std"))]
     assert!(stats.total_elapsed.is_none());
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn async_with_stats_returns_result_and_stats() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
     let call_count = Rc::new(Cell::new(0_u32));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 let count = Rc::clone(&call_count);
                 count.set(count.get().saturating_add(1));
                 async move {
@@ -151,7 +151,7 @@ fn async_with_stats_returns_result_and_stats() {
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
     assert!(stats.total_elapsed.is_some());
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,10 +160,10 @@ fn async_with_stats_returns_result_and_stats() {
 
 #[test]
 fn sync_first_attempt_success_has_minimal_stats() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
@@ -175,19 +175,19 @@ fn sync_first_attempt_success_has_minimal_stats() {
     assert!(stats.total_elapsed.is_some());
     #[cfg(not(feature = "std"))]
     assert!(stats.total_elapsed.is_none());
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
 fn sync_stats_total_wait_accumulates_with_exponential() {
     let initial = Duration::from_millis(10);
     let num_attempts: u32 = 4;
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(num_attempts))
         .wait(wait::exponential(initial));
 
     let (_result, stats) = policy
-        .retry(|| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
@@ -197,7 +197,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
         Duration::from_millis(10) + Duration::from_millis(20) + Duration::from_millis(40);
     assert_eq!(stats.attempts, num_attempts);
     assert_eq!(stats.total_wait, expected_wait);
-    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,27 +205,27 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sync_stop_reason_success_with_default_predicate() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+fn sync_stop_reason_accepted_with_default_predicate() {
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
-fn sync_stop_reason_stop_strategy_triggered_on_exhaustion() {
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_exhausted_on_exhaustion() {
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let (_result, stats) = policy
-        .retry(|| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
@@ -235,17 +235,17 @@ fn sync_stop_reason_stop_strategy_triggered_on_exhaustion() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
 #[test]
-fn sync_stop_reason_success_for_custom_predicate_on_ok() {
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_accepted_for_custom_predicate_on_ok() {
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|value: &i32| *value < 0));
+        .when(predicate::ok(|value: &i32| *value < 0));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
@@ -253,88 +253,87 @@ fn sync_stop_reason_success_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    // Accepted Ok outcomes report Success, even with custom predicates.
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    // Accepted Ok outcomes report Accepted, even with custom predicates.
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
-fn sync_stop_reason_success_for_result_predicate_on_ok() {
-    // on::result() with a predicate that retries on Err, accepts on Ok.
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_accepted_for_result_predicate_on_ok() {
+    // predicate::result() with a predicate that retries on Err, accepts on Ok.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::result(|r: &Result<i32, &str>| r.is_err()));
+        .when(predicate::result(|r: &Result<i32, &str>| r.is_err()));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    // Ok accepted by result-based predicate still reports Success.
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    // Ok accepted by result-based predicate still reports Accepted.
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
-fn sync_stop_reason_success_for_error_predicate_on_ok() {
-    // on::error() only retries matching errors; Ok values are accepted immediately.
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_accepted_for_error_predicate_on_ok() {
+    // predicate::error() only retries matching errors; Ok values are accepted immediately.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|e: &&str| *e == "retryable"));
+        .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    // Ok outcome with an error-only predicate still reports Success.
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    // Ok outcome with an error-only predicate still reports Accepted.
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
-fn sync_stop_reason_non_retryable_error_when_error_rejected() {
-    // on::error() rejects "fatal" errors — predicate says "don't retry this".
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_accepted_when_error_rejected() {
+    // predicate::error() rejects "fatal" errors — predicate says "don't retry this".
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|e: &&str| *e == "retryable"));
+        .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let (result, stats) = policy
-        .retry(|| Err::<i32, _>("fatal"))
+        .retry(|_| Err::<i32, _>("fatal"))
         .sleep(instant_sleep)
         .with_stats()
         .call();
 
-    // The error is non-retryable, so we don't report a stop-strategy exit.
-    assert!(matches!(result, Err(RetryError::NonRetryableError { .. })));
+    // The error is non-retryable, so we get Rejected.
+    assert!(matches!(result, Err(RetryError::Rejected { .. })));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::NonRetryableError);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
-fn sync_stop_reason_stop_strategy_triggered_on_condition_not_met() {
-    // Using on::ok() to retry while value is negative. Stop fires before we get a positive.
-    let mut policy = RetryPolicy::new()
+fn sync_stop_reason_exhausted_on_condition_not_met() {
+    // Using predicate::ok() to retry while value is negative. Stop fires before we get a positive.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|v: &i32| *v < 0));
+        .when(predicate::ok(|v: &i32| *v < 0));
 
     let (result, stats) = policy
-        .retry(|| Ok::<_, &str>(-1_i32))
+        .retry(|_| Ok::<_, &str>(-1_i32))
         .sleep(instant_sleep)
         .with_stats()
         .call();
 
     match result {
-        Err(RetryError::ConditionNotMet { last, attempts, .. }) => {
+        Err(RetryError::Exhausted { last, .. }) => {
             assert_eq!(last, Ok(-1));
-            assert_eq!(attempts, MAX_ATTEMPTS);
         }
-        other => panic!("expected ConditionNotMet, got {:?}", other),
+        other => panic!("expected Exhausted, got {:?}", other),
     }
-    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
 }
 
@@ -344,14 +343,14 @@ fn sync_stop_reason_stop_strategy_triggered_on_condition_not_met() {
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_stop_reason_stop_strategy_triggered_on_exhaustion() {
-    let mut policy = RetryPolicy::new()
+fn async_stop_reason_exhausted_on_exhaustion() {
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let (_result, stats) = block_on(
         policy
-            .retry_async(|| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .sleep(InstantSleeper)
             .with_stats(),
     );
@@ -361,17 +360,17 @@ fn async_stop_reason_stop_strategy_triggered_on_exhaustion() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn async_first_attempt_success_has_minimal_stats() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
             .with_stats(),
     );
@@ -379,41 +378,41 @@ fn async_first_attempt_success_has_minimal_stats() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_condition_not_met() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|v: &i32| *v < 0));
+        .when(predicate::ok(|v: &i32| *v < 0));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(-1) })
+            .retry_async(|_| async { Ok::<i32, &str>(-1) })
             .sleep(InstantSleeper)
             .with_stats(),
     );
 
     assert!(matches!(
         result,
-        Err(RetryError::ConditionNotMet { last: Ok(-1), .. })
+        Err(RetryError::Exhausted { last: Ok(-1), .. })
     ));
-    assert_eq!(stats.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
 }
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_stop_reason_success_for_custom_predicate_on_ok() {
-    let mut policy = RetryPolicy::new()
+fn async_stop_reason_accepted_for_custom_predicate_on_ok() {
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::ok(|value: &i32| *value < 0));
+        .when(predicate::ok(|value: &i32| *value < 0));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
             .with_stats(),
     );
@@ -421,8 +420,8 @@ fn async_stop_reason_success_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    // Accepted Ok outcomes report Success, even with custom predicates.
-    assert_eq!(stats.stop_reason, StopReason::Success);
+    // Accepted Ok outcomes report Accepted, even with custom predicates.
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
 }
 
 // ---------------------------------------------------------------------------
@@ -431,10 +430,10 @@ fn async_stop_reason_success_for_custom_predicate_on_ok() {
 
 #[test]
 fn sync_call_without_stats_returns_plain_result() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let result: Result<i32, RetryError<&str, i32>> = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+    let result: Result<i32, RetryError<i32, &str>> = policy
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
 
@@ -448,10 +447,10 @@ fn sync_call_without_stats_returns_plain_result() {
 #[test]
 #[cfg(feature = "std")]
 fn sync_total_elapsed_is_some_with_std() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let (_result, stats) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
@@ -465,11 +464,11 @@ fn sync_total_elapsed_is_some_with_std() {
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn async_total_elapsed_is_some_with_std() {
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let (_result, stats) = block_on(
         policy
-            .retry_async(|| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
             .with_stats(),
     );
@@ -490,7 +489,7 @@ fn retry_stats_implements_debug_and_clone() {
         attempts: MAX_ATTEMPTS,
         total_elapsed: Some(Duration::from_secs(1)),
         total_wait: WAIT_DURATION,
-        stop_reason: StopReason::Success,
+        stop_reason: StopReason::Accepted,
     };
 
     let cloned = stats;
@@ -502,7 +501,7 @@ fn retry_stats_implements_debug_and_clone() {
 
 #[test]
 fn stop_reason_implements_debug_clone_copy_eq() {
-    let reason = StopReason::Success;
+    let reason = StopReason::Accepted;
 
     // Copy
     let copied = reason;
@@ -514,46 +513,43 @@ fn stop_reason_implements_debug_clone_copy_eq() {
 
     // Debug
     let debug = format!("{:?}", reason);
-    assert!(debug.contains("Success"), "Debug output: {debug}");
+    assert!(debug.contains("Accepted"), "Debug output: {debug}");
 
     // All three variants
-    assert_ne!(StopReason::Success, StopReason::StopStrategyTriggered);
-    assert_ne!(
-        StopReason::StopStrategyTriggered,
-        StopReason::NonRetryableError
-    );
-    assert_ne!(StopReason::Success, StopReason::NonRetryableError);
+    assert_ne!(StopReason::Accepted, StopReason::Exhausted);
+    assert_ne!(StopReason::Exhausted, StopReason::Cancelled);
+    assert_ne!(StopReason::Accepted, StopReason::Cancelled);
 }
 
 // ---------------------------------------------------------------------------
-// Policy reuse: stats are fresh after reset
+// Policy reuse: stats are fresh per invocation
 // ---------------------------------------------------------------------------
 
 #[test]
 fn sync_stats_are_fresh_after_policy_reuse() {
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     // First invocation: exhaust all attempts.
     let (_result1, stats1) = policy
-        .retry(|| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
     assert_eq!(stats1.attempts, MAX_ATTEMPTS);
-    assert_eq!(stats1.stop_reason, StopReason::StopStrategyTriggered);
+    assert_eq!(stats1.stop_reason, StopReason::Exhausted);
 
     // Second invocation: succeed on first attempt.
     let (result2, stats2) = policy
-        .retry(|| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
     assert_eq!(result2, Ok(SUCCESS_VALUE));
     assert_eq!(stats2.attempts, 1);
     assert_eq!(stats2.total_wait, Duration::ZERO);
-    assert_eq!(stats2.stop_reason, StopReason::Success);
+    assert_eq!(stats2.stop_reason, StopReason::Accepted);
 }
 
 // ---------------------------------------------------------------------------
@@ -563,12 +559,12 @@ fn sync_stats_are_fresh_after_policy_reuse() {
 #[test]
 fn sync_stats_work_alongside_hooks() {
     let hook_calls = Cell::new(0_u32);
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let (result, stats) = policy
-        .retry(|| {
+        .retry(|_| {
             if hook_calls.get() < MAX_ATTEMPTS {
                 Err::<i32, _>(ERROR_VALUE)
             } else {

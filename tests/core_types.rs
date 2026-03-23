@@ -5,7 +5,7 @@
 //! - Wait trait definition and semantics (1.3)
 //! - Predicate trait definition and semantics (1.4)
 //! - Sleeper trait and blanket impl (1.5, 1.6)
-//! - RetryState, AttemptState, BeforeAttemptState, and ExitState structs
+//! - RetryState, AttemptState, and ExitState structs
 //! - RetryError enum and Display/Error impls (1.9, 1.10)
 //! - Duration is core::time::Duration (1.11)
 
@@ -27,16 +27,12 @@ use tenacious::Wait;
 /// The maximum attempts threshold used in stop-strategy tests.
 const STOP_AFTER_MAX_ATTEMPTS: u32 = 3;
 
-/// Per-call increment for the counting wait strategy.
-const WAIT_INCREMENT_MILLIS: u64 = 100;
-
 /// Values that are genuinely arbitrary — any valid value would work.
 /// These signal "the specific value doesn't matter" to the reader.
 const ARBITRARY_DURATION: Duration = Duration::from_millis(10);
-const ARBITRARY_ATTEMPT_COUNT: u32 = 5;
 
 // ---------------------------------------------------------------------------
-// 1.2: Stop trait — should_stop and reset methods
+// 1.2: Stop trait — should_stop method (&self, no reset)
 // ---------------------------------------------------------------------------
 
 /// A trivial Stop implementation that stops after a fixed number of attempts.
@@ -45,14 +41,14 @@ struct StopAfter {
 }
 
 impl Stop for StopAfter {
-    fn should_stop(&mut self, state: &tenacious::RetryState) -> bool {
+    fn should_stop(&self, state: &tenacious::RetryState) -> bool {
         state.attempt >= self.max
     }
 }
 
 #[test]
 fn stop_trait_should_stop_returns_bool() {
-    let mut stop = StopAfter {
+    let stop = StopAfter {
         max: STOP_AFTER_MAX_ATTEMPTS,
     };
 
@@ -66,88 +62,8 @@ fn stop_trait_should_stop_returns_bool() {
     assert!(stop.should_stop(&state), "attempt == max, should stop");
 }
 
-/// Verify that the default reset() implementation exists and can be called.
-#[test]
-fn stop_trait_reset_has_default_impl() {
-    let mut stop = StopAfter {
-        max: STOP_AFTER_MAX_ATTEMPTS,
-    };
-    stop.reset();
-    let state = make_retry_state(1);
-    assert!(
-        !stop.should_stop(&state),
-        "default reset must be callable without changing stop behavior"
-    );
-}
-
-/// A Stop impl that overrides reset to verify custom reset works.
-struct ResettableStop {
-    fired: bool,
-}
-
-impl Stop for ResettableStop {
-    fn should_stop(&mut self, _state: &tenacious::RetryState) -> bool {
-        self.fired = true;
-        true
-    }
-
-    fn reset(&mut self) {
-        self.fired = false;
-    }
-}
-
-#[test]
-fn stop_trait_custom_reset() {
-    let mut stop = ResettableStop { fired: false };
-    let state = make_retry_state(1);
-    stop.should_stop(&state);
-    assert!(stop.fired);
-    stop.reset();
-    assert!(!stop.fired);
-}
-
-/// Verify Stop::should_stop takes &mut self — a stateful stop strategy that
-/// counts calls internally and stops after a threshold.
-struct CountingStop {
-    calls: u32,
-    threshold: u32,
-}
-
-impl Stop for CountingStop {
-    fn should_stop(&mut self, _state: &tenacious::RetryState) -> bool {
-        self.calls = self.calls.saturating_add(1);
-        self.calls >= self.threshold
-    }
-
-    fn reset(&mut self) {
-        self.calls = 0;
-    }
-}
-
-#[test]
-fn stop_trait_mutates_state_across_calls() {
-    let mut stop = CountingStop {
-        calls: 0,
-        threshold: STOP_AFTER_MAX_ATTEMPTS,
-    };
-    let state = make_retry_state(1);
-
-    assert!(!stop.should_stop(&state));
-    assert!(!stop.should_stop(&state));
-    assert!(
-        stop.should_stop(&state),
-        "should stop after threshold calls"
-    );
-
-    stop.reset();
-    assert!(
-        !stop.should_stop(&state),
-        "after reset, count restarts from zero"
-    );
-}
-
 // ---------------------------------------------------------------------------
-// 1.3: Wait trait — next_wait and reset methods
+// 1.3: Wait trait — next_wait method (&self, no reset)
 // ---------------------------------------------------------------------------
 
 /// A trivial Wait implementation that returns a fixed duration.
@@ -156,67 +72,18 @@ struct FixedWait {
 }
 
 impl Wait for FixedWait {
-    fn next_wait(&mut self, _state: &tenacious::RetryState) -> Duration {
+    fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
         self.dur
     }
 }
 
 #[test]
 fn wait_trait_next_wait_returns_duration() {
-    let mut wait = FixedWait {
+    let wait = FixedWait {
         dur: ARBITRARY_DURATION,
     };
     let state = make_retry_state(1);
     assert_eq!(wait.next_wait(&state), ARBITRARY_DURATION);
-}
-
-#[test]
-fn wait_trait_reset_has_default_impl() {
-    let mut wait = FixedWait {
-        dur: ARBITRARY_DURATION,
-    };
-    wait.reset();
-    let state = make_retry_state(1);
-    assert_eq!(
-        wait.next_wait(&state),
-        ARBITRARY_DURATION,
-        "default reset must be callable without changing wait behavior"
-    );
-}
-
-/// A Wait impl that overrides reset — counts calls and produces increasing waits.
-struct ResettableWait {
-    call_count: u32,
-}
-
-impl Wait for ResettableWait {
-    fn next_wait(&mut self, _state: &tenacious::RetryState) -> Duration {
-        self.call_count += 1;
-        Duration::from_millis(self.call_count as u64 * WAIT_INCREMENT_MILLIS)
-    }
-
-    fn reset(&mut self) {
-        self.call_count = 0;
-    }
-}
-
-#[test]
-fn wait_trait_custom_reset() {
-    let first_call_wait = Duration::from_millis(WAIT_INCREMENT_MILLIS);
-    let second_call_wait = Duration::from_millis(WAIT_INCREMENT_MILLIS * 2);
-
-    let mut wait = ResettableWait { call_count: 0 };
-    let state = make_retry_state(1);
-
-    assert_eq!(wait.next_wait(&state), first_call_wait);
-    assert_eq!(wait.next_wait(&state), second_call_wait);
-
-    wait.reset();
-    assert_eq!(
-        wait.next_wait(&state),
-        first_call_wait,
-        "reset should restart the sequence"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -227,10 +94,10 @@ fn wait_trait_custom_reset() {
 /// works across operations with different Result types.
 #[test]
 fn stop_and_wait_are_not_generic_over_result_type() {
-    let mut stop = StopAfter {
+    let stop = StopAfter {
         max: STOP_AFTER_MAX_ATTEMPTS,
     };
-    let mut wait = FixedWait {
+    let wait = FixedWait {
         dur: ARBITRARY_DURATION,
     };
     let state = make_retry_state(1);
@@ -242,28 +109,28 @@ fn stop_and_wait_are_not_generic_over_result_type() {
 }
 
 // ---------------------------------------------------------------------------
-// 1.4: Predicate<T, E> trait — should_retry method
+// 1.4: Predicate<T, E> trait — should_retry method (&self)
 // ---------------------------------------------------------------------------
 
 /// A predicate that retries on any error.
 struct RetryOnAnyError;
 
 impl Predicate<String, std::io::Error> for RetryOnAnyError {
-    fn should_retry(&mut self, outcome: &Result<String, std::io::Error>) -> bool {
+    fn should_retry(&self, outcome: &Result<String, std::io::Error>) -> bool {
         outcome.is_err()
     }
 }
 
 #[test]
 fn predicate_trait_should_retry_on_error() {
-    let mut pred = RetryOnAnyError;
+    let pred = RetryOnAnyError;
     let err_result: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
     assert!(pred.should_retry(&err_result));
 }
 
 #[test]
 fn predicate_trait_should_not_retry_on_ok() {
-    let mut pred = RetryOnAnyError;
+    let pred = RetryOnAnyError;
     let ok_result: Result<String, std::io::Error> = Ok("success".to_string());
     assert!(!pred.should_retry(&ok_result));
 }
@@ -273,54 +140,54 @@ fn predicate_trait_should_not_retry_on_ok() {
 struct AlwaysRetry;
 
 impl Predicate<u32, String> for AlwaysRetry {
-    fn should_retry(&mut self, _outcome: &Result<u32, String>) -> bool {
+    fn should_retry(&self, _outcome: &Result<u32, String>) -> bool {
         true
     }
 }
 
 impl Predicate<bool, i32> for AlwaysRetry {
-    fn should_retry(&mut self, _outcome: &Result<bool, i32>) -> bool {
+    fn should_retry(&self, _outcome: &Result<bool, i32>) -> bool {
         true
     }
 }
 
 #[test]
 fn predicate_trait_type_params_on_trait() {
-    let mut pred = AlwaysRetry;
+    let pred = AlwaysRetry;
     let r1: Result<u32, String> = Ok(42);
     let r2: Result<bool, i32> = Err(-1);
 
     // Both should compile and work — T, E are on the trait, not the method.
     assert!(<AlwaysRetry as Predicate<u32, String>>::should_retry(
-        &mut pred, &r1
+        &pred, &r1
     ));
     assert!(<AlwaysRetry as Predicate<bool, i32>>::should_retry(
-        &mut pred, &r2
+        &pred, &r2
     ));
 }
 
 /// 4.8: Predicate is blanket-implemented for Fn(&Result<T, E>) -> bool.
 #[test]
 fn predicate_blanket_impl_for_closure() {
-    let mut pred = |outcome: &Result<i32, &str>| outcome.is_err();
+    let pred = |outcome: &Result<i32, &str>| outcome.is_err();
 
     let err: Result<i32, &str> = Err("fail");
     let ok: Result<i32, &str> = Ok(42);
 
-    assert!(Predicate::should_retry(&mut pred, &err));
-    assert!(!Predicate::should_retry(&mut pred, &ok));
+    assert!(Predicate::should_retry(&pred, &err));
+    assert!(!Predicate::should_retry(&pred, &ok));
 }
 
-/// Predicate::should_retry takes &mut self. Verify it can be called
-/// multiple times through a mutable reference.
+/// Predicate::should_retry takes &self. Verify it can be called
+/// multiple times through a shared reference.
 #[test]
 fn predicate_is_callable_multiple_times() {
-    let mut pred = RetryOnAnyError;
+    let pred = RetryOnAnyError;
 
     let err: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
     let ok: Result<String, std::io::Error> = Ok("ok".to_string());
 
-    // Multiple calls through a mutable reference must work.
+    // Multiple calls through a shared reference must work.
     assert!(pred.should_retry(&err));
     assert!(pred.should_retry(&Err(std::io::Error::other("boom2"))));
     assert!(!pred.should_retry(&ok));
@@ -405,21 +272,17 @@ fn sleeper_blanket_impl_different_future_type() {
 }
 
 // ---------------------------------------------------------------------------
-// 1.7, 1.8: RetryState, AttemptState, and BeforeAttemptState structs
+// 1.7, 1.8: RetryState, AttemptState, and ExitState structs
 // ---------------------------------------------------------------------------
 
 #[test]
 fn retry_state_has_required_fields() {
     let elapsed = Duration::from_secs(5);
-    let next_delay = Duration::from_millis(200);
-    let total_wait = Duration::from_millis(100);
 
-    let state = tenacious::RetryState::new(1, Some(elapsed), next_delay, total_wait);
+    let state = tenacious::RetryState::new(1, Some(elapsed));
 
     assert_eq!(state.attempt, 1);
     assert_eq!(state.elapsed, Some(elapsed));
-    assert_eq!(state.next_delay, next_delay);
-    assert_eq!(state.total_wait, total_wait);
 }
 
 #[test]
@@ -430,76 +293,42 @@ fn retry_state_attempt_is_one_indexed() {
 
 #[test]
 fn retry_state_elapsed_can_be_none() {
-    let state = tenacious::RetryState::new(1, None, Duration::ZERO, Duration::ZERO);
+    let state = tenacious::RetryState::new(1, None);
     assert_eq!(state.elapsed, None);
 }
 
 #[test]
 fn attempt_state_has_flat_fields_and_outcome() {
-    let retry_state = make_retry_state(1);
     let outcome: Result<i32, String> = Ok(42);
 
     let state = tenacious::AttemptState::new(
-        retry_state.attempt,
+        1,
+        Some(Duration::ZERO),
         &outcome,
-        retry_state.elapsed,
-        Some(retry_state.next_delay),
-        retry_state.total_wait,
+        Some(Duration::from_millis(100)),
     );
 
     assert_eq!(state.attempt, 1);
     assert_eq!(*state.outcome, Ok(42));
-    assert_eq!(state.next_delay, Some(Duration::ZERO));
+    assert_eq!(state.next_delay, Some(Duration::from_millis(100)));
 }
 
 #[test]
 fn attempt_state_with_err_outcome() {
-    let retry_state = make_retry_state(1);
     let outcome: Result<(), String> = Err("network timeout".to_string());
 
-    let state = tenacious::AttemptState::new(
-        retry_state.attempt,
-        &outcome,
-        retry_state.elapsed,
-        Some(retry_state.next_delay),
-        retry_state.total_wait,
-    );
+    let state =
+        tenacious::AttemptState::new(1, Some(Duration::ZERO), &outcome, Some(Duration::ZERO));
 
     assert!(state.outcome.is_err());
     assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
 }
 
 #[test]
-fn before_attempt_state_has_required_fields() {
-    let elapsed = Duration::from_secs(1);
-    let total_wait = Duration::from_millis(500);
-
-    let state = tenacious::BeforeAttemptState::new(2, Some(elapsed), total_wait);
-
-    assert_eq!(state.attempt, 2);
-    assert_eq!(state.elapsed, Some(elapsed));
-    assert_eq!(state.total_wait, total_wait);
-}
-
-#[test]
-fn before_attempt_state_does_not_have_outcome() {
-    let state = tenacious::BeforeAttemptState::new(1, None, Duration::ZERO);
-    assert_eq!(state.attempt, 1);
-    assert_eq!(state.elapsed, None);
-    assert_eq!(state.total_wait, Duration::ZERO);
-}
-
-#[test]
 fn exit_state_has_required_fields() {
-    let retry_state = make_retry_state(2);
     let outcome = Err::<i32, &str>("fatal");
-    let state = tenacious::ExitState::new(
-        retry_state.attempt,
-        Some(&outcome),
-        retry_state.elapsed,
-        retry_state.total_wait,
-        tenacious::StopReason::StopStrategyTriggered,
-    );
+    let state =
+        tenacious::ExitState::new(2, None, Some(&outcome), tenacious::StopReason::Exhausted);
 
     assert_eq!(state.attempt, 2);
     assert!(
@@ -509,8 +338,7 @@ fn exit_state_has_required_fields() {
             .is_err()
     );
     assert_eq!(state.elapsed, None);
-    assert_eq!(state.total_wait, Duration::ZERO);
-    assert_eq!(state.reason, tenacious::StopReason::StopStrategyTriggered);
+    assert_eq!(state.stop_reason, tenacious::StopReason::Exhausted);
 }
 
 // ---------------------------------------------------------------------------
@@ -519,194 +347,87 @@ fn exit_state_has_required_fields() {
 
 #[test]
 fn retry_error_exhausted_variant() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
         last: Err("connection refused".to_string()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
     };
 
     match err {
-        tenacious::RetryError::Exhausted {
-            ref last,
-            attempts,
-            total_elapsed,
-        } => {
+        tenacious::RetryError::Exhausted { ref last } => {
             assert_eq!(last, &Err("connection refused".to_string()));
-            assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
-            assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
         }
         _ => panic!("expected Exhausted variant"),
     }
 }
 
 #[test]
-fn retry_error_non_retryable_error_variant() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::NonRetryableError {
-        last: Err("fatal".to_string()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
+fn retry_error_rejected_variant() {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Rejected {
+        last: "fatal".to_string(),
     };
 
     match err {
-        tenacious::RetryError::NonRetryableError {
-            ref last,
-            attempts,
-            total_elapsed,
-        } => {
-            assert_eq!(last, &Err("fatal".to_string()));
-            assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
-            assert_eq!(total_elapsed, Some(ARBITRARY_DURATION));
+        tenacious::RetryError::Rejected { ref last } => {
+            assert_eq!(last, "fatal");
         }
-        _ => panic!("expected NonRetryableError variant"),
+        _ => panic!("expected Rejected variant"),
     }
 }
 
 #[test]
-fn retry_error_condition_not_met_variant_carries_last_value() {
-    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::ConditionNotMet {
-        last: Ok(42),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
-    };
+fn retry_error_cancelled_variant_with_none() {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled { last: None };
 
-    match err {
-        tenacious::RetryError::ConditionNotMet {
-            last,
-            attempts,
-            total_elapsed,
-        } => {
-            assert_eq!(last, Ok(42));
-            assert_eq!(attempts, ARBITRARY_ATTEMPT_COUNT);
-            assert_eq!(total_elapsed, None);
-        }
-        _ => panic!("expected ConditionNotMet variant"),
-    }
+    assert!(matches!(
+        err,
+        tenacious::RetryError::Cancelled { last: None }
+    ));
 }
 
 #[test]
-fn retry_error_condition_not_met_default_t_is_unit() {
-    // When T defaults to (), ConditionNotMet still compiles.
-    let err: tenacious::RetryError<String> = tenacious::RetryError::ConditionNotMet {
-        last: Ok(()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
-    };
-    assert!(matches!(err, tenacious::RetryError::ConditionNotMet { .. }));
-}
+fn retry_error_exhausted_with_ok_last() {
+    let err: tenacious::RetryError<i32, String> = tenacious::RetryError::Exhausted { last: Ok(42) };
 
-#[test]
-fn retry_error_exhausted_elapsed_can_be_none() {
-    let err: tenacious::RetryError<&str> = tenacious::RetryError::Exhausted {
-        last: Err("fail"),
-        attempts: 1,
-        total_elapsed: None,
-    };
-
-    if let tenacious::RetryError::Exhausted { total_elapsed, .. } = err {
-        assert_eq!(total_elapsed, None);
+    if let tenacious::RetryError::Exhausted { last } = err {
+        assert_eq!(last, Ok(42));
     }
 }
 
 /// 1.10: RetryError implements Display unconditionally.
 #[test]
 fn retry_error_display_includes_meaningful_content() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
         last: Err("timeout".to_string()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
     };
 
     let msg = format!("{}", err);
-    assert!(
-        msg.contains(&ARBITRARY_ATTEMPT_COUNT.to_string()),
-        "Display should include the attempt count: {msg}"
-    );
     assert!(
         msg.contains("timeout"),
         "Display should include the error message: {msg}"
     );
 
-    let err2: tenacious::RetryError<String, i32> = tenacious::RetryError::ConditionNotMet {
-        last: Ok(99),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
+    let err2: tenacious::RetryError<i32, String> = tenacious::RetryError::Rejected {
+        last: "fatal".to_string(),
     };
     let msg2 = format!("{}", err2);
     assert!(
-        msg2.contains(&ARBITRARY_ATTEMPT_COUNT.to_string()),
-        "Display should include the attempt count: {msg2}"
+        msg2.contains("fatal"),
+        "Display should include the error message: {msg2}"
     );
 }
 
-/// 1.10: Display for NonRetryableError with Ok value says "non-retryable result".
-#[test]
-fn retry_error_display_non_retryable_error_ok_value() {
-    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::NonRetryableError {
-        last: Ok(42),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
-    };
-
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("non-retryable result"),
-        "NonRetryableError with Ok should say 'non-retryable result': {msg}"
-    );
-    assert!(
-        msg.contains("42"),
-        "Display should include the Ok value: {msg}"
-    );
-}
-
-/// 1.10: Display for NonRetryableError with Err value says "non-retryable error".
-#[test]
-fn retry_error_display_non_retryable_error_err_value() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::NonRetryableError {
-        last: Err("bad request".to_string()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
-    };
-
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("non-retryable error"),
-        "NonRetryableError with Err should say 'non-retryable error': {msg}"
-    );
-    assert!(
-        msg.contains("bad request"),
-        "Display should include the error message: {msg}"
-    );
-}
-
-/// 1.10: Display for Cancelled covers all three branches (Err, Ok, None).
+/// 1.10: Display for Cancelled covers both branches (Err and None).
 #[test]
 fn retry_error_display_cancelled_variants() {
     // Cancelled with Err
-    let err: tenacious::RetryError<String> = tenacious::RetryError::Cancelled {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled {
         last: Some(Err("in flight".to_string())),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
     };
     let msg = format!("{}", err);
     assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
     assert!(msg.contains("in flight"), "Should include the error: {msg}");
 
-    // Cancelled with Ok
-    let err: tenacious::RetryError<String, i32> = tenacious::RetryError::Cancelled {
-        last: Some(Ok(99)),
-        attempts: 2,
-        total_elapsed: None,
-    };
-    let msg = format!("{}", err);
-    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
-    assert!(msg.contains("99"), "Should include the Ok value: {msg}");
-
     // Cancelled before first attempt (None)
-    let err: tenacious::RetryError<String> = tenacious::RetryError::Cancelled {
-        last: None,
-        attempts: 0,
-        total_elapsed: None,
-    };
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled { last: None };
     let msg = format!("{}", err);
     assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
 }
@@ -716,11 +437,8 @@ fn retry_error_display_cancelled_variants() {
 #[cfg(feature = "std")]
 fn retry_error_implements_std_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out");
-    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::Exhausted {
-        last: Err(inner),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
-    };
+    let err: tenacious::RetryError<(), std::io::Error> =
+        tenacious::RetryError::Exhausted { last: Err(inner) };
 
     // Verify it can be used as a dyn Error.
     let dyn_err: &dyn std::error::Error = &err;
@@ -730,48 +448,40 @@ fn retry_error_implements_std_error() {
     );
 }
 
-/// source() returns None for ConditionNotMet.
+/// source() returns None for Exhausted with Ok.
 #[test]
 #[cfg(feature = "std")]
-fn retry_error_condition_not_met_source_is_none() {
-    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::ConditionNotMet {
-        last: Ok(()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
-    };
+fn retry_error_exhausted_ok_source_is_none() {
+    let err: tenacious::RetryError<(), std::io::Error> =
+        tenacious::RetryError::Exhausted { last: Ok(()) };
 
     let dyn_err: &dyn std::error::Error = &err;
     assert!(
         dyn_err.source().is_none(),
-        "ConditionNotMet has no source error"
+        "Exhausted with Ok has no source error"
     );
 }
 
-/// source() returns Some(inner) for NonRetryableError.
+/// source() returns Some(inner) for Rejected.
 #[test]
 #[cfg(feature = "std")]
-fn retry_error_non_retryable_error_source_is_inner_error() {
+fn retry_error_rejected_source_is_inner_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
-    let err: tenacious::RetryError<std::io::Error> = tenacious::RetryError::NonRetryableError {
-        last: Err(inner),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: None,
-    };
+    let err: tenacious::RetryError<(), std::io::Error> =
+        tenacious::RetryError::Rejected { last: inner };
 
     let dyn_err: &dyn std::error::Error = &err;
     assert!(
         dyn_err.source().is_some(),
-        "NonRetryableError should chain to the inner error via source()"
+        "Rejected should chain to the inner error via source()"
     );
 }
 
 /// RetryError derives Clone and PartialEq for ergonomic test assertions.
 #[test]
 fn retry_error_derives_clone_and_partial_eq() {
-    let err: tenacious::RetryError<String> = tenacious::RetryError::Exhausted {
+    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
         last: Err("fail".to_string()),
-        attempts: 1,
-        total_elapsed: None,
     };
 
     let cloned = err.clone();
@@ -780,51 +490,37 @@ fn retry_error_derives_clone_and_partial_eq() {
 
 #[test]
 fn retry_error_accessors_expose_last_outcome_and_error() {
-    let exhausted: tenacious::RetryError<String, i32> = tenacious::RetryError::Exhausted {
+    let exhausted: tenacious::RetryError<i32, String> = tenacious::RetryError::Exhausted {
         last: Err("timeout".to_string()),
-        attempts: ARBITRARY_ATTEMPT_COUNT,
-        total_elapsed: Some(ARBITRARY_DURATION),
     };
     let expected_error = "timeout".to_string();
     assert_eq!(exhausted.last(), Some(&Err(expected_error.clone())));
     assert_eq!(exhausted.last_error(), Some(&expected_error));
-    assert_eq!(exhausted.attempts(), ARBITRARY_ATTEMPT_COUNT);
-    assert_eq!(exhausted.total_elapsed(), Some(ARBITRARY_DURATION));
 
-    let condition_not_met: tenacious::RetryError<String, i32> =
-        tenacious::RetryError::ConditionNotMet {
-            last: Ok(42),
-            attempts: 2,
-            total_elapsed: None,
-        };
-    assert_eq!(condition_not_met.last(), Some(&Ok(42)));
-    assert_eq!(condition_not_met.last_error(), None);
-
-    let cancelled: tenacious::RetryError<String, i32> = tenacious::RetryError::Cancelled {
-        last: None,
-        attempts: 0,
-        total_elapsed: None,
+    let rejected: tenacious::RetryError<i32, String> = tenacious::RetryError::Rejected {
+        last: "fatal".to_string(),
     };
+    // Rejected has no full last() (only the error), so last() returns None
+    assert_eq!(rejected.last(), None);
+    assert_eq!(rejected.last_error(), Some(&"fatal".to_string()));
+
+    let cancelled: tenacious::RetryError<i32, String> =
+        tenacious::RetryError::Cancelled { last: None };
     assert_eq!(cancelled.last(), None);
     assert_eq!(cancelled.last_error(), None);
 }
 
 #[test]
 fn retry_error_into_accessors_extract_owned_values() {
-    let exhausted: tenacious::RetryError<String, i32> = tenacious::RetryError::Exhausted {
+    let exhausted: tenacious::RetryError<i32, String> = tenacious::RetryError::Exhausted {
         last: Err("timeout".to_string()),
-        attempts: 1,
-        total_elapsed: None,
     };
     assert_eq!(exhausted.into_last(), Some(Err("timeout".to_string())));
 
-    let non_retryable: tenacious::RetryError<String, i32> =
-        tenacious::RetryError::NonRetryableError {
-            last: Err("fatal".to_string()),
-            attempts: 1,
-            total_elapsed: None,
-        };
-    assert_eq!(non_retryable.into_last_error(), Some("fatal".to_string()));
+    let rejected: tenacious::RetryError<i32, String> = tenacious::RetryError::Rejected {
+        last: "fatal".to_string(),
+    };
+    assert_eq!(rejected.into_last_error(), Some("fatal".to_string()));
 }
 
 #[test]
@@ -832,7 +528,6 @@ fn public_value_types_derive_common_traits() {
     fn assert_copy<T: Copy>() {}
 
     assert_copy::<tenacious::RetryState>();
-    assert_copy::<tenacious::BeforeAttemptState>();
     assert_copy::<tenacious::RetryStats>();
     assert_copy::<tenacious::StopReason>();
     assert_copy::<tenacious::wait::WaitFixed>();
@@ -840,44 +535,32 @@ fn public_value_types_derive_common_traits() {
     assert_copy::<tenacious::wait::WaitExponential>();
     assert_copy::<tenacious::stop::StopAfterAttempts>();
     assert_copy::<tenacious::stop::StopAfterElapsed>();
-    assert_copy::<tenacious::stop::StopBeforeElapsed>();
     assert_copy::<tenacious::stop::StopNever>();
-    assert_copy::<tenacious::NeverCancel>();
-    assert_copy::<tenacious::on::AnyError>();
-
-    let policy = tenacious::RetryPolicy::default();
-    assert_eq!(policy, policy.clone());
-    assert_eq!(tenacious::stop::StopNever, tenacious::stop::never());
-    assert_eq!(tenacious::NeverCancel, tenacious::cancel::never());
-    assert_eq!(tenacious::on::AnyError, tenacious::on::any_error());
+    assert_copy::<tenacious::CancelNever>();
 }
 
 /// Verify RetryError can be used in a Result context (ergonomics).
 #[test]
 fn retry_error_in_result_context() {
-    fn fallible() -> Result<i32, tenacious::RetryError<String>> {
+    fn fallible() -> Result<i32, tenacious::RetryError<(), String>> {
         Err(tenacious::RetryError::Exhausted {
             last: Err("fail".to_string()),
-            attempts: 1,
-            total_elapsed: None,
         })
     }
 
     assert!(fallible().is_err());
 }
 
-/// Verify RetryResult aliases Result<T, RetryError<E, T>>.
+/// Verify RetryResult aliases Result<T, RetryError<T, E>>.
 #[test]
 fn retry_result_alias_matches_retry_error_shape() {
     fn fallible() -> tenacious::RetryResult<i32, String> {
         Err(tenacious::RetryError::Exhausted {
             last: Err("fail".to_string()),
-            attempts: 1,
-            total_elapsed: None,
         })
     }
 
-    let result: Result<i32, tenacious::RetryError<String, i32>> = fallible();
+    let result: Result<i32, tenacious::RetryError<i32, String>> = fallible();
     assert!(result.is_err());
 }
 
@@ -887,10 +570,10 @@ fn retry_result_alias_matches_retry_error_shape() {
 
 #[test]
 fn duration_is_core_time_duration() {
-    // AttemptState uses Duration — verify it's the standard core::time::Duration.
+    // RetryState uses Duration — verify it's the standard core::time::Duration.
     let d: core::time::Duration = ARBITRARY_DURATION;
-    let state = tenacious::RetryState::new(1, None, d, Duration::ZERO);
-    assert_eq!(state.next_delay, ARBITRARY_DURATION);
+    let state = tenacious::RetryState::new(1, Some(d));
+    assert_eq!(state.elapsed, Some(ARBITRARY_DURATION));
 }
 
 // ---------------------------------------------------------------------------
@@ -902,9 +585,6 @@ fn _assert_send_sync<T: Send + Sync>() {}
 #[test]
 fn default_retry_policy_is_send_and_sync() {
     _assert_send_sync::<tenacious::RetryPolicy>();
-    let mut policy = tenacious::RetryPolicy::default();
-    let result = policy.retry(|| Ok::<(), &str>(())).sleep(|_| {}).call();
-    assert_eq!(result, Ok(()));
 }
 
 // ---------------------------------------------------------------------------
@@ -916,5 +596,5 @@ fn default_retry_policy_is_send_and_sync() {
 /// NOTE: The spec says state types are "never constructed by user code" (1.8).
 /// These helpers simulate what the execution engine would do.
 fn make_retry_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, None, Duration::ZERO, Duration::ZERO)
+    tenacious::RetryState::new(attempt, None)
 }

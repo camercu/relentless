@@ -7,7 +7,7 @@ use core::{future::Future, pin::Pin, task::Context, task::Poll};
 use std::sync::Arc;
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
 use tenacious::RetryPolicy;
-use tenacious::{Predicate, Stop, StopExt, Wait, WaitExt, on, stop, wait};
+use tenacious::{Predicate, Stop, Wait, predicate, stop, wait};
 
 const ARBITRARY_ATTEMPT: u32 = 3;
 const ARBITRARY_ELAPSED: Duration = Duration::from_secs(2);
@@ -37,13 +37,13 @@ fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 fn state(attempt: u32, elapsed: Option<Duration>) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, elapsed, Duration::ZERO, Duration::ZERO)
+    tenacious::RetryState::new(attempt, elapsed)
 }
 
 #[test]
 fn stop_named_combinators_match_operator_forms() {
-    let mut named_or = stop::attempts(ARBITRARY_ATTEMPT).or(stop::elapsed(ARBITRARY_ELAPSED));
-    let mut op_or = stop::attempts(ARBITRARY_ATTEMPT) | stop::elapsed(ARBITRARY_ELAPSED);
+    let named_or = stop::attempts(ARBITRARY_ATTEMPT).or(stop::elapsed(ARBITRARY_ELAPSED));
+    let op_or = stop::attempts(ARBITRARY_ATTEMPT) | stop::elapsed(ARBITRARY_ELAPSED);
 
     let early = state(1, Some(Duration::from_secs(1)));
     let elapsed_hit = state(1, Some(ARBITRARY_ELAPSED));
@@ -58,8 +58,8 @@ fn stop_named_combinators_match_operator_forms() {
         op_or.should_stop(&attempt_hit)
     );
 
-    let mut named_and = stop::attempts(ARBITRARY_ATTEMPT).and(stop::elapsed(ARBITRARY_ELAPSED));
-    let mut op_and = stop::attempts(ARBITRARY_ATTEMPT) & stop::elapsed(ARBITRARY_ELAPSED);
+    let named_and = stop::attempts(ARBITRARY_ATTEMPT).and(stop::elapsed(ARBITRARY_ELAPSED));
+    let op_and = stop::attempts(ARBITRARY_ATTEMPT) & stop::elapsed(ARBITRARY_ELAPSED);
 
     let both_hit = state(ARBITRARY_ATTEMPT, Some(ARBITRARY_ELAPSED));
     assert_eq!(named_and.should_stop(&early), op_and.should_stop(&early));
@@ -75,9 +75,10 @@ fn stop_named_combinators_match_operator_forms() {
 
 #[test]
 fn predicate_named_combinators_match_operator_forms() {
-    let mut named_or =
-        on::error(|err: &&str| *err == "retryable").or(on::ok(|value: &u32| *value < 2));
-    let mut op_or = on::error(|err: &&str| *err == "retryable") | on::ok(|value: &u32| *value < 2);
+    let named_or = predicate::error(|err: &&str| *err == "retryable")
+        .or(predicate::ok(|value: &u32| *value < 2));
+    let op_or = predicate::error(|err: &&str| *err == "retryable")
+        | predicate::ok(|value: &u32| *value < 2);
 
     assert_eq!(
         named_or.should_retry(&Err("retryable")),
@@ -92,8 +93,10 @@ fn predicate_named_combinators_match_operator_forms() {
         op_or.should_retry(&Err("fatal"))
     );
 
-    let mut named_and = on::any_error().and(on::error(|err: &&str| *err == "retryable"));
-    let mut op_and = on::any_error() & on::error(|err: &&str| *err == "retryable");
+    let named_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
+        .and(predicate::error(|err: &&str| *err == "retryable"));
+    let op_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
+        & predicate::error(|err: &&str| *err == "retryable");
     assert_eq!(
         named_and.should_retry(&Err::<u32, &str>("retryable")),
         op_and.should_retry(&Err::<u32, &str>("retryable"))
@@ -112,19 +115,19 @@ fn predicate_named_combinators_match_operator_forms() {
 fn wait_named_add_matches_operator_and_supports_custom_wait() {
     let retry_state = state(1, None);
 
-    let mut named = wait::fixed(ARBITRARY_WAIT_A).add(wait::fixed(ARBITRARY_WAIT_B));
-    let mut op = wait::fixed(ARBITRARY_WAIT_A) + wait::fixed(ARBITRARY_WAIT_B);
+    let named = wait::fixed(ARBITRARY_WAIT_A).add(wait::fixed(ARBITRARY_WAIT_B));
+    let op = wait::fixed(ARBITRARY_WAIT_A) + wait::fixed(ARBITRARY_WAIT_B);
     assert_eq!(named.next_wait(&retry_state), op.next_wait(&retry_state));
 
     #[derive(Clone, Copy)]
     struct CustomWait(Duration);
     impl Wait for CustomWait {
-        fn next_wait(&mut self, _state: &tenacious::RetryState) -> Duration {
+        fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
             self.0
         }
     }
 
-    let mut custom = CustomWait(ARBITRARY_WAIT_A).add(wait::fixed(ARBITRARY_WAIT_B));
+    let custom = CustomWait(ARBITRARY_WAIT_A).add(wait::fixed(ARBITRARY_WAIT_B));
     assert_eq!(
         custom.next_wait(&retry_state),
         ARBITRARY_WAIT_A.saturating_add(ARBITRARY_WAIT_B)
@@ -136,10 +139,10 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
 fn tokio_sleep_helper_is_sleep_compatible() {
     let helper: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<(), tenacious::RetryError<&str>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<(), tenacious::RetryError<(), &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<(), &str>(()) })
+            .retry_async(|_| async { Ok::<(), &str>(()) })
             .sleep(helper),
     );
     assert_eq!(result, Ok(()));
@@ -150,10 +153,10 @@ fn tokio_sleep_helper_is_sleep_compatible() {
 fn futures_timer_sleep_helper_is_sleep_compatible() {
     let helper: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<(), tenacious::RetryError<&str>> = block_on(
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let result: Result<(), tenacious::RetryError<(), &str>> = block_on(
         policy
-            .retry_async(|| async { Ok::<(), &str>(()) })
+            .retry_async(|_| async { Ok::<(), &str>(()) })
             .sleep(helper),
     );
     assert_eq!(result, Ok(()));

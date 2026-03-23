@@ -36,11 +36,11 @@ fn block_on<F: Future>(future: F) -> F::Output {
 #[test]
 fn policy_async_retry_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
-            .retry_async(|| {
+            .retry_async(|_| {
                 attempts.set(attempts.get().saturating_add(1));
                 if attempts.get() < MAX_ATTEMPTS {
                     ready(Err(ERROR_VALUE))
@@ -62,8 +62,8 @@ fn policy_async_retry_remains_available_without_alloc() {
 fn async_retry_ext_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
 
-    let result: Result<i32, RetryError<&str, i32>> = block_on(
-        (|| {
+    let result: Result<i32, RetryError<i32, &str>> = block_on(
+        (|_| {
             attempts.set(attempts.get().saturating_add(1));
             if attempts.get() < MAX_ATTEMPTS {
                 ready(Err(ERROR_VALUE))

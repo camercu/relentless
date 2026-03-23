@@ -4,7 +4,7 @@ use core::cell::Cell;
 use core::time::Duration;
 use std::cell::RefCell;
 use tenacious::RetryPolicy;
-use tenacious::{StopReason, on, stop, wait};
+use tenacious::{StopReason, predicate, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
@@ -16,10 +16,10 @@ fn before_attempt_and_after_attempt_fire_at_defined_points() {
     let events: RefCell<Vec<(char, u32)>> = RefCell::new(Vec::new());
     let op_attempt = Cell::new(0_u32);
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| {
+        .retry(|_| {
             let attempt = op_attempt.get().saturating_add(1);
             op_attempt.set(attempt);
             events.borrow_mut().push(('o', attempt));
@@ -53,15 +53,15 @@ fn after_attempt_runs_after_predicate_evaluation() {
     let predicate_calls = Cell::new(0_u32);
     let after_observed: RefCell<Vec<u32>> = RefCell::new(Vec::new());
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(2)).when(on::result(
-        |_outcome: &Result<i32, &str>| {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .when(predicate::result(|_outcome: &Result<i32, &str>| {
             predicate_calls.set(predicate_calls.get().saturating_add(1));
             true
-        },
-    ));
+        }));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {
             after_observed.borrow_mut().push(predicate_calls.get());
         })
@@ -74,12 +74,12 @@ fn after_attempt_runs_after_predicate_evaluation() {
 #[test]
 fn after_attempt_receives_next_delay_for_retryable_attempts() {
     let seen: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
             seen.borrow_mut().push((state.attempt, state.next_delay));
         })
@@ -100,10 +100,10 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
 #[test]
 fn on_exit_fires_once_with_final_state() {
     let exits: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
             exits.borrow_mut().push((
                 state.attempt,
@@ -111,7 +111,7 @@ fn on_exit_fires_once_with_final_state() {
                     .outcome
                     .expect("outcome should be present when stop triggers")
                     .is_err(),
-                state.reason,
+                state.stop_reason,
             ));
         })
         .sleep(instant_sleep)
@@ -119,26 +119,26 @@ fn on_exit_fires_once_with_final_state() {
 
     assert_eq!(
         *exits.borrow(),
-        vec![(MAX_ATTEMPTS, true, StopReason::StopStrategyTriggered)]
+        vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
     );
 }
 
 #[test]
 fn on_exit_reports_non_retryable_error_reason() {
     let reasons: RefCell<Vec<StopReason>> = RefCell::new(Vec::new());
-    let mut policy = RetryPolicy::new()
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(on::error(|err: &&str| *err == "retryable"));
+        .when(predicate::error(|err: &&str| *err == "retryable"));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fatal"))
+        .retry(|_| Err::<i32, _>("fatal"))
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
-            reasons.borrow_mut().push(state.reason);
+            reasons.borrow_mut().push(state.stop_reason);
         })
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(*reasons.borrow(), vec![StopReason::NonRetryableError]);
+    assert_eq!(*reasons.borrow(), vec![StopReason::Accepted]);
 }
 
 #[cfg(feature = "alloc")]
@@ -146,10 +146,10 @@ fn on_exit_reports_non_retryable_error_reason() {
 fn multiple_hooks_of_same_kind_fire_in_registration_order() {
     let calls: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
 
-    let mut policy = RetryPolicy::new().stop(stop::attempts(1));
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let _ = policy
-        .retry(|| Err::<i32, _>("fail"))
+        .retry(|_| Err::<i32, _>("fail"))
         .before_attempt(|_state| calls.borrow_mut().push("before_1"))
         .before_attempt(|_state| calls.borrow_mut().push("before_2"))
         .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {
