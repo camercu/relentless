@@ -15,6 +15,33 @@ use core::task::Context;
 use core::task::Poll;
 use pin_project_lite::pin_project;
 
+/// Trait abstracting the retry operation callable.
+///
+/// Both `FnMut(RetryState) -> Result<T, E>` (policy path, free functions)
+/// and `StatelessOp<FnMut() -> Result<T, E>>` (ext trait path) implement this.
+pub(crate) trait RetryOp<T, E> {
+    fn call_op(&mut self, state: RetryState) -> Result<T, E>;
+}
+
+impl<T, E, F: FnMut(RetryState) -> Result<T, E>> RetryOp<T, E> for F {
+    fn call_op(&mut self, state: RetryState) -> Result<T, E> {
+        (self)(state)
+    }
+}
+
+/// Trait abstracting the async retry operation callable.
+pub(crate) trait AsyncRetryOp<T, E, Fut: Future<Output = Result<T, E>>> {
+    fn call_op(&mut self, state: RetryState) -> Fut;
+}
+
+impl<T, E, Fut: Future<Output = Result<T, E>>, F: FnMut(RetryState) -> Fut> AsyncRetryOp<T, E, Fut>
+    for F
+{
+    fn call_op(&mut self, state: RetryState) -> Fut {
+        (self)(state)
+    }
+}
+
 fn attempt_state_from<'a, T, E>(
     retry_state: &RetryState,
     outcome: &'a Result<T, E>,
@@ -332,7 +359,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Result<T, E>,
+    F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
     let mut attempt: u32 = 1;
@@ -342,7 +369,7 @@ where
         fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
 
         let state = RetryState::new(attempt, elapsed_tracker.elapsed());
-        let outcome = (op)(state);
+        let outcome = op.call_op(state);
         match transition_from_outcome(
             policy,
             hooks,
@@ -414,7 +441,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Fut,
+    F: AsyncRetryOp<T, E, Fut>,
     Fut: Future<Output = Result<T, E>>,
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
@@ -426,7 +453,7 @@ where
 
                 let state = RetryState::new(*attempt, elapsed_tracker.elapsed());
                 phase.set(AsyncPhase::PollingOperation {
-                    op_future: (op)(state),
+                    op_future: op.call_op(state),
                 });
             }
             AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(

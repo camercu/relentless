@@ -152,7 +152,7 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryCore<Policy, BA, AA, OX, F, 
         BA: BeforeAttemptHook,
         AA: AttemptHook<T, E>,
         OX: ExitHook<T, E>,
-        F: FnMut(RetryState) -> Result<T, E>,
+        F: super::common::RetryOp<T, E>,
         SleepFn: SyncSleep,
     {
         let policy = self.policy.policy_ref();
@@ -294,10 +294,6 @@ impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
 
 impl<'policy, S, W, P, BA, AA, OX, F, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, OX, F, NoSyncSleep, T, E>
-where
-    S: Stop,
-    W: Wait,
-    F: FnMut(RetryState) -> Result<T, E>,
 {
     /// Sets a custom blocking sleep function.
     #[must_use]
@@ -321,7 +317,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Result<T, E>,
+    F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
     /// Executes the retry loop synchronously.
@@ -352,7 +348,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Result<T, E>,
+    F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
     /// Executes the retry loop synchronously and returns `(result, stats)`.

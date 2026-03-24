@@ -15,7 +15,10 @@ use crate::{
 };
 
 /// Extension trait to start sync retries directly from a closure/function.
-pub trait RetryExt<T, E>: FnMut(RetryState) -> Result<T, E> + Sized {
+///
+/// The operation takes no parameters. Use the free function [`crate::retry`]
+/// when you need access to [`RetryState`].
+pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// Starts an owned sync retry builder from [`RetryPolicy::default()`].
     ///
     /// This means extension-based retries default to:
@@ -30,7 +33,7 @@ pub trait RetryExt<T, E>: FnMut(RetryState) -> Result<T, E> + Sized {
     /// ```
     /// use tenacious::RetryExt;
     ///
-    /// let _ = (|_| Ok::<(), &str>(()))
+    /// let _ = (|| Ok::<(), &str>(()))
     ///     .retry()
     ///     .sleep(|_| {})
     ///     .call();
@@ -38,16 +41,31 @@ pub trait RetryExt<T, E>: FnMut(RetryState) -> Result<T, E> + Sized {
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E>;
 }
 
+/// Wrapper that adapts `FnMut() -> Result<T, E>` to the [`RetryOp`] trait.
+///
+/// Used internally by [`RetryExt::retry`] so the execution engine receives
+/// the expected interface while the user only provides `FnMut() -> Result`.
+#[doc(hidden)]
+pub struct StatelessOp<F>(F);
+
+impl<T, E, F: FnMut() -> Result<T, E>> super::super::execution::common::RetryOp<T, E>
+    for StatelessOp<F>
+{
+    fn call_op(&mut self, _state: RetryState) -> Result<T, E> {
+        (self.0)()
+    }
+}
+
 impl<T, E, F> RetryExt<T, E> for F
 where
-    F: FnMut(RetryState) -> Result<T, E> + Sized,
+    F: FnMut() -> Result<T, E> + Sized,
 {
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E> {
         SyncRetryBuilder {
             inner: SyncRetryCore::new(
                 RetryPolicy::default(),
                 ExecutionHooks::new(),
-                self,
+                StatelessOp(self),
                 NoSyncSleep,
                 ElapsedTracker::new(None),
             ),
@@ -66,7 +84,7 @@ pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
     (),
     (),
     (),
-    F,
+    StatelessOp<F>,
     NoSyncSleep,
     T,
     E,
@@ -81,7 +99,7 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWi
     (),
     (),
     (),
-    F,
+    StatelessOp<F>,
     SleepFn,
     T,
     E,
@@ -92,7 +110,7 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWi
 /// ```compile_fail
 /// use tenacious::RetryExt;
 ///
-/// let _ = (|_| Err::<(), &str>("fail"))
+/// let _ = (|| Err::<(), &str>("fail"))
 ///     .retry()
 ///     .call();
 /// ```
@@ -107,7 +125,7 @@ fn _sync_retry_builder_requires_sleep_in_no_std() {}
 /// use core::time::Duration;
 /// use tenacious::{RetryExt, stop};
 ///
-/// let retry = (|_| Ok::<u32, &str>(1))
+/// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
 ///     .stop(stop::attempts(2))
 ///     .sleep(|_dur: Duration| {});
@@ -150,7 +168,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E> fmt::Debug
 /// use core::time::Duration;
 /// use tenacious::RetryExt;
 ///
-/// let retry = (|_| Ok::<u32, &str>(1))
+/// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
 ///     .sleep(|_dur: Duration| {})
 ///     .with_stats();
@@ -307,7 +325,7 @@ impl<S, W, P, AA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, (), AA, OX, F,
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|_| Err::<(), _>("fail"))
+    /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .before_attempt(|_state| {})
@@ -332,7 +350,7 @@ impl<S, W, P, BA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, (), OX, F,
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|_| Err::<(), _>("fail"))
+    /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .after_attempt(|_state| {})
@@ -357,7 +375,7 @@ impl<S, W, P, BA, AA, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, AA, (), F,
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
     ///
-    /// let _ = (|_| Err::<(), _>("fail"))
+    /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()
     ///     .stop(stop::attempts(1))
     ///     .on_exit(|_state| {})
@@ -375,6 +393,8 @@ impl<S, W, P, BA, AA, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, AA, (), F,
     }
 }
 
+use super::super::execution::common::RetryOp;
+
 #[allow(private_bounds)]
 impl<S, W, P, BA, AA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E>
 where
@@ -384,7 +404,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Result<T, E>,
+    F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
     /// Executes the sync retry loop.
@@ -415,7 +435,7 @@ where
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
-    F: FnMut(RetryState) -> Result<T, E>,
+    F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
     /// Executes the sync retry loop and returns `(result, stats)`.

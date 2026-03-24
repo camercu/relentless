@@ -348,7 +348,7 @@ fn builder_until_sets_predicate() {
     use tenacious::{RetryExt, stop, wait};
 
     let counter = Cell::new(0u32);
-    let result = (|_state: tenacious::RetryState| {
+    let result = (|| {
         let n = counter.get() + 1;
         counter.set(n);
         Ok::<u32, &str>(n)

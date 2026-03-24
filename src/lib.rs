@@ -35,7 +35,7 @@
 //! use core::time::Duration;
 //! use tenacious::{RetryExt, stop, wait};
 //!
-//! let result = (|_state| Err::<u32, &str>("transient"))
+//! let result = (|| Err::<u32, &str>("transient"))
 //!     .retry()
 //!     .stop(stop::attempts(3))
 //!     .wait(wait::fixed(Duration::from_millis(5)))
@@ -96,11 +96,24 @@ pub use wait::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitt
 ///     .call();
 /// assert_eq!(result.unwrap(), 42);
 /// ```
-pub fn retry<F, T, E>(op: F) -> builders::DefaultSyncRetryBuilder<F, T, E>
+pub fn retry<F, T, E>(
+    op: F,
+) -> builders::SyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    predicate::PredicateAnyError,
+    (),
+    (),
+    (),
+    F,
+    policy::NoSyncSleep,
+    T,
+    E,
+>
 where
     F: FnMut(RetryState) -> Result<T, E>,
 {
-    op.retry()
+    builders::SyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }
 
 /// Async retry with default policy.
@@ -118,12 +131,26 @@ where
 ///     .sleep(|_dur: Duration| async {});
 /// let _ = retry;
 /// ```
-pub fn retry_async<F, T, E, Fut>(op: F) -> builders::DefaultAsyncRetryBuilder<F, Fut, T, E>
+pub fn retry_async<F, T, E, Fut>(
+    op: F,
+) -> builders::AsyncRetryBuilder<
+    stop::StopAfterAttempts,
+    wait::WaitExponential,
+    predicate::PredicateAnyError,
+    (),
+    (),
+    (),
+    F,
+    Fut,
+    policy::NoAsyncSleep,
+    T,
+    E,
+>
 where
     F: FnMut(RetryState) -> Fut,
     Fut: core::future::Future<Output = Result<T, E>>,
 {
-    op.retry_async()
+    builders::AsyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }
 
 /// Advanced builder types and aliases.

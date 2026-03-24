@@ -8,7 +8,7 @@ const WAIT_DURATION: Duration = Duration::from_millis(10);
 fn main() {
     let attempts = Cell::new(0_u32);
 
-    let (result, stats) = (|_: tenacious::RetryState| {
+    let (result, stats) = (|| {
         attempts.set(attempts.get().saturating_add(1));
         Err::<(), &'static str>("control plane unavailable")
     })

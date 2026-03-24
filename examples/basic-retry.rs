@@ -8,7 +8,7 @@ const WAIT_DURATION: Duration = Duration::from_millis(10);
 fn main() {
     let attempts = Cell::new(0_u32);
 
-    let result = (|_: tenacious::RetryState| {
+    let result = (|| {
         attempts.set(attempts.get().saturating_add(1));
         if attempts.get() < MAX_ATTEMPTS {
             Err::<&'static str, &'static str>("transient")

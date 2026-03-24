@@ -52,7 +52,7 @@ fn retry_ext_closure_form_retries_until_success() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let result: Result<i32, RetryError<i32, &str>> = (move |_state: RetryState| {
+    let result: Result<i32, RetryError<i32, &str>> = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         if attempts_ref.get() < MAX_ATTEMPTS {
             Err(ERROR_VALUE)
@@ -70,7 +70,7 @@ fn retry_ext_closure_form_retries_until_success() {
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
 }
 
-fn do_work(_state: RetryState) -> Result<i32, &'static str> {
+fn do_work() -> Result<i32, &'static str> {
     Ok(SUCCESS_VALUE)
 }
 
@@ -82,7 +82,7 @@ fn retry_ext_function_pointer_form_works() {
 
 #[test]
 fn default_sync_retry_builder_alias_is_nameable_from_builders_module() {
-    type SyncWorkFn = fn(RetryState) -> Result<i32, &'static str>;
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
     type Builder = tenacious::builders::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn).retry();
@@ -91,7 +91,7 @@ fn default_sync_retry_builder_alias_is_nameable_from_builders_module() {
 
 #[test]
 fn default_sync_retry_builder_with_stats_alias_is_nameable_from_builders_module() {
-    type SyncWorkFn = fn(RetryState) -> Result<i32, &'static str>;
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
     type SleepFn = fn(Duration);
     type Builder = tenacious::builders::DefaultSyncRetryBuilderWithStats<
         SyncWorkFn,
@@ -116,7 +116,7 @@ fn retry_ext_uses_default_policy_when_not_overridden() {
     let sleeps = Rc::new(RefCell::new(Vec::new()));
     let sleeps_ref = Rc::clone(&sleeps);
 
-    let result = (move |_state: RetryState| {
+    let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Err::<i32, &str>(ERROR_VALUE)
     })
@@ -135,7 +135,7 @@ fn retry_ext_with_stats_reports_attempts() {
     let attempts_ref = Rc::clone(&attempts);
 
     let (result, stats): (Result<i32, RetryError<i32, &str>>, tenacious::RetryStats) =
-        (move |_state: RetryState| {
+        (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             Err(ERROR_VALUE)
         })
@@ -157,7 +157,7 @@ fn retry_ext_stateful_stop_and_wait_work() {
     let sleeps = Rc::new(RefCell::new(Vec::new()));
     let sleeps_ref = Rc::clone(&sleeps);
 
-    let result = (move |_state: RetryState| {
+    let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Err::<i32, &str>(ERROR_VALUE)
     })
@@ -183,7 +183,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
     let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
     let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
-    let _ = (|_state: RetryState| Err::<i32, _>(ERROR_VALUE))
+    let _ = (|| Err::<i32, _>(ERROR_VALUE))
         .retry()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION))
@@ -220,7 +220,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
 
 #[test]
 fn retry_ext_condition_not_met_for_ok_exhaustion() {
-    let result = (|_state: RetryState| Ok::<i32, &str>(-1))
+    let result = (|| Ok::<i32, &str>(-1))
         .retry()
         .stop(stop::attempts(2))
         .when(predicate::ok(|_value: &i32| true))
@@ -235,7 +235,7 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
 
 #[test]
 fn retry_ext_non_retryable_error_returns_immediately() {
-    let result = (|_state: RetryState| Err::<i32, &str>(ERROR_VALUE))
+    let result = (|| Err::<i32, &str>(ERROR_VALUE))
         .retry()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"))
@@ -281,7 +281,7 @@ mod async_tests {
         }
     }
 
-    fn do_async_work(_state: RetryState) -> core::future::Ready<Result<i32, &'static str>> {
+    fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
         ready(Ok(SUCCESS_VALUE))
     }
 
@@ -294,7 +294,7 @@ mod async_tests {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
 
-        let future = (move |_state: RetryState| {
+        let future = (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             if attempts_ref.get() < MAX_ATTEMPTS {
                 ready(Err(ERROR_VALUE))
@@ -320,7 +320,7 @@ mod async_tests {
         let sleeps_ref = Rc::clone(&sleeps);
 
         let result = block_on(
-            (move |_state: RetryState| {
+            (move || {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ERROR_VALUE))
             })
@@ -338,7 +338,7 @@ mod async_tests {
 
     #[test]
     fn default_async_retry_builder_alias_is_nameable_from_builders_module() {
-        type AsyncWorkFn = fn(RetryState) -> core::future::Ready<Result<i32, &'static str>>;
+        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type Builder = tenacious::builders::DefaultAsyncRetryBuilder<
             AsyncWorkFn,
@@ -355,7 +355,7 @@ mod async_tests {
 
     #[test]
     fn default_async_retry_builder_with_stats_alias_is_nameable_from_builders_module() {
-        type AsyncWorkFn = fn(RetryState) -> core::future::Ready<Result<i32, &'static str>>;
+        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type SleepFn = fn(Duration) -> core::future::Ready<()>;
         type SleepFuture = core::future::Ready<()>;
@@ -384,7 +384,7 @@ mod async_tests {
         let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
         let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
-        let future = (|_state: RetryState| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
+        let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
             .retry_async()
             .stop(stop::attempts(MAX_ATTEMPTS))
             .wait(wait::fixed(WAIT_DURATION))
@@ -422,7 +422,7 @@ mod async_tests {
 
     #[test]
     fn async_retry_ext_with_stats_reports_attempts() {
-        let future = (|_state: RetryState| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
+        let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
             .retry_async()
             .stop(stop::attempts(2))
             .when(predicate::any_error())
@@ -442,7 +442,7 @@ mod async_tests {
         let sleeps_ref = Rc::clone(&sleeps);
 
         let result = block_on(
-            (move |_state: RetryState| {
+            (move || {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ERROR_VALUE))
             })
@@ -468,7 +468,7 @@ mod async_tests {
     #[test]
     fn async_retry_ext_repoll_after_completion_panics() {
         let mut retry = Box::pin(
-            (|_state: RetryState| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
+            (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
                 .retry_async()
                 .stop(stop::attempts(1))
                 .sleep(|_dur| ready(())),
@@ -488,7 +488,7 @@ mod async_tests {
 
 #[test]
 fn policy_and_extension_forms_are_equivalent_for_basic_case() {
-    let from_ext = (|_state: RetryState| Err::<i32, &str>(ERROR_VALUE))
+    let from_ext = (|| Err::<i32, &str>(ERROR_VALUE))
         .retry()
         .sleep(instant_sleep)
         .call();
