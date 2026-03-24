@@ -17,12 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: dtolnay/rust-toolchain@master
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: DeterminateSystems/magic-nix-cache-action@v9
+          toolchain: "1.85.0"
+          targets: thumbv7m-none-eabi,wasm32-unknown-unknown
+          components: clippy,rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0,cargo-deny@0.19.0,typos-cli@1.41.0,taplo-cli@0.10.0
       - name: just ci
-        run: nix-shell --run 'just ci'
+        run: just ci
 
   stable-advisory:
     name: Latest stable advisory

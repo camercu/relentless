@@ -1,0 +1,7 @@
+# Pinned tool versions — used by both shell.nix and .github/workflows/ci.yml
+# Update both when changing versions here.
+rust 1.85.0
+just 1.46.0
+cargo-deny 0.19.0
+typos-cli 1.41.0
+taplo-cli 0.10.0
