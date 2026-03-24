@@ -28,7 +28,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: stable
           components: clippy
@@ -46,11 +46,9 @@ jobs:
       matrix:
         features:
           - jitter
-          - serde
-          - jitter,serde
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo test feature_compat
@@ -67,7 +65,7 @@ jobs:
           - futures-timer-sleep
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo test policy_async
@@ -78,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo check embassy-sleep
@@ -89,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo test allocation_hot_paths
@@ -100,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo check --no-default-features --features alloc
@@ -111,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@efa25f7f0596c5e57a3425100840d6b4182ed01a
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
           toolchain: "1.85.0"
       - name: cargo check
