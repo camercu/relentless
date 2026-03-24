@@ -184,6 +184,23 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
+    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
+    ///
+    /// Wraps `p` in [`predicate::PredicateUntil`](crate::predicate::PredicateUntil),
+    /// negating its result. Natural for polling:
+    /// `.until(ok(|s| s.is_ready()))` reads "retry until ready."
+    #[must_use]
+    pub fn until<NewPredicate>(
+        self,
+        predicate: NewPredicate,
+    ) -> RetryPolicy<S, W, predicate::PredicateUntil<NewPredicate>> {
+        RetryPolicy {
+            stop: self.stop,
+            wait: self.wait,
+            predicate: predicate::until(predicate),
+        }
+    }
+
     /// Converts this policy into a type-erased boxed variant.
     #[cfg(feature = "alloc")]
     #[must_use]

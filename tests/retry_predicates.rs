@@ -269,6 +269,137 @@ fn predicate_and_short_circuits_when_left_rejects() {
 }
 
 // ---------------------------------------------------------------------------
+// 4.9: PredicateUntil negates inner predicate
+// ---------------------------------------------------------------------------
+
+#[test]
+fn predicate_until_negates_inner() {
+    // ok(|v| *v >= READY_THRESHOLD) returns true when ready.
+    // PredicateUntil wraps it: should_retry is negated,
+    // so it retries when inner returns false (not ready yet).
+    let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD);
+    let until = predicate::until(inner);
+
+    // Not ready (inner returns false) → until says retry (true)
+    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    // Ready (inner returns true) → until says stop (false)
+    assert!(!until.should_retry(&ok(READY_VALUE)));
+    // Err → inner ok() returns false → until negates to true (retry errors)
+    assert!(until.should_retry(&err(TestError::Retryable)));
+}
+
+#[test]
+fn predicate_until_with_any_error_retries_ok_stops_on_error() {
+    // until(any_error()) means: retry until there's an error
+    // any_error().should_retry returns true for Err, false for Ok
+    // until negates: true for Ok (retry), false for Err (stop)
+    let until = predicate::until(predicate::any_error());
+
+    assert!(until.should_retry(&ok(ARBITRARY_OK_VALUE)));
+    assert!(!until.should_retry(&err(TestError::Retryable)));
+}
+
+#[test]
+fn predicate_until_composes_with_operators() {
+    // until(ok(|v| ready) | error(|e| fatal))
+    // Retries until ready OR until fatal error
+    let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD)
+        | predicate::error(|error: &TestError| matches!(error, TestError::Fatal));
+    let until = predicate::until(inner);
+
+    // Not ready, not fatal → inner false → until true (retry)
+    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
+    // Retryable error → inner false → until true (retry)
+    assert!(until.should_retry(&err(TestError::Retryable)));
+    // Ready → inner true → until false (stop)
+    assert!(!until.should_retry(&ok(READY_VALUE)));
+    // Fatal → inner true → until false (stop)
+    assert!(!until.should_retry(&err(TestError::Fatal)));
+}
+
+#[test]
+fn policy_until_sets_predicate() {
+    use core::time::Duration;
+    use tenacious::{RetryPolicy, stop, wait};
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(15))
+        .wait(wait::fixed(Duration::from_millis(1)))
+        .until(predicate::ok(|value: &u32| *value >= READY_THRESHOLD));
+
+    let counter = Cell::new(0u32);
+    let result = policy
+        .retry(|_| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            Ok::<u32, &str>(n)
+        })
+        .sleep(|_| {})
+        .call();
+
+    // Should retry until value >= READY_THRESHOLD (10)
+    assert_eq!(result.unwrap(), READY_VALUE);
+    assert_eq!(counter.get(), READY_VALUE);
+}
+
+#[test]
+fn builder_until_sets_predicate() {
+    use core::time::Duration;
+    use tenacious::{RetryExt, stop, wait};
+
+    let counter = Cell::new(0u32);
+    let result = (|_state: tenacious::RetryState| {
+        let n = counter.get() + 1;
+        counter.set(n);
+        Ok::<u32, &str>(n)
+    })
+    .retry()
+    .stop(stop::attempts(15))
+    .wait(wait::fixed(Duration::from_millis(1)))
+    .until(predicate::ok(|value: &u32| *value >= READY_THRESHOLD))
+    .sleep(|_| {})
+    .call();
+
+    assert_eq!(result.unwrap(), READY_VALUE);
+    assert_eq!(counter.get(), READY_VALUE);
+}
+
+#[test]
+fn until_ok_retries_errors_by_default() {
+    // Per SPEC: .until(ok(f)) retries errors because ok(f) returns false
+    // for Err, and until inverts to true (retry).
+    use core::time::Duration;
+    use tenacious::{RetryPolicy, stop, wait};
+
+    let counter = Cell::new(0u32);
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(5))
+        .wait(wait::fixed(Duration::from_millis(1)))
+        .until(predicate::ok(|value: &u32| *value >= 3))
+        .retry(|_| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            if n < 2 {
+                Err::<u32, &str>("transient")
+            } else {
+                Ok(n)
+            }
+        })
+        .sleep(|_| {})
+        .call();
+
+    // First call: Err → retried (ok returns false for Err, until inverts to true)
+    // Second call: Ok(2) → retried (ok returns true for 2 < 3, until inverts... wait)
+    // Actually ok(|v| *v >= 3) returns true when v >= 3, false when v < 3
+    // until negates: retry when inner is false (v < 3), stop when inner is true (v >= 3)
+    // For Err: ok() returns false → until makes it true (retry)
+    // Ok(2): ok(2 >= 3) = false → until = true (retry)
+    // Ok(3): ok(3 >= 3) = true → until = false (stop, accepted)
+    assert_eq!(result.unwrap(), 3);
+    assert_eq!(counter.get(), 3);
+}
+
+// ---------------------------------------------------------------------------
 // 4.8: Blanket impl for `Fn(&Result<T, E>) -> bool`
 // ---------------------------------------------------------------------------
 

@@ -271,6 +271,47 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// PredicateUntil (negation wrapper)
+// ---------------------------------------------------------------------------
+
+/// Predicate that negates the inner predicate's decision.
+///
+/// Created by [`until`] or by calling `.until(p)` on a [`crate::RetryPolicy`]
+/// or extension builder. Retries *until* the inner predicate returns `true`.
+///
+/// # Examples
+///
+/// ```
+/// use tenacious::{Predicate, predicate};
+///
+/// let p = predicate::until(predicate::ok(|v: &u32| *v >= 10));
+/// assert!(p.should_retry(&Ok::<u32, &str>(3)));   // not ready → retry
+/// assert!(!p.should_retry(&Ok::<u32, &str>(10))); // ready → stop
+/// ```
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PredicateUntil<P> {
+    inner: P,
+}
+
+/// Wraps a predicate so that its `should_retry()` result is negated.
+///
+/// The resulting predicate retries *until* the inner predicate returns `true`.
+#[must_use]
+pub fn until<P>(inner: P) -> PredicateUntil<P> {
+    PredicateUntil { inner }
+}
+
+impl<T, E, P> Predicate<T, E> for PredicateUntil<P>
+where
+    P: Predicate<T, E>,
+{
+    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
+        !self.inner.should_retry(outcome)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Composition types
 // ---------------------------------------------------------------------------
 
@@ -384,3 +425,4 @@ impl_predicate_ops!(PredicateResult<F>, F);
 impl_predicate_ops!(PredicateOk<F>, F);
 impl_predicate_ops!(PredicateAny<A, B>, A, B);
 impl_predicate_ops!(PredicateAll<A, B>, A, B);
+impl_predicate_ops!(PredicateUntil<P>, P);

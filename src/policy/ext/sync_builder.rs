@@ -227,6 +227,21 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
+    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
+    ///
+    /// Wraps `p` in [`PredicateUntil`](crate::predicate::PredicateUntil).
+    /// Natural for polling: `.until(ok(|s| s.is_ready()))`.
+    #[must_use]
+    pub fn until<NewPredicate>(
+        self,
+        predicate: NewPredicate,
+    ) -> SyncRetryBuilder<S, W, predicate::PredicateUntil<NewPredicate>, BA, AA, OX, F, SleepFn, T, E>
+    {
+        SyncRetryBuilder {
+            inner: self.inner.map_policy(|policy| policy.until(predicate)),
+        }
+    }
+
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
     #[must_use]
     pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {

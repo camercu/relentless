@@ -279,6 +279,34 @@ where
         }
     }
 
+    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
+    ///
+    /// Wraps `p` in [`PredicateUntil`](crate::predicate::PredicateUntil).
+    /// Natural for polling: `.until(ok(|s| s.is_ready()))`.
+    #[must_use]
+    pub fn until<NewPredicate>(
+        self,
+        predicate: NewPredicate,
+    ) -> AsyncRetryBuilder<
+        S,
+        W,
+        predicate::PredicateUntil<NewPredicate>,
+        BA,
+        AA,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+    > {
+        let AsyncRetryBuilder { inner } = self;
+        AsyncRetryBuilder {
+            inner: inner.map_policy(|policy| policy.until(predicate)),
+        }
+    }
+
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
     #[must_use]
     pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
