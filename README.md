@@ -5,8 +5,7 @@
 It models retry behavior as three composable parts: what outcomes are
 retryable (`Predicate`), how long to wait between retries (`Wait`), and when
 to stop retrying (`Stop`). Compared with simpler retry helpers, it gives you
-policy reuse, polling-oriented workflows, hooks for observing retry lifecycle,
-cancellation, and stats, all under one API that works in sync and async code
+policy reuse, polling-oriented workflows, hooks for observing retry lifecycle and stats, all under one API that works in sync and async code
 across `std`, `no_std`, and `wasm` targets.
 
 It is inspired by Python's [`tenacity`](https://github.com/jd/tenacity),
@@ -16,11 +15,11 @@ builders.
 
 ## Features
 
-- Start simple: `retry(|_| my_fn()).sleep(|_| {}).call()` with safe defaults.
+- Start simple: `retry(|_| my_fn()).call()` with safe defaults.
 - Compose policies: combine `Stop`, `Wait`, and `Predicate` with operators.
 - Reuse policies across call sites instead of duplicating retry loops.
 - Handle polling workflows, not just retry-on-error workflows.
-- Add hooks, cancellation, and stats without changing your core retry model.
+- Add hooks and stats without changing your core retry model.
 
 ## Install
 
@@ -33,12 +32,11 @@ Feature flags are listed in [`Cargo.toml`](./Cargo.toml). Key flags:
 | Flag | Purpose |
 |------|---------|
 | `std` (default) | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-| `alloc` | Boxed policies, `Arc<AtomicBool>` canceler, closure elapsed clocks, multiple hooks per point |
+| `alloc` | Boxed policies, closure elapsed clocks, multiple hooks per point |
 | `tokio-sleep` | `sleep::tokio()` async sleep adapter |
 | `embassy-sleep` | `sleep::embassy()` async sleep adapter |
 | `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
 | `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter |
-| `tokio-cancel` | `CancellationToken` async canceler support |
 | `jitter` | Jitter strategies and `Wait` jitter decorator methods |
 | `serde` | Serialize/deserialize for `RetryPolicy` |
 
@@ -149,7 +147,7 @@ fn fetch_export_status(
 fn run() -> Result<String, tenacious::RetryError<String, reqwest::Error>> {
     let client = reqwest::blocking::Client::new();
     let final_status = RetryPolicy::new()
-        .when(predicate::ok(|status: &String| !status.contains("\"status\":\"success\"")))
+        .until(predicate::ok(|status: &String| status.contains("\"status\":\"success\"")))
         .wait(wait::fixed(Duration::from_millis(250)))
         .stop(stop::attempts(8))
         .retry(|_| fetch_export_status(&client))
@@ -222,11 +220,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 5) Hooks, cancellation, and stats
+### 5) Hooks and stats
 
 ```rust
-use core::sync::atomic::{AtomicBool, Ordering};
-use tenacious::{retry, RetryError, predicate};
+use tenacious::{retry, predicate};
 
 fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {
     client
@@ -236,7 +233,6 @@ fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, req
         .text()
 }
 
-let cancelled = AtomicBool::new(false);
 let client = reqwest::blocking::Client::new();
 
 let (result, stats) = retry(|_| fetch_control_plane(&client))
@@ -249,16 +245,11 @@ let (result, stats) = retry(|_| fetch_control_plane(&client))
             );
         }
     })
-    .sleep(|_dur| {
-        // Real world: shutdown signal arrives while waiting for retry.
-        cancelled.store(true, Ordering::Relaxed);
-    })
-    .cancel_on(&cancelled)
     .with_stats()
     .call();
 
-assert!(matches!(result, Err(RetryError::Cancelled { .. })));
-assert_eq!(stats.attempts, 1);
+let _ = result;
+assert!(stats.attempts >= 1);
 ```
 
 ---
@@ -272,11 +263,11 @@ assert_eq!(stats.attempts, 1);
 | Stop strategies | `stop::attempts`, `stop::elapsed`, `stop::never` |
 | Wait strategies | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter` (jitter feature) |
 | Predicates | `predicate::any_error`, `predicate::error`, `predicate::ok`, `predicate::result` |
-| Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, cancellation, stats, timeout |
-| Terminal types | `RetryError<T, E>` (`Exhausted`, `Rejected`, `Cancelled`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
+| Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, stats, timeout |
+| Terminal types | `RetryError<T, E>` (`Exhausted`, `Rejected`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
 
 Builder methods follow the order: **when/until** -> **wait** -> **stop** ->
-sleep -> hooks -> canceler -> stats -> call.
+sleep -> hooks -> stats -> call.
 
 If you need builder types in signatures, use `tenacious::builders::*`.
 
