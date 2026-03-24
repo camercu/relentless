@@ -119,6 +119,9 @@ pub trait Wait {
 
     fn chain<W: Wait>(self, other: W, after: u32) -> wait::WaitChain<Self, W>
     where Self: Sized { ... }
+
+    fn add<W: Wait>(self, other: W) -> wait::WaitCombine<Self, W>
+    where Self: Sized { ... }
 }
 ```
 
@@ -142,6 +145,9 @@ Built-in wait semantics:
   is never consulted
 - the second strategy in `.chain(...)` receives the original global
   `RetryState` unchanged; attempt counting is not rebased at the switch point
+- `.add(other)` combines two strategies by summing their outputs. Equivalent to
+  the `+` operator. `(a + b).next_wait(state)` returns
+  `a.next_wait(state) + b.next_wait(state)` with saturating arithmetic.
 
 Wait strategies only compute `Duration`. They do not sleep directly.
 
@@ -542,14 +548,20 @@ other internal state.
 
 ## Execution model
 
-`RetryPolicy::retry(op)` borrows `&self` and returns `SyncRetryBuilder`, which
+`RetryPolicy::retry(op)` borrows `&self` and returns `SyncRetry`, which
 supports hook configuration and terminal execution. The operation receives
 `RetryState` by value on each invocation.
 
 `RetryPolicy::retry_async(op)` borrows `&self` and returns
-`AsyncRetryBuilder`, which supports hook configuration, sleeper configuration,
+`AsyncRetry`, which supports hook configuration, sleeper configuration,
 and terminal execution. The operation receives `RetryState` by value on each
 invocation.
+
+`SyncRetry` and `AsyncRetry` are the policy-borrowing builder types. They
+share the same method surface as `SyncRetryBuilder` / `AsyncRetryBuilder`
+(hooks, sleep, timing, execution) but do not expose strategy overrides
+(`.stop()`, `.wait()`, `.when()`, `.until()`) because those are configured on
+the policy itself.
 
 Because `Stop`, `Wait`, and `Predicate` all use `&self`, the policy holds no
 mutable state. Multiple concurrent retry loops can share the same policy
@@ -648,10 +660,16 @@ retry_async(|state| async move {
 
 ### Builder method signatures
 
-`SyncRetryBuilder` and `AsyncRetryBuilder` are generic over `S: Stop`,
-`W: Wait`, `P: Predicate<T, E>`, and (for async) `Sl: Sleeper`.
+All execution builders (`SyncRetry`, `SyncRetryBuilder`, `AsyncRetry`,
+`AsyncRetryBuilder`) are generic over `S: Stop`, `W: Wait`,
+`P: Predicate<T, E>`, and (for async) `Sl: Sleeper`.
 
 #### Strategy overrides
+
+Strategy overrides are available only on `SyncRetryBuilder` and
+`AsyncRetryBuilder` (the ext-trait / free-function builders that own their
+policy). `SyncRetry` and `AsyncRetry` borrow the policy and do not expose
+these methods.
 
 - `.when(p: impl Predicate<T, E>) -> ...Builder<S, W, P2, ...>`
 - `.until(p: impl Predicate<T, E>) -> ...Builder<S, W, P2, ...>`
@@ -1067,13 +1085,14 @@ Types:
 - `RetryError`, `RetryResult`
 - `RetryStats`, `StopReason`
 - `RetryState`, `AttemptState`, `ExitState`
-- `SyncRetryBuilder`, `AsyncRetryBuilder`
+- `SyncRetry`, `AsyncRetry` (policy-borrowing builders)
+- `SyncRetryBuilder`, `AsyncRetryBuilder` (ext-trait / free-function builders)
 
 Traits:
 
 - `Stop` (includes `.or()`, `.and()` as provided methods)
-- `Wait` (includes `.cap()`, `.chain()` as provided methods; `.jitter()`,
-  `.full_jitter()`, `.equal_jitter()` with `jitter`)
+- `Wait` (includes `.cap()`, `.chain()`, `.add()` as provided methods;
+  `.jitter()`, `.full_jitter()`, `.equal_jitter()` with `jitter`)
 - `Predicate` (includes `.or()`, `.and()` as provided methods)
 - `Sleeper`
 - `RetryExt` (blanket-implemented for `FnMut() -> Result<T, E>`)
@@ -1097,7 +1116,7 @@ Free functions:
 
 - constructors: `fixed`, `linear`, `exponential`
 - types: `WaitFixed`, `WaitLinear`, `WaitExponential`, `WaitCapped`,
-  `WaitChain`
+  `WaitChain`, `WaitCombine`
 - conditionally (with `jitter`): `decorrelated_jitter` constructor;
   `WaitJitter`, `WaitFullJitter`, `WaitEqualJitter`, `WaitDecorrelatedJitter`
   types
@@ -1115,7 +1134,7 @@ Free functions:
 ### Combinator type opacity
 
 Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
-`PredicateAny`, `PredicateAll`, `PredicateUntil`, etc.) are public for technical
+`WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, etc.) are public for technical
 reasons (they appear in return types of composition methods and `.until()`),
 but users should not name them in function signatures. Use `impl Stop`,
 `impl Wait`, or `impl Predicate<T, E>` instead.
@@ -1137,12 +1156,16 @@ Composite types derive traits conditionally on their type parameters.
 |`StopReason`           |yes    |yes   |yes        |yes |yes   |—        |yes       |
 |`RetryError<T,E>`      |T,E    |—     |T,E        |T,E |—     |—        |E: Display|
 |All stop strategy types|yes    |yes   |yes        |yes |—     |—        |—         |
-|All wait strategy types|yes    |yes   |yes        |yes |—     |—        |—         |
+|All wait strategy types|yes    |yes   |yes        |*   |—     |—        |—         |
 |All predicate types    |F      |—     |—          |—   |—     |—        |—         |
 |Combinator types (A,B) |A,B    |—     |—          |—   |—     |—        |—         |
 
 Cells with type names (e.g. "T,E" or "F" or "A,B") indicate the trait is
 implemented conditionally when those components implement the trait.
+
+\* `WaitExponential` implements `PartialEq` but not `Eq` because it contains
+an `f64` field (the exponential base). All other wait strategy types implement
+both `PartialEq` and `Eq`.
 
 `RetryStats` and `StopReason` do not implement `Default` because there is no
 meaningful default `StopReason`.

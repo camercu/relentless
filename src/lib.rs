@@ -69,13 +69,14 @@ pub mod wait;
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
+pub use policy::{AsyncRetryBuilder, SyncRetryBuilder};
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
-pub use stop::{Stop, StopAll, StopAny};
-pub use wait::{Wait, WaitCapped, WaitChain, WaitCombine};
+pub use stop::Stop;
+pub use wait::Wait;
 #[cfg(feature = "jitter")]
 pub use wait::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
 
@@ -174,7 +175,7 @@ pub mod builders {
 /// built-in stop, wait, and predicate constructors that appear most often in
 /// retry chains.
 ///
-/// It does not export the `cancel`, `predicate`, `sleep`, `stop`, or `wait` modules
+/// It does not export the `predicate`, `sleep`, `stop`, or `wait` modules
 /// themselves, and it leaves runtime-specific sleep helpers such as
 /// `sleep::tokio()` on their modules. That keeps
 /// `use tenacious::prelude::*;` useful for day-to-day call sites without
