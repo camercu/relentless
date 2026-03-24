@@ -32,7 +32,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - uses: taiki-e/install-action@87026687851535188a2e3e5ac8af4f68b8470b34 # v2.67.22
+      - uses: taiki-e/install-action@870266878ed54ea9ceb25502c53e42aa939585a6 # v2.67.22
         with:
           tool: just
       - name: just ci-stable
