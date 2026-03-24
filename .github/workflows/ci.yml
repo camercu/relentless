@@ -17,14 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.85.0"
+          toolchain: ${{ steps.tools.outputs.rust }}
           targets: thumbv7m-none-eabi,wasm32-unknown-unknown
           components: clippy,rustfmt
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@1.46.0,cargo-deny@0.19.0,typos-cli@1.41.0,taplo-cli@0.10.0
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }}
       - name: just ci
         run: just ci
 

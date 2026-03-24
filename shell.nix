@@ -1,4 +1,4 @@
-# Tool versions should match .tool-versions and .github/workflows/ci.yml
+# Tool versions should match .tool-versions — run `just check-tool-versions` to verify
 let
   pinned_nixpkgs = builtins.fetchTarball {
     url = "https://github.com/NixOS/nixpkgs/archive/ed142ab1b3a092c4d149245d0c4126a5d7ea00b0.tar.gz";

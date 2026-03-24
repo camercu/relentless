@@ -103,6 +103,31 @@ bench-no-run:
 bench-no-run-strict:
     RUSTFLAGS="{{warning_flags}}" cargo bench --bench {{benchmark_target}} --no-run
 
+check-tool-versions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    drift=0
+    while read -r name version; do
+        case "$name" in
+            rust)       actual=$(rustc --version | awk '{print $2}') ;;
+            just)       actual=$(just --version | awk '{print $2}') ;;
+            cargo-deny) actual=$(cargo-deny --version | awk '{print $2}') ;;
+            typos-cli)  actual=$(typos --version | awk '{print $2}') ;;
+            taplo-cli)  actual=$(taplo --version | awk '{print $2}') ;;
+            *)          continue ;;
+        esac
+        if [ "$actual" != "$version" ]; then
+            printf '  %-12s pinned=%s  actual=%s\n' "$name" "$version" "$actual"
+            drift=1
+        fi
+    done < <(grep -v '^#' .tool-versions | grep -v '^$')
+    if [ "$drift" -eq 1 ]; then
+        echo "tool versions have drifted from .tool-versions"
+        exit 1
+    else
+        echo "all tool versions match .tool-versions"
+    fi
+
 pre-commit: fmt-check lint-typos
 
 pre-push: lint-clippy test-strict doc-strict

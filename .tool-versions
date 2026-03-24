@@ -1,5 +1,5 @@
-# Pinned tool versions — used by both shell.nix and .github/workflows/ci.yml
-# Update both when changing versions here.
+# Pinned tool versions — single source of truth for CI (.github/workflows/ci.yml).
+# Run `just check-tool-versions` to verify shell.nix matches.
 rust 1.85.0
 just 1.46.0
 cargo-deny 0.19.0
