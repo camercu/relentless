@@ -82,7 +82,7 @@ pub use wait::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitt
 
 /// Sync retry with default policy.
 ///
-/// Creates a [`SyncRetryBuilder`](builders::SyncRetryBuilder) using
+/// Creates a [`SyncRetryBuilder`] using
 /// [`RetryPolicy::new()`] defaults: `attempts(3)`, `exponential(100ms)`,
 /// `any_error()`.
 ///
@@ -119,7 +119,7 @@ where
 
 /// Async retry with default policy.
 ///
-/// Creates an [`AsyncRetryBuilder`](builders::AsyncRetryBuilder) using
+/// Creates an [`AsyncRetryBuilder`] using
 /// [`RetryPolicy::new()`] defaults.
 ///
 /// # Examples

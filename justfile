@@ -105,7 +105,7 @@ bench-no-run-strict:
 
 pre-commit: fmt-check lint-typos
 
-pre-push: lint-clippy test
+pre-push: lint-clippy test-strict doc-strict
 
 ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict bench-no-run-strict
 
