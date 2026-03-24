@@ -22,7 +22,6 @@ use core::ops::{BitAnd, BitOr};
 /// let s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAny<A, B> {
     left: A,
     right: B,
@@ -86,7 +85,6 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 /// let s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAll<A, B> {
     left: A,
     right: B,

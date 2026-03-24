@@ -13,11 +13,6 @@ use rand::{Rng, SeedableRng, rngs::SmallRng};
 /// Fixed seed used by jitter-enabled wait strategies.
 const DEFAULT_JITTER_SEED: [u8; 32] = [0x5A; 32];
 
-#[cfg(feature = "serde")]
-const fn default_jitter_seed() -> [u8; 32] {
-    DEFAULT_JITTER_SEED
-}
-
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
 #[cfg(target_has_atomic = "ptr")]
 static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -95,56 +90,6 @@ impl<W: Wait> Wait for WaitJitter<W> {
         let base = self.inner.next_wait(state);
         let jitter = random_jitter_duration(self.max_jitter, &self.rng, self.nonce);
         base.saturating_add(jitter)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<W> serde::Serialize for WaitJitter<W>
-where
-    W: serde::Serialize,
-{
-    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
-    where
-        Ser: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        let mut state = serializer.serialize_struct("WaitJitter", 4)?;
-        state.serialize_field("inner", &self.inner)?;
-        state.serialize_field("max_jitter", &self.max_jitter)?;
-        state.serialize_field("seed", &self.seed)?;
-        state.serialize_field("nonce", &self.nonce)?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, W> serde::Deserialize<'de> for WaitJitter<W>
-where
-    W: serde::Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct SerializedWaitJitter<W> {
-            inner: W,
-            max_jitter: Duration,
-            #[serde(default = "default_jitter_seed")]
-            seed: [u8; 32],
-            #[serde(default = "next_jitter_nonce")]
-            nonce: u64,
-        }
-
-        let serialized = SerializedWaitJitter::deserialize(deserializer)?;
-        Ok(Self {
-            inner: serialized.inner,
-            max_jitter: serialized.max_jitter,
-            seed: serialized.seed,
-            nonce: serialized.nonce,
-            rng: RefCell::new(SmallRng::from_seed(serialized.seed)),
-        })
     }
 }
 

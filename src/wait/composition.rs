@@ -25,7 +25,6 @@ use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCapped<W> {
     pub(super) inner: W,
     pub(super) max: Duration,
@@ -55,7 +54,6 @@ impl<W: Wait> Wait for WaitCapped<W> {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitCombine<A, B> {
     left: A,
     right: B,
@@ -103,7 +101,6 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitChain<A, B> {
     first: A,
     second: B,

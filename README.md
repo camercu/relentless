@@ -38,7 +38,6 @@ Feature flags are listed in [`Cargo.toml`](./Cargo.toml). Key flags:
 | `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
 | `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter |
 | `jitter` | Jitter strategies and `Wait` jitter decorator methods |
-| `serde` | Serialize/deserialize for `RetryPolicy` |
 
 Async retry does not require `alloc`.
 

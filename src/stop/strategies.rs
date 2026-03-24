@@ -40,41 +40,6 @@ impl Stop for StopAfterAttempts {
     }
 }
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for StopAfterAttempts {
-    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
-    where
-        Ser: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        let mut state = serializer.serialize_struct("StopAfterAttempts", 1)?;
-        state.serialize_field("max", &self.max)?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for StopAfterAttempts {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct SerializedStopAfterAttempts {
-            max: u32,
-        }
-
-        let serialized = SerializedStopAfterAttempts::deserialize(deserializer)?;
-        if serialized.max == 0 {
-            return Err(serde::de::Error::custom("stop::attempts requires max >= 1"));
-        }
-        Ok(StopAfterAttempts {
-            max: serialized.max,
-        })
-    }
-}
-
 /// Stops when wall-clock elapsed time meets or exceeds a deadline.
 ///
 /// Created by [`elapsed`]. When `state.elapsed` is `None` (no clock
@@ -92,7 +57,6 @@ impl<'de> serde::Deserialize<'de> for StopAfterAttempts {
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopAfterElapsed {
     deadline: Duration,
 }
@@ -129,7 +93,6 @@ impl Stop for StopAfterElapsed {
 /// assert!(!s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StopNever;
 
 /// Produces a strategy that always returns `false` — never stops.

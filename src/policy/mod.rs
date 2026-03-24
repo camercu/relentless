@@ -15,6 +15,8 @@
 //! configuration, while per-call hooks, sleepers, and stats remain
 //! local to a specific execution.
 
+#[cfg(feature = "alloc")]
+use crate::compat::Box;
 use crate::compat::Duration;
 use crate::predicate;
 #[cfg(feature = "alloc")]
@@ -25,11 +27,6 @@ use crate::stop::Stop;
 use crate::wait;
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
-#[cfg(feature = "serde")]
-use serde::ser::SerializeStruct;
-
-#[cfg(feature = "alloc")]
-use crate::compat::Box;
 
 /// Default maximum attempts used by the safe policy constructor.
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
@@ -77,52 +74,6 @@ pub struct RetryPolicy<
     stop: S,
     wait: W,
     predicate: P,
-}
-
-#[cfg(feature = "serde")]
-impl<S, W, P> serde::Serialize for RetryPolicy<S, W, P>
-where
-    S: serde::Serialize,
-    W: serde::Serialize,
-    P: serde::Serialize,
-{
-    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
-    where
-        Ser: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RetryPolicy", 3)?;
-        state.serialize_field("stop", &self.stop)?;
-        state.serialize_field("wait", &self.wait)?;
-        state.serialize_field("predicate", &self.predicate)?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, S, W, P> serde::Deserialize<'de> for RetryPolicy<S, W, P>
-where
-    S: serde::Deserialize<'de>,
-    W: serde::Deserialize<'de>,
-    P: serde::Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct SerializedRetryPolicy<S, W, P> {
-            stop: S,
-            wait: W,
-            predicate: P,
-        }
-
-        let serialized = SerializedRetryPolicy::deserialize(deserializer)?;
-        Ok(Self {
-            stop: serialized.stop,
-            wait: serialized.wait,
-            predicate: serialized.predicate,
-        })
-    }
 }
 
 impl RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::PredicateAnyError> {

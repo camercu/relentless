@@ -23,7 +23,6 @@ use super::math::{
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitFixed {
     duration: Duration,
 }
@@ -58,7 +57,6 @@ impl Wait for WaitFixed {
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaitLinear {
     initial: Duration,
     increment: Duration,
@@ -122,11 +120,6 @@ pub fn exponential(initial: Duration) -> WaitExponential {
     }
 }
 
-#[cfg(feature = "serde")]
-fn deserialize_exponential_base(base: f64) -> f64 {
-    clamp_exponential_base(base)
-}
-
 impl WaitExponential {
     /// Changes the exponential base from the default of `2.0`.
     ///
@@ -145,62 +138,5 @@ impl Wait for WaitExponential {
         let exponent = state.attempt.saturating_sub(1);
         let multiplier = pow_nonnegative_f64(self.base, exponent);
         saturating_duration_mul_f64(self.initial, multiplier)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for WaitExponential {
-    fn serialize<Ser>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error>
-    where
-        Ser: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        let mut state = serializer.serialize_struct("WaitExponential", 2)?;
-        state.serialize_field("initial", &self.initial)?;
-        state.serialize_field("base", &self.base)?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for WaitExponential {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct SerializedWaitExponential {
-            initial: Duration,
-            base: f64,
-        }
-
-        let serialized = SerializedWaitExponential::deserialize(deserializer)?;
-        let base = deserialize_exponential_base(serialized.base);
-        Ok(exponential(serialized.initial).base(base))
-    }
-}
-
-#[cfg(all(test, feature = "serde"))]
-mod serde_validation_tests {
-    use super::*;
-
-    const ARBITRARY_INITIAL_WAIT: Duration = Duration::from_millis(5);
-    const NON_FINITE_BASE: f64 = f64::INFINITY;
-    const SUBUNIT_BASE: f64 = 0.5;
-
-    #[test]
-    fn deserialize_exponential_base_clamps_non_finite() {
-        let base = deserialize_exponential_base(NON_FINITE_BASE);
-        assert_eq!(base, 1.0);
-    }
-
-    #[test]
-    fn deserialize_exponential_base_clamps_subunit_values() {
-        let strategy =
-            exponential(ARBITRARY_INITIAL_WAIT).base(deserialize_exponential_base(SUBUNIT_BASE));
-        let first = strategy.next_wait(&RetryState::new(1, None));
-        let second = strategy.next_wait(&RetryState::new(2, None));
-        assert_eq!(first, second);
     }
 }

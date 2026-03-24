@@ -118,7 +118,6 @@ impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
 /// assert!(predicate.should_retry(&outcome));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAnyError;
 
 /// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
@@ -150,7 +149,6 @@ impl<T, E> Predicate<T, E> for PredicateAnyError {
 /// assert!(!predicate.should_retry(&fatal));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateError<F> {
     matcher: F,
 }
@@ -191,7 +189,6 @@ where
 /// assert!(!predicate.should_retry(&Ok(10)));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateResult<F> {
     matcher: F,
 }
@@ -234,7 +231,6 @@ where
 /// assert!(!predicate.should_retry(&Ok::<u32, &str>(3)));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateOk<F> {
     matcher: F,
 }
@@ -289,7 +285,6 @@ where
 /// assert!(!p.should_retry(&Ok::<u32, &str>(10))); // ready → stop
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateUntil<P> {
     inner: P,
 }
@@ -330,7 +325,6 @@ where
 /// assert!(!p.should_retry(&Ok(5)));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAny<A, B> {
     left: A,
     right: B,
@@ -370,7 +364,6 @@ where
 /// assert!(!p.should_retry(&Err("fatal")));
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PredicateAll<A, B> {
     left: A,
     right: B,

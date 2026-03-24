@@ -20,7 +20,6 @@ use core::fmt;
 /// assert_eq!(stats.stop_reason, StopReason::Exhausted);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StopReason {
     /// The predicate accepted the outcome (did not request retry).
     /// Covers both predicate-accepted `Ok` (returned as `Ok(T)`) and
@@ -60,7 +59,6 @@ impl fmt::Display for StopReason {
 /// assert_eq!(stats.total_wait, Duration::from_millis(10));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RetryStats {
     /// Number of attempts that were executed.
     pub attempts: u32,
