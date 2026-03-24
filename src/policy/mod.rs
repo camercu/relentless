@@ -12,7 +12,7 @@
 //!
 //! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
 //! keeps the reusable policy focused on stop, wait, predicate, and clock
-//! configuration, while per-call hooks, sleepers, cancelers, and stats remain
+//! configuration, while per-call hooks, sleepers, and stats remain
 //! local to a specific execution.
 
 use crate::compat::Duration;

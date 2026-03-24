@@ -16,7 +16,6 @@ use core::fmt;
 ///   still wanted to retry.
 /// - [`RetryError::Rejected`] means the predicate accepted an `Err` outcome
 ///   as terminal (did not request retry).
-/// - [`RetryError::Cancelled`] means an external canceler interrupted the loop.
 ///
 /// # Examples
 ///
@@ -44,13 +43,6 @@ pub enum RetryError<T, E> {
         /// The non-retryable error.
         last: E,
     },
-
-    /// An external cancellation signal interrupted the retry loop.
-    Cancelled {
-        /// The outcome from the most recent completed attempt, or `None` when
-        /// cancellation fires before the first attempt.
-        last: Option<Result<T, E>>,
-    },
 }
 
 /// Convenience alias for retry-returning operations.
@@ -61,15 +53,13 @@ pub type RetryResult<T, E> = core::result::Result<T, RetryError<T, E>>;
 impl<T, E> RetryError<T, E> {
     /// Returns the final attempt outcome, if one exists.
     ///
-    /// Returns `Some` for `Exhausted` and `Cancelled` (when an attempt
-    /// completed), `None` for `Rejected` (which stores only `E`) and
-    /// `Cancelled` before the first attempt.
+    /// Returns `Some` for `Exhausted`, `None` for `Rejected` (which stores
+    /// only `E`).
     #[must_use]
     pub fn last(&self) -> Option<&Result<T, E>> {
         match self {
             RetryError::Exhausted { last } => Some(last),
             RetryError::Rejected { .. } => None,
-            RetryError::Cancelled { last } => last.as_ref(),
         }
     }
 
@@ -81,20 +71,18 @@ impl<T, E> RetryError<T, E> {
         match self {
             RetryError::Exhausted { last } => Some(last),
             RetryError::Rejected { .. } => None,
-            RetryError::Cancelled { last } => last,
         }
     }
 
     /// Returns the last error value when the terminal outcome carried `Err(E)`.
     ///
-    /// Returns `Some` for `Rejected`, for `Exhausted` when the last outcome is
-    /// `Err`, and for `Cancelled` when the last outcome is `Err`; `None` otherwise.
+    /// Returns `Some` for `Rejected`, and for `Exhausted` when the last outcome
+    /// is `Err`; `None` otherwise.
     #[must_use]
     pub fn last_error(&self) -> Option<&E> {
         match self {
             RetryError::Exhausted { last } => last.as_ref().err(),
             RetryError::Rejected { last } => Some(last),
-            RetryError::Cancelled { last } => last.as_ref().and_then(|r| r.as_ref().err()),
         }
     }
 
@@ -106,7 +94,6 @@ impl<T, E> RetryError<T, E> {
         match self {
             RetryError::Exhausted { last } => last.err(),
             RetryError::Rejected { last } => Some(last),
-            RetryError::Cancelled { last } => last.and_then(Result::err),
         }
     }
 
@@ -116,7 +103,6 @@ impl<T, E> RetryError<T, E> {
         match self {
             RetryError::Exhausted { .. } => StopReason::Exhausted,
             RetryError::Rejected { .. } => StopReason::Accepted,
-            RetryError::Cancelled { .. } => StopReason::Cancelled,
         }
     }
 }
@@ -129,10 +115,6 @@ impl<T, E: fmt::Display> fmt::Display for RetryError<T, E> {
                 Ok(_) => f.write_str("retries exhausted"),
             },
             RetryError::Rejected { last } => write!(f, "rejected: {last}"),
-            RetryError::Cancelled { last } => match last {
-                Some(Err(error)) => write!(f, "cancelled: {error}"),
-                _ => f.write_str("cancelled"),
-            },
         }
     }
 }
@@ -150,10 +132,6 @@ where
                 _ => None,
             },
             RetryError::Rejected { last } => Some(last as _),
-            RetryError::Cancelled { last } => match last {
-                Some(Err(error)) => Some(error as _),
-                _ => None,
-            },
         }
     }
 }

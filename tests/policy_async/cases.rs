@@ -132,12 +132,11 @@ fn retry_async_executes_when_sleeper_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity)]
-    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut, C>(
-        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut, C>,
+    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
+        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
     ) where
         F: FnMut(tenacious::RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
-        C: tenacious::cancel::AsyncCanceler,
     {
         let _ = retry;
     }

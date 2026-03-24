@@ -56,7 +56,6 @@ extern crate std;
 
 mod compat;
 
-pub mod cancel;
 mod error;
 mod policy;
 pub mod predicate;
@@ -67,7 +66,6 @@ pub mod stop;
 pub mod wait;
 
 // Re-export core public types at the crate root (spec 10.1).
-pub use cancel::{AsyncCanceler, CancelNever, Canceler, PolledCanceler};
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
@@ -176,7 +174,7 @@ pub mod prelude {
     pub use crate::stop::{attempts, elapsed, never};
     pub use crate::wait::{exponential, fixed, linear};
     pub use crate::{
-        Canceler, Predicate, RetryError, RetryExt, RetryPolicy, RetryResult, RetryStats, Stop,
-        StopReason, Wait,
+        Predicate, RetryError, RetryExt, RetryPolicy, RetryResult, RetryStats, Stop, StopReason,
+        Wait,
     };
 }

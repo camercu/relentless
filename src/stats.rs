@@ -28,8 +28,6 @@ pub enum StopReason {
     Accepted,
     /// The stop strategy fired while the predicate still wanted to retry.
     Exhausted,
-    /// An external cancellation signal interrupted the retry loop.
-    Cancelled,
 }
 
 impl fmt::Display for StopReason {
@@ -37,7 +35,6 @@ impl fmt::Display for StopReason {
         match self {
             StopReason::Accepted => f.write_str("accepted"),
             StopReason::Exhausted => f.write_str("retries exhausted"),
-            StopReason::Cancelled => f.write_str("cancelled"),
         }
     }
 }

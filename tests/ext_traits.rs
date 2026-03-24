@@ -2,7 +2,6 @@
 #![cfg(feature = "std")]
 
 use core::cell::Cell;
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -197,10 +196,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
         .on_exit(|state: &tenacious::ExitState<i32, &str>| {
             exit_calls.borrow_mut().push((
                 state.attempt,
-                state
-                    .outcome
-                    .expect("outcome should be present when stop triggers")
-                    .is_err(),
+                state.outcome.is_err(),
                 state.stop_reason,
             ));
         })
@@ -255,50 +251,6 @@ fn retry_ext_non_retryable_error_returns_immediately() {
     ));
 }
 
-#[test]
-fn retry_ext_cancel_before_first_attempt_returns_cancelled() {
-    let flag = AtomicBool::new(true);
-    let result = (|_state: RetryState| Err::<i32, &str>(ERROR_VALUE))
-        .retry()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .sleep(instant_sleep)
-        .cancel_on(&flag)
-        .call();
-
-    assert!(matches!(
-        result,
-        Err(RetryError::Cancelled { last: None, .. })
-    ));
-}
-
-#[test]
-fn retry_ext_cancel_after_attempt_preserves_last_result() {
-    let flag = AtomicBool::new(false);
-    let calls = Cell::new(0_u32);
-
-    let result = (|_state: RetryState| {
-        calls.set(calls.get().saturating_add(1));
-        Err::<i32, &str>(ERROR_VALUE)
-    })
-    .retry()
-    .stop(stop::attempts(MAX_ATTEMPTS))
-    .wait(wait::fixed(Duration::from_millis(1)))
-    .sleep(|_dur| {
-        flag.store(true, Ordering::Relaxed);
-    })
-    .cancel_on(&flag)
-    .call();
-
-    assert_eq!(calls.get(), 1);
-    assert!(matches!(
-        result,
-        Err(RetryError::Cancelled {
-            last: Some(Err(ERROR_VALUE)),
-            ..
-        })
-    ));
-}
-
 #[cfg(feature = "alloc")]
 mod async_tests {
     use core::future::{Future, ready};
@@ -307,64 +259,6 @@ mod async_tests {
     use std::sync::Arc;
 
     use super::*;
-
-    /// Number of cancellation-future polls before cancellation is reported.
-    const CANCEL_READY_AFTER_POLLS: u32 = 2;
-
-    struct CancelAfterPollsFuture {
-        poll_count: Rc<Cell<u32>>,
-        ready_after: u32,
-    }
-
-    impl Future for CancelAfterPollsFuture {
-        type Output = ();
-
-        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let next = self.poll_count.get().saturating_add(1);
-            self.poll_count.set(next);
-            if next >= self.ready_after {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    struct CancelViaFuture {
-        poll_count: Rc<Cell<u32>>,
-        ready_after: u32,
-    }
-
-    impl CancelViaFuture {
-        fn new(ready_after: u32) -> Self {
-            Self {
-                poll_count: Rc::new(Cell::new(0)),
-                ready_after,
-            }
-        }
-
-        fn poll_count(&self) -> u32 {
-            self.poll_count.get()
-        }
-    }
-
-    impl tenacious::Canceler for CancelViaFuture {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-    }
-
-    impl tenacious::AsyncCanceler for CancelViaFuture {
-        type Cancel = CancelAfterPollsFuture;
-
-        fn cancel(&self) -> Self::Cancel {
-            CancelAfterPollsFuture {
-                poll_count: Rc::clone(&self.poll_count),
-                ready_after: self.ready_after,
-            }
-        }
-    }
 
     fn noop_waker() -> Waker {
         struct NoopWake;
@@ -503,10 +397,7 @@ mod async_tests {
             .on_exit(|state: &tenacious::ExitState<i32, &str>| {
                 exit_calls.borrow_mut().push((
                     state.attempt,
-                    state
-                        .outcome
-                        .expect("outcome should be present when stop triggers")
-                        .is_err(),
+                    state.outcome.is_err(),
                     state.stop_reason,
                 ));
             })
@@ -572,115 +463,6 @@ mod async_tests {
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
         assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
-    }
-
-    #[test]
-    fn async_retry_ext_cancel_before_first_attempt_returns_cancelled() {
-        let flag = AtomicBool::new(true);
-
-        let result = block_on(
-            (|_state: RetryState| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
-                .retry_async()
-                .stop(stop::attempts(MAX_ATTEMPTS))
-                .sleep(|_dur| ready(()))
-                .cancel_on(tenacious::PolledCanceler(&flag)),
-        );
-
-        assert!(matches!(
-            result,
-            Err(RetryError::Cancelled { last: None, .. })
-        ));
-    }
-
-    #[test]
-    fn async_retry_ext_cancel_after_attempt_preserves_last_result() {
-        let flag = AtomicBool::new(false);
-        let calls = Cell::new(0_u32);
-
-        let result = block_on(
-            (|_state: RetryState| {
-                calls.set(calls.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
-            })
-            .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
-            .wait(wait::fixed(Duration::from_millis(1)))
-            .sleep(|_dur| {
-                flag.store(true, Ordering::Relaxed);
-                ready(())
-            })
-            .cancel_on(tenacious::PolledCanceler(&flag)),
-        );
-
-        assert_eq!(calls.get(), 1);
-        assert!(matches!(
-            result,
-            Err(RetryError::Cancelled {
-                last: Some(Err(ERROR_VALUE)),
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn async_retry_ext_cancel_future_interrupts_sleep_when_poll_signal_stays_false() {
-        let canceler = CancelViaFuture::new(CANCEL_READY_AFTER_POLLS);
-        let canceler_for_assert = canceler.clone();
-        let calls = Cell::new(0_u32);
-
-        let result = block_on(
-            (|_state: RetryState| {
-                calls.set(calls.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err("future-cancel"))
-            })
-            .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
-            .wait(wait::fixed(Duration::from_millis(1)))
-            .sleep(|_dur| core::future::pending())
-            .cancel_on(canceler),
-        );
-
-        assert_eq!(calls.get(), 1);
-        assert!(matches!(
-            result,
-            Err(RetryError::Cancelled {
-                last: Some(Err("future-cancel")),
-                ..
-            })
-        ));
-        assert!(canceler_for_assert.poll_count() >= CANCEL_READY_AFTER_POLLS);
-    }
-
-    #[cfg(feature = "tokio-cancel")]
-    #[test]
-    fn async_retry_ext_tokio_cancellation_token_interrupts_sleep() {
-        let token = tokio_util::sync::CancellationToken::new();
-        let token_for_sleep = token.clone();
-        let calls = Cell::new(0_u32);
-
-        let result = block_on(
-            (|_state: RetryState| {
-                calls.set(calls.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err("tokio-cancel"))
-            })
-            .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
-            .wait(wait::fixed(Duration::from_millis(1)))
-            .sleep(move |_dur| {
-                token_for_sleep.cancel();
-                core::future::pending()
-            })
-            .cancel_on(token),
-        );
-
-        assert_eq!(calls.get(), 1);
-        assert!(matches!(
-            result,
-            Err(RetryError::Cancelled {
-                last: Some(Err("tokio-cancel")),
-                ..
-            })
-        ));
     }
 
     #[test]

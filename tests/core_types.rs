@@ -327,16 +327,10 @@ fn attempt_state_with_err_outcome() {
 #[test]
 fn exit_state_has_required_fields() {
     let outcome = Err::<i32, &str>("fatal");
-    let state =
-        tenacious::ExitState::new(2, None, Some(&outcome), tenacious::StopReason::Exhausted);
+    let state = tenacious::ExitState::new(2, None, &outcome, tenacious::StopReason::Exhausted);
 
     assert_eq!(state.attempt, 2);
-    assert!(
-        state
-            .outcome
-            .expect("exit outcome should be present here")
-            .is_err()
-    );
+    assert!(state.outcome.is_err());
     assert_eq!(state.elapsed, None);
     assert_eq!(state.stop_reason, tenacious::StopReason::Exhausted);
 }
@@ -374,16 +368,6 @@ fn retry_error_rejected_variant() {
 }
 
 #[test]
-fn retry_error_cancelled_variant_with_none() {
-    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled { last: None };
-
-    assert!(matches!(
-        err,
-        tenacious::RetryError::Cancelled { last: None }
-    ));
-}
-
-#[test]
 fn retry_error_exhausted_with_ok_last() {
     let err: tenacious::RetryError<i32, String> = tenacious::RetryError::Exhausted { last: Ok(42) };
 
@@ -413,23 +397,6 @@ fn retry_error_display_includes_meaningful_content() {
         msg2.contains("fatal"),
         "Display should include the error message: {msg2}"
     );
-}
-
-/// 1.10: Display for Cancelled covers both branches (Err and None).
-#[test]
-fn retry_error_display_cancelled_variants() {
-    // Cancelled with Err
-    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled {
-        last: Some(Err("in flight".to_string())),
-    };
-    let msg = format!("{}", err);
-    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
-    assert!(msg.contains("in flight"), "Should include the error: {msg}");
-
-    // Cancelled before first attempt (None)
-    let err: tenacious::RetryError<(), String> = tenacious::RetryError::Cancelled { last: None };
-    let msg = format!("{}", err);
-    assert!(msg.contains("cancelled"), "Should mention cancelled: {msg}");
 }
 
 /// 1.10: RetryError implements std::error::Error when std is active and E: Error + 'static.
@@ -503,11 +470,6 @@ fn retry_error_accessors_expose_last_outcome_and_error() {
     // Rejected has no full last() (only the error), so last() returns None
     assert_eq!(rejected.last(), None);
     assert_eq!(rejected.last_error(), Some(&"fatal".to_string()));
-
-    let cancelled: tenacious::RetryError<i32, String> =
-        tenacious::RetryError::Cancelled { last: None };
-    assert_eq!(cancelled.last(), None);
-    assert_eq!(cancelled.last_error(), None);
 }
 
 #[test]
@@ -536,7 +498,6 @@ fn public_value_types_derive_common_traits() {
     assert_copy::<tenacious::stop::StopAfterAttempts>();
     assert_copy::<tenacious::stop::StopAfterElapsed>();
     assert_copy::<tenacious::stop::StopNever>();
-    assert_copy::<tenacious::CancelNever>();
 }
 
 /// Verify RetryError can be used in a Result context (ergonomics).

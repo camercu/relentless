@@ -1,5 +1,4 @@
 use super::sync_exec::SyncSleep;
-use crate::cancel::{AsyncCanceler, Canceler};
 use crate::compat::Duration;
 use crate::error::RetryError;
 use crate::policy::time::ElapsedTracker;
@@ -36,7 +35,7 @@ fn exit_state_from<'a, T, E>(
     ExitState::new(
         attempt_state.attempt,
         attempt_state.elapsed,
-        Some(attempt_state.outcome),
+        attempt_state.outcome,
         stop_reason,
     )
 }
@@ -64,37 +63,6 @@ fn maybe_stats(
     } else {
         None
     }
-}
-
-fn finish_cancelled<T, E, BA, AA, OX>(
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
-    last_result: Option<Result<T, E>>,
-    attempts: u32,
-    total_wait: Duration,
-    collect_stats: bool,
-    elapsed_tracker: &ElapsedTracker,
-) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
-where
-    OX: ExitHook<T, E>,
-{
-    let elapsed = elapsed_tracker.elapsed();
-    let stats = maybe_stats(
-        collect_stats,
-        attempts,
-        elapsed,
-        total_wait,
-        StopReason::Cancelled,
-    );
-
-    let exit_state = ExitState::new(
-        attempts,
-        elapsed,
-        last_result.as_ref(),
-        StopReason::Cancelled,
-    );
-    hooks.on_exit.call(&exit_state);
-
-    (Err(RetryError::Cancelled { last: last_result }), stats)
 }
 
 fn finish_terminal_transition<BA, AA, OX, T, E>(
@@ -140,8 +108,8 @@ where
     AttemptTransition::Finished { result, stats }
 }
 
-fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
-    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut, CancelFut>>,
+fn finish_async_poll<T, E, Fut, SleepFut>(
+    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
     final_stats: &mut Option<RetryStats>,
     result: Result<T, RetryError<T, E>>,
     stats: Option<RetryStats>,
@@ -149,31 +117,6 @@ fn finish_async_poll<T, E, Fut, SleepFut, CancelFut>(
     *final_stats = stats;
     phase.set(AsyncPhase::Finished);
     Poll::Ready(result)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn finish_cancelled_async_poll<BA, AA, OX, T, E, Fut, SleepFut, CancelFut>(
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
-    last_result: &mut Option<Result<T, E>>,
-    attempts: u32,
-    total_wait: Duration,
-    collect_stats: bool,
-    elapsed_tracker: &ElapsedTracker,
-    phase: Pin<&mut AsyncPhase<Fut, SleepFut, CancelFut>>,
-    final_stats: &mut Option<RetryStats>,
-) -> Poll<Result<T, RetryError<T, E>>>
-where
-    OX: ExitHook<T, E>,
-{
-    let (result, stats) = finish_cancelled(
-        hooks,
-        last_result.take(),
-        attempts,
-        total_wait,
-        collect_stats,
-        elapsed_tracker,
-    );
-    finish_async_poll(phase, final_stats, result, stats)
 }
 
 pub(super) enum AttemptTransition<T, E> {
@@ -189,7 +132,7 @@ pub(super) enum AttemptTransition<T, E> {
 
 pin_project! {
     #[project = AsyncPhaseProj]
-pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
+pub(crate) enum AsyncPhase<Fut, SleepFut> {
         ReadyToStartAttempt,
         PollingOperation {
             #[pin]
@@ -198,8 +141,6 @@ pub(crate) enum AsyncPhase<Fut, SleepFut, CancelFut> {
         Sleeping {
             #[pin]
             sleep_future: SleepFut,
-            #[pin]
-            cancel_future: CancelFut,
         },
         Finished,
     }
@@ -217,10 +158,10 @@ pub(crate) enum AsyncOperationPoll<T, E> {
     },
 }
 
-pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, OldCancelFut, NewSleepFut, NewCancelFut>(
-    phase: AsyncPhase<Fut, OldSleepFut, OldCancelFut>,
+pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, NewSleepFut>(
+    phase: AsyncPhase<Fut, OldSleepFut>,
     unreachable_message: &'static str,
-) -> AsyncPhase<Fut, NewSleepFut, NewCancelFut> {
+) -> AsyncPhase<Fut, NewSleepFut> {
     match phase {
         AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
         AsyncPhase::PollingOperation { op_future } => AsyncPhase::PollingOperation { op_future },
@@ -336,8 +277,8 @@ where
         );
     }
 
-    // after_attempt is fired by the caller after the step-10 cancellation
-    // check so that the hook receives a truthful next_delay on all
+    // after_attempt is fired by the caller after the timeout clamp
+    // so that the hook receives a truthful next_delay on all
     // termination paths detected before sleep.
     AttemptTransition::Sleep {
         next_delay,
@@ -376,25 +317,11 @@ where
     )
 }
 
-pub(crate) fn execute_sync_loop<
-    S,
-    W,
-    P,
-    BA,
-    AA,
-    OX,
-    F,
-    SleepFn,
-    T,
-    E,
-    C,
-    const COLLECT_STATS: bool,
->(
+pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, SleepFn, T, E, const COLLECT_STATS: bool>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &mut SleepFn,
-    canceler: &C,
     elapsed_tracker: &ElapsedTracker,
     timeout: Option<Duration>,
 ) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
@@ -407,25 +334,11 @@ where
     OX: ExitHook<T, E>,
     F: FnMut(RetryState) -> Result<T, E>,
     SleepFn: SyncSleep,
-    C: Canceler,
 {
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
-    let mut last_result: Option<Result<T, E>> = None;
 
     loop {
-        if canceler.is_cancelled() {
-            let completed_attempts = attempt.saturating_sub(1);
-            return finish_cancelled(
-                hooks,
-                last_result.take(),
-                completed_attempts,
-                total_wait,
-                COLLECT_STATS,
-                elapsed_tracker,
-            );
-        }
-
         fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
 
         let state = RetryState::new(attempt, elapsed_tracker.elapsed());
@@ -450,27 +363,7 @@ where
                     next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
                 }
 
-                // Step 10: Check cancellation before committing to sleep.
-                if canceler.is_cancelled() {
-                    // Fire after_attempt with next_delay = None (step 10a).
-                    let attempt_state = AttemptState::new(
-                        attempt,
-                        elapsed_tracker.elapsed(),
-                        &attempt_last_result,
-                        None,
-                    );
-                    hooks.after_attempt.call(&attempt_state);
-                    return finish_cancelled(
-                        hooks,
-                        Some(attempt_last_result),
-                        attempt,
-                        total_wait,
-                        COLLECT_STATS,
-                        elapsed_tracker,
-                    );
-                }
-
-                // Step 11: Fire after_attempt with next_delay = Some(delay).
+                // Fire after_attempt with next_delay = Some(delay).
                 {
                     let retry_state = RetryState::new(attempt, elapsed_tracker.elapsed());
                     let attempt_state =
@@ -478,27 +371,13 @@ where
                     hooks.after_attempt.call(&attempt_state);
                 }
 
-                // Step 12: Zero-duration sleep rule: skip sleep when delay is zero.
+                // Zero-duration sleep rule: skip sleep when delay is zero.
                 if !next_delay.is_zero() {
                     sleeper.sleep(next_delay);
                 }
                 total_wait = total_wait.saturating_add(next_delay);
 
-                // Post-sleep cancellation check (step 1 of next iteration,
-                // short-circuited here for efficiency).
-                if canceler.is_cancelled() {
-                    return finish_cancelled(
-                        hooks,
-                        Some(attempt_last_result),
-                        attempt,
-                        total_wait,
-                        COLLECT_STATS,
-                        elapsed_tracker,
-                    );
-                }
-
-                // Step 13: increment attempt, continue.
-                last_result = Some(attempt_last_result);
+                // Increment attempt, continue.
                 attempt = attempt.saturating_add(1);
             }
         }
@@ -512,15 +391,14 @@ pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
 // Intentional: this is the shared async state-machine engine used by both
 // policy-based and extension-trait async retry futures.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, C>(
+pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>(
     cx: &mut Context<'_>,
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &SleepImpl,
-    canceler: &C,
     last_result: &mut Option<Result<T, E>>,
-    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut, C::Cancel>>,
+    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
     attempt: &mut u32,
     total_wait: &mut Duration,
     collect_stats: bool,
@@ -540,29 +418,8 @@ where
     Fut: Future<Output = Result<T, E>>,
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
-    C: AsyncCanceler,
 {
     loop {
-        if canceler.is_cancelled() {
-            let completed_attempts = match phase.as_ref().get_ref() {
-                AsyncPhase::ReadyToStartAttempt => Some(attempt.saturating_sub(1)),
-                AsyncPhase::Sleeping { .. } => Some(*attempt),
-                AsyncPhase::PollingOperation { .. } | AsyncPhase::Finished => None,
-            };
-            if let Some(attempts) = completed_attempts {
-                return finish_cancelled_async_poll(
-                    hooks,
-                    last_result,
-                    attempts,
-                    *total_wait,
-                    collect_stats,
-                    elapsed_tracker,
-                    phase,
-                    final_stats,
-                );
-            }
-        }
-
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
                 fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed());
@@ -597,30 +454,7 @@ where
                         next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
                     }
 
-                    // Step 10: Check cancellation before committing to sleep.
-                    if canceler.is_cancelled() {
-                        // Fire after_attempt with next_delay = None (step 10a).
-                        let attempt_state = AttemptState::new(
-                            *attempt,
-                            elapsed_tracker.elapsed(),
-                            &attempt_last_result,
-                            None,
-                        );
-                        hooks.after_attempt.call(&attempt_state);
-                        *last_result = Some(attempt_last_result);
-                        return finish_cancelled_async_poll(
-                            hooks,
-                            last_result,
-                            *attempt,
-                            *total_wait,
-                            collect_stats,
-                            elapsed_tracker,
-                            phase,
-                            final_stats,
-                        );
-                    }
-
-                    // Step 11: Fire after_attempt with next_delay = Some(delay).
+                    // Fire after_attempt with next_delay = Some(delay).
                     {
                         let retry_state = RetryState::new(*attempt, elapsed_tracker.elapsed());
                         let attempt_state = attempt_state_from(
@@ -634,57 +468,24 @@ where
                     *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
 
-                    // Step 12: Zero-duration sleep rule: skip sleep when delay is zero.
+                    // Zero-duration sleep rule: skip sleep when delay is zero.
                     if next_delay.is_zero() {
                         *attempt = attempt.saturating_add(1);
                         phase.set(AsyncPhase::ReadyToStartAttempt);
                     } else {
                         phase.set(AsyncPhase::Sleeping {
                             sleep_future: sleeper.sleep(next_delay),
-                            cancel_future: canceler.cancel(),
                         });
                     }
                 }
             },
-            AsyncPhaseProj::Sleeping {
-                sleep_future,
-                cancel_future,
-            } => {
-                if let Poll::Ready(()) = cancel_future.poll(cx) {
-                    return finish_cancelled_async_poll(
-                        hooks,
-                        last_result,
-                        *attempt,
-                        *total_wait,
-                        collect_stats,
-                        elapsed_tracker,
-                        phase,
-                        final_stats,
-                    );
+            AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(()) => {
+                    *attempt = attempt.saturating_add(1);
+                    phase.set(AsyncPhase::ReadyToStartAttempt);
                 }
-
-                let sleep_poll = sleep_future.poll(cx);
-                if canceler.is_cancelled() {
-                    return finish_cancelled_async_poll(
-                        hooks,
-                        last_result,
-                        *attempt,
-                        *total_wait,
-                        collect_stats,
-                        elapsed_tracker,
-                        phase,
-                        final_stats,
-                    );
-                }
-
-                match sleep_poll {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(()) => {
-                        *attempt = attempt.saturating_add(1);
-                        phase.set(AsyncPhase::ReadyToStartAttempt);
-                    }
-                }
-            }
+            },
             AsyncPhaseProj::Finished => {
                 return poll_after_completion(completed_type_name);
             }

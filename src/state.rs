@@ -102,12 +102,9 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 
 /// Final read-only context passed to the `on_exit` hook.
 ///
-/// This contains the last attempt's outcome (when available) and termination
-/// reason, and fires once whenever retry execution exits (success, stop
-/// strategy triggered, rejected error, or cancellation).
-///
-/// `outcome` is `None` only when cancellation happens before the first attempt
-/// starts. In all other exit paths, it is `Some(&Result<T, E>)`.
+/// This contains the last attempt's outcome and termination reason, and fires
+/// once whenever retry execution exits (success, stop strategy triggered, or
+/// rejected error).
 ///
 /// # Examples
 ///
@@ -123,8 +120,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 pub struct ExitState<'a, T, E> {
-    /// The number of completed attempts. `0` only when cancelled before
-    /// the first attempt.
+    /// The number of completed attempts. Always >= 1.
     pub attempt: u32,
 
     /// Wall-clock time elapsed since the first attempt began.
@@ -132,9 +128,7 @@ pub struct ExitState<'a, T, E> {
     pub elapsed: Option<Duration>,
 
     /// A reference to the final outcome.
-    ///
-    /// `None` only when cancellation happens before the first attempt starts.
-    pub outcome: Option<&'a Result<T, E>>,
+    pub outcome: &'a Result<T, E>,
 
     /// Why the retry loop terminated.
     pub stop_reason: crate::stats::StopReason,
@@ -146,7 +140,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
     pub const fn new(
         attempt: u32,
         elapsed: Option<Duration>,
-        outcome: Option<&'a Result<T, E>>,
+        outcome: &'a Result<T, E>,
         stop_reason: crate::stats::StopReason,
     ) -> Self {
         Self {

@@ -3,7 +3,7 @@
 //! These tests verify:
 //! - `.with_stats()` on SyncRetry/AsyncRetry changes return type (8.1)
 //! - `RetryStats` struct fields: attempts, total_elapsed, total_wait, stop_reason (8.2)
-//! - `StopReason` variants: Accepted, Exhausted, Cancelled (8.3)
+//! - `StopReason` variants: Accepted, Exhausted (8.3)
 //! - Stats accumulated inside the execution engine (8.4)
 //! - `total_elapsed` is `Some` when std active (8.5, verified implicitly)
 //! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq (8.6)
@@ -515,10 +515,8 @@ fn stop_reason_implements_debug_clone_copy_eq() {
     let debug = format!("{:?}", reason);
     assert!(debug.contains("Accepted"), "Debug output: {debug}");
 
-    // All three variants
+    // Both variants
     assert_ne!(StopReason::Accepted, StopReason::Exhausted);
-    assert_ne!(StopReason::Exhausted, StopReason::Cancelled);
-    assert_ne!(StopReason::Accepted, StopReason::Cancelled);
 }
 
 // ---------------------------------------------------------------------------
