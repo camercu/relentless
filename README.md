@@ -66,7 +66,7 @@ before `.call()`.
 The `retry` free function is the fastest way to add retries. Defaults: 3
 attempts, exponential backoff from 100 ms, retry on any `Err`.
 
-```rust
+```rust,no_run
 use tenacious::retry;
 
 fn fetch_health(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {
@@ -88,7 +88,7 @@ fn run() -> Result<String, tenacious::RetryError<String, reqwest::Error>> {
 
 Define retry rules once with `RetryPolicy`, then apply them wherever you need.
 
-```rust
+```rust,no_run
 use core::time::Duration;
 use tenacious::{RetryPolicy, predicate, stop, wait};
 use reqwest::{Error, StatusCode};
@@ -137,7 +137,7 @@ Not every retry is about errors. Use `.until(...)` when the operation returns
 `Ok` for both "not ready" and "done" states — retry continues until the
 predicate is satisfied.
 
-```rust
+```rust,no_run
 use core::time::Duration;
 use tenacious::{RetryPolicy, predicate, stop, wait};
 
@@ -171,7 +171,7 @@ When stop fires during polling, the error is `RetryError::Exhausted` carrying
 the last `Ok` value. If you also need to retry selected errors during polling,
 compose predicates with `predicate::result(...)`:
 
-```rust
+```rust,no_run
 use core::time::Duration;
 use tenacious::{RetryPolicy, predicate, stop, wait};
 
@@ -181,7 +181,7 @@ enum ExportState { Pending, Success }
 #[derive(Debug)]
 enum ExportError { RetryableTransport, Fatal }
 
-fn fetch_export_status() -> Result<ExportState, ExportError> {
+fn fetch_export_status(_state: tenacious::RetryState) -> Result<ExportState, ExportError> {
     unimplemented!()
 }
 
@@ -203,7 +203,7 @@ let _ = policy.retry(fetch_export_status).sleep(|_| {}).call();
 Async retry uses the same stop/wait/predicate model. Pass an async sleeper —
 here via the `tokio-sleep` feature.
 
-```rust
+```rust,no_run
 use core::time::Duration;
 use tenacious::{retry_async, stop, wait};
 
@@ -234,7 +234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Attach lifecycle hooks and collect retry statistics without changing your core
 retry logic.
 
-```rust
+```rust,no_run
 use tenacious::retry;
 
 fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {

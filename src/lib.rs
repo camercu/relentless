@@ -48,6 +48,12 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+// Compile-test README code examples as doctests.
+// Gated on `tokio-sleep` because the async example uses `sleep::tokio()`.
+#[cfg(all(doctest, feature = "tokio-sleep"))]
+#[doc = include_str!("../README.md")]
+mod readme_doctests {}
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 

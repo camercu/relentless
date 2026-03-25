@@ -97,6 +97,12 @@ check-wasm:
 check-wasm-strict:
     RUSTFLAGS="{{warning_flags}}" cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
 
+test-readme:
+    cargo test --features tokio-sleep --doc -- readme_doctests
+
+test-readme-strict:
+    RUSTFLAGS="{{warning_flags}}" cargo test --features tokio-sleep --doc -- readme_doctests
+
 test-examples:
     cargo run --example basic-retry
     cargo run --example hooks-and-stats
@@ -142,6 +148,6 @@ pre-commit: fmt-check lint-typos
 
 pre-push: lint-clippy test-strict doc-strict
 
-ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict test-examples-strict bench-no-run-strict
+ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict test-readme-strict test-examples-strict bench-no-run-strict
 
 ci-stable: build-stable test-stable lint-clippy-stable
