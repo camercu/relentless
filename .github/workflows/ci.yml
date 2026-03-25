@@ -63,8 +63,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.85.0"
-      - name: cargo test feature_compat
-        run: cargo test --test feature_compat --features "${{ matrix.features }}"
+      - name: cargo test jitter
+        run: cargo test --test jitter --features "${{ matrix.features }}"
 
   runtime-sleep-features:
     name: Runtime sleep features (${{ matrix.features }})
@@ -102,8 +102,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.85.0"
-      - name: cargo test allocation_hot_paths
-        run: cargo test --test allocation_hot_paths -- --test-threads=1
+      - name: cargo test allocation
+        run: cargo test --test allocation -- --test-threads=1
 
   alloc-compat:
     name: alloc-only compatibility
