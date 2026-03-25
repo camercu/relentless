@@ -37,14 +37,14 @@ cargo add tenacious
 
 ### Feature flags
 
-| Flag | Purpose |
-|------|---------|
-| `std` (default) | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-| `alloc` | Boxed policies, closure elapsed clocks, multiple hooks per point |
-| `tokio-sleep` | `sleep::tokio()` async sleep adapter |
-| `embassy-sleep` | `sleep::embassy()` async sleep adapter |
-| `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
-| `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter |
+| Flag                  | Purpose                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `std` (default)       | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
+| `alloc`               | Boxed policies, closure elapsed clocks, multiple hooks per point                            |
+| `tokio-sleep`         | `sleep::tokio()` async sleep adapter                                                        |
+| `embassy-sleep`       | `sleep::embassy()` async sleep adapter                                                      |
+| `gloo-timers-sleep`   | `sleep::gloo()` async sleep adapter (wasm32)                                                |
+| `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter                                                |
 
 Async retry does not require `alloc`.
 
@@ -230,8 +230,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 5) Hooks and stats
 
-Attach lifecycle hooks and collect retry statistics without changing your
-core retry logic.
+Attach lifecycle hooks and collect retry statistics without changing your core
+retry logic.
 
 ```rust
 use tenacious::retry;
@@ -265,15 +265,15 @@ println!("completed in {} attempts", stats.attempts);
 
 ## API surface at a glance
 
-| Area | Items |
-|------|-------|
-| Entry points | `retry`, `retry_async` (free functions); `RetryExt`, `AsyncRetryExt` (extension traits) |
-| Policy | `RetryPolicy<S, W, P>` with `.retry()`, `.retry_async()` |
-| Stop strategies | `stop::attempts`, `stop::elapsed`, `stop::never` |
-| Wait strategies | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter` |
-| Predicates | `predicate::any_error`, `predicate::error`, `predicate::ok`, `predicate::result` |
-| Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, stats, timeout |
-| Terminal types | `RetryError<T, E>` (`Exhausted`, `Rejected`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
+| Area               | Items                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| Entry points       | `retry`, `retry_async` (free functions); `RetryExt`, `AsyncRetryExt` (extension traits)       |
+| Policy             | `RetryPolicy<S, W, P>` with `.retry()`, `.retry_async()`                                      |
+| Stop strategies    | `stop::attempts`, `stop::elapsed`, `stop::never`                                              |
+| Wait strategies    | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter`               |
+| Predicates         | `predicate::any_error`, `predicate::error`, `predicate::ok`, `predicate::result`              |
+| Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, stats, timeout                           |
+| Terminal types     | `RetryError<T, E>` (`Exhausted`, `Rejected`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
 
 Builder methods follow the order: **when/until** -> **wait** -> **stop** ->
 sleep -> hooks -> stats -> call.
@@ -296,5 +296,5 @@ For user-facing changes, see the [changelog](./CHANGELOG.md).
 
 Licensed under either:
 
-- MIT ([LICENSE-MIT.txt](./LICENSE-MIT.txt))
-- Apache-2.0 ([LICENSE-APACHE.txt](./LICENSE-APACHE.txt))
+- MIT ([LICENSE-MIT](./LICENSE-MIT))
+- Apache-2.0 ([LICENSE-APACHE](./LICENSE-APACHE))
