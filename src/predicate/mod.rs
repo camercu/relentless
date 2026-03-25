@@ -6,7 +6,8 @@
 //! - [`result`] retries based on the full `Result<T, E>`.
 //! - [`ok`] retries on selected `Ok` values and treats any `Err` as terminal.
 //!
-//! Predicates compose with `|` ([`PredicateAny`]) and `&` ([`PredicateAll`]).
+//! Predicates compose with `|` and `&` operators, or via `.or()` and `.and()`
+//! methods on the [`Predicate`] trait.
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
@@ -43,8 +44,7 @@ pub trait Predicate<T, E> {
 
     /// Returns a predicate that retries when either side retries.
     ///
-    /// This is the named equivalent of the `|` operator. See
-    /// [`PredicateAny`] for details.
+    /// This is the named equivalent of the `|` operator.
     ///
     /// ```
     /// use tenacious::{Predicate, predicate};
@@ -63,8 +63,7 @@ pub trait Predicate<T, E> {
 
     /// Returns a predicate that retries only when both sides retry.
     ///
-    /// This is the named equivalent of the `&` operator. See
-    /// [`PredicateAll`] for details.
+    /// This is the named equivalent of the `&` operator.
     ///
     /// ```
     /// use tenacious::{Predicate, predicate};
@@ -334,8 +333,8 @@ where
 
 /// Composite predicate that retries when **either** predicate retries.
 ///
-/// Created by combining predicates with the `|` operator, the
-/// [`Predicate::or`] named method, or [`PredicateAny::new`].
+/// Created by combining predicates with the `|` operator or the
+/// [`Predicate::or`] named method.
 ///
 /// # Examples
 ///
@@ -379,8 +378,8 @@ where
 
 /// Composite predicate that retries only when **both** predicates retry.
 ///
-/// Created by combining predicates with the `&` operator, the
-/// [`Predicate::and`] named method, or [`PredicateAll::new`].
+/// Created by combining predicates with the `&` operator or the
+/// [`Predicate::and`] named method.
 ///
 /// # Examples
 ///

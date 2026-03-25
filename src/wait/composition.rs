@@ -37,9 +37,9 @@ impl<W: Wait> Wait for WaitCapped<W> {
 
 /// Composite strategy that returns the **sum** of two strategies' outputs.
 ///
-/// Created by combining two [`Wait`] strategies with the `+` operator,
-/// the [`Wait::add`] named method, or [`WaitCombine::new`]. Overflow
-/// saturates at [`Duration::MAX`].
+/// Created by combining two [`Wait`] strategies with the `+` operator
+/// or the [`Wait::add`] named method. Overflow saturates at
+/// [`Duration::MAX`].
 ///
 /// # Examples
 ///

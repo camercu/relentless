@@ -1,7 +1,7 @@
 //! Wait trait and built-in wait strategies.
 //!
 //! Wait strategies determine the delay between retry attempts. They compose
-//! with `+` ([`WaitCombine`]) or [`.add()`](Wait::add), and chain via
+//! with `+` or [`.add()`](Wait::add), and chain via
 //! [`.chain()`](Wait::chain).
 
 #[cfg(feature = "alloc")]
@@ -68,8 +68,8 @@ pub trait Wait {
 
     /// Adds another wait strategy to this one.
     ///
-    /// This is the named equivalent of the `+` operator. See
-    /// [`WaitCombine`] for details.
+    /// This is the named equivalent of the `+` operator — returns
+    /// the sum of both strategies' outputs (saturating on overflow).
     ///
     /// ```
     /// use tenacious::{Wait, wait};

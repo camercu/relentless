@@ -1,8 +1,8 @@
 //! Stop trait and built-in stop strategies.
 //!
 //! Stop strategies determine when the retry loop should give up. They compose
-//! with `|` ([`StopAny`]) and `&` ([`StopAll`]), or via named methods
-//! `.or()` and `.and()` on the [`Stop`] trait.
+//! with `|` and `&` operators, or via `.or()` and `.and()` methods on the
+//! [`Stop`] trait.
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
@@ -44,8 +44,8 @@ pub trait Stop {
 
     /// Returns a strategy that stops when either side stops.
     ///
-    /// This is the named equivalent of the `|` operator. See
-    /// [`StopAny`] for details.
+    /// This is the named equivalent of the `|` operator — stops when
+    /// either side stops.
     ///
     /// ```
     /// use tenacious::{Stop, stop};
@@ -65,8 +65,8 @@ pub trait Stop {
 
     /// Returns a strategy that stops only when both sides stop.
     ///
-    /// This is the named equivalent of the `&` operator. See
-    /// [`StopAll`] for details.
+    /// This is the named equivalent of the `&` operator — stops only
+    /// when both sides stop.
     ///
     /// ```
     /// use tenacious::{Stop, stop};

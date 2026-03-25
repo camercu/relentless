@@ -5,8 +5,8 @@ use core::ops::{BitAnd, BitOr};
 
 /// Composite strategy that stops when **either** constituent stops.
 ///
-/// Created by combining two [`Stop`] strategies with the `|` operator,
-/// the [`Stop::or`] named method, or [`StopAny::new`].
+/// Created by combining two [`Stop`] strategies with the `|` operator
+/// or the [`Stop::or`] named method.
 ///
 /// Both constituents are always evaluated (no short-circuit) so that
 /// stateful strategies on either side receive every `should_stop` call.
@@ -71,8 +71,8 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 
 /// Composite strategy that stops only when **both** constituents stop.
 ///
-/// Created by combining two [`Stop`] strategies with the `&` operator,
-/// the [`Stop::and`] named method, or [`StopAll::new`].
+/// Created by combining two [`Stop`] strategies with the `&` operator
+/// or the [`Stop::and`] named method.
 ///
 /// Both constituents are always evaluated (no short-circuit) so that
 /// stateful strategies on either side receive every `should_stop` call.
