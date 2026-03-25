@@ -128,8 +128,7 @@ Use `.until(...)` when `Ok` doesn't mean "done." Retry continues until the
 predicate is satisfied.
 
 ```rust,no_run
-use core::time::Duration;
-use tenacious::{RetryPolicy, predicate, stop, wait};
+use tenacious::{RetryPolicy, predicate};
 
 #[derive(Debug, PartialEq)]
 enum Status { Pending, Done }
@@ -138,8 +137,6 @@ fn poll_status() -> Result<Status, std::io::Error> { todo!() }
 
 let result = RetryPolicy::new()
     .until(predicate::ok(|s: &Status| *s == Status::Done))
-    .wait(wait::fixed(Duration::from_millis(500)))
-    .stop(stop::attempts(10))
     .retry(|_| poll_status())
     .call();
 ```
@@ -147,8 +144,7 @@ let result = RetryPolicy::new()
 To also retry selected errors during polling, use `predicate::result`:
 
 ```rust,no_run
-use core::time::Duration;
-use tenacious::{RetryPolicy, predicate, stop, wait};
+use tenacious::{RetryPolicy, predicate};
 
 #[derive(Debug)]
 enum Status { Pending, Done }
@@ -162,8 +158,6 @@ let result = RetryPolicy::new()
     .until(predicate::result(|outcome: &Result<Status, Error>| {
         matches!(outcome, Ok(Status::Done) | Err(Error::Fatal))
     }))
-    .wait(wait::fixed(Duration::from_millis(500)))
-    .stop(stop::attempts(10))
     .retry(|_| poll_job())
     .call();
 ```
@@ -173,8 +167,7 @@ let result = RetryPolicy::new()
 Pass an async sleep adapter — here via the `tokio-sleep` feature.
 
 ```rust,no_run
-use core::time::Duration;
-use tenacious::{retry_async, stop, wait};
+use tenacious::retry_async;
 
 async fn fetch(url: &str) -> Result<String, reqwest::Error> {
     reqwest::get(url).await?.text().await
@@ -183,8 +176,6 @@ async fn fetch(url: &str) -> Result<String, reqwest::Error> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let body = retry_async(|_| fetch("https://api.example.com/data"))
-        .stop(stop::attempts(4))
-        .wait(wait::exponential(Duration::from_millis(200)))
         .sleep(tenacious::sleep::tokio())
         .await?;
     Ok(())
