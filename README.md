@@ -63,11 +63,11 @@ before `.call()`.
 
 ### 1) Retry with defaults
 
-The `retry` free function is the fastest way to add retries. Defaults: 3
+The `.retry()` extension method is the fastest way to add retries. Defaults: 3
 attempts, exponential backoff from 100 ms, retry on any `Err`.
 
 ```rust,no_run
-use tenacious::retry;
+use tenacious::RetryExt;
 
 fn fetch_health(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {
     client
@@ -77,28 +77,31 @@ fn fetch_health(client: &reqwest::blocking::Client) -> Result<String, reqwest::E
         .text()
 }
 
-fn run() -> Result<String, tenacious::RetryError<String, reqwest::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::new();
-    let health = retry(|_| fetch_health(&client)).call()?;
-    Ok(health)
+    let health = (|| fetch_health(&client)).retry().call()?;
+    println!("{health}");
+    Ok(())
 }
 ```
 
-### 2) Reuse a policy across call sites
+### 2) Customized retry
 
-Define retry rules once with `RetryPolicy`, then apply them wherever you need.
+Use the `retry` free function for full control over predicate, wait, and stop
+strategies. Here, exponential backoff with full jitter and a cap gives
+production-grade behavior in three chained calls.
 
 ```rust,no_run
 use core::time::Duration;
-use tenacious::{RetryPolicy, predicate, stop, wait};
+use tenacious::{Wait, retry, predicate, stop, wait};
 use reqwest::{Error, StatusCode};
 
 fn fetch_invoice(
     client: &reqwest::blocking::Client,
-    invoice_id: &str,
+    id: &str,
 ) -> Result<String, Error> {
     client
-        .get(format!("https://api.example.com/invoices/{invoice_id}"))
+        .get(format!("https://api.example.com/invoices/{id}"))
         .send()?
         .error_for_status()?
         .text()
@@ -107,31 +110,85 @@ fn fetch_invoice(
 fn is_retryable(err: &Error) -> bool {
     err.is_timeout()
         || err.is_connect()
-        || err.status().is_some_and(|status| {
-            status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+        || err.status().is_some_and(|s| {
+            s == StatusCode::TOO_MANY_REQUESTS || s.is_server_error()
         })
 }
 
-fn run() -> Result<String, tenacious::RetryError<String, Error>> {
-    let api_policy = RetryPolicy::new()
-        .when(predicate::error(is_retryable))
-        // Compose strategies with operators: fixed + exponential backoff,
-        // stop after 5 attempts OR 2 seconds total elapsed.
-        .wait(wait::fixed(Duration::from_millis(50))
-            + wait::exponential(Duration::from_millis(100)))
-        .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(2)));
-
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::new();
-
-    // Use the same policy for every API call.
-    let invoice = api_policy
-        .retry(|_| fetch_invoice(&client, "inv_123"))
+    let invoice = retry(|_| fetch_invoice(&client, "inv_123"))
+        .when(predicate::error(is_retryable))
+        .wait(
+            wait::exponential(Duration::from_millis(100))
+                .full_jitter()
+                .cap(Duration::from_secs(5)),
+        )
+        .stop(stop::attempts(5))
         .call()?;
-    Ok(invoice)
+    println!("{invoice}");
+    Ok(())
 }
 ```
 
-### 3) Poll for a condition
+### 3) Reuse a policy across call sites
+
+Define retry rules once with `RetryPolicy`, then apply them wherever needed.
+Compose strategies with operators: `+` sums wait durations, `|` stops when
+either condition fires.
+
+```rust,no_run
+use core::time::Duration;
+use tenacious::{RetryPolicy, predicate, stop, wait};
+use reqwest::{Error, StatusCode};
+
+fn is_retryable(err: &Error) -> bool {
+    err.is_timeout()
+        || err.is_connect()
+        || err.status().is_some_and(|s| {
+            s == StatusCode::TOO_MANY_REQUESTS || s.is_server_error()
+        })
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let api_policy = RetryPolicy::new()
+        .when(predicate::error(is_retryable))
+        // fixed + exponential produces a steeper curve with a floor.
+        .wait(
+            wait::fixed(Duration::from_millis(50))
+                + wait::exponential(Duration::from_millis(100)),
+        )
+        // Stop after 5 attempts OR 30 seconds, whichever comes first.
+        .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)));
+
+    let client = reqwest::blocking::Client::new();
+
+    // Same policy, different operations.
+    let health = api_policy
+        .retry(|_| {
+            client
+                .get("https://api.example.com/health")
+                .send()?
+                .text()
+        })
+        .call()?;
+
+    let invoice = api_policy
+        .retry(|_| {
+            client
+                .get("https://api.example.com/invoices/inv_123")
+                .send()?
+                .error_for_status()?
+                .text()
+        })
+        .call()?;
+
+    println!("health: {health}, invoice: {invoice}");
+    Ok(())
+}
+```
+
+### 4) Poll for a condition
 
 Not every retry is about errors. Use `.until(...)` when the operation returns
 `Ok` for both "not ready" and "done" states — retry continues until the
@@ -155,7 +212,7 @@ fn fetch_export_status(
     Ok(ExportStatus::Pending) // placeholder
 }
 
-fn run() -> Result<ExportStatus, tenacious::RetryError<ExportStatus, reqwest::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::new();
     let status = RetryPolicy::new()
         .until(predicate::ok(|s: &ExportStatus| *s == ExportStatus::Complete))
@@ -163,13 +220,14 @@ fn run() -> Result<ExportStatus, tenacious::RetryError<ExportStatus, reqwest::Er
         .stop(stop::attempts(8))
         .retry(|_| fetch_export_status(&client))
         .call()?;
-    Ok(status)
+    println!("{status:?}");
+    Ok(())
 }
 ```
 
 When stop fires during polling, the error is `RetryError::Exhausted` carrying
 the last `Ok` value. If you also need to retry selected errors during polling,
-compose predicates with `predicate::result(...)`:
+use `.until(predicate::result(...))` to match on both:
 
 ```rust,no_run
 use core::time::Duration;
@@ -179,26 +237,32 @@ use tenacious::{RetryPolicy, predicate, stop, wait};
 enum ExportState { Pending, Success }
 
 #[derive(Debug)]
-enum ExportError { RetryableTransport, Fatal }
+enum ExportError { Retryable, Fatal }
 
-fn fetch_export_status(_state: tenacious::RetryState) -> Result<ExportState, ExportError> {
-    unimplemented!()
+fn check_export() -> Result<ExportState, ExportError> {
+    todo!()
 }
 
-let policy = RetryPolicy::new()
-    .when(predicate::result(|outcome: &Result<ExportState, ExportError>| {
-        matches!(
-            outcome,
-            Ok(ExportState::Pending) | Err(ExportError::RetryableTransport)
-        )
-    }))
-    .wait(wait::fixed(Duration::from_millis(250)))
-    .stop(stop::attempts(8));
-
-let _ = policy.retry(fetch_export_status).sleep(|_| {}).call();
+fn main() {
+    // Retry until a terminal state: Success or Fatal.
+    // Pending results and Retryable errors both trigger another attempt.
+    let result = RetryPolicy::new()
+        .until(predicate::result(
+            |outcome: &Result<ExportState, ExportError>| {
+                matches!(
+                    outcome,
+                    Ok(ExportState::Success) | Err(ExportError::Fatal)
+                )
+            },
+        ))
+        .wait(wait::fixed(Duration::from_millis(250)))
+        .stop(stop::attempts(8))
+        .retry(|_| check_export())
+        .call();
+}
 ```
 
-### 4) Async retry
+### 5) Async retry
 
 Async retry uses the same stop/wait/predicate model. Pass an async sleeper —
 here via the `tokio-sleep` feature.
@@ -229,15 +293,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 5) Hooks and stats
+### 6) Hooks, stats & error handling
 
-Attach lifecycle hooks and collect retry statistics without changing your core
-retry logic.
+Attach lifecycle hooks, collect retry statistics, and distinguish how the
+retry loop terminated.
 
 ```rust,no_run
-use tenacious::retry;
+use tenacious::{retry, RetryError};
 
-fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {
+fn fetch_control_plane(
+    client: &reqwest::blocking::Client,
+) -> Result<String, reqwest::Error> {
     client
         .get("https://api.example.com/control-plane/health")
         .send()?
@@ -245,21 +311,38 @@ fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, req
         .text()
 }
 
-let client = reqwest::blocking::Client::new();
+fn main() {
+    let client = reqwest::blocking::Client::new();
 
-let (result, stats) = retry(|_| fetch_control_plane(&client))
-    .after_attempt(|state| {
-        if let Err(err) = state.outcome {
-            log::warn!(
-                "control-plane health check failed on attempt {}: {err}",
-                state.attempt
-            );
+    let (result, stats) = retry(|_| fetch_control_plane(&client))
+        .before_attempt(|state| {
+            if state.attempt > 1 {
+                log::info!("retry attempt {}", state.attempt);
+            }
+        })
+        .after_attempt(|state| {
+            if let Err(err) = state.outcome {
+                log::warn!("attempt {} failed: {err}", state.attempt);
+            }
+        })
+        .with_stats()
+        .call();
+
+    match result {
+        Ok(body) => {
+            println!("OK after {} attempts: {body}", stats.attempts);
         }
-    })
-    .with_stats()
-    .call();
-
-println!("completed in {} attempts", stats.attempts);
+        Err(RetryError::Exhausted { last }) => {
+            // Stop strategy fired while predicate still wanted to retry.
+            // `last` is the Result from the final attempt.
+            eprintln!("gave up after {} attempts: {last:?}", stats.attempts);
+        }
+        Err(RetryError::Rejected { last }) => {
+            // Predicate decided this error is not retryable.
+            eprintln!("non-retryable error: {last}");
+        }
+    }
+}
 ```
 
 ---
