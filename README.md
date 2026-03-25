@@ -78,23 +78,27 @@ let config = (|| fetch_config()).retry().call();
 
 ### 2) Customized retry
 
-The `retry` free function gives full control over which errors to retry, how
-long to wait, and when to stop.
+The `retry` free function is equivalent to the extension trait, with the added
+ability to capture retry loop state. Both the free function and extension trait
+give full control over which errors to retry, how long to wait, and when to
+stop.
 
 ```rust,no_run
 use core::time::Duration;
 use tenacious::{Wait, retry, predicate, stop, wait};
 
-let body = retry(|_| {
+let body = retry(|state| {
+    println!("attempt {}", state.attempt);
     reqwest::blocking::get("https://api.example.com/data")?.text()
 })
 .when(predicate::error(|e: &reqwest::Error| e.is_timeout()))
 .wait(
     wait::exponential(Duration::from_millis(200))
         .full_jitter()
-        .cap(Duration::from_secs(10)),
+        .cap(Duration::from_secs(5)),
 )
-.stop(stop::attempts(5))
+.stop(stop::attempts(10))
+.timeout(Duration::from_secs(30))
 .call();
 ```
 
