@@ -69,11 +69,11 @@ attempts, exponential backoff from 100 ms, retry on any `Err`.
 ```rust,no_run
 use tenacious::RetryExt;
 
-fn fetch_config() -> Result<String, std::io::Error> {
-    std::fs::read_to_string("/etc/app/config.json")
+fn fetch_job_output() -> Result<String, std::io::Error> {
+    std::fs::read_to_string("/var/run/background_job.output")
 }
 
-let config = fetch_config.retry().call();
+let results = fetch_job_output.retry().call();
 ```
 
 ### 2) Customized retry
