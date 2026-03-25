@@ -4,6 +4,10 @@ This file records notable user-facing changes to `tenacious`.
 
 ## Unreleased
 
+- No unreleased changes yet.
+
+## 0.4.0
+
 ### Breaking
 
 - **Jitter no longer requires a feature flag.** The `jitter` feature has been

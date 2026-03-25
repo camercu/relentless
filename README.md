@@ -6,7 +6,8 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
 
 Retry and polling for Rust — with composable strategies, policy reuse, and
-first-class support for polling workflows where success doesn't mean "done."
+first-class support for polling workflows where `Ok(_)` doesn't always mean
+"done."
 
 Most retry libraries handle the simple case well: call a function, retry on
 error, back off. `tenacious` handles that too, but it also handles the cases
@@ -56,9 +57,9 @@ For full docs, see <https://docs.rs/tenacious>. Behavior spec:
 [docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
 [`examples/`](./examples).
 
-The examples below use `reqwest` for HTTP. Sync examples omit `.sleep(...)`
-because `std` builds fall back to `std::thread::sleep` automatically. Without
-`std`, pass an explicit sleeper before `.call()`.
+Sync examples omit `.sleep(...)` because `std` builds fall back to
+`std::thread::sleep` automatically. Without `std`, pass an explicit sleeper
+before `.call()`.
 
 ### 1) Retry with defaults
 
