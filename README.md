@@ -1,25 +1,33 @@
 # tenacious
 
-`tenacious` is a retry and polling toolkit for Rust.
+[![crates.io](https://img.shields.io/crates/v/tenacious.svg)](https://crates.io/crates/tenacious)
+[![docs.rs](https://docs.rs/tenacious/badge.svg)](https://docs.rs/tenacious)
+[![CI](https://github.com/camercu/tenacious/actions/workflows/ci.yml/badge.svg)](https://github.com/camercu/tenacious/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
 
-It models retry behavior as three composable parts: what outcomes are
-retryable (`Predicate`), how long to wait between retries (`Wait`), and when
-to stop retrying (`Stop`). Compared with simpler retry helpers, it gives you
-policy reuse, polling-oriented workflows, hooks for observing retry lifecycle and stats, all under one API that works in sync and async code
-across `std`, `no_std`, and `wasm` targets.
+Retry and polling for Rust — with composable strategies, policy reuse, and
+first-class support for polling workflows where success doesn't mean "done."
 
-It is inspired by Python's [`tenacity`](https://github.com/jd/tenacity),
-especially composable strategy algebra, and Rust's
-[`backon`](https://crates.io/crates/backon), especially ergonomic retry
-builders.
+Most retry libraries handle the simple case well: call a function, retry on
+error, back off. `tenacious` handles that too, but it also handles the cases
+those libraries make awkward:
 
-## Features
+- **Polling**, where `Ok("pending")` means "keep going" and you need
+  `.until(predicate::ok(...))` rather than just retrying errors.
+- **Policy reuse**, where a single `RetryPolicy` captures your retry rules and
+  gets shared across multiple call sites — no duplicated builder chains.
+- **Strategy composition**, where `wait::fixed(50ms) + wait::exponential(100ms)`
+  and `stop::attempts(5) | stop::elapsed(2s)` express complex behavior in one
+  line.
+- **Hooks and stats**, where you observe the retry lifecycle (logging, metrics)
+  without restructuring your retry logic.
 
-- Start simple: `retry(|_| my_fn()).call()` with safe defaults.
-- Compose policies: combine `Stop`, `Wait`, and `Predicate` with operators.
-- Reuse policies across call sites instead of duplicating retry loops.
-- Handle polling workflows, not just retry-on-error workflows.
-- Add hooks and stats without changing your core retry model.
+All of this works in sync and async code, across `std`, `no_std`, and `wasm`
+targets.
+
+Inspired by Python's [`tenacity`](https://github.com/jd/tenacity) (composable
+strategy algebra) and Rust's [`backon`](https://crates.io/crates/backon)
+(ergonomic retry builders).
 
 ## Install
 
@@ -27,7 +35,7 @@ builders.
 cargo add tenacious
 ```
 
-Feature flags are listed in [`Cargo.toml`](./Cargo.toml). Key flags:
+### Feature flags
 
 | Flag | Purpose |
 |------|---------|
@@ -37,31 +45,25 @@ Feature flags are listed in [`Cargo.toml`](./Cargo.toml). Key flags:
 | `embassy-sleep` | `sleep::embassy()` async sleep adapter |
 | `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
 | `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter |
-| `jitter` | Jitter strategies and `Wait` jitter decorator methods |
 
 Async retry does not require `alloc`.
 
-If you want to contribute, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
 ---
 
-## Quick start
+## Examples
 
-For full docs and additional examples, see <https://docs.rs/tenacious>.
+For full docs, see <https://docs.rs/tenacious>. Behavior spec:
+[docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
+[`examples/`](./examples).
 
-Behavior spec: [docs/SPEC.md](./docs/SPEC.md)
-
-Runnable examples live in [`examples/`](./examples).
-
-The HTTP-focused examples below use `reqwest`. The async example uses `tokio`.
-Sync examples omit `.sleep(...)` because `std` builds use
-`std::thread::sleep` by default. Without `std`, pass an explicit blocking
-sleeper before `.call()`.
+The examples below use `reqwest` for HTTP. Sync examples omit `.sleep(...)`
+because `std` builds fall back to `std::thread::sleep` automatically. Without
+`std`, pass an explicit sleeper before `.call()`.
 
 ### 1) Retry with defaults
 
-Use the `retry` free function for one-off operations. Defaults are: 3
-attempts, exponential backoff from 100ms, retry on any error.
+The `retry` free function is the fastest way to add retries. Defaults: 3
+attempts, exponential backoff from 100 ms, retry on any `Err`.
 
 ```rust
 use tenacious::retry;
@@ -81,9 +83,9 @@ fn run() -> Result<String, tenacious::RetryError<String, reqwest::Error>> {
 }
 ```
 
-### 2) Reuse a policy for API calls
+### 2) Reuse a policy across call sites
 
-Use `RetryPolicy` when multiple operations share retry rules.
+Define retry rules once with `RetryPolicy`, then apply them wherever you need.
 
 ```rust
 use core::time::Duration;
@@ -112,10 +114,15 @@ fn is_retryable(err: &Error) -> bool {
 fn run() -> Result<String, tenacious::RetryError<String, Error>> {
     let api_policy = RetryPolicy::new()
         .when(predicate::error(is_retryable))
+        // Compose strategies with operators: fixed + exponential backoff,
+        // stop after 5 attempts OR 2 seconds total elapsed.
         .wait(wait::fixed(Duration::from_millis(50))
             + wait::exponential(Duration::from_millis(100)))
         .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(2)));
+
     let client = reqwest::blocking::Client::new();
+
+    // Use the same policy for every API call.
     let invoice = api_policy
         .retry(|_| fetch_invoice(&client, "inv_123"))
         .call()?;
@@ -125,33 +132,37 @@ fn run() -> Result<String, tenacious::RetryError<String, Error>> {
 
 ### 3) Poll for a condition
 
-Use `predicate::ok(...)` when the operation returns `Ok` for both "not ready"
-and "ready" states. Retry while the predicate returns `true`; any `Err` stops
-immediately.
+Not every retry is about errors. Use `.until(...)` when the operation returns
+`Ok` for both "not ready" and "done" states — retry continues until the
+predicate is satisfied.
 
 ```rust
 use core::time::Duration;
 use tenacious::{RetryPolicy, predicate, stop, wait};
 
+#[derive(Debug, PartialEq)]
+enum ExportStatus { Pending, Complete }
+
 fn fetch_export_status(
     client: &reqwest::blocking::Client,
-) -> Result<String, reqwest::Error> {
-    client
+) -> Result<ExportStatus, reqwest::Error> {
+    // In practice, parse the response body into ExportStatus.
+    let _ = client
         .get("https://api.example.com/exports/exp_42")
         .send()?
-        .error_for_status()?
-        .text()
+        .error_for_status()?;
+    Ok(ExportStatus::Pending) // placeholder
 }
 
-fn run() -> Result<String, tenacious::RetryError<String, reqwest::Error>> {
+fn run() -> Result<ExportStatus, tenacious::RetryError<ExportStatus, reqwest::Error>> {
     let client = reqwest::blocking::Client::new();
-    let final_status = RetryPolicy::new()
-        .until(predicate::ok(|status: &String| status.contains("\"status\":\"success\"")))
+    let status = RetryPolicy::new()
+        .until(predicate::ok(|s: &ExportStatus| *s == ExportStatus::Complete))
         .wait(wait::fixed(Duration::from_millis(250)))
         .stop(stop::attempts(8))
         .retry(|_| fetch_export_status(&client))
         .call()?;
-    Ok(final_status)
+    Ok(status)
 }
 ```
 
@@ -188,13 +199,12 @@ let _ = policy.retry(fetch_export_status).sleep(|_| {}).call();
 
 ### 4) Async retry
 
-`retry_async` uses the same stop/wait/predicate model. Async execution always
-requires an explicit sleeper. The example below uses Tokio (`tokio-sleep`
-feature).
+Async retry uses the same stop/wait/predicate model. Pass an async sleeper —
+here via the `tokio-sleep` feature.
 
 ```rust
 use core::time::Duration;
-use tenacious::{predicate, retry_async, stop, wait};
+use tenacious::{retry_async, stop, wait};
 
 async fn fetch_profile(client: &reqwest::Client) -> Result<String, reqwest::Error> {
     client
@@ -208,21 +218,23 @@ async fn fetch_profile(client: &reqwest::Client) -> Result<String, reqwest::Erro
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
-    let profile_json = retry_async(|_| fetch_profile(&client))
-        .when(predicate::any_error())
+    let profile = retry_async(|_| fetch_profile(&client))
         .wait(wait::exponential(Duration::from_millis(100)))
         .stop(stop::attempts(4))
-        .sleep(tokio::time::sleep)
+        .sleep(tenacious::sleep::tokio())
         .await?;
-    let _ = profile_json;
+    println!("{profile}");
     Ok(())
 }
 ```
 
 ### 5) Hooks and stats
 
+Attach lifecycle hooks and collect retry statistics without changing your
+core retry logic.
+
 ```rust
-use tenacious::{retry, predicate};
+use tenacious::retry;
 
 fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, reqwest::Error> {
     client
@@ -235,7 +247,6 @@ fn fetch_control_plane(client: &reqwest::blocking::Client) -> Result<String, req
 let client = reqwest::blocking::Client::new();
 
 let (result, stats) = retry(|_| fetch_control_plane(&client))
-    .when(predicate::any_error())
     .after_attempt(|state| {
         if let Err(err) = state.outcome {
             log::warn!(
@@ -247,8 +258,7 @@ let (result, stats) = retry(|_| fetch_control_plane(&client))
     .with_stats()
     .call();
 
-let _ = result;
-assert!(stats.attempts >= 1);
+println!("completed in {} attempts", stats.attempts);
 ```
 
 ---
@@ -260,7 +270,7 @@ assert!(stats.attempts >= 1);
 | Entry points | `retry`, `retry_async` (free functions); `RetryExt`, `AsyncRetryExt` (extension traits) |
 | Policy | `RetryPolicy<S, W, P>` with `.retry()`, `.retry_async()` |
 | Stop strategies | `stop::attempts`, `stop::elapsed`, `stop::never` |
-| Wait strategies | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter` (jitter feature) |
+| Wait strategies | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter` |
 | Predicates | `predicate::any_error`, `predicate::error`, `predicate::ok`, `predicate::result` |
 | Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, stats, timeout |
 | Terminal types | `RetryError<T, E>` (`Exhausted`, `Rejected`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
@@ -273,6 +283,10 @@ If you need builder types in signatures, use `tenacious::builders::*`.
 ## MSRV
 
 Minimum supported Rust version: **1.85**.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Release notes
 
