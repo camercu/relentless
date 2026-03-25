@@ -2,26 +2,24 @@ use core::cell::Cell;
 use core::time::Duration;
 use tenacious::{RetryExt, stop, wait};
 
-const MAX_ATTEMPTS: u32 = 3;
-const WAIT_DURATION: Duration = Duration::from_millis(10);
-
 fn main() {
-    let attempts = Cell::new(0_u32);
-
-    let result = (|| {
-        attempts.set(attempts.get().saturating_add(1));
-        if attempts.get() < MAX_ATTEMPTS {
-            Err::<&'static str, &'static str>("transient")
-        } else {
-            Ok("ready")
+    // Simulate an unreliable service that fails twice before succeeding.
+    let failures_left = Cell::new(2_u32);
+    let fetch_config = || -> Result<&str, &str> {
+        if failures_left.get() > 0 {
+            failures_left.set(failures_left.get() - 1);
+            return Err("connection refused");
         }
-    })
-    .retry()
-    .stop(stop::attempts(MAX_ATTEMPTS))
-    .wait(wait::fixed(WAIT_DURATION))
-    .sleep(|_dur| {})
-    .call();
+        Ok("config_value=42")
+    };
 
-    assert_eq!(result, Ok("ready"));
-    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    // Retry up to 5 times, waiting 10 ms between attempts.
+    let result = fetch_config
+        .retry()
+        .stop(stop::attempts(5))
+        .wait(wait::fixed(Duration::from_millis(10)))
+        .sleep(|_dur| {}) // no-op sleep for this demo
+        .call();
+
+    assert_eq!(result, Ok("config_value=42"));
 }
