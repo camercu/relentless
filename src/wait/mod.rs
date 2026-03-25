@@ -68,7 +68,17 @@ pub trait Wait {
 
     /// Adds another wait strategy to this one.
     ///
-    /// Equivalent to `self + other`.
+    /// This is the named equivalent of the `+` operator. See
+    /// [`WaitCombine`] for details.
+    ///
+    /// ```
+    /// use tenacious::{Wait, wait};
+    /// use core::time::Duration;
+    ///
+    /// // These are equivalent:
+    /// let a = wait::fixed(Duration::from_millis(50)).add(wait::exponential(Duration::from_millis(100)));
+    /// let b = wait::fixed(Duration::from_millis(50)) + wait::exponential(Duration::from_millis(100));
+    /// ```
     #[must_use]
     fn add<W2: Wait>(self, other: W2) -> WaitCombine<Self, W2>
     where

@@ -43,6 +43,18 @@ pub trait Stop {
     fn should_stop(&self, state: &RetryState) -> bool;
 
     /// Returns a strategy that stops when either side stops.
+    ///
+    /// This is the named equivalent of the `|` operator. See
+    /// [`StopAny`] for details.
+    ///
+    /// ```
+    /// use tenacious::{Stop, stop};
+    /// use core::time::Duration;
+    ///
+    /// // These are equivalent:
+    /// let a = stop::attempts(5).or(stop::elapsed(Duration::from_secs(2)));
+    /// let b = stop::attempts(5) | stop::elapsed(Duration::from_secs(2));
+    /// ```
     #[must_use]
     fn or<S: Stop>(self, other: S) -> StopAny<Self, S>
     where
@@ -52,6 +64,18 @@ pub trait Stop {
     }
 
     /// Returns a strategy that stops only when both sides stop.
+    ///
+    /// This is the named equivalent of the `&` operator. See
+    /// [`StopAll`] for details.
+    ///
+    /// ```
+    /// use tenacious::{Stop, stop};
+    /// use core::time::Duration;
+    ///
+    /// // These are equivalent:
+    /// let a = stop::attempts(5).and(stop::elapsed(Duration::from_secs(2)));
+    /// let b = stop::attempts(5) & stop::elapsed(Duration::from_secs(2));
+    /// ```
     #[must_use]
     fn and<S: Stop>(self, other: S) -> StopAll<Self, S>
     where

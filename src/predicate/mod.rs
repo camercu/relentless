@@ -42,6 +42,17 @@ pub trait Predicate<T, E> {
     fn should_retry(&self, outcome: &Result<T, E>) -> bool;
 
     /// Returns a predicate that retries when either side retries.
+    ///
+    /// This is the named equivalent of the `|` operator. See
+    /// [`PredicateAny`] for details.
+    ///
+    /// ```
+    /// use tenacious::{Predicate, predicate};
+    ///
+    /// // These are equivalent:
+    /// let a = predicate::error(|e: &&str| *e == "retry").or(predicate::ok(|v: &u32| *v < 2));
+    /// let b = predicate::error(|e: &&str| *e == "retry") | predicate::ok(|v: &u32| *v < 2);
+    /// ```
     #[must_use]
     fn or<P: Predicate<T, E>>(self, other: P) -> PredicateAny<Self, P>
     where
@@ -51,6 +62,17 @@ pub trait Predicate<T, E> {
     }
 
     /// Returns a predicate that retries only when both sides retry.
+    ///
+    /// This is the named equivalent of the `&` operator. See
+    /// [`PredicateAll`] for details.
+    ///
+    /// ```
+    /// use tenacious::{Predicate, predicate};
+    ///
+    /// // These are equivalent:
+    /// let a = predicate::error(|e: &&str| *e == "retry").and(predicate::ok(|v: &u32| *v < 2));
+    /// let b = predicate::error(|e: &&str| *e == "retry") & predicate::ok(|v: &u32| *v < 2);
+    /// ```
     #[must_use]
     fn and<P: Predicate<T, E>>(self, other: P) -> PredicateAll<Self, P>
     where
@@ -312,7 +334,8 @@ where
 
 /// Composite predicate that retries when **either** predicate retries.
 ///
-/// Created by combining predicates with `|`, or via [`PredicateAny::new`].
+/// Created by combining predicates with the `|` operator, the
+/// [`Predicate::or`] named method, or [`PredicateAny::new`].
 ///
 /// # Examples
 ///
@@ -323,6 +346,9 @@ where
 /// assert!(p.should_retry(&Err("retryable")));
 /// assert!(p.should_retry(&Ok(1)));
 /// assert!(!p.should_retry(&Ok(5)));
+///
+/// // Equivalent using the named method:
+/// let p = predicate::error(|err: &&str| *err == "retryable").or(predicate::ok(|value: &u32| *value < 2));
 /// ```
 #[derive(Debug, Clone)]
 pub struct PredicateAny<A, B> {
@@ -332,6 +358,10 @@ pub struct PredicateAny<A, B> {
 
 impl<A, B> PredicateAny<A, B> {
     /// Creates a composite predicate that retries when either side retries.
+    ///
+    /// Prefer the `|` operator or [`Predicate::or`] method for built-in
+    /// predicates. This constructor is useful for composing custom
+    /// [`Predicate`] implementations that don't have operator overloads.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -350,7 +380,8 @@ where
 
 /// Composite predicate that retries only when **both** predicates retry.
 ///
-/// Created by combining predicates with `&`, or via [`PredicateAll::new`].
+/// Created by combining predicates with the `&` operator, the
+/// [`Predicate::and`] named method, or [`PredicateAll::new`].
 ///
 /// # Examples
 ///
@@ -362,6 +393,10 @@ where
 ///
 /// assert!(p.should_retry(&Err("retryable")));
 /// assert!(!p.should_retry(&Err("fatal")));
+///
+/// // Equivalent using the named method:
+/// let p = predicate::result(|outcome: &Result<u32, &str>| outcome.is_err())
+///     .and(predicate::error(|err: &&str| *err == "retryable"));
 /// ```
 #[derive(Debug, Clone)]
 pub struct PredicateAll<A, B> {
@@ -371,6 +406,10 @@ pub struct PredicateAll<A, B> {
 
 impl<A, B> PredicateAll<A, B> {
     /// Creates a composite predicate that retries only when both sides retry.
+    ///
+    /// Prefer the `&` operator or [`Predicate::and`] method for built-in
+    /// predicates. This constructor is useful for composing custom
+    /// [`Predicate`] implementations that don't have operator overloads.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }

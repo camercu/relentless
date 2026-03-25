@@ -5,8 +5,8 @@ use core::ops::{BitAnd, BitOr};
 
 /// Composite strategy that stops when **either** constituent stops.
 ///
-/// Created by combining two [`Stop`] strategies with `|`, or via
-/// [`StopAny::new`].
+/// Created by combining two [`Stop`] strategies with the `|` operator,
+/// the [`Stop::or`] named method, or [`StopAny::new`].
 ///
 /// Both constituents are always evaluated (no short-circuit) so that
 /// stateful strategies on either side receive every `should_stop` call.
@@ -20,6 +20,9 @@ use core::ops::{BitAnd, BitOr};
 ///
 /// // Stop after 5 attempts OR after 30 seconds, whichever comes first.
 /// let s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
+///
+/// // Equivalent using the named method:
+/// let s = stop::attempts(5).or(stop::elapsed(Duration::from_secs(30)));
 /// ```
 #[derive(Debug, Clone)]
 pub struct StopAny<A, B> {
@@ -30,8 +33,9 @@ pub struct StopAny<A, B> {
 impl<A, B> StopAny<A, B> {
     /// Creates a composite that stops when either `left` or `right` stops.
     ///
+    /// Prefer the `|` operator or [`Stop::or`] method for built-in strategies.
     /// This constructor is useful for composing custom [`Stop`] implementations
-    /// that don't have `BitOr` operator overloads.
+    /// that don't have operator overloads.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -68,8 +72,8 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 
 /// Composite strategy that stops only when **both** constituents stop.
 ///
-/// Created by combining two [`Stop`] strategies with `&`, or via
-/// [`StopAll::new`].
+/// Created by combining two [`Stop`] strategies with the `&` operator,
+/// the [`Stop::and`] named method, or [`StopAll::new`].
 ///
 /// Both constituents are always evaluated (no short-circuit) so that
 /// stateful strategies on either side receive every `should_stop` call.
@@ -83,6 +87,9 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 ///
 /// // Stop only when BOTH conditions are true.
 /// let s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));
+///
+/// // Equivalent using the named method:
+/// let s = stop::attempts(5).and(stop::elapsed(Duration::from_secs(30)));
 /// ```
 #[derive(Debug, Clone)]
 pub struct StopAll<A, B> {
@@ -93,8 +100,9 @@ pub struct StopAll<A, B> {
 impl<A, B> StopAll<A, B> {
     /// Creates a composite that stops only when both `left` and `right` stop.
     ///
+    /// Prefer the `&` operator or [`Stop::and`] method for built-in strategies.
     /// This constructor is useful for composing custom [`Stop`] implementations
-    /// that don't have `BitAnd` operator overloads.
+    /// that don't have operator overloads.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }

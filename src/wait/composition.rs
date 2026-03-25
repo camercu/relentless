@@ -37,8 +37,9 @@ impl<W: Wait> Wait for WaitCapped<W> {
 
 /// Composite strategy that returns the **sum** of two strategies' outputs.
 ///
-/// Created by combining two [`Wait`] strategies with `+`, or via
-/// [`WaitCombine::new`]. Overflow saturates at [`Duration::MAX`].
+/// Created by combining two [`Wait`] strategies with the `+` operator,
+/// the [`Wait::add`] named method, or [`WaitCombine::new`]. Overflow
+/// saturates at [`Duration::MAX`].
 ///
 /// # Examples
 ///
@@ -51,6 +52,11 @@ impl<W: Wait> Wait for WaitCapped<W> {
 ///     + wait::fixed(Duration::from_millis(50));
 /// # let state = tenacious::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
+///
+/// // Equivalent using the named method:
+/// let w = wait::fixed(Duration::from_millis(100))
+///     .add(wait::fixed(Duration::from_millis(50)));
+/// # assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 /// ```
 #[derive(Debug, Clone)]
 pub struct WaitCombine<A, B> {
@@ -60,6 +66,10 @@ pub struct WaitCombine<A, B> {
 
 impl<A, B> WaitCombine<A, B> {
     /// Creates a composite that returns the sum of `left` and `right`.
+    ///
+    /// Prefer the `+` operator or [`Wait::add`] method for built-in strategies.
+    /// This constructor is useful for composing custom [`Wait`] implementations
+    /// that don't have operator overloads.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
