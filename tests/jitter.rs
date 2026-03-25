@@ -1,37 +1,23 @@
-//! Acceptance tests for jitter strategies (Spec §Feature-gated APIs → Jitter).
+//! Acceptance tests for jitter strategies.
 
-#[cfg(feature = "jitter")]
 use core::time::Duration;
-#[cfg(feature = "jitter")]
 use std::cell::RefCell;
-#[cfg(feature = "jitter")]
 use tenacious::RetryPolicy;
-#[cfg(feature = "jitter")]
 use tenacious::Wait;
-#[cfg(feature = "jitter")]
 use tenacious::{stop, wait};
 
-#[cfg(feature = "jitter")]
 const BASE_WAIT: Duration = Duration::from_millis(20);
-#[cfg(feature = "jitter")]
 const MAX_JITTER: Duration = Duration::from_millis(10);
-#[cfg(feature = "jitter")]
 const WAIT_CAP: Duration = Duration::from_millis(25);
-#[cfg(feature = "jitter")]
 const SEEDED_NONCE_A: u64 = 7;
-#[cfg(feature = "jitter")]
 const SEEDED_NONCE_B: u64 = 8;
-#[cfg(feature = "jitter")]
 const SEEDED_ATTEMPT_COUNT: u32 = 8;
-#[cfg(feature = "jitter")]
-const SEEDED_JITTER_SEED: [u8; 32] = [0x11; 32];
+const SEEDED_JITTER_SEED: u64 = 0x11;
 
-#[cfg(feature = "jitter")]
 fn state(attempt: u32) -> tenacious::RetryState {
     tenacious::RetryState::new(attempt, None)
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_additive_stays_within_base_plus_max() {
     let strategy = wait::fixed(BASE_WAIT).jitter(MAX_JITTER);
@@ -44,7 +30,6 @@ fn jitter_additive_stays_within_base_plus_max() {
     }
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_respects_cap_when_cap_called_before_jitter() {
     let capped_then_jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
@@ -55,7 +40,6 @@ fn jitter_respects_cap_when_cap_called_before_jitter() {
     }
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_respects_cap_when_cap_called_after_jitter() {
     let jittered_then_capped = wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP);
@@ -66,7 +50,6 @@ fn jitter_respects_cap_when_cap_called_after_jitter() {
     }
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_sequence_changes_between_policy_invocations() {
     let policy = RetryPolicy::new()
@@ -95,15 +78,17 @@ fn jitter_sequence_changes_between_policy_invocations() {
     );
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_seed_and_nonce_make_sequence_reproducible() {
-    let template = wait::fixed(BASE_WAIT)
+    // Construct two identical instances (same seed + nonce) independently.
+    let first = wait::fixed(BASE_WAIT)
         .jitter(MAX_JITTER)
         .with_seed(SEEDED_JITTER_SEED)
         .with_nonce(SEEDED_NONCE_A);
-    let first = template.clone();
-    let second = template;
+    let second = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED)
+        .with_nonce(SEEDED_NONCE_A);
 
     for attempt in 1..=SEEDED_ATTEMPT_COUNT {
         assert_eq!(
@@ -113,7 +98,6 @@ fn jitter_seed_and_nonce_make_sequence_reproducible() {
     }
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn jitter_nonce_changes_sequence_for_same_seed() {
     let first = wait::fixed(BASE_WAIT)
@@ -128,4 +112,18 @@ fn jitter_nonce_changes_sequence_for_same_seed() {
     let first_delay = first.next_wait(&state(1));
     let second_delay = second.next_wait(&state(1));
     assert_ne!(first_delay, second_delay);
+}
+
+#[test]
+fn clone_decorrelates_jitter_sequence() {
+    let original = wait::fixed(Duration::ZERO).jitter(MAX_JITTER);
+    let cloned = original.clone();
+
+    let orig_delays: Vec<Duration> = (1..=8).map(|a| original.next_wait(&state(a))).collect();
+    let clone_delays: Vec<Duration> = (1..=8).map(|a| cloned.next_wait(&state(a))).collect();
+
+    assert_ne!(
+        orig_delays, clone_delays,
+        "cloned jitter strategy should produce a different sequence"
+    );
 }

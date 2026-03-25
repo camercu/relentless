@@ -46,7 +46,6 @@ Runtime adapter helpers are feature-gated separately:
 - `embassy`: `sleep::embassy()`
 - `gloo-timers`: `sleep::gloo()` on `wasm32`
 - `futures-timer`: `sleep::futures_timer()`
-- `jitter`: jitter strategies and `Wait` jitter decorator methods
 
 `alloc` is not required for async retry itself. It is required only for
 closure-based elapsed clocks and registering more than one hook of the same
@@ -109,13 +108,13 @@ pub trait Wait {
     where Self: Sized { ... }
 
     fn jitter(self, max_jitter: Duration) -> wait::WaitJitter<Self>
-    where Self: Sized { ... } // jitter feature
+    where Self: Sized { ... }
 
     fn full_jitter(self) -> wait::WaitFullJitter<Self>
-    where Self: Sized { ... } // jitter feature
+    where Self: Sized { ... }
 
     fn equal_jitter(self) -> wait::WaitEqualJitter<Self>
-    where Self: Sized { ... } // jitter feature
+    where Self: Sized { ... }
 
     fn chain<W: Wait>(self, other: W, after: u32) -> wait::WaitChain<Self, W>
     where Self: Sized { ... }
@@ -131,7 +130,6 @@ Built-in strategies:
 - `wait::linear(initial: Duration, increment: Duration) -> WaitLinear`
 - `wait::exponential(initial: Duration) -> WaitExponential`
 - `wait::decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter`
-  (with `jitter`)
 
 Built-in wait semantics:
 
@@ -160,9 +158,9 @@ rule is referenced by the Timeout section and the loop pseudocode (step 10).
 
 ### Jitter strategies
 
-All jitter strategies require the `jitter` feature. Three are decorator methods
-on the `Wait` trait that transform the inner strategy's output. One is a
-standalone constructor that computes delays independently.
+Three jitter strategies are decorator methods on the `Wait` trait that
+transform the inner strategy's output. One is a standalone constructor that
+computes delays independently.
 
 **Additive jitter** (`.jitter(max_jitter)`): adds a uniformly distributed
 duration in `[0, max_jitter]` to the inner strategy's output.
@@ -205,10 +203,11 @@ with `.cap(max)` to bound the maximum delay.
 Because decorrelated jitter is stateful via `Cell<Duration>`, each concurrent
 or sequential retry loop should use its own clone of a decorrelated jitter
 strategy to ensure independent sequences. Cloning snapshots the current
-`last_sleep` value; the two copies then diverge independently.
+`last_sleep` value and assigns a fresh PRNG stream so the two copies
+diverge immediately.
 
-All jitter strategy types support `.with_seed([u8; 32])` and
-`.with_nonce(u64)` for reproducible sequences.
+All jitter strategy types support `.with_seed(u64)` and `.with_nonce(u64)`
+for reproducible sequences.
 
 Jitter decorators (`.jitter()`, `.full_jitter()`, `.equal_jitter()`) apply
 before `.cap(...)`:
@@ -1038,8 +1037,6 @@ type.
 
 ### Jitter
 
-With the `jitter` feature:
-
 Decorator methods on `Wait`:
 
 - `.jitter(max_jitter)` — additive uniform jitter
@@ -1054,7 +1051,7 @@ Standalone constructor:
 Exported types: `WaitJitter`, `WaitFullJitter`, `WaitEqualJitter`,
 `WaitDecorrelatedJitter`.
 
-All jitter types support `.with_seed([u8; 32])` and `.with_nonce(u64)` for
+All jitter types support `.with_seed(u64)` and `.with_nonce(u64)` for
 reproducible sequences.
 
 ### Boxed policies

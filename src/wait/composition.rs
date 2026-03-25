@@ -4,7 +4,6 @@ use crate::compat::Duration;
 use crate::state::RetryState;
 
 use super::Wait;
-#[cfg(feature = "jitter")]
 use super::WaitJitter;
 use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 
@@ -134,7 +133,6 @@ impl<W> WaitCapped<W> {
     /// Adds jitter while preserving cap-after-jitter semantics.
     ///
     /// Even when called after `.cap(max)`, the cap remains the final operation.
-    #[cfg(feature = "jitter")]
     #[must_use]
     pub fn jitter(self, max_jitter: Duration) -> WaitCapped<WaitJitter<W>> {
         let WaitCapped { inner, max } = self;
@@ -186,7 +184,6 @@ impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
     }
 }
 
-#[cfg(feature = "jitter")]
 impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitJitter<W> {
     type Output = WaitCombine<Self, Rhs>;
 

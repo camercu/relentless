@@ -1,4 +1,5 @@
 use core::cell::{Cell, RefCell};
+use core::fmt;
 
 use crate::compat::Duration;
 use crate::state::RetryState;
@@ -8,14 +9,67 @@ use super::Wait;
 #[cfg(target_has_atomic = "ptr")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use rand::{Rng, SeedableRng, rngs::SmallRng};
-
-/// Fixed seed used by jitter-enabled wait strategies.
-const DEFAULT_JITTER_SEED: [u8; 32] = [0x5A; 32];
+/// Default seed for jitter PRNGs.
+const DEFAULT_JITTER_SEED: u64 = 0x5A5A_5A5A_5A5A_5A5A;
 
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
 #[cfg(target_has_atomic = "ptr")]
 static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+// ---------------------------------------------------------------------------
+// SplitMix64 — inline PRNG
+// ---------------------------------------------------------------------------
+
+/// Fast, non-cryptographic PRNG for jitter decorrelation.
+///
+/// SplitMix64 has excellent avalanche properties and is widely used for
+/// seeding other PRNGs (e.g., in Java's `SplittableRandom`). It is more
+/// than sufficient for retry jitter where the goal is decorrelation, not
+/// cryptographic security.
+struct SplitMix64 {
+    state: u64,
+}
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// Returns a value in `[0, max]`.
+    fn next_bounded(&mut self, max: u64) -> u64 {
+        if max == u64::MAX {
+            return self.next_u64();
+        }
+        // Simple modulo — bias is negligible for jitter ranges (nanoseconds).
+        let range = max + 1;
+        self.next_u64() % range
+    }
+}
+
+impl Clone for SplitMix64 {
+    fn clone(&self) -> Self {
+        Self { state: self.state }
+    }
+}
+
+impl fmt::Debug for SplitMix64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitMix64").finish_non_exhaustive()
+    }
+}
+
+/// Creates an RNG seeded from the combination of a base seed and a nonce.
+fn seeded_rng(seed: u64, nonce: u64) -> SplitMix64 {
+    SplitMix64::new(seed ^ nonce)
+}
 
 // ---------------------------------------------------------------------------
 // WaitJitter — additive jitter
@@ -24,17 +78,15 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// A wrapper that adds uniformly distributed jitter in `[0, max_jitter]` to
 /// the inner strategy output.
 ///
-/// Enabled with the `jitter` feature and created by calling `.jitter(max)` on
-/// any wait strategy.
+/// Created by calling `.jitter(max)` on any wait strategy.
 ///
 /// Jitter uses a fast PRNG intended for retry backoff behavior, not for
-/// cryptographic use.
+/// cryptographic use. Cloning a jitter strategy produces a decorrelated
+/// copy — the clone will generate a different jitter sequence.
 ///
 /// # Examples
 ///
 /// ```
-/// # #[cfg(feature = "jitter")]
-/// # {
 /// use tenacious::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
@@ -45,50 +97,63 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));
 /// assert!(next <= Duration::from_millis(60));
-/// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WaitJitter<W> {
     inner: W,
     max_jitter: Duration,
-    seed: [u8; 32],
+    seed: u64,
     nonce: u64,
-    rng: RefCell<SmallRng>,
+    rng: RefCell<SplitMix64>,
 }
 
 impl<W> WaitJitter<W> {
     pub(super) fn new(inner: W, max_jitter: Duration) -> Self {
-        let seed = DEFAULT_JITTER_SEED;
+        let nonce = next_jitter_nonce();
         Self {
             inner,
             max_jitter,
-            seed,
-            nonce: next_jitter_nonce(),
-            rng: RefCell::new(SmallRng::from_seed(seed)),
+            seed: DEFAULT_JITTER_SEED,
+            nonce,
+            rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
         }
     }
 
     /// Sets an explicit PRNG seed for reproducible jitter when paired with
     /// [`with_nonce`](Self::with_nonce).
     #[must_use]
-    pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
+    pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
-        self.rng = RefCell::new(SmallRng::from_seed(seed));
+        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
         self
     }
 
-    /// Sets an explicit nonce offset used to decorrelate policy instances.
+    /// Sets an explicit nonce used to decorrelate policy instances.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
+        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
         self
+    }
+}
+
+impl<W: Clone> Clone for WaitJitter<W> {
+    fn clone(&self) -> Self {
+        let nonce = next_jitter_nonce();
+        Self {
+            inner: self.inner.clone(),
+            max_jitter: self.max_jitter,
+            seed: self.seed,
+            nonce,
+            rng: RefCell::new(seeded_rng(self.seed, nonce)),
+        }
     }
 }
 
 impl<W: Wait> Wait for WaitJitter<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         let base = self.inner.next_wait(state);
-        let jitter = random_jitter_duration(self.max_jitter, &self.rng, self.nonce);
+        let jitter = random_jitter_duration(self.max_jitter, &self.rng);
         base.saturating_add(jitter)
     }
 }
@@ -105,8 +170,6 @@ impl<W: Wait> Wait for WaitJitter<W> {
 /// # Examples
 ///
 /// ```
-/// # #[cfg(feature = "jitter")]
-/// # {
 /// use tenacious::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
@@ -116,47 +179,59 @@ impl<W: Wait> Wait for WaitJitter<W> {
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next <= Duration::from_millis(100));
-/// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WaitFullJitter<W> {
     inner: W,
-    seed: [u8; 32],
+    seed: u64,
     nonce: u64,
-    rng: RefCell<SmallRng>,
+    rng: RefCell<SplitMix64>,
 }
 
 impl<W> WaitFullJitter<W> {
     pub(super) fn new(inner: W) -> Self {
-        let seed = DEFAULT_JITTER_SEED;
+        let nonce = next_jitter_nonce();
         Self {
             inner,
-            seed,
-            nonce: next_jitter_nonce(),
-            rng: RefCell::new(SmallRng::from_seed(seed)),
+            seed: DEFAULT_JITTER_SEED,
+            nonce,
+            rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
         }
     }
 
     /// Sets an explicit PRNG seed for reproducible jitter.
     #[must_use]
-    pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
+    pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
-        self.rng = RefCell::new(SmallRng::from_seed(seed));
+        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
         self
     }
 
-    /// Sets an explicit nonce offset used to decorrelate policy instances.
+    /// Sets an explicit nonce used to decorrelate policy instances.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
+        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
         self
+    }
+}
+
+impl<W: Clone> Clone for WaitFullJitter<W> {
+    fn clone(&self) -> Self {
+        let nonce = next_jitter_nonce();
+        Self {
+            inner: self.inner.clone(),
+            seed: self.seed,
+            nonce,
+            rng: RefCell::new(seeded_rng(self.seed, nonce)),
+        }
     }
 }
 
 impl<W: Wait> Wait for WaitFullJitter<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         let base = self.inner.next_wait(state);
-        random_jitter_duration(base, &self.rng, self.nonce)
+        random_jitter_duration(base, &self.rng)
     }
 }
 
@@ -172,8 +247,6 @@ impl<W: Wait> Wait for WaitFullJitter<W> {
 /// # Examples
 ///
 /// ```
-/// # #[cfg(feature = "jitter")]
-/// # {
 /// use tenacious::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
@@ -184,40 +257,52 @@ impl<W: Wait> Wait for WaitFullJitter<W> {
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));
 /// assert!(next <= Duration::from_millis(100));
-/// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WaitEqualJitter<W> {
     inner: W,
-    seed: [u8; 32],
+    seed: u64,
     nonce: u64,
-    rng: RefCell<SmallRng>,
+    rng: RefCell<SplitMix64>,
 }
 
 impl<W> WaitEqualJitter<W> {
     pub(super) fn new(inner: W) -> Self {
-        let seed = DEFAULT_JITTER_SEED;
+        let nonce = next_jitter_nonce();
         Self {
             inner,
-            seed,
-            nonce: next_jitter_nonce(),
-            rng: RefCell::new(SmallRng::from_seed(seed)),
+            seed: DEFAULT_JITTER_SEED,
+            nonce,
+            rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
         }
     }
 
     /// Sets an explicit PRNG seed for reproducible jitter.
     #[must_use]
-    pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
+    pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
-        self.rng = RefCell::new(SmallRng::from_seed(seed));
+        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
         self
     }
 
-    /// Sets an explicit nonce offset used to decorrelate policy instances.
+    /// Sets an explicit nonce used to decorrelate policy instances.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
+        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
         self
+    }
+}
+
+impl<W: Clone> Clone for WaitEqualJitter<W> {
+    fn clone(&self) -> Self {
+        let nonce = next_jitter_nonce();
+        Self {
+            inner: self.inner.clone(),
+            seed: self.seed,
+            nonce,
+            rng: RefCell::new(seeded_rng(self.seed, nonce)),
+        }
     }
 }
 
@@ -225,7 +310,7 @@ impl<W: Wait> Wait for WaitEqualJitter<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         let base = self.inner.next_wait(state);
         let half = base / 2;
-        let jitter = random_jitter_duration(half, &self.rng, self.nonce);
+        let jitter = random_jitter_duration(half, &self.rng);
         half.saturating_add(jitter)
     }
 }
@@ -245,14 +330,13 @@ impl<W: Wait> Wait for WaitEqualJitter<W> {
 /// with `.cap(max)` to bound the maximum delay.
 ///
 /// Because decorrelated jitter is stateful, each concurrent or sequential
-/// retry loop should use its own clone. Cloning snapshots the current
-/// `last_sleep` value; the two copies then diverge independently.
+/// retry loop should use its own clone. Cloning produces a decorrelated
+/// copy with a fresh PRNG stream and snapshots the current `last_sleep`
+/// value.
 ///
 /// # Examples
 ///
 /// ```
-/// # #[cfg(feature = "jitter")]
-/// # {
 /// use tenacious::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
@@ -263,15 +347,14 @@ impl<W: Wait> Wait for WaitEqualJitter<W> {
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(100));
 /// assert!(next <= Duration::from_millis(300));
-/// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WaitDecorrelatedJitter {
     base: Duration,
     last_sleep: Cell<Duration>,
-    seed: [u8; 32],
+    seed: u64,
     nonce: u64,
-    rng: RefCell<SmallRng>,
+    rng: RefCell<SplitMix64>,
 }
 
 /// Produces a decorrelated jitter strategy: `random(base, last_sleep * 3)`.
@@ -279,30 +362,44 @@ pub struct WaitDecorrelatedJitter {
 /// On the first attempt, `last_sleep` is `base`.
 #[must_use]
 pub fn decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter {
-    let seed = DEFAULT_JITTER_SEED;
+    let nonce = next_jitter_nonce();
     WaitDecorrelatedJitter {
         base,
         last_sleep: Cell::new(base),
-        seed,
-        nonce: next_jitter_nonce(),
-        rng: RefCell::new(SmallRng::from_seed(seed)),
+        seed: DEFAULT_JITTER_SEED,
+        nonce,
+        rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
     }
 }
 
 impl WaitDecorrelatedJitter {
     /// Sets an explicit PRNG seed for reproducible jitter.
     #[must_use]
-    pub fn with_seed(mut self, seed: [u8; 32]) -> Self {
+    pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
-        self.rng = RefCell::new(SmallRng::from_seed(seed));
+        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
         self
     }
 
-    /// Sets an explicit nonce offset used to decorrelate policy instances.
+    /// Sets an explicit nonce used to decorrelate policy instances.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
+        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
         self
+    }
+}
+
+impl Clone for WaitDecorrelatedJitter {
+    fn clone(&self) -> Self {
+        let nonce = next_jitter_nonce();
+        Self {
+            base: self.base,
+            last_sleep: self.last_sleep.clone(),
+            seed: self.seed,
+            nonce,
+            rng: RefCell::new(seeded_rng(self.seed, nonce)),
+        }
     }
 }
 
@@ -321,8 +418,7 @@ impl Wait for WaitDecorrelatedJitter {
                 lower
             } else {
                 let max_nanos = range_nanos.min(u64::MAX as u128) as u64;
-                let mut rng = self.rng.borrow_mut();
-                let random = rng.gen_range(0..=max_nanos);
+                let random = self.rng.borrow_mut().next_bounded(max_nanos);
                 lower.saturating_add(Duration::from_nanos(random))
             }
         };
@@ -337,23 +433,16 @@ impl Wait for WaitDecorrelatedJitter {
 // ---------------------------------------------------------------------------
 
 /// Generates a random jitter duration in `[0, max_jitter]`.
-fn random_jitter_duration(max_jitter: Duration, rng: &RefCell<SmallRng>, nonce: u64) -> Duration {
+fn random_jitter_duration(max_jitter: Duration, rng: &RefCell<SplitMix64>) -> Duration {
     if max_jitter.is_zero() {
         return Duration::ZERO;
     }
 
     const MAX_JITTER_NANOS: u128 = u64::MAX as u128;
     let upper = max_jitter.as_nanos().min(MAX_JITTER_NANOS) as u64;
-    let random = rng.borrow_mut().gen_range(0..=upper);
-    let offset = nonce;
-    let adjusted = if upper == u64::MAX {
-        random.wrapping_add(offset)
-    } else {
-        let modulus = upper + 1;
-        (random + (offset % modulus)) % modulus
-    };
+    let random = rng.borrow_mut().next_bounded(upper);
 
-    Duration::from_nanos(adjusted)
+    Duration::from_nanos(random)
 }
 
 #[cfg(target_has_atomic = "ptr")]

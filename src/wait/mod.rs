@@ -13,13 +13,10 @@ mod composition;
 mod math;
 mod strategies;
 
-#[cfg(feature = "jitter")]
 mod jitter;
 
 pub use composition::{WaitCapped, WaitChain, WaitCombine};
-#[cfg(feature = "jitter")]
 pub use jitter::decorrelated_jitter;
-#[cfg(feature = "jitter")]
 pub use jitter::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
 pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed, linear};
 
@@ -81,7 +78,6 @@ pub trait Wait {
     }
 
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.
-    #[cfg(feature = "jitter")]
     #[must_use]
     fn jitter(self, max_jitter: Duration) -> WaitJitter<Self>
     where
@@ -93,7 +89,6 @@ pub trait Wait {
     /// Replaces the computed delay with a random value in `[0, base]`.
     ///
     /// This is the "Full Jitter" strategy from the AWS Architecture Blog.
-    #[cfg(feature = "jitter")]
     #[must_use]
     fn full_jitter(self) -> WaitFullJitter<Self>
     where
@@ -105,7 +100,6 @@ pub trait Wait {
     /// Keeps half the computed delay and jitters the other half.
     ///
     /// This is the "Equal Jitter" strategy from the AWS Architecture Blog.
-    #[cfg(feature = "jitter")]
     #[must_use]
     fn equal_jitter(self) -> WaitEqualJitter<Self>
     where

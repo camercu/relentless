@@ -567,7 +567,6 @@ fn custom_wait_supports_cap_and_chain_via_wait_ext() {
     );
 }
 
-#[cfg(feature = "jitter")]
 #[test]
 fn custom_wait_supports_jitter_via_wait_ext() {
     let strategy = StepWait {
