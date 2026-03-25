@@ -359,9 +359,8 @@ pub struct PredicateAny<A, B> {
 impl<A, B> PredicateAny<A, B> {
     /// Creates a composite predicate that retries when either side retries.
     ///
-    /// Prefer the `|` operator or [`Predicate::or`] method for built-in
-    /// predicates. This constructor is useful for composing custom
-    /// [`Predicate`] implementations that don't have operator overloads.
+    /// Prefer the `|` operator or [`Predicate::or`] method instead of
+    /// calling this constructor directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -407,9 +406,8 @@ pub struct PredicateAll<A, B> {
 impl<A, B> PredicateAll<A, B> {
     /// Creates a composite predicate that retries only when both sides retry.
     ///
-    /// Prefer the `&` operator or [`Predicate::and`] method for built-in
-    /// predicates. This constructor is useful for composing custom
-    /// [`Predicate`] implementations that don't have operator overloads.
+    /// Prefer the `&` operator or [`Predicate::and`] method instead of
+    /// calling this constructor directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }

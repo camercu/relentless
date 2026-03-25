@@ -33,9 +33,8 @@ pub struct StopAny<A, B> {
 impl<A, B> StopAny<A, B> {
     /// Creates a composite that stops when either `left` or `right` stops.
     ///
-    /// Prefer the `|` operator or [`Stop::or`] method for built-in strategies.
-    /// This constructor is useful for composing custom [`Stop`] implementations
-    /// that don't have operator overloads.
+    /// Prefer the `|` operator or [`Stop::or`] method instead of calling
+    /// this constructor directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -100,9 +99,8 @@ pub struct StopAll<A, B> {
 impl<A, B> StopAll<A, B> {
     /// Creates a composite that stops only when both `left` and `right` stop.
     ///
-    /// Prefer the `&` operator or [`Stop::and`] method for built-in strategies.
-    /// This constructor is useful for composing custom [`Stop`] implementations
-    /// that don't have operator overloads.
+    /// Prefer the `&` operator or [`Stop::and`] method instead of calling
+    /// this constructor directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }

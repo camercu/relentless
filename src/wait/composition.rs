@@ -67,9 +67,8 @@ pub struct WaitCombine<A, B> {
 impl<A, B> WaitCombine<A, B> {
     /// Creates a composite that returns the sum of `left` and `right`.
     ///
-    /// Prefer the `+` operator or [`Wait::add`] method for built-in strategies.
-    /// This constructor is useful for composing custom [`Wait`] implementations
-    /// that don't have operator overloads.
+    /// Prefer the `+` operator or [`Wait::add`] method instead of calling
+    /// this constructor directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
