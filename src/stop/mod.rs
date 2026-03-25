@@ -44,8 +44,9 @@ pub trait Stop {
 
     /// Returns a strategy that stops when either side stops.
     ///
-    /// This is the named equivalent of the `|` operator — stops when
-    /// either side stops.
+    /// This is the named equivalent of the `|` operator. Both sides are
+    /// always evaluated (no short-circuit) so that stateful strategies
+    /// receive every `should_stop` call.
     ///
     /// ```
     /// use tenacious::{Stop, stop};
@@ -65,8 +66,9 @@ pub trait Stop {
 
     /// Returns a strategy that stops only when both sides stop.
     ///
-    /// This is the named equivalent of the `&` operator — stops only
-    /// when both sides stop.
+    /// This is the named equivalent of the `&` operator. Both sides are
+    /// always evaluated (no short-circuit) so that stateful strategies
+    /// receive every `should_stop` call.
     ///
     /// ```
     /// use tenacious::{Stop, stop};
