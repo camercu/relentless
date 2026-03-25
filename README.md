@@ -270,18 +270,6 @@ sleep -> hooks -> stats -> call.
 
 If you need builder types in signatures, use `tenacious::builders::*`.
 
-For concise imports:
-
-```rust
-use tenacious::prelude::*;
-```
-
-The prelude exports core traits, entry traits, terminal types, and the most
-common constructors (`attempts`, `elapsed`, `never`, `fixed`, `linear`,
-`exponential`, `any_error`, `error`, `ok`, `result`). It leaves modules and
-runtime-specific helpers on their original paths so wildcard imports stay
-predictable.
-
 ## MSRV
 
 Minimum supported Rust version: **1.85**.

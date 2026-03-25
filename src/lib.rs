@@ -77,8 +77,6 @@ pub use state::{AttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
 pub use stop::Stop;
 pub use wait::Wait;
-#[cfg(feature = "jitter")]
-pub use wait::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
 
 /// Sync retry with default policy.
 ///
@@ -165,44 +163,5 @@ pub mod builders {
         AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
         DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder,
         DefaultSyncRetryBuilderWithStats, SyncRetryBuilder, SyncRetryBuilderWithStats,
-    };
-}
-
-/// Common traits and constructors for ergonomic imports.
-///
-/// The prelude intentionally exports the most common retry-building items:
-/// core traits, builder entry points, terminal error/result types, and the
-/// built-in stop, wait, and predicate constructors that appear most often in
-/// retry chains.
-///
-/// It does not export the `predicate`, `sleep`, `stop`, or `wait` modules
-/// themselves, and it leaves runtime-specific sleep helpers such as
-/// `sleep::tokio()` on their modules. That keeps
-/// `use tenacious::prelude::*;` useful for day-to-day call sites without
-/// flattening the entire crate root into one import.
-///
-/// # Examples
-///
-/// ```
-/// use tenacious::prelude::*;
-/// use core::time::Duration;
-///
-/// let policy = RetryPolicy::new()
-///     .stop(attempts(3) | elapsed(Duration::from_secs(1)))
-///     .wait(exponential(Duration::from_millis(10)))
-///     .when(any_error());
-///
-/// let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_dur| {}).call();
-/// assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-/// ```
-pub mod prelude {
-    pub use crate::AsyncRetryExt;
-    pub use crate::predicate::{any_error, error, ok, result};
-    pub use crate::sleep::Sleeper;
-    pub use crate::stop::{attempts, elapsed, never};
-    pub use crate::wait::{exponential, fixed, linear};
-    pub use crate::{
-        Predicate, RetryError, RetryExt, RetryPolicy, RetryResult, RetryStats, Stop, StopReason,
-        Wait,
     };
 }

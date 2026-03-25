@@ -1085,7 +1085,8 @@ Types:
 - `RetryError`, `RetryResult`
 - `RetryStats`, `StopReason`
 - `RetryState`, `AttemptState`, `ExitState`
-- `SyncRetry`, `AsyncRetry` (policy-borrowing builders)
+- `SyncRetry`, `SyncRetryWithStats`, `AsyncRetry`, `AsyncRetryWithStats`
+  (policy-borrowing builders and their stats variants)
 - `SyncRetryBuilder`, `AsyncRetryBuilder` (ext-trait / free-function builders)
 
 Traits:
@@ -1130,6 +1131,18 @@ Free functions:
 `sleep` module:
 
 - constructors: `tokio`, `embassy`, `gloo`, `futures_timer` (feature-gated)
+
+`builders` module:
+
+- `SyncRetryBuilder`, `SyncRetryBuilderWithStats`
+- `AsyncRetryBuilder`, `AsyncRetryBuilderWithStats`
+- `DefaultSyncRetryBuilder`, `DefaultSyncRetryBuilderWithStats`
+- `DefaultAsyncRetryBuilder`, `DefaultAsyncRetryBuilderWithStats`
+
+These are the full type-state builder types and default aliases. Use them when
+builder types must appear in function signatures. The non-default variants are
+also re-exported at the crate root; the `Default*` aliases and `*WithStats`
+builder variants are only available through this module.
 
 ### Combinator type opacity
 
