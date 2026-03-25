@@ -73,7 +73,7 @@ fn fetch_config() -> Result<String, std::io::Error> {
     std::fs::read_to_string("/etc/app/config.json")
 }
 
-let config = (|| fetch_config()).retry().call();
+let config = fetch_config.retry().call();
 ```
 
 ### 2) Customized retry
