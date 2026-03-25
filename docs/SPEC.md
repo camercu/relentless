@@ -171,7 +171,7 @@ output = base + random(0, max_jitter)
 
 **Full jitter** (`.full_jitter()`): replaces the inner strategy's output with
 a random value between zero and the computed base. This is the "Full Jitter"
-strategy from the AWS Architecture Blog. It produces the lowest total client
+strategy from the [AWS Architecture Blog][aws-jitter]. It produces the lowest total client
 work under contention.
 
 ```
@@ -179,8 +179,8 @@ output = random(0, base)
 ```
 
 **Equal jitter** (`.equal_jitter()`): keeps half the computed base and jitters
-the other half. This is the "Equal Jitter" strategy from the AWS Architecture
-Blog. It guarantees a minimum delay of `base / 2` while still spreading
+the other half. This is the "Equal Jitter" strategy from the [AWS Architecture
+Blog][aws-jitter]. It guarantees a minimum delay of `base / 2` while still spreading
 requests.
 
 ```
@@ -189,8 +189,8 @@ output = base / 2 + random(0, base / 2)
 
 **Decorrelated jitter** (`wait::decorrelated_jitter(base)`): a standalone
 strategy where each delay is random between `base` and three times the
-previous delay. This is the "Decorrelated Jitter" strategy from the AWS
-Architecture Blog. It is stateful, tracking the previous delay via interior
+previous delay. This is the "Decorrelated Jitter" strategy from the [AWS
+Architecture Blog][aws-jitter]. It is stateful, tracking the previous delay via interior
 mutability (`Cell<Duration>`), consistent with the `&self` model.
 
 ```
@@ -1205,3 +1205,5 @@ The crate guarantees the following project-wide properties.
   `E: std::error::Error + 'static`, `T: fmt::Debug + 'static`
 - all public items have rustdoc examples using `?` for error handling
 - license is dual MIT OR Apache-2.0
+
+[aws-jitter]: https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/

@@ -164,7 +164,7 @@ impl<W: Wait> Wait for WaitJitter<W> {
 
 /// Replaces the inner strategy's delay with a random value in `[0, base]`.
 ///
-/// This is the "Full Jitter" strategy from the AWS Architecture Blog. It
+/// This is the "Full Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/). It
 /// produces the lowest total client work under contention.
 ///
 /// # Examples
@@ -241,7 +241,7 @@ impl<W: Wait> Wait for WaitFullJitter<W> {
 
 /// Keeps half the computed delay and jitters the other half.
 ///
-/// This is the "Equal Jitter" strategy from the AWS Architecture Blog. It
+/// This is the "Equal Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/). It
 /// guarantees a minimum delay of `base / 2` while still spreading requests.
 ///
 /// # Examples
@@ -322,7 +322,7 @@ impl<W: Wait> Wait for WaitEqualJitter<W> {
 /// A standalone jitter strategy where each delay is random between `base` and
 /// three times the previous delay.
 ///
-/// This is the "Decorrelated Jitter" strategy from the AWS Architecture Blog.
+/// This is the "Decorrelated Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
 /// State is tracked via interior mutability (`Cell<Duration>`), consistent
 /// with the `&self` model.
 ///

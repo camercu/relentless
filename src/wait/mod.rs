@@ -98,7 +98,7 @@ pub trait Wait {
 
     /// Replaces the computed delay with a random value in `[0, base]`.
     ///
-    /// This is the "Full Jitter" strategy from the AWS Architecture Blog.
+    /// This is the "Full Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
     #[must_use]
     fn full_jitter(self) -> WaitFullJitter<Self>
     where
@@ -109,7 +109,7 @@ pub trait Wait {
 
     /// Keeps half the computed delay and jitters the other half.
     ///
-    /// This is the "Equal Jitter" strategy from the AWS Architecture Blog.
+    /// This is the "Equal Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
     #[must_use]
     fn equal_jitter(self) -> WaitEqualJitter<Self>
     where
