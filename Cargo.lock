@@ -1196,7 +1196,6 @@ dependencies = [
  "embassy-time",
  "futures-timer",
  "gloo-timers",
- "log",
  "pin-project-lite",
  "reqwest",
  "stats_alloc",
