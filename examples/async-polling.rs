@@ -1,6 +1,6 @@
 use core::cell::Cell;
 use core::time::Duration;
-use tenacious::{RetryPolicy, predicate, stop, wait};
+use tenacious::{RetryPolicy, predicate, sleep, stop, wait};
 
 #[tokio::main]
 async fn main() {
@@ -24,7 +24,7 @@ async fn main() {
 
     let result = policy
         .retry_async(check_deploy_status)
-        .sleep(tenacious::sleep::tokio())
+        .sleep(sleep::tokio())
         .await;
 
     assert_eq!(result, Ok("ready"));

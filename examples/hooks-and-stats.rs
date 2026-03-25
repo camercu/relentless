@@ -9,7 +9,7 @@ fn main() {
     let (result, stats) = ping_service
         .retry()
         .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::from_millis(10)))
+        .wait(wait::fixed(Duration::from_millis(5)))
         .when(predicate::any_error())
         .after_attempt(|state: &tenacious::AttemptState<(), &str>| {
             if let Err(error) = state.outcome {
