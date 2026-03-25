@@ -1,4 +1,4 @@
-//! Acceptance tests for Callbacks and Hooks (Spec items 7.1–7.7, 12.2–12.4).
+//! Acceptance tests for hooks (Spec §Hooks).
 
 use core::cell::Cell;
 use core::time::Duration;

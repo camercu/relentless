@@ -1,4 +1,4 @@
-//! Focused wall-clock timing integration tests.
+//! Wall-clock timing integration tests (Spec §Elapsed time, clocks, and timeout).
 #![cfg(feature = "std")]
 
 use core::cell::Cell;

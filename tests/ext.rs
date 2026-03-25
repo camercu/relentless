@@ -1,4 +1,4 @@
-//! Acceptance tests for extension-trait owned retry builders (Spec iteration 14).
+//! Acceptance tests for extension traits (Spec §Execution model → Extension traits).
 #![cfg(feature = "std")]
 
 use core::cell::Cell;

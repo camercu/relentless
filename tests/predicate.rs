@@ -1,17 +1,16 @@
-//! Acceptance tests for Retry Predicates (Spec items 4.1–4.8).
+//! Acceptance tests for the Predicate trait and predicate factories
+//! (Spec §Core abstractions → Predicate).
 //!
 //! These tests verify:
-//! - `predicate` module factory functions exist and produce predicates (4.1)
-//! - `predicate::error` retries only matching `Err` values (4.2)
-//! - `predicate::any_error` retries on any `Err` (4.3)
-//! - `predicate::result` sees the full outcome (4.4)
-//! - `predicate::ok` retries only matching `Ok` values (4.5)
-//! - Predicate composition with `|` retries when either side retries (4.6)
-//! - Predicate composition with `&` retries only when both sides retry (4.7)
-//! - Closures satisfy `Predicate<T, E>` via blanket impl (4.8)
-//!
-//! Polling behavior that combines `error`, `ok`, and `result` is validated here
-//! and in execution tests where the retry loop exists.
+//! - Predicate trait: should_retry(&self, &Result<T, E>) -> bool, T and E on trait
+//! - Predicate is callable multiple times through &self
+//! - `predicate` module factory functions exist and produce predicates
+//! - `predicate::error` retries only matching `Err` values
+//! - `predicate::any_error` retries on any `Err`
+//! - `predicate::result` sees the full outcome
+//! - `predicate::ok` retries only matching `Ok` values
+//! - Predicate composition with `|` (BitOr) and `&` (BitAnd)
+//! - Closures satisfy `Predicate<T, E>` via blanket impl
 
 use core::cell::Cell;
 use tenacious::Predicate;
@@ -56,7 +55,88 @@ fn err(error: TestError) -> TestResult {
 }
 
 // ---------------------------------------------------------------------------
-// 4.1: `predicate` module factory functions
+// Predicate trait contract
+// ---------------------------------------------------------------------------
+
+/// A predicate that retries on any error.
+struct RetryOnAnyError;
+
+impl Predicate<String, std::io::Error> for RetryOnAnyError {
+    fn should_retry(&self, outcome: &Result<String, std::io::Error>) -> bool {
+        outcome.is_err()
+    }
+}
+
+#[test]
+fn predicate_should_retry_returns_true_for_retryable_error() {
+    let pred = RetryOnAnyError;
+    let err_result: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
+    assert!(pred.should_retry(&err_result));
+}
+
+#[test]
+fn predicate_should_retry_returns_false_for_ok() {
+    let pred = RetryOnAnyError;
+    let ok_result: Result<String, std::io::Error> = Ok("success".to_string());
+    assert!(!pred.should_retry(&ok_result));
+}
+
+/// Verify that T and E are type parameters on the trait (not the method).
+struct AlwaysRetry;
+
+impl Predicate<u32, String> for AlwaysRetry {
+    fn should_retry(&self, _outcome: &Result<u32, String>) -> bool {
+        true
+    }
+}
+
+impl Predicate<bool, i32> for AlwaysRetry {
+    fn should_retry(&self, _outcome: &Result<bool, i32>) -> bool {
+        true
+    }
+}
+
+#[test]
+fn predicate_type_params_are_on_trait_not_method() {
+    let pred = AlwaysRetry;
+    let r1: Result<u32, String> = Ok(42);
+    let r2: Result<bool, i32> = Err(-1);
+
+    assert!(<AlwaysRetry as Predicate<u32, String>>::should_retry(
+        &pred, &r1
+    ));
+    assert!(<AlwaysRetry as Predicate<bool, i32>>::should_retry(
+        &pred, &r2
+    ));
+}
+
+/// Predicate::should_retry takes &self — callable multiple times through shared reference.
+#[test]
+fn predicate_is_callable_multiple_times_through_shared_ref() {
+    let pred = RetryOnAnyError;
+
+    let err: Result<String, std::io::Error> = Err(std::io::Error::other("boom"));
+    let ok: Result<String, std::io::Error> = Ok("ok".to_string());
+
+    assert!(pred.should_retry(&err));
+    assert!(pred.should_retry(&Err(std::io::Error::other("boom2"))));
+    assert!(!pred.should_retry(&ok));
+}
+
+/// Blanket impl: Fn(&Result<T, E>) -> bool satisfies Predicate<T, E>.
+#[test]
+fn predicate_blanket_impl_for_closure() {
+    let pred = |outcome: &Result<i32, &str>| outcome.is_err();
+
+    let err: Result<i32, &str> = Err("fail");
+    let ok: Result<i32, &str> = Ok(42);
+
+    assert!(Predicate::should_retry(&pred, &err));
+    assert!(!Predicate::should_retry(&pred, &ok));
+}
+
+// ---------------------------------------------------------------------------
+// predicate module factory functions
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -428,4 +508,46 @@ fn closure_predicate_can_be_used_in_generic_context() {
     assert!(evaluate(closure, Err(TestError::Retryable)));
     assert!(!evaluate(closure, Err(TestError::Fatal)));
     assert!(!evaluate(closure, Ok(ARBITRARY_OK_VALUE)));
+}
+
+// ---------------------------------------------------------------------------
+// Named combinators (.or, .and) match operator forms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn predicate_named_combinators_match_operator_forms() {
+    let named_or = predicate::error(|err: &&str| *err == "retryable")
+        .or(predicate::ok(|value: &u32| *value < 2));
+    let op_or = predicate::error(|err: &&str| *err == "retryable")
+        | predicate::ok(|value: &u32| *value < 2);
+
+    assert_eq!(
+        named_or.should_retry(&Err("retryable")),
+        op_or.should_retry(&Err("retryable"))
+    );
+    assert_eq!(
+        named_or.should_retry(&Ok(1_u32)),
+        op_or.should_retry(&Ok(1_u32))
+    );
+    assert_eq!(
+        named_or.should_retry(&Err("fatal")),
+        op_or.should_retry(&Err("fatal"))
+    );
+
+    let named_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
+        .and(predicate::error(|err: &&str| *err == "retryable"));
+    let op_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
+        & predicate::error(|err: &&str| *err == "retryable");
+    assert_eq!(
+        named_and.should_retry(&Err::<u32, &str>("retryable")),
+        op_and.should_retry(&Err::<u32, &str>("retryable"))
+    );
+    assert_eq!(
+        named_and.should_retry(&Err::<u32, &str>("fatal")),
+        op_and.should_retry(&Err::<u32, &str>("fatal"))
+    );
+    assert_eq!(
+        named_and.should_retry(&Ok(1_u32)),
+        op_and.should_retry(&Ok(1_u32))
+    );
 }

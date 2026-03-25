@@ -1,4 +1,4 @@
-//! Acceptance tests for no_std and feature compatibility.
+//! Acceptance tests for jitter strategies (Spec §Feature-gated APIs → Jitter).
 
 #[cfg(feature = "jitter")]
 use core::time::Duration;
@@ -33,7 +33,7 @@ fn state(attempt: u32) -> tenacious::RetryState {
 
 #[cfg(feature = "jitter")]
 #[test]
-fn jitter_stays_within_expected_bounds() {
+fn jitter_additive_stays_within_base_plus_max() {
     let strategy = wait::fixed(BASE_WAIT).jitter(MAX_JITTER);
     let upper = BASE_WAIT.saturating_add(MAX_JITTER);
 
@@ -46,7 +46,7 @@ fn jitter_stays_within_expected_bounds() {
 
 #[cfg(feature = "jitter")]
 #[test]
-fn cap_is_applied_after_jitter_even_when_cap_called_first() {
+fn jitter_respects_cap_when_cap_called_before_jitter() {
     let capped_then_jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
 
     for attempt in 1..=64 {
@@ -57,7 +57,7 @@ fn cap_is_applied_after_jitter_even_when_cap_called_first() {
 
 #[cfg(feature = "jitter")]
 #[test]
-fn jitter_then_cap_respects_cap() {
+fn jitter_respects_cap_when_cap_called_after_jitter() {
     let jittered_then_capped = wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP);
 
     for attempt in 1..=64 {

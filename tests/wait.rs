@@ -1,16 +1,18 @@
-//! Acceptance tests for Wait Strategies (Spec items 3.1–3.11)
+//! Acceptance tests for the Wait trait and wait strategies
+//! (Spec §Core abstractions → Wait).
 //!
 //! These tests verify:
-//! - wait::fixed(dur) always returns dur (3.1)
-//! - wait::linear(initial, increment) computes initial + (n-1)*increment (3.2)
-//! - wait::exponential(initial) computes initial * 2^(n-1) (3.3)
-//! - exponential .base(f) changes the multiplier (3.4)
-//! - .cap(max) clamps computed wait (3.5)
-//! - Add composition produces WaitCombine (3.7)
-//! - .chain(other, after) produces WaitChain (3.8)
-//! - Reset propagation on composites (3.9)
-//! - Clone and Debug on all types (3.10)
-//! - Wait strategies return Duration, don't interact with sleep (3.11)
+//! - Wait trait: next_wait(&self, &RetryState) -> Duration
+//! - wait::fixed(dur) always returns dur
+//! - wait::linear(initial, increment) computes initial + (n-1)*increment
+//! - wait::exponential(initial) computes initial * 2^(n-1)
+//! - exponential .base(f) changes the multiplier
+//! - .cap(max) clamps computed wait
+//! - Add composition produces WaitCombine
+//! - .chain(other, after) produces WaitChain
+//! - Clone and Debug on all types
+//! - Wait strategies return Duration, don't interact with sleep
+//! - Wait provided methods (.cap, .chain, .jitter) work on custom impls
 
 use core::time::Duration;
 use tenacious::Wait;
@@ -41,7 +43,29 @@ fn make_state(attempt: u32) -> tenacious::RetryState {
 }
 
 // ---------------------------------------------------------------------------
-// 3.1: wait::fixed(dur)
+// Wait trait contract
+// ---------------------------------------------------------------------------
+
+/// A trivial Wait implementation that returns a fixed duration.
+struct FixedWait {
+    dur: Duration,
+}
+
+impl Wait for FixedWait {
+    fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
+        self.dur
+    }
+}
+
+#[test]
+fn wait_next_wait_takes_ref_self_and_retry_state() {
+    let wait = FixedWait { dur: BASE };
+    let state = make_state(1);
+    assert_eq!(wait.next_wait(&state), BASE);
+}
+
+// ---------------------------------------------------------------------------
+// wait::fixed(dur)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -502,4 +526,89 @@ fn chain_after_zero_always_uses_second() {
     // With after=0, always use the second strategy.
     let state = make_state(1);
     assert_eq!(w.next_wait(&state), fallback);
+}
+
+// ---------------------------------------------------------------------------
+// Wait provided methods on custom impls (.cap, .chain, .jitter)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct StepWait {
+    base: Duration,
+    increment: Duration,
+}
+
+impl Wait for StepWait {
+    fn next_wait(&self, state: &tenacious::RetryState) -> Duration {
+        let step = self
+            .increment
+            .checked_mul(state.attempt.saturating_sub(1))
+            .unwrap_or(Duration::MAX);
+        self.base.saturating_add(step)
+    }
+}
+
+#[test]
+fn custom_wait_supports_cap_and_chain_via_wait_ext() {
+    let strategy = StepWait {
+        base: Duration::from_millis(10),
+        increment: Duration::from_millis(5),
+    }
+    .cap(Duration::from_millis(22))
+    .chain(wait::fixed(Duration::from_millis(40)), 2);
+
+    assert_eq!(
+        strategy.next_wait(&make_state(1)),
+        Duration::from_millis(10).min(Duration::from_millis(22))
+    );
+    assert_eq!(
+        strategy.next_wait(&make_state(3)),
+        Duration::from_millis(40)
+    );
+}
+
+#[cfg(feature = "jitter")]
+#[test]
+fn custom_wait_supports_jitter_via_wait_ext() {
+    let strategy = StepWait {
+        base: Duration::from_millis(10),
+        increment: Duration::from_millis(5),
+    }
+    .jitter(Duration::from_millis(7));
+
+    let baseline = Duration::from_millis(10).saturating_add(Duration::from_millis(5));
+    let upper = baseline.saturating_add(Duration::from_millis(7));
+    let wait = strategy.next_wait(&make_state(2));
+
+    assert!(wait >= baseline);
+    assert!(wait <= upper);
+}
+
+// ---------------------------------------------------------------------------
+// Named combinator (.add) matches operator form
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wait_named_add_matches_operator_and_supports_custom_wait() {
+    let retry_state = make_state(1);
+    let wait_a = Duration::from_millis(7);
+    let wait_b = Duration::from_millis(11);
+
+    let named = wait::fixed(wait_a).add(wait::fixed(wait_b));
+    let op = wait::fixed(wait_a) + wait::fixed(wait_b);
+    assert_eq!(named.next_wait(&retry_state), op.next_wait(&retry_state));
+
+    #[derive(Clone, Copy)]
+    struct CustomWait(Duration);
+    impl Wait for CustomWait {
+        fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
+            self.0
+        }
+    }
+
+    let custom = CustomWait(wait_a).add(wait::fixed(wait_b));
+    assert_eq!(
+        custom.next_wait(&retry_state),
+        wait_a.saturating_add(wait_b)
+    );
 }

@@ -1,12 +1,15 @@
-//! Acceptance tests for Stop Strategies (Spec items 2.1–2.7, 2.9)
+//! Acceptance tests for the Stop trait and stop strategies
+//! (Spec §Core abstractions → Stop).
 //!
 //! These tests verify:
-//! - stop::attempts(n) fires at the correct threshold (2.1)
-//! - stop::elapsed(dur) fires on deadline, handles None clock (2.2)
-//! - stop::never() always returns false (2.4)
-//! - BitOr composition produces StopAny (2.5, 2.7)
-//! - BitAnd composition produces StopAll (2.6, 2.7)
-//! - Clone and Debug derive on all types (2.9)
+//! - Stop trait: should_stop(&self, &RetryState) -> bool
+//! - Stop and Wait are non-generic (decoupled from T, E)
+//! - stop::attempts(n) fires at the correct threshold
+//! - stop::elapsed(dur) fires on deadline, handles None clock
+//! - stop::never() always returns false
+//! - BitOr composition produces StopAny
+//! - BitAnd composition produces StopAll
+//! - Clone and Debug derive on all types
 
 use core::cell::Cell;
 use core::time::Duration;
@@ -36,7 +39,48 @@ fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> tenacious::RetryS
 }
 
 // ---------------------------------------------------------------------------
-// 2.1: stop::attempts(n)
+// Stop trait contract
+// ---------------------------------------------------------------------------
+
+/// A trivial Stop implementation that stops after a fixed number of attempts.
+struct StopAfter {
+    max: u32,
+}
+
+impl Stop for StopAfter {
+    fn should_stop(&self, state: &tenacious::RetryState) -> bool {
+        state.attempt >= self.max
+    }
+}
+
+#[test]
+fn stop_should_stop_takes_ref_self_and_retry_state() {
+    let stop = StopAfter { max: 3 };
+
+    let state = make_state(1);
+    assert!(
+        !stop.should_stop(&state),
+        "attempt 1 < max, should not stop"
+    );
+
+    let state = make_state(3);
+    assert!(stop.should_stop(&state), "attempt == max, should stop");
+}
+
+/// Stop and Wait accept RetryState (non-generic), so a single strategy
+/// works across operations with different Result types.
+#[test]
+fn stop_and_wait_are_not_generic_over_result_type() {
+    let stop = StopAfter { max: 3 };
+    let state = make_state(1);
+
+    // The same stop instance works regardless of operation type —
+    // no <T, E> parameterization needed. This is a compile-time check.
+    assert!(!stop.should_stop(&state));
+}
+
+// ---------------------------------------------------------------------------
+// stop::attempts(n)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -352,4 +396,41 @@ fn no_short_circuit_in_stop_any() {
     assert!(composite.should_stop(&state)); // fires (left), custom count 1
     assert!(composite.should_stop(&state)); // fires (left), custom count 2
     assert!(composite.should_stop(&state)); // fires (left+right), custom count 3
+}
+
+// ---------------------------------------------------------------------------
+// Named combinators (.or, .and) match operator forms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stop_named_combinators_match_operator_forms() {
+    let named_or = stop::attempts(3).or(stop::elapsed(Duration::from_secs(2)));
+    let op_or = stop::attempts(3) | stop::elapsed(Duration::from_secs(2));
+
+    let early = make_state_with_elapsed(1, Duration::from_secs(1));
+    let elapsed_hit = make_state_with_elapsed(1, Duration::from_secs(2));
+    let attempt_hit = make_state(3);
+    assert_eq!(named_or.should_stop(&early), op_or.should_stop(&early));
+    assert_eq!(
+        named_or.should_stop(&elapsed_hit),
+        op_or.should_stop(&elapsed_hit)
+    );
+    assert_eq!(
+        named_or.should_stop(&attempt_hit),
+        op_or.should_stop(&attempt_hit)
+    );
+
+    let named_and = stop::attempts(3).and(stop::elapsed(Duration::from_secs(2)));
+    let op_and = stop::attempts(3) & stop::elapsed(Duration::from_secs(2));
+
+    let both_hit = make_state_with_elapsed(3, Duration::from_secs(2));
+    assert_eq!(named_and.should_stop(&early), op_and.should_stop(&early));
+    assert_eq!(
+        named_and.should_stop(&elapsed_hit),
+        op_and.should_stop(&elapsed_hit)
+    );
+    assert_eq!(
+        named_and.should_stop(&both_hit),
+        op_and.should_stop(&both_hit)
+    );
 }
