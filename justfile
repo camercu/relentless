@@ -97,6 +97,16 @@ check-wasm:
 check-wasm-strict:
     RUSTFLAGS="{{warning_flags}}" cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
 
+test-examples:
+    cargo run --example basic-retry
+    cargo run --example hooks-and-stats
+    cargo run --example async-polling --features tokio-sleep
+
+test-examples-strict:
+    RUSTFLAGS="{{warning_flags}}" cargo run --example basic-retry
+    RUSTFLAGS="{{warning_flags}}" cargo run --example hooks-and-stats
+    RUSTFLAGS="{{warning_flags}}" cargo run --example async-polling --features tokio-sleep
+
 bench-no-run:
     cargo bench --bench {{benchmark_target}} --no-run
 
@@ -132,6 +142,6 @@ pre-commit: fmt-check lint-typos
 
 pre-push: lint-clippy test-strict doc-strict
 
-ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict bench-no-run-strict
+ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict test-examples-strict bench-no-run-strict
 
 ci-stable: build-stable test-stable lint-clippy-stable
