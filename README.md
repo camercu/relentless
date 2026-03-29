@@ -128,8 +128,9 @@ let invoice = policy.retry(|_| fetch_invoice("inv_123")).call();
 
 ### 4) Poll for a condition
 
-Use `.until(...)` when `Ok` doesn't mean "done." Retry continues until the
-predicate is satisfied.
+Use `.until(predicate)` to keep retrying until a success condition is met.
+Unlike `.when()`, which retries on matching outcomes, `.until()` retries on
+everything *except* the matching outcome.
 
 ```rust,no_run
 use tenacious::{RetryPolicy, predicate};
