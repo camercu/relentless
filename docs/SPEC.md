@@ -79,6 +79,8 @@ pub trait Stop {
 }
 ```
 
+The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit) so that stateful strategies receive every `should_stop` call.
+
 Built-in strategies:
 
 - `stop::attempts(n: u32) -> StopAfterAttempts`
@@ -236,6 +238,8 @@ pub trait Predicate<T, E> {
     where Self: Sized { ... }
 }
 ```
+
+The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit).
 
 `Predicate` uses `&self`. Most predicates are stateless closures; the rare
 stateful predicate can use interior mutability (`Cell`, `AtomicUsize`).
