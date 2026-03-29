@@ -244,8 +244,6 @@ match retry(|_| Err::<(), &str>("boom")).call() {
 Builder methods follow the order: **when/until** -> **wait** -> **stop** ->
 sleep -> hooks -> stats -> call.
 
-If you need builder types in signatures, use `tenacious::builders::*`.
-
 ## MSRV
 
 Minimum supported Rust version: **1.85**.

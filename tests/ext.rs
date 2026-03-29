@@ -81,24 +81,20 @@ fn retry_ext_function_pointer_form_works() {
 }
 
 #[test]
-fn default_sync_retry_builder_alias_is_nameable_from_builders_module() {
+fn default_sync_retry_builder_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
-    type Builder = tenacious::builders::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
+    type Builder = tenacious::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn).retry();
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
 #[test]
-fn default_sync_retry_builder_with_stats_alias_is_nameable_from_builders_module() {
+fn default_sync_retry_builder_with_stats_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
     type SleepFn = fn(Duration);
-    type Builder = tenacious::builders::DefaultSyncRetryBuilderWithStats<
-        SyncWorkFn,
-        SleepFn,
-        i32,
-        &'static str,
-    >;
+    type Builder =
+        tenacious::DefaultSyncRetryBuilderWithStats<SyncWorkFn, SleepFn, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn)
         .retry()
@@ -337,15 +333,11 @@ mod async_tests {
     }
 
     #[test]
-    fn default_async_retry_builder_alias_is_nameable_from_builders_module() {
+    fn default_async_retry_builder_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
-        type Builder = tenacious::builders::DefaultAsyncRetryBuilder<
-            AsyncWorkFn,
-            AsyncWork,
-            i32,
-            &'static str,
-        >;
+        type Builder =
+            tenacious::DefaultAsyncRetryBuilder<AsyncWorkFn, AsyncWork, i32, &'static str>;
 
         let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
         let result: Result<i32, RetryError<i32, &str>> =
@@ -354,12 +346,12 @@ mod async_tests {
     }
 
     #[test]
-    fn default_async_retry_builder_with_stats_alias_is_nameable_from_builders_module() {
+    fn default_async_retry_builder_with_stats_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type SleepFn = fn(Duration) -> core::future::Ready<()>;
         type SleepFuture = core::future::Ready<()>;
-        type Builder = tenacious::builders::DefaultAsyncRetryBuilderWithStats<
+        type Builder = tenacious::DefaultAsyncRetryBuilderWithStats<
             AsyncWorkFn,
             AsyncWork,
             SleepFn,

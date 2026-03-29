@@ -75,7 +75,11 @@ pub mod wait;
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
-pub use policy::{AsyncRetryBuilder, SyncRetryBuilder};
+pub use policy::{
+    AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
+    DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
+    SyncRetryBuilder, SyncRetryBuilderWithStats,
+};
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
@@ -103,7 +107,7 @@ pub use wait::Wait;
 /// ```
 pub fn retry<F, T, E>(
     op: F,
-) -> builders::SyncRetryBuilder<
+) -> SyncRetryBuilder<
     stop::StopAfterAttempts,
     wait::WaitExponential,
     predicate::PredicateAnyError,
@@ -118,7 +122,7 @@ pub fn retry<F, T, E>(
 where
     F: FnMut(RetryState) -> Result<T, E>,
 {
-    builders::SyncRetryBuilder::from_policy(RetryPolicy::new(), op)
+    SyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }
 
 /// Async retry with default policy.
@@ -138,7 +142,7 @@ where
 /// ```
 pub fn retry_async<F, T, E, Fut>(
     op: F,
-) -> builders::AsyncRetryBuilder<
+) -> AsyncRetryBuilder<
     stop::StopAfterAttempts,
     wait::WaitExponential,
     predicate::PredicateAnyError,
@@ -155,19 +159,5 @@ where
     F: FnMut(RetryState) -> Fut,
     Fut: core::future::Future<Output = Result<T, E>>,
 {
-    builders::AsyncRetryBuilder::from_policy(RetryPolicy::new(), op)
-}
-
-/// Advanced builder types and aliases.
-///
-/// This module contains the full type-state builder matrix (default/policy
-/// aliases and with-stats variants.
-/// Keep imports explicit when you need these names in signatures:
-/// `use tenacious::builders::DefaultSyncRetryBuilder`.
-pub mod builders {
-    pub use crate::policy::{
-        AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
-        DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder,
-        DefaultSyncRetryBuilderWithStats, SyncRetryBuilder, SyncRetryBuilderWithStats,
-    };
+    AsyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }
