@@ -1,4 +1,4 @@
-//! Acceptance tests for thread safety and standard trait implementations
+//! Acceptance tests for standard trait implementations
 //! (Spec §Thread safety, §Standard trait implementations).
 //!
 //! These tests verify:
