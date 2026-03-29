@@ -4,7 +4,8 @@ use tenacious::{RetryPolicy, predicate, sleep, stop, wait};
 
 #[tokio::main]
 async fn main() {
-    // Simulate a deployment that takes a few checks before it's ready.
+    // Represents a remote status endpoint that returns "deploying" until the service
+    // is up. Using a counter keeps the example self-contained.
     let checks_remaining = Cell::new(3_u32);
     let check_deploy_status = |_| {
         let status = if checks_remaining.get() > 0 {
@@ -16,7 +17,8 @@ async fn main() {
         async move { Ok::<_, &str>(status) }
     };
 
-    // Poll until the service reports "ready", checking every 25 ms.
+    // `.until()` inverts the predicate: retry while the Ok value does NOT match.
+    // This is more readable than `.when(predicate::ok(|s| *s != "ready"))`.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(10))
         .wait(wait::fixed(Duration::from_millis(25)))

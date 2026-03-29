@@ -41,10 +41,11 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E>;
 }
 
-/// Wrapper that adapts `FnMut() -> Result<T, E>` to the [`RetryOp`] trait.
+/// Adapts a no-argument closure to the [`RetryOp`] trait by discarding the
+/// [`RetryState`] parameter that the execution engine always passes.
 ///
-/// Used internally by [`RetryExt::retry`] so the execution engine receives
-/// the expected interface while the user only provides `FnMut() -> Result`.
+/// This is the bridge between the ext-trait API (`FnMut() -> Result`) and the
+/// execution engine, which requires `FnMut(RetryState) -> Result`.
 #[doc(hidden)]
 pub struct StatelessOp<F>(F);
 
@@ -138,7 +139,6 @@ pub struct SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E> {
 }
 
 impl<S, W, P, F, T, E> SyncRetryBuilder<S, W, P, (), (), (), F, NoSyncSleep, T, E> {
-    /// Creates a builder from an owned policy and operation.
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
         SyncRetryBuilder {
             inner: SyncRetryCore::new(
@@ -212,7 +212,6 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
-    /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
@@ -223,7 +222,6 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
-    /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(
         self,
@@ -234,7 +232,6 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
-    /// Replaces the retry predicate.
     #[must_use]
     pub fn when<NewPredicate>(
         self,
@@ -298,7 +295,6 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
-    /// Sets the blocking sleep implementation.
     #[must_use]
     pub fn sleep<NewSleep>(
         self,
@@ -320,7 +316,10 @@ impl_alloc_hook_chain! {
 
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, AA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, (), AA, OX, F, SleepFn, T, E> {
-    /// Sets the sole before-attempt hook (no-alloc mode).
+    /// Sets the before-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
@@ -345,7 +344,10 @@ impl<S, W, P, AA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, (), AA, OX, F,
 
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, BA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, (), OX, F, SleepFn, T, E> {
-    /// Sets the sole after-attempt hook (no-alloc mode).
+    /// Sets the after-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
@@ -370,7 +372,10 @@ impl<S, W, P, BA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, (), OX, F,
 
 #[cfg(not(feature = "alloc"))]
 impl<S, W, P, BA, AA, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, AA, (), F, SleepFn, T, E> {
-    /// Sets the sole on-exit hook (no-alloc mode).
+    /// Sets the on-exit hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryExt, stop};
@@ -407,12 +412,13 @@ where
     F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
-    /// Executes the sync retry loop.
     pub fn call(self) -> Result<T, RetryError<T, E>> {
         self.execute::<false>().0
     }
 
-    /// Executes the sync retry loop and returns aggregate statistics.
+    /// Wraps this builder to also return [`RetryStats`] on completion.
+    ///
+    /// Does not execute the retry loop; call `.call()` on the returned wrapper.
     #[must_use]
     pub fn with_stats(self) -> SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E> {
         SyncRetryBuilderWithStats { inner: self }
@@ -438,7 +444,6 @@ where
     F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
-    /// Executes the sync retry loop and returns `(result, stats)`.
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats) {
         let (result, stats) = self.inner.execute::<true>();
         (

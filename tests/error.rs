@@ -1,18 +1,8 @@
-//! Acceptance tests for error types.
+//! Tests for RetryError and RetryResult.
 //!
-//! These tests verify:
-//! - RetryError::Exhausted carries `last: Result<T, E>`
-//! - RetryError::Rejected carries `last: E`
-//! - Display is implemented unconditionally
-//! - std::error::Error is implemented when `std` + `E: Error + 'static`
-//! - source() chains correctly for both variants
-//! - Clone, PartialEq derives
-//! - Accessor methods: last(), last_error(), into_last(), into_last_error()
-//! - RetryResult alias matches Result<T, RetryError<T, E>>
-
-// ---------------------------------------------------------------------------
-// RetryError variants
-// ---------------------------------------------------------------------------
+//! Verifies the variant payloads (Exhausted carries last: Result<T,E>; Rejected carries last: E),
+//! Display output, the std::error::Error source chain under the `std` feature, accessor methods,
+//! and the RetryResult type alias.
 
 #[test]
 fn retry_error_exhausted_variant() {
@@ -51,10 +41,6 @@ fn retry_error_exhausted_with_ok_last() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Display
-// ---------------------------------------------------------------------------
-
 #[test]
 fn retry_error_display_includes_meaningful_content() {
     let err: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
@@ -76,10 +62,6 @@ fn retry_error_display_includes_meaningful_content() {
         "Display should include the error message: {msg2}"
     );
 }
-
-// ---------------------------------------------------------------------------
-// std::error::Error (feature = "std")
-// ---------------------------------------------------------------------------
 
 #[test]
 #[cfg(feature = "std")]
@@ -122,10 +104,6 @@ fn retry_error_rejected_source_is_inner_error() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Clone, PartialEq
-// ---------------------------------------------------------------------------
-
 #[test]
 fn retry_error_derives_clone_and_partial_eq() {
     let err: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
@@ -135,10 +113,6 @@ fn retry_error_derives_clone_and_partial_eq() {
     let cloned = err.clone();
     assert_eq!(err, cloned);
 }
-
-// ---------------------------------------------------------------------------
-// Accessor methods
-// ---------------------------------------------------------------------------
 
 #[test]
 fn retry_error_accessors_expose_last_outcome_and_error() {
@@ -168,10 +142,6 @@ fn retry_error_into_accessors_extract_owned_values() {
     };
     assert_eq!(rejected.into_last_error(), Some("fatal".to_string()));
 }
-
-// ---------------------------------------------------------------------------
-// RetryResult alias
-// ---------------------------------------------------------------------------
 
 #[test]
 fn retry_error_is_usable_as_result_error_type() {

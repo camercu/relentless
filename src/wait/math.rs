@@ -10,7 +10,6 @@ pub(super) fn clamp_exponential_base(base: f64) -> f64 {
     f64::max(base, MIN_EXPONENTIAL_BASE)
 }
 
-/// Multiplies a `Duration` by a `u32`, saturating on overflow.
 pub(super) fn saturating_duration_mul(dur: Duration, mul: u32) -> Duration {
     dur.checked_mul(mul).unwrap_or(Duration::MAX)
 }
@@ -41,9 +40,10 @@ pub(super) fn saturating_duration_mul_f64(dur: Duration, mul: f64) -> Duration {
     )
 }
 
-/// Raises a non-negative base to a non-negative integer exponent.
+/// Raises `base` to an integer `exponent`, returning `f64::INFINITY` on overflow.
 ///
-/// Uses exponentiation by squaring and returns infinity on overflow.
+/// Bases below [`MIN_EXPONENTIAL_BASE`] are treated as `1.0`, so the
+/// result is always `>= 1.0` for non-zero exponents.
 pub(super) fn pow_nonnegative_f64(base: f64, exponent: u32) -> f64 {
     if exponent == 0 {
         return 1.0;

@@ -1,4 +1,11 @@
-//! Acceptance tests for extension traits.
+//! Acceptance tests for `RetryExt` and `AsyncRetryExt`.
+//!
+//! These traits let callers start a retry chain directly from a closure or function
+//! pointer without constructing a `RetryPolicy` first. Tests verify that the
+//! default policy applied by `RetryExt` matches `RetryPolicy::default()`, that
+//! stateful `Stop`/`Wait` implementors work through the extension trait, and that
+//! the builder type aliases (`DefaultSyncRetryBuilder`, etc.) are nameable — a
+//! regression guard for the public type API.
 #![cfg(feature = "std")]
 
 use core::cell::Cell;

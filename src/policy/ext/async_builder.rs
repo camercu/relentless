@@ -41,7 +41,8 @@ where
     fn retry_async(self) -> DefaultAsyncRetryBuilder<Self, Fut, T, E>;
 }
 
-/// Wrapper that adapts `FnMut() -> Fut` to the [`AsyncRetryOp`] trait.
+/// Adapts a no-argument async closure to the [`AsyncRetryOp`] trait by
+/// discarding the [`RetryState`] parameter the execution engine always passes.
 #[doc(hidden)]
 pub struct StatelessAsyncOp<F>(F);
 
@@ -153,7 +154,6 @@ impl<S, W, P, F, Fut, T, E> AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsy
 where
     F: FnMut(RetryState) -> Fut,
 {
-    /// Creates a builder from an owned policy and operation.
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
         AsyncRetryBuilder {
             inner: AsyncRetryCore::new(
@@ -239,7 +239,6 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
-    /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
@@ -251,7 +250,6 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
-    /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(
         self,
@@ -263,7 +261,6 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
-    /// Replaces the retry predicate.
     #[must_use]
     pub fn when<NewPredicate>(
         self,
@@ -337,7 +334,9 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
-    /// Wraps this async retry builder with statistics collection.
+    /// Wraps this builder to also yield [`RetryStats`] on completion.
+    ///
+    /// Does not begin executing; the returned future must still be `.await`ed.
     #[must_use]
     pub fn with_stats(
         self,
@@ -354,7 +353,6 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
     AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 {
-    /// Sets the async sleep implementation.
     #[must_use]
     #[allow(clippy::type_complexity)]
     pub fn sleep<NewSleep>(

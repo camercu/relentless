@@ -31,10 +31,7 @@ pub struct StopAny<A, B> {
 }
 
 impl<A, B> StopAny<A, B> {
-    /// Creates a composite that stops when either `left` or `right` stops.
-    ///
-    /// Prefer the `|` operator or [`Stop::or`] method instead of calling
-    /// this constructor directly.
+    /// Prefer the `|` operator or [`Stop::or`] method over this constructor.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -42,10 +39,6 @@ impl<A, B> StopAny<A, B> {
 }
 
 impl<A: Stop, B: Stop> Stop for StopAny<A, B> {
-    /// Returns `true` if **either** constituent says to stop.
-    ///
-    /// Both constituents are always evaluated (no short-circuit) so that
-    /// stateful strategies on either side receive every call.
     fn should_stop(&self, state: &RetryState) -> bool {
         let left = self.left.should_stop(state);
         let right = self.right.should_stop(state);
@@ -97,10 +90,7 @@ pub struct StopAll<A, B> {
 }
 
 impl<A, B> StopAll<A, B> {
-    /// Creates a composite that stops only when both `left` and `right` stop.
-    ///
-    /// Prefer the `&` operator or [`Stop::and`] method instead of calling
-    /// this constructor directly.
+    /// Prefer the `&` operator or [`Stop::and`] method over this constructor.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -108,10 +98,6 @@ impl<A, B> StopAll<A, B> {
 }
 
 impl<A: Stop, B: Stop> Stop for StopAll<A, B> {
-    /// Returns `true` only when **both** constituents say to stop.
-    ///
-    /// Both constituents are always evaluated (no short-circuit) so that
-    /// stateful strategies on either side receive every call.
     fn should_stop(&self, state: &RetryState) -> bool {
         let left = self.left.should_stop(state);
         let right = self.right.should_stop(state);

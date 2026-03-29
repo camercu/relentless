@@ -13,14 +13,7 @@
 use crate::compat::Box;
 use core::ops::{BitAnd, BitOr};
 
-// ---------------------------------------------------------------------------
-// Trait
-// ---------------------------------------------------------------------------
-
 /// Examines the outcome of an operation and decides whether to retry.
-///
-/// `T` and `E` are type parameters on the trait, meaning each predicate is
-/// typed to a specific operation's return type.
 ///
 /// Composition methods are provided directly on the trait with
 /// `where Self: Sized` bounds.
@@ -81,8 +74,8 @@ pub trait Predicate<T, E> {
     }
 }
 
-/// Blanket implementation allowing any `Fn(&Result<T, E>) -> bool` to serve
-/// as a [`Predicate`]. This enables inline closure use:
+/// Any `Fn(&Result<T, E>) -> bool` can be used directly as a [`Predicate`],
+/// without wrapping in a named type.
 ///
 /// ```
 /// use tenacious::Predicate;
@@ -121,10 +114,6 @@ impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Built-in predicate types and constructors
-// ---------------------------------------------------------------------------
-
 /// Predicate that retries on any error.
 ///
 /// Created by [`any_error`].
@@ -141,7 +130,6 @@ impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
 #[derive(Debug, Clone)]
 pub struct PredicateAnyError;
 
-/// Produces a predicate that retries on any `Err(_)` and accepts any `Ok(_)`.
 #[must_use]
 pub fn any_error() -> PredicateAnyError {
     PredicateAnyError
@@ -214,7 +202,6 @@ pub struct PredicateResult<F> {
     matcher: F,
 }
 
-/// Produces a predicate that retries when `matcher(outcome)` returns `true`.
 #[must_use]
 pub fn result<F>(matcher: F) -> PredicateResult<F> {
     PredicateResult { matcher }
@@ -287,10 +274,6 @@ where
     }
 }
 
-// ---------------------------------------------------------------------------
-// PredicateUntil (negation wrapper)
-// ---------------------------------------------------------------------------
-
 /// Predicate that negates the inner predicate's decision.
 ///
 /// Created by [`until`] or by calling `.until(p)` on a [`crate::RetryPolicy`]
@@ -327,10 +310,6 @@ where
     }
 }
 
-// ---------------------------------------------------------------------------
-// Composition types
-// ---------------------------------------------------------------------------
-
 /// Composite predicate that retries when **either** predicate retries.
 ///
 /// Created by combining predicates with the `|` operator or the
@@ -356,10 +335,7 @@ pub struct PredicateAny<A, B> {
 }
 
 impl<A, B> PredicateAny<A, B> {
-    /// Creates a composite predicate that retries when either side retries.
-    ///
-    /// Prefer the `|` operator or [`Predicate::or`] method instead of
-    /// calling this constructor directly.
+    /// Prefer the `|` operator or [`Predicate::or`] method over this constructor.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -403,10 +379,7 @@ pub struct PredicateAll<A, B> {
 }
 
 impl<A, B> PredicateAll<A, B> {
-    /// Creates a composite predicate that retries only when both sides retry.
-    ///
-    /// Prefer the `&` operator or [`Predicate::and`] method instead of
-    /// calling this constructor directly.
+    /// Prefer the `&` operator or [`Predicate::and`] method over this constructor.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -422,10 +395,6 @@ where
         self.left.should_retry(outcome) && self.right.should_retry(outcome)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Predicate composition operator impls
-// ---------------------------------------------------------------------------
 
 /// Generates `BitOr` / `BitAnd` operator impls for a predicate type.
 macro_rules! impl_predicate_ops {

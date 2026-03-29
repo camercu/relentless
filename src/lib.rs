@@ -71,7 +71,6 @@ mod stats;
 pub mod stop;
 pub mod wait;
 
-// Re-export core public types at the crate root (spec 10.1).
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
 pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
@@ -88,11 +87,8 @@ pub use stats::{RetryStats, StopReason};
 pub use stop::Stop;
 pub use wait::Wait;
 
-/// Sync retry with default policy.
-///
-/// Creates a [`SyncRetryBuilder`] using
-/// [`RetryPolicy::new()`] defaults: `attempts(3)`, `exponential(100ms)`,
-/// `any_error()`.
+/// Returns a [`SyncRetryBuilder`] with default policy: `attempts(3)`,
+/// `exponential(100ms)`, `any_error()`.
 ///
 /// # Examples
 ///
@@ -125,10 +121,8 @@ where
     SyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }
 
-/// Async retry with default policy.
-///
-/// Creates an [`AsyncRetryBuilder`] using
-/// [`RetryPolicy::new()`] defaults.
+/// Returns an [`AsyncRetryBuilder`] with default policy: `attempts(3)`,
+/// `exponential(100ms)`, `any_error()`.
 ///
 /// # Examples
 ///

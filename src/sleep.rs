@@ -1,13 +1,10 @@
-//! Sleeper trait — abstracts how delays are performed.
-
 use crate::compat::Duration;
 use core::future::Future;
 
-/// Abstracts the mechanism for sleeping/delaying between retry attempts.
+/// Async sleep abstraction used by the retry engine between attempts.
 ///
-/// The async execution engine calls [`Sleeper::sleep`] and `.await`s the
-/// returned future. The sync execution engine uses a blocking sleep function
-/// directly and does not use this trait.
+/// Only the async execution engine uses this trait; the sync engine calls a
+/// blocking sleep function directly.
 ///
 /// # Examples
 ///
@@ -37,16 +34,14 @@ use core::future::Future;
 /// }
 /// ```
 pub trait Sleeper {
-    /// The future type returned by [`sleep`](Sleeper::sleep).
     type Sleep: Future<Output = ()>;
 
-    /// Returns a future that completes after the given duration.
+    /// Returns a future that completes after `dur`.
     fn sleep(&self, dur: Duration) -> Self::Sleep;
 }
 
-/// Blanket implementation for any `Fn(Duration) -> Fut` where
-/// `Fut: Future<Output = ()>`. This allows passing runtime sleep functions
-/// (e.g. `tokio::time::sleep`) directly without a wrapper struct.
+/// Blanket implementation so runtime sleep functions (e.g. `tokio::time::sleep`)
+/// can be passed to `.sleep(...)` directly without a wrapper struct.
 impl<F, Fut> Sleeper for F
 where
     F: Fn(Duration) -> Fut,
@@ -59,36 +54,28 @@ where
     }
 }
 
-/// Returns a Tokio sleep function compatible with `.sleep(...)`.
-///
-/// Enabled with the `tokio-sleep` feature.
+/// Returns `tokio::time::sleep` as a [`Sleeper`]-compatible function.
 #[cfg(feature = "tokio-sleep")]
 #[must_use]
 pub fn tokio() -> fn(Duration) -> tokio::time::Sleep {
     tokio::time::sleep
 }
 
-/// Returns a Gloo sleep function compatible with `.sleep(...)`.
-///
-/// Enabled with the `gloo-timers-sleep` feature on `wasm32`.
+/// Returns `gloo_timers::future::sleep` as a [`Sleeper`]-compatible function.
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[must_use]
 pub fn gloo() -> fn(Duration) -> gloo_timers::future::TimeoutFuture {
     gloo_timers::future::sleep
 }
 
-/// Returns a futures-timer sleep function compatible with `.sleep(...)`.
-///
-/// Enabled with the `futures-timer-sleep` feature.
+/// Returns `futures_timer::Delay::new` as a [`Sleeper`]-compatible function.
 #[cfg(feature = "futures-timer-sleep")]
 #[must_use]
 pub fn futures_timer() -> fn(Duration) -> futures_timer::Delay {
     futures_timer::Delay::new
 }
 
-/// Returns an Embassy sleep function compatible with `.sleep(...)`.
-///
-/// Enabled with the `embassy-sleep` feature.
+/// Returns an Embassy sleep function as a [`Sleeper`]-compatible function.
 #[cfg(feature = "embassy-sleep")]
 #[must_use]
 pub fn embassy() -> fn(Duration) -> embassy_time::Timer {
@@ -100,7 +87,7 @@ fn embassy_sleep_fn(dur: Duration) -> embassy_time::Timer {
     embassy_time::Timer::after(to_embassy_duration(dur))
 }
 
-/// Converts core `Duration` to embassy `Duration`, saturating on overflow.
+/// Embassy uses microseconds as a `u64`; saturate rather than panic on very large durations.
 #[cfg(feature = "embassy-sleep")]
 fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
     const MAX_U64_AS_U128: u128 = u64::MAX as u128;

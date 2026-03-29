@@ -28,10 +28,7 @@ use crate::wait;
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
 
-/// Default maximum attempts used by the safe policy constructor.
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
-
-/// Default initial backoff used by the safe policy constructor.
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Reusable retry configuration.
@@ -105,7 +102,6 @@ impl Default
 }
 
 impl<S, W, P> RetryPolicy<S, W, P> {
-    /// Replaces the stop strategy.
     #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P> {
         RetryPolicy {
@@ -115,7 +111,6 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
-    /// Replaces the wait strategy.
     #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P> {
         RetryPolicy {
@@ -125,7 +120,6 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
-    /// Replaces the retry predicate.
     #[must_use]
     pub fn when<NewPredicate>(self, predicate: NewPredicate) -> RetryPolicy<S, W, NewPredicate> {
         RetryPolicy {
@@ -152,7 +146,10 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
-    /// Converts this policy into a type-erased boxed variant.
+    /// Erases the generic stop, wait, and predicate parameters behind trait objects.
+    ///
+    /// Useful when the policy must be stored or passed without its concrete type
+    /// parameters, such as in heterogeneous collections or across API boundaries.
     #[cfg(feature = "alloc")]
     #[must_use]
     #[allow(clippy::type_complexity)]
@@ -176,7 +173,9 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     }
 }
 
-/// Internal abstraction over owned and borrowed policy storage.
+/// Abstracts over owned (`RetryPolicy<S,W,P>`) and borrowed (`&RetryPolicy<S,W,P>`)
+/// storage so that `SyncRetry`/`AsyncRetry` (which borrow) and the ext-trait
+/// builders (which own) can share the same execution engine.
 pub(crate) trait PolicyHandle<S, W, P> {
     fn policy_ref(&self) -> &RetryPolicy<S, W, P>;
 }
@@ -212,7 +211,6 @@ macro_rules! impl_alloc_hook_chain {
         impl<$($gen)*> $Builder
         $(where $($wc)*)?
         {
-            /// Appends a before-attempt hook.
             #[must_use]
             pub fn before_attempt<Hook>(
                 self,
@@ -224,7 +222,6 @@ macro_rules! impl_alloc_hook_chain {
                 self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
             }
 
-            /// Appends an after-attempt hook.
             #[must_use]
             pub fn after_attempt<Hook>(
                 self,
@@ -236,7 +233,6 @@ macro_rules! impl_alloc_hook_chain {
                 self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
             }
 
-            /// Appends an on-exit hook.
             #[must_use]
             pub fn on_exit<Hook>(
                 self,

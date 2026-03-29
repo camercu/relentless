@@ -20,15 +20,13 @@ use crate::wait::Wait;
 #[doc(hidden)]
 pub struct NoSyncSleep;
 
-/// Abstraction for blocking sleep functions used by [`SyncRetry`].
+/// Blocking sleep abstraction for the sync retry execution engine.
 ///
-/// The sync execution engine calls this to pause between retry attempts.
-/// A blanket implementation is provided for `FnMut(Duration)` closures.
-/// When the `std` feature is active, [`NoSyncSleep`] defaults to
-/// [`std::thread::sleep`].
+/// A blanket implementation covers `FnMut(Duration)` closures, enabling
+/// `.sleep(|dur| ...)` in the builder API. When the `std` feature is active,
+/// [`NoSyncSleep`] defaults to [`std::thread::sleep`].
 #[doc(hidden)]
 pub trait SyncSleep {
-    /// Blocks the current thread for the given duration.
     fn sleep(&mut self, dur: Duration);
 }
 
@@ -295,7 +293,6 @@ impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
 impl<'policy, S, W, P, BA, AA, OX, F, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, OX, F, NoSyncSleep, T, E>
 {
-    /// Sets a custom blocking sleep function.
     #[must_use]
     pub fn sleep<SleepFn>(
         self,
@@ -320,12 +317,13 @@ where
     F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
-    /// Executes the retry loop synchronously.
     pub fn call(self) -> Result<T, RetryError<T, E>> {
         self.execute::<false>().0
     }
 
-    /// Executes the retry loop and returns aggregate statistics.
+    /// Wraps this execution object to also return [`RetryStats`] on completion.
+    ///
+    /// Does not execute the retry loop; call `.call()` on the returned wrapper.
     #[must_use]
     pub fn with_stats(self) -> SyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E> {
         SyncRetryWithStats { inner: self }
@@ -351,7 +349,6 @@ where
     F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
-    /// Executes the retry loop synchronously and returns `(result, stats)`.
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats) {
         let (result, stats) = self.inner.execute::<true>();
         (result, stats.expect("sync retry completed without stats"))
@@ -370,7 +367,11 @@ impl_alloc_hook_chain! {
 impl<'policy, S, W, P, AA, OX, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, (), AA, OX, F, SleepFn, T, E>
 {
-    /// Sets the sole before-attempt hook (no-alloc mode).
+    /// Sets the before-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error (the `BA` type parameter would already be
+    /// non-`()`).
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -397,7 +398,10 @@ impl<'policy, S, W, P, AA, OX, F, SleepFn, T, E>
 impl<'policy, S, W, P, BA, OX, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, BA, (), OX, F, SleepFn, T, E>
 {
-    /// Sets the sole after-attempt hook (no-alloc mode).
+    /// Sets the after-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -424,7 +428,10 @@ impl<'policy, S, W, P, BA, OX, F, SleepFn, T, E>
 impl<'policy, S, W, P, BA, AA, F, SleepFn, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, (), F, SleepFn, T, E>
 {
-    /// Sets the sole on-exit hook (no-alloc mode).
+    /// Sets the on-exit hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -452,7 +459,6 @@ where
     S: Stop,
     W: Wait,
 {
-    /// Begins configuring sync retry execution.
     #[must_use]
     pub fn retry<T, E, F>(&self, op: F) -> SyncRetry<'_, S, W, P, (), (), (), F, NoSyncSleep, T, E>
     where

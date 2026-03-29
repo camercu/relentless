@@ -7,7 +7,7 @@ use super::math::{
     saturating_duration_mul_f64,
 };
 
-/// A wait strategy that always returns the same duration.
+/// A wait strategy that returns the same duration on every attempt.
 ///
 /// Created by [`fixed`].
 ///
@@ -27,7 +27,6 @@ pub struct WaitFixed {
     duration: Duration,
 }
 
-/// Produces a strategy that always returns `dur` regardless of attempt number.
 #[must_use]
 pub fn fixed(dur: Duration) -> WaitFixed {
     WaitFixed { duration: dur }
@@ -62,9 +61,6 @@ pub struct WaitLinear {
     increment: Duration,
 }
 
-/// Produces a linearly increasing strategy: `initial + (n - 1) * increment`.
-///
-/// Overflow saturates at [`Duration::MAX`].
 #[must_use]
 pub fn linear(initial: Duration, increment: Duration) -> WaitLinear {
     WaitLinear { initial, increment }
@@ -105,7 +101,6 @@ pub struct WaitExponential {
     base: f64,
 }
 
-/// The default exponential base multiplier.
 const DEFAULT_EXPONENTIAL_BASE: f64 = 2.0;
 
 /// Produces an exponentially increasing strategy: `initial * 2^(n-1)`.

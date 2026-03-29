@@ -16,10 +16,6 @@ pub use strategies::{StopAfterAttempts, StopAfterElapsed, StopNever, attempts, e
 
 /// Determines when the retry loop should stop.
 ///
-/// Implementations examine the current [`RetryState`] and return `true` when
-/// no more attempts should be made. The state contains only timing and counting
-/// fields — stop strategies never need to inspect the operation's outcome.
-///
 /// Composition methods are provided directly on the trait with
 /// `where Self: Sized` bounds, following the `Iterator` pattern.
 ///
@@ -38,8 +34,6 @@ pub use strategies::{StopAfterAttempts, StopAfterElapsed, StopNever, attempts, e
 /// }
 /// ```
 pub trait Stop {
-    /// Returns `true` if the retry loop should stop after examining the
-    /// current retry state.
     fn should_stop(&self, state: &RetryState) -> bool;
 
     /// Returns a strategy that stops when either side stops.

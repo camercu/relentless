@@ -2,10 +2,12 @@ use core::time::Duration;
 use tenacious::{RetryError, RetryExt, predicate, stop, wait};
 
 fn main() {
-    // Simulate a service that is permanently down.
+    // Represents a remote health check that is permanently unavailable.
     let ping_service = || -> Result<(), &str> { Err("control plane unavailable") };
 
-    // Retry with logging and stats collection.
+    // `.with_stats()` wraps the builder so `.call()` returns (result, RetryStats).
+    // Stats are useful for observability: emitting metrics or surfacing attempt counts
+    // in error messages without threading a counter through the closure.
     let (result, stats) = ping_service
         .retry()
         .stop(stop::attempts(3))

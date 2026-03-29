@@ -1,9 +1,12 @@
 use crate::state::{AttemptState, ExitState, RetryState};
 
-/// Hook callback shape for the `before_attempt` hook.
+/// Sealed dispatch trait for before-attempt hooks.
+///
+/// The `()` impl is the zero-cost no-op used when no hook is configured;
+/// the `FnMut` impl handles user-supplied closures. Both cases are monomorphised
+/// away at compile time with no runtime overhead.
 #[doc(hidden)]
 pub(crate) trait BeforeAttemptHook {
-    /// Invokes the hook.
     fn call(&mut self, state: &RetryState);
 }
 
@@ -20,10 +23,11 @@ where
     }
 }
 
-/// Hook callback shape for hooks receiving an [`AttemptState`].
+/// Sealed dispatch trait for after-attempt hooks.
+///
+/// Same `()` / `FnMut` dual-impl pattern as [`BeforeAttemptHook`].
 #[doc(hidden)]
 pub(crate) trait AttemptHook<T, E> {
-    /// Invokes the hook.
     fn call(&mut self, state: &AttemptState<'_, T, E>);
 }
 
@@ -40,10 +44,11 @@ where
     }
 }
 
-/// Hook callback shape for the `on_exit` hook.
+/// Sealed dispatch trait for on-exit hooks.
+///
+/// Same `()` / `FnMut` dual-impl pattern as [`BeforeAttemptHook`].
 #[doc(hidden)]
 pub(crate) trait ExitHook<T, E> {
-    /// Invokes the hook.
     fn call(&mut self, state: &ExitState<'_, T, E>);
 }
 
@@ -60,7 +65,11 @@ where
     }
 }
 
-/// Internal hook-chain wrapper used when multiple hooks are appended.
+/// Links two hooks of the same kind so both are called in registration order.
+///
+/// Each call to `before_attempt`, `after_attempt`, or `on_exit` wraps the
+/// existing hook and the new one into a `HookChain`, building a linked list
+/// of callbacks in the type system rather than at runtime.
 #[doc(hidden)]
 #[derive(Clone)]
 #[cfg(feature = "alloc")]

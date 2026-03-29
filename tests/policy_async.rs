@@ -1,15 +1,10 @@
-//! Acceptance tests for async execution.
+//! Acceptance tests for the async execution path via `RetryPolicy::retry_async`.
 //!
-//! These tests verify:
-//! - `RetryPolicy::retry_async(op)` configures async retry
-//! - `AsyncRetry::sleep(...)` sets required sleeper and enables execution
-//! - `AsyncRetry` is directly awaitable
-//! - Async execution loop behavior matches sync semantics
-//! - Async execution is executor-agnostic and deterministic in-process
-//! - Runtime sleep helper constructors are available behind feature gates
-//! - Async hook callbacks are synchronous and fire at the right points
-//! - Predicate is evaluated before stop
-//! - Default predicate behaves like `predicate::any_error()`
+//! All tests run under a minimal in-process `block_on` executor so they are
+//! deterministic and executor-agnostic: no Tokio runtime, no real timers. The
+//! `RecordingSleeper` captures requested sleep durations without blocking, letting
+//! tests verify wait-strategy output without wall-clock delays. Feature-gated tests
+//! check that runtime-specific sleep constructors compile and return the correct type.
 
 use core::cell::Cell;
 use core::future::Future;
@@ -23,33 +18,17 @@ use std::sync::Arc;
 use tenacious::{RetryError, RetryPolicy};
 use tenacious::{predicate, sleep::Sleeper, stop, wait};
 
-// ---------------------------------------------------------------------------
-// Test constants
-// ---------------------------------------------------------------------------
-
-/// Maximum attempts for most async retry tests.
 const MAX_ATTEMPTS: u32 = 3;
-
-/// Wait duration used in async sleep verification tests.
 const WAIT_DURATION: Duration = Duration::from_millis(10);
-
-/// Deadline used for deterministic custom-clock elapsed stop tests.
+/// Deadline shorter than `ASYNC_CUSTOM_CLOCK_STEP_MILLIS` so the first attempt always exhausts it.
 const ASYNC_CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
-
-/// Simulated operation runtime increment for custom-clock tests.
 const ASYNC_CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-
-/// Arbitrary success value used across tests.
 const SUCCESS_VALUE: i32 = 42;
-
-/// Arbitrary error value for tests.
 const ERROR_VALUE: &str = "fail";
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
-/// Creates a no-op waker for polling futures in unit tests.
+/// Creates a no-op waker for polling futures without an executor.
 fn noop_waker() -> Waker {
     struct NoopWake;
     impl std::task::Wake for NoopWake {
@@ -58,7 +37,8 @@ fn noop_waker() -> Waker {
     Waker::from(Arc::new(NoopWake))
 }
 
-/// Minimal `block_on` for immediately-ready unit-test futures.
+/// Polls a future to completion. Only correct for futures that never return `Pending`
+/// permanently; yields the thread on each `Pending` to let cooperative tasks make progress.
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
     let waker = noop_waker();
@@ -99,10 +79,6 @@ static ASYNC_ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
 fn async_elapsed_clock_millis() -> Duration {
     Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
 }
-
-// ---------------------------------------------------------------------------
-// Async retry setup and awaitability
-// ---------------------------------------------------------------------------
 
 #[test]
 fn retry_async_executes_when_sleeper_is_set() {
@@ -205,10 +181,6 @@ fn retry_async_borrows_policy_immutably() {
     assert_eq!(call_count.get(), 2);
 }
 
-// ---------------------------------------------------------------------------
-// Async loop behavior matches sync semantics
-// ---------------------------------------------------------------------------
-
 #[test]
 fn async_retry_returns_exhausted_on_persistent_errors() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
@@ -302,14 +274,11 @@ fn async_sleep_receives_wait_strategy_delays() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Predicate evaluation and default predicate behavior
-// ---------------------------------------------------------------------------
-
 #[test]
 fn async_predicate_is_evaluated_before_stop() {
-    // attempts(1) would stop immediately if checked first.
-    // Predicate accepts this Ok, so result must be returned.
+    // The predicate is consulted before the stop strategy. With stop::attempts(1),
+    // the stop would fire on the first call if checked first — but because the Ok
+    // value satisfies the predicate, the result is returned without stopping.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
         .when(predicate::ok(|value: &i32| *value < 0));
@@ -383,7 +352,6 @@ fn async_elapsed_stop_triggers_after_deadline() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    // Advance clock past the deadline on the first attempt
                     ASYNC_ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
                     Err::<i32, &str>("would exceed budget")
                 }
@@ -396,10 +364,6 @@ fn async_elapsed_stop_triggers_after_deadline() {
     assert!(sleeper.calls.borrow().is_empty());
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
-
-// ---------------------------------------------------------------------------
-// Async hooks are synchronous
-// ---------------------------------------------------------------------------
 
 #[test]
 fn async_hooks_fire_in_expected_places() {
@@ -500,10 +464,6 @@ fn async_hooks_are_per_call_and_do_not_persist() {
     );
     assert_eq!(exit_calls.get(), 1);
 }
-
-// ---------------------------------------------------------------------------
-// Runtime sleep helpers (feature-gated)
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "tokio-sleep")]
 #[test]

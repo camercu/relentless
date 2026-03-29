@@ -36,7 +36,6 @@ pub struct RetryState {
 }
 
 impl RetryState {
-    /// Creates a retry state value for tests and custom strategy code.
     #[must_use]
     pub const fn new(attempt: u32, elapsed: Option<Duration>) -> Self {
         Self { attempt, elapsed }
@@ -46,10 +45,7 @@ impl RetryState {
 /// Read-only context passed to the `after_attempt` hook.
 ///
 /// This contains the attempt outcome plus timing/counting fields for the
-/// completed attempt. The `next_delay` field tells whether a retry will
-/// happen: `Some(delay)` means the engine will sleep for `delay` before
-/// the next attempt, while `None` means this was a terminal attempt
-/// (predicate accepted, stop condition fired, or first-attempt success).
+/// completed attempt.
 ///
 /// # Examples
 ///
@@ -74,16 +70,13 @@ pub struct AttemptState<'a, T, E> {
     /// A reference to the outcome of the most recent attempt.
     pub outcome: &'a Result<T, E>,
 
-    /// The delay that will be applied before the next attempt.
-    ///
-    /// `Some(delay)` when a retry will happen (the engine will sleep for
-    /// `delay`). `None` when this is a terminal attempt — predicate
-    /// accepted, stop condition fired, or first-attempt success.
+    /// The delay that will be applied before the next attempt, or `None`
+    /// if this is the terminal attempt (predicate accepted, stop condition
+    /// fired, or first-attempt success).
     pub next_delay: Option<Duration>,
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
-    /// Creates an attempt state value for tests and custom integrations.
     #[must_use]
     pub const fn new(
         attempt: u32,
@@ -130,12 +123,10 @@ pub struct ExitState<'a, T, E> {
     /// A reference to the final outcome.
     pub outcome: &'a Result<T, E>,
 
-    /// Why the retry loop terminated.
     pub stop_reason: crate::stats::StopReason,
 }
 
 impl<'a, T, E> ExitState<'a, T, E> {
-    /// Creates an exit state value for tests and custom integrations.
     #[must_use]
     pub const fn new(
         attempt: u32,

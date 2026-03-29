@@ -15,10 +15,9 @@ use core::task::Context;
 use core::task::Poll;
 use pin_project_lite::pin_project;
 
-/// Trait abstracting the retry operation callable.
-///
-/// Both `FnMut(RetryState) -> Result<T, E>` (policy path, free functions)
-/// and `StatelessOp<FnMut() -> Result<T, E>>` (ext trait path) implement this.
+/// Unified callable interface for both the policy path (`FnMut(RetryState) -> Result<T, E>`)
+/// and the ext-trait path (`StatelessOp<FnMut() -> Result<T, E>>`), so the sync
+/// execution engine can drive both without a separate code path.
 pub(crate) trait RetryOp<T, E> {
     fn call_op(&mut self, state: RetryState) -> Result<T, E>;
 }
@@ -29,7 +28,8 @@ impl<T, E, F: FnMut(RetryState) -> Result<T, E>> RetryOp<T, E> for F {
     }
 }
 
-/// Trait abstracting the async retry operation callable.
+/// Async counterpart to [`RetryOp`]; same dual-path unification for the async
+/// execution engine.
 pub(crate) trait AsyncRetryOp<T, E, Fut: Future<Output = Result<T, E>>> {
     fn call_op(&mut self, state: RetryState) -> Fut;
 }
@@ -287,7 +287,6 @@ where
 
     let next_delay = policy.wait.next_wait(&retry_state);
 
-    // Check both the policy's stop strategy and the timeout deadline.
     let timeout_exceeded = match (timeout, retry_state.elapsed) {
         (Some(t), Some(e)) => e >= t,
         _ => false,
@@ -304,9 +303,9 @@ where
         );
     }
 
-    // after_attempt is fired by the caller after the timeout clamp
-    // so that the hook receives a truthful next_delay on all
-    // termination paths detected before sleep.
+    // after_attempt is fired by the caller (execute_sync_loop / poll_async_loop)
+    // after the timeout clamp, so the hook always receives the actual sleep
+    // duration rather than an unclamped value.
     AttemptTransition::Sleep {
         next_delay,
         last_result: outcome,
@@ -385,12 +384,14 @@ where
                 mut next_delay,
                 last_result: attempt_last_result,
             } => {
-                // Step 7: Clamp delay to remaining timeout budget.
+                // Prevent sleeping past the deadline: cap the delay to the
+                // remaining timeout budget so the loop terminates on time.
                 if let (Some(timeout_dur), Some(elapsed)) = (timeout, elapsed_tracker.elapsed()) {
                     next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
                 }
 
-                // Fire after_attempt with next_delay = Some(delay).
+                // after_attempt receives the clamped next_delay so the hook
+                // always sees a truthful value on every non-terminal path.
                 {
                     let retry_state = RetryState::new(attempt, elapsed_tracker.elapsed());
                     let attempt_state =
@@ -398,13 +399,13 @@ where
                     hooks.after_attempt.call(&attempt_state);
                 }
 
-                // Zero-duration sleep rule: skip sleep when delay is zero.
+                // Avoid a blocking syscall for zero-duration waits (e.g. when
+                // the timeout budget is already exhausted).
                 if !next_delay.is_zero() {
                     sleeper.sleep(next_delay);
                 }
                 total_wait = total_wait.saturating_add(next_delay);
 
-                // Increment attempt, continue.
                 attempt = attempt.saturating_add(1);
             }
         }
@@ -475,13 +476,15 @@ where
                     mut next_delay,
                     last_result: attempt_last_result,
                 } => {
-                    // Step 7: Clamp delay to remaining timeout budget.
+                    // Prevent sleeping past the deadline: cap the delay to the
+                    // remaining timeout budget so the loop terminates on time.
                     if let (Some(timeout_dur), Some(elapsed)) = (timeout, elapsed_tracker.elapsed())
                     {
                         next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
                     }
 
-                    // Fire after_attempt with next_delay = Some(delay).
+                    // after_attempt receives the clamped next_delay so the hook
+                    // always sees a truthful value on every non-terminal path.
                     {
                         let retry_state = RetryState::new(*attempt, elapsed_tracker.elapsed());
                         let attempt_state = attempt_state_from(
@@ -495,7 +498,8 @@ where
                     *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
 
-                    // Zero-duration sleep rule: skip sleep when delay is zero.
+                    // Avoid spawning a zero-duration sleep future (e.g. when
+                    // the timeout budget is already exhausted).
                     if next_delay.is_zero() {
                         *attempt = attempt.saturating_add(1);
                         phase.set(AsyncPhase::ReadyToStartAttempt);

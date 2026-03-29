@@ -1,16 +1,9 @@
-//! Acceptance tests for state types.
+//! Tests for state types passed to Stop strategies and hooks.
 //!
-//! These tests verify:
-//! - RetryState has `attempt` (1-indexed) and `elapsed` (Option<Duration>) fields
-//! - AttemptState has flat fields including `outcome` and `next_delay`
-//! - ExitState has `stop_reason` field
-//! - Duration is core::time::Duration
+//! Verifies the public field layout of RetryState, AttemptState, and ExitState,
+//! including 1-indexed attempt numbers and Option<Duration> for elapsed time.
 
 use core::time::Duration;
-
-// ---------------------------------------------------------------------------
-// RetryState
-// ---------------------------------------------------------------------------
 
 #[test]
 fn retry_state_has_required_fields() {
@@ -32,10 +25,6 @@ fn retry_state_elapsed_can_be_none() {
     let state = tenacious::RetryState::new(1, None);
     assert_eq!(state.elapsed, None);
 }
-
-// ---------------------------------------------------------------------------
-// AttemptState
-// ---------------------------------------------------------------------------
 
 #[test]
 fn attempt_state_has_flat_fields_and_outcome() {
@@ -64,10 +53,6 @@ fn attempt_state_with_err_outcome() {
     assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
 }
 
-// ---------------------------------------------------------------------------
-// ExitState
-// ---------------------------------------------------------------------------
-
 #[test]
 fn exit_state_has_required_fields() {
     let outcome = Err::<i32, &str>("fatal");
@@ -78,10 +63,6 @@ fn exit_state_has_required_fields() {
     assert_eq!(state.elapsed, None);
     assert_eq!(state.stop_reason, tenacious::StopReason::Exhausted);
 }
-
-// ---------------------------------------------------------------------------
-// Duration is core::time::Duration
-// ---------------------------------------------------------------------------
 
 #[test]
 fn duration_is_core_time_duration() {

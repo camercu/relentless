@@ -1,4 +1,8 @@
-//! Acceptance tests for hooks.
+//! Tests for before_attempt, after_attempt, and on_exit hooks.
+//!
+//! Verifies call ordering relative to the operation and predicate evaluation,
+//! the `next_delay` field in AttemptState (Some for retried attempts, None for terminal),
+//! and that multiple hooks of the same kind fire in registration order.
 
 use core::cell::Cell;
 use core::time::Duration;
@@ -86,7 +90,7 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
         .sleep(instant_sleep)
         .call();
 
-    // Attempts 1 and 2 will retry (next_delay=Some), attempt 3 is terminal (next_delay=None).
+    // next_delay is Some for attempts that will be retried, None for the terminal attempt
     assert_eq!(
         *seen.borrow(),
         vec![

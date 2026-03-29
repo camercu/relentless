@@ -9,16 +9,11 @@ use super::Wait;
 #[cfg(target_has_atomic = "ptr")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-/// Default seed for jitter PRNGs.
 const DEFAULT_JITTER_SEED: u64 = 0x5A5A_5A5A_5A5A_5A5A;
 
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
 #[cfg(target_has_atomic = "ptr")]
 static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
-
-// ---------------------------------------------------------------------------
-// SplitMix64 — inline PRNG
-// ---------------------------------------------------------------------------
 
 /// Fast, non-cryptographic PRNG for jitter decorrelation.
 ///
@@ -66,16 +61,11 @@ impl fmt::Debug for SplitMix64 {
     }
 }
 
-/// Creates an RNG seeded from the combination of a base seed and a nonce.
 fn seeded_rng(seed: u64, nonce: u64) -> SplitMix64 {
     SplitMix64::new(seed ^ nonce)
 }
 
-// ---------------------------------------------------------------------------
-// JitterKind — internal enum selecting the jitter computation
-// ---------------------------------------------------------------------------
-
-/// Internal jitter mode selector.
+/// Selects which jitter formula `Jittered<W>` applies to the base duration.
 #[derive(Debug, Clone, Copy)]
 enum JitterKind {
     /// `base + random(0, max_jitter)`
@@ -86,11 +76,7 @@ enum JitterKind {
     Equal,
 }
 
-// ---------------------------------------------------------------------------
-// Jittered<W> — unified jitter wrapper
-// ---------------------------------------------------------------------------
-
-/// A wrapper that applies jitter to an inner wait strategy's output.
+/// Applies jitter to an inner wait strategy's output.
 ///
 /// Created by calling [`.jitter(max)`](Wait::jitter),
 /// [`.full_jitter()`](Wait::full_jitter), or
@@ -175,8 +161,10 @@ impl<W> Jittered<W> {
         Self::new(inner, JitterKind::Equal)
     }
 
-    /// Sets an explicit PRNG seed for reproducible jitter when paired with
-    /// [`with_nonce`](Self::with_nonce).
+    /// Sets an explicit PRNG seed for reproducible jitter sequences.
+    ///
+    /// Combine with [`with_nonce`](Self::with_nonce) to fully pin the PRNG
+    /// state for deterministic testing.
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -184,7 +172,12 @@ impl<W> Jittered<W> {
         self
     }
 
-    /// Sets an explicit nonce used to decorrelate policy instances.
+    /// Overrides the instance-decorrelation nonce.
+    ///
+    /// By default, each `Jittered` instance (including clones) receives a
+    /// unique nonce so independent retry loops produce different jitter
+    /// sequences. Set an explicit nonce when you need deterministic output,
+    /// such as in tests.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
@@ -223,10 +216,6 @@ impl<W: Wait> Wait for Jittered<W> {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// WaitDecorrelatedJitter — decorrelated jitter: random(base, last_sleep * 3)
-// ---------------------------------------------------------------------------
 
 /// A standalone jitter strategy where each delay is random between `base` and
 /// three times the previous delay.
@@ -267,8 +256,6 @@ pub struct WaitDecorrelatedJitter {
 }
 
 /// Produces a decorrelated jitter strategy: `random(base, last_sleep * 3)`.
-///
-/// On the first attempt, `last_sleep` is `base`.
 #[must_use]
 pub fn decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter {
     let nonce = next_jitter_nonce();
@@ -282,7 +269,10 @@ pub fn decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter {
 }
 
 impl WaitDecorrelatedJitter {
-    /// Sets an explicit PRNG seed for reproducible jitter.
+    /// Sets an explicit PRNG seed for reproducible jitter sequences.
+    ///
+    /// Combine with [`with_nonce`](Self::with_nonce) to fully pin the PRNG
+    /// state for deterministic testing.
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -290,7 +280,11 @@ impl WaitDecorrelatedJitter {
         self
     }
 
-    /// Sets an explicit nonce used to decorrelate policy instances.
+    /// Overrides the instance-decorrelation nonce.
+    ///
+    /// By default, each instance (including clones) receives a unique nonce
+    /// so concurrent retry loops produce different jitter sequences. Set an
+    /// explicit nonce when you need deterministic output, such as in tests.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
@@ -318,7 +312,6 @@ impl Wait for WaitDecorrelatedJitter {
         let upper = last.saturating_mul(3);
         let lower = self.base;
 
-        // Generate random duration in [lower, upper]
         let delay = if upper <= lower {
             lower
         } else {
@@ -336,10 +329,6 @@ impl Wait for WaitDecorrelatedJitter {
         delay
     }
 }
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
 
 /// Generates a random jitter duration in `[0, max_jitter]`.
 fn random_jitter_duration(max_jitter: Duration, rng: &RefCell<SplitMix64>) -> Duration {

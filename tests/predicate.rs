@@ -1,39 +1,19 @@
-//! Acceptance tests for the Predicate trait and predicate factories.
+//! Tests for the Predicate trait and built-in predicate factories.
 //!
-//! These tests verify:
-//! - Predicate trait: should_retry(&self, &Result<T, E>) -> bool, T and E on trait
-//! - Predicate is callable multiple times through &self
-//! - `predicate` module factory functions exist and produce predicates
-//! - `predicate::error` retries only matching `Err` values
-//! - `predicate::any_error` retries on any `Err`
-//! - `predicate::result` sees the full outcome
-//! - `predicate::ok` retries only matching `Ok` values
-//! - Predicate composition with `|` (BitOr) and `&` (BitAnd)
-//! - Closures satisfy `Predicate<T, E>` via blanket impl
+//! Covers the type-parameterization of Predicate<T, E>, the behavior of each factory
+//! (error, any_error, result, ok), short-circuit semantics of `|`/`&` composition,
+//! the `until` inversion wrapper, and the closure blanket impl.
 
 use core::cell::Cell;
 use tenacious::Predicate;
 use tenacious::predicate;
 
-// ---------------------------------------------------------------------------
-// Test constants
-// ---------------------------------------------------------------------------
-
-/// Value used to represent a "ready" result.
+// READY_VALUE is the threshold at which a polling result is "ready".
+// ARBITRARY_NOT_READY_VALUE is any value below that threshold.
 const READY_VALUE: u32 = 10;
-
-/// Values below this threshold are considered "not ready yet".
 const READY_THRESHOLD: u32 = READY_VALUE;
-
-/// Arbitrary success value for tests that only need a valid `Ok` payload.
 const ARBITRARY_OK_VALUE: u32 = 7;
-
-/// Arbitrary value that does not satisfy readiness conditions.
 const ARBITRARY_NOT_READY_VALUE: u32 = 3;
-
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TestError {
@@ -53,11 +33,7 @@ fn err(error: TestError) -> TestResult {
     Err(error)
 }
 
-// ---------------------------------------------------------------------------
-// Predicate trait contract
-// ---------------------------------------------------------------------------
-
-/// A predicate that retries on any error.
+/// Minimal Predicate implementation used to verify the trait contract.
 struct RetryOnAnyError;
 
 impl Predicate<String, std::io::Error> for RetryOnAnyError {
@@ -80,7 +56,8 @@ fn predicate_should_retry_returns_false_for_ok() {
     assert!(!pred.should_retry(&ok_result));
 }
 
-/// Verify that T and E are type parameters on the trait (not the method).
+/// Implements Predicate for two distinct (T, E) pairs to verify T and E are
+/// trait-level type parameters, not method-level.
 struct AlwaysRetry;
 
 impl Predicate<u32, String> for AlwaysRetry {
@@ -109,7 +86,6 @@ fn predicate_type_params_are_on_trait_not_method() {
     ));
 }
 
-/// Predicate::should_retry takes &self — callable multiple times through shared reference.
 #[test]
 fn predicate_is_callable_multiple_times_through_shared_ref() {
     let pred = RetryOnAnyError;
@@ -122,7 +98,6 @@ fn predicate_is_callable_multiple_times_through_shared_ref() {
     assert!(!pred.should_retry(&ok));
 }
 
-/// Blanket impl: Fn(&Result<T, E>) -> bool satisfies Predicate<T, E>.
 #[test]
 fn predicate_blanket_impl_for_closure() {
     let pred = |outcome: &Result<i32, &str>| outcome.is_err();
@@ -133,10 +108,6 @@ fn predicate_blanket_impl_for_closure() {
     assert!(Predicate::should_retry(&pred, &err));
     assert!(!Predicate::should_retry(&pred, &ok));
 }
-
-// ---------------------------------------------------------------------------
-// predicate module factory functions
-// ---------------------------------------------------------------------------
 
 #[test]
 fn factory_functions_return_predicates() {
@@ -161,10 +132,6 @@ fn factory_functions_return_predicates() {
     assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
 }
 
-// ---------------------------------------------------------------------------
-// 4.2: `predicate::error`
-// ---------------------------------------------------------------------------
-
 #[test]
 fn error_retries_only_matching_errors() {
     let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable));
@@ -186,10 +153,6 @@ fn error_does_not_call_matcher_for_ok_values() {
     assert_eq!(calls.get(), 0);
 }
 
-// ---------------------------------------------------------------------------
-// 4.3: `predicate::any_error`
-// ---------------------------------------------------------------------------
-
 #[test]
 fn any_error_retries_on_any_error() {
     let predicate = predicate::any_error();
@@ -198,10 +161,6 @@ fn any_error_retries_on_any_error() {
     assert!(predicate.should_retry(&err(TestError::Fatal)));
     assert!(!predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
 }
-
-// ---------------------------------------------------------------------------
-// 4.4: `predicate::result`
-// ---------------------------------------------------------------------------
 
 #[test]
 fn result_can_decide_using_full_outcome() {
@@ -216,10 +175,6 @@ fn result_can_decide_using_full_outcome() {
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(!predicate.should_retry(&err(TestError::Fatal)));
 }
-
-// ---------------------------------------------------------------------------
-// 4.5: `predicate::ok`
-// ---------------------------------------------------------------------------
 
 #[test]
 fn ok_retries_only_matching_ok_values() {
@@ -267,10 +222,6 @@ fn result_can_express_polling_rules_in_one_predicate() {
     assert!(!predicate.should_retry(&ok(READY_VALUE)));
 }
 
-// ---------------------------------------------------------------------------
-// 4.6: Predicate composition with `|`
-// ---------------------------------------------------------------------------
-
 #[test]
 fn predicate_or_retries_when_either_side_retries() {
     let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
@@ -309,10 +260,6 @@ fn predicate_or_short_circuits_when_left_retries() {
     assert_eq!(right_calls.get(), 0);
 }
 
-// ---------------------------------------------------------------------------
-// 4.7: Predicate composition with `&`
-// ---------------------------------------------------------------------------
-
 #[test]
 fn predicate_and_retries_only_when_both_sides_retry() {
     let predicate = predicate::any_error()
@@ -347,15 +294,10 @@ fn predicate_and_short_circuits_when_left_rejects() {
     assert_eq!(right_calls.get(), 0);
 }
 
-// ---------------------------------------------------------------------------
-// PredicateUntil negates inner predicate
-// ---------------------------------------------------------------------------
-
 #[test]
 fn predicate_until_negates_inner() {
-    // ok(|v| *v >= READY_THRESHOLD) returns true when ready.
-    // PredicateUntil wraps it: should_retry is negated,
-    // so it retries when inner returns false (not ready yet).
+    // `until` inverts the inner predicate: it retries while inner returns false,
+    // and stops when inner returns true. This lets callers express "retry until <condition>".
     let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD);
     let until = predicate::until(inner);
 
@@ -369,9 +311,8 @@ fn predicate_until_negates_inner() {
 
 #[test]
 fn predicate_until_with_any_error_retries_ok_stops_on_error() {
-    // until(any_error()) means: retry until there's an error
-    // any_error().should_retry returns true for Err, false for Ok
-    // until negates: true for Ok (retry), false for Err (stop)
+    // until(any_error()): any_error() returns true for Err, false for Ok;
+    // until negates so the result retries on Ok and stops on Err.
     let until = predicate::until(predicate::any_error());
 
     assert!(until.should_retry(&ok(ARBITRARY_OK_VALUE)));
@@ -380,20 +321,16 @@ fn predicate_until_with_any_error_retries_ok_stops_on_error() {
 
 #[test]
 fn predicate_until_composes_with_operators() {
-    // until(ok(|v| ready) | error(|e| fatal))
-    // Retries until ready OR until fatal error
+    // until(ok(ready) | error(fatal)): retries until the value is ready OR a fatal error occurs.
+    // Inner returns true for ready/fatal (stop condition met), until negates to false (stop retrying).
     let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD)
         | predicate::error(|error: &TestError| matches!(error, TestError::Fatal));
     let until = predicate::until(inner);
 
-    // Not ready, not fatal → inner false → until true (retry)
-    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    // Retryable error → inner false → until true (retry)
-    assert!(until.should_retry(&err(TestError::Retryable)));
-    // Ready → inner true → until false (stop)
-    assert!(!until.should_retry(&ok(READY_VALUE)));
-    // Fatal → inner true → until false (stop)
-    assert!(!until.should_retry(&err(TestError::Fatal)));
+    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE))); // not ready → keep retrying
+    assert!(until.should_retry(&err(TestError::Retryable))); // not fatal → keep retrying
+    assert!(!until.should_retry(&ok(READY_VALUE))); // ready → stop
+    assert!(!until.should_retry(&err(TestError::Fatal))); // fatal → stop
 }
 
 #[test]
@@ -416,7 +353,6 @@ fn policy_until_sets_predicate() {
         .sleep(|_| {})
         .call();
 
-    // Should retry until value >= READY_THRESHOLD (10)
     assert_eq!(result.unwrap(), READY_VALUE);
     assert_eq!(counter.get(), READY_VALUE);
 }
@@ -445,8 +381,8 @@ fn builder_until_sets_predicate() {
 
 #[test]
 fn until_ok_retries_errors_by_default() {
-    // Per SPEC: .until(ok(f)) retries errors because ok(f) returns false
-    // for Err, and until inverts to true (retry).
+    // .until(ok(f)) retries errors automatically: ok(f) returns false for Err variants,
+    // and until inverts to true (keep retrying).
     use core::time::Duration;
     use tenacious::{RetryPolicy, stop, wait};
 
@@ -467,20 +403,9 @@ fn until_ok_retries_errors_by_default() {
         .sleep(|_| {})
         .call();
 
-    // First call: Err → retried (ok returns false for Err, until inverts to true)
-    // Second call: Ok(2) → retried (ok returns true for 2 < 3, until inverts... wait)
-    // Actually ok(|v| *v >= 3) returns true when v >= 3, false when v < 3
-    // until negates: retry when inner is false (v < 3), stop when inner is true (v >= 3)
-    // For Err: ok() returns false → until makes it true (retry)
-    // Ok(2): ok(2 >= 3) = false → until = true (retry)
-    // Ok(3): ok(3 >= 3) = true → until = false (stop, accepted)
     assert_eq!(result.unwrap(), 3);
     assert_eq!(counter.get(), 3);
 }
-
-// ---------------------------------------------------------------------------
-// 4.8: Blanket impl for `Fn(&Result<T, E>) -> bool`
-// ---------------------------------------------------------------------------
 
 #[test]
 fn closure_implements_predicate_trait() {
@@ -508,10 +433,6 @@ fn closure_predicate_can_be_used_in_generic_context() {
     assert!(!evaluate(closure, Err(TestError::Fatal)));
     assert!(!evaluate(closure, Ok(ARBITRARY_OK_VALUE)));
 }
-
-// ---------------------------------------------------------------------------
-// Named combinators (.or, .and) match operator forms
-// ---------------------------------------------------------------------------
 
 #[test]
 fn predicate_named_combinators_match_operator_forms() {

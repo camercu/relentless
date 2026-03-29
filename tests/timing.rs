@@ -1,4 +1,9 @@
-//! Wall-clock timing integration tests.
+//! Integration tests that use a real wall-clock to verify `stop::elapsed` behavior.
+//!
+//! These tests run the actual `std::thread::sleep` to simulate operation latency.
+//! They are intentionally narrow: only elapsed-stop is verified here because all other
+//! stop/wait/predicate correctness is covered by deterministic tests in `composition.rs`
+//! and `policy_sync.rs`.
 #![cfg(feature = "std")]
 
 use core::cell::Cell;

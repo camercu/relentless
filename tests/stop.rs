@@ -1,33 +1,16 @@
-//! Acceptance tests for the Stop trait and stop strategies.
+//! Tests for the Stop trait and built-in stop strategies.
 //!
-//! These tests verify:
-//! - Stop trait: should_stop(&self, &RetryState) -> bool
-//! - Stop and Wait are non-generic (decoupled from T, E)
-//! - stop::attempts(n) fires at the correct threshold
-//! - stop::elapsed(dur) fires on deadline, handles None clock
-//! - stop::never() always returns false
-//! - BitOr composition produces StopAny
-//! - BitAnd composition produces StopAll
-//! - Clone and Debug derive on all types
+//! Covers threshold/boundary behavior of each strategy, the non-generic (T/E-independent)
+//! nature of Stop, composition via `|`/`&` (StopAny/StopAll), and the no-short-circuit
+//! guarantee for composite strategies.
 
 use core::cell::Cell;
 use core::time::Duration;
 use tenacious::Stop;
 use tenacious::stop;
 
-// ---------------------------------------------------------------------------
-// Test constants
-// ---------------------------------------------------------------------------
-
-/// The attempt threshold used across most stop-strategy tests.
 const MAX_ATTEMPTS: u32 = 5;
-
-/// Deadline duration for elapsed-based strategies.
 const DEADLINE: Duration = Duration::from_secs(30);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 fn make_state(attempt: u32) -> tenacious::RetryState {
     tenacious::RetryState::new(attempt, None)
@@ -37,11 +20,8 @@ fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> tenacious::RetryS
     tenacious::RetryState::new(attempt, Some(elapsed))
 }
 
-// ---------------------------------------------------------------------------
-// Stop trait contract
-// ---------------------------------------------------------------------------
-
-/// A trivial Stop implementation that stops after a fixed number of attempts.
+/// Minimal Stop implementation used to verify the trait contract.
+/// Stops when `state.attempt >= self.max`.
 struct StopAfter {
     max: u32,
 }
@@ -66,21 +46,15 @@ fn stop_should_stop_takes_ref_self_and_retry_state() {
     assert!(stop.should_stop(&state), "attempt == max, should stop");
 }
 
-/// Stop and Wait accept RetryState (non-generic), so a single strategy
-/// works across operations with different Result types.
 #[test]
 fn stop_and_wait_are_not_generic_over_result_type() {
     let stop = StopAfter { max: 3 };
     let state = make_state(1);
 
-    // The same stop instance works regardless of operation type —
-    // no <T, E> parameterization needed. This is a compile-time check.
+    // Stop takes &RetryState, not Result<T, E> — a single strategy instance works across
+    // operations with different outcome types. This is a compile-time check.
     assert!(!stop.should_stop(&state));
 }
-
-// ---------------------------------------------------------------------------
-// stop::attempts(n)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn attempts_does_not_fire_below_threshold() {
@@ -141,10 +115,6 @@ fn attempts_with_zero_panics() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 2.2: stop::elapsed(dur)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn elapsed_does_not_fire_below_deadline() {
     let s = stop::elapsed(DEADLINE);
@@ -169,7 +139,7 @@ fn elapsed_fires_above_deadline() {
 #[test]
 fn elapsed_never_fires_when_no_clock() {
     let s = stop::elapsed(DEADLINE);
-    // elapsed is None — no clock available
+    // make_state passes None for elapsed — simulates no clock available
     let state = make_state(1);
     assert!(
         !s.should_stop(&state),
@@ -177,14 +147,9 @@ fn elapsed_never_fires_when_no_clock() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 2.4: stop::never()
-// ---------------------------------------------------------------------------
-
 #[test]
 fn never_always_returns_false() {
     let s = stop::never();
-    // Test at various attempt counts including extremes.
     for &attempt in &[1, 100, u32::MAX] {
         let state = make_state(attempt);
         assert!(
@@ -200,10 +165,6 @@ fn never_returns_false_even_with_elapsed() {
     let state = make_state_with_elapsed(u32::MAX, Duration::MAX);
     assert!(!s.should_stop(&state));
 }
-
-// ---------------------------------------------------------------------------
-// 2.5: StopAny via BitOr
-// ---------------------------------------------------------------------------
 
 #[test]
 fn stop_any_fires_when_left_fires() {
@@ -224,13 +185,9 @@ fn stop_any_fires_when_right_fires() {
 #[test]
 fn stop_any_does_not_fire_when_neither_fires() {
     let s = stop::attempts(MAX_ATTEMPTS) | stop::elapsed(DEADLINE);
-    let state = make_state(1); // attempt 1 < 5, no clock
+    let state = make_state(1); // attempt 1 < 5 and no elapsed — neither condition is met
     assert!(!s.should_stop(&state));
 }
-
-// ---------------------------------------------------------------------------
-// 2.6: StopAll via BitAnd
-// ---------------------------------------------------------------------------
 
 #[test]
 fn stop_all_fires_when_both_fire() {
@@ -242,35 +199,28 @@ fn stop_all_fires_when_both_fire() {
 #[test]
 fn stop_all_does_not_fire_when_only_left_fires() {
     let s = stop::attempts(MAX_ATTEMPTS) & stop::elapsed(DEADLINE);
-    let state = make_state(MAX_ATTEMPTS); // attempts met but no clock
+    let state = make_state(MAX_ATTEMPTS); // elapsed is None, so elapsed condition is unmet
     assert!(!s.should_stop(&state));
 }
 
 #[test]
 fn stop_all_does_not_fire_when_only_right_fires() {
     let s = stop::attempts(MAX_ATTEMPTS) & stop::elapsed(DEADLINE);
-    let state = make_state_with_elapsed(1, DEADLINE); // elapsed met but attempt 1 < 5
+    let state = make_state_with_elapsed(1, DEADLINE); // attempts condition unmet (1 < 5)
     assert!(!s.should_stop(&state));
 }
 
-// ---------------------------------------------------------------------------
-// 2.7: Chained composition
-// ---------------------------------------------------------------------------
-
 #[test]
 fn three_way_or_composition() {
-    // stop::attempts(5) | stop::elapsed(30s) | stop::never()
     let s = stop::attempts(MAX_ATTEMPTS) | stop::elapsed(DEADLINE) | stop::never();
 
-    // Only attempts fires
     let state = make_state(MAX_ATTEMPTS);
     assert!(s.should_stop(&state));
 
-    // Only elapsed fires
     let state = make_state_with_elapsed(1, DEADLINE);
     assert!(s.should_stop(&state));
 
-    // Neither fires (never never fires)
+    // never() never fires, and neither of the other conditions is met here
     let state = make_state(1);
     assert!(!s.should_stop(&state));
 }
@@ -280,18 +230,14 @@ fn mixed_and_or_composition() {
     // (attempts(5) & elapsed(30s)) | never()
     let s = (stop::attempts(MAX_ATTEMPTS) & stop::elapsed(DEADLINE)) | stop::never();
 
-    // Both inner conditions met — the & fires, so | fires.
+    // Both inner conditions met — the & fires, so the outer | fires too.
     let state = make_state_with_elapsed(MAX_ATTEMPTS, DEADLINE);
     assert!(s.should_stop(&state));
 
-    // Only one inner condition met — the & doesn't fire, never doesn't fire.
+    // Only attempts condition met — the & doesn't fire, and never() never fires.
     let state = make_state(MAX_ATTEMPTS);
     assert!(!s.should_stop(&state));
 }
-
-// ---------------------------------------------------------------------------
-// 2.9: Clone and Debug
-// ---------------------------------------------------------------------------
 
 #[test]
 fn attempts_is_clone_and_debug() {
@@ -336,7 +282,6 @@ fn stop_all_is_clone_and_debug() {
     assert!(debug.contains("StopAll"));
 }
 
-/// Verify cloned strategy behaves independently of the original.
 #[test]
 fn cloned_strategy_is_independent() {
     let original = stop::attempts(MAX_ATTEMPTS);
@@ -346,18 +291,14 @@ fn cloned_strategy_is_independent() {
     assert!(original.should_stop(&state));
     assert!(cloned.should_stop(&state));
 
-    // Both should still work independently after calls.
     let state = make_state(1);
     assert!(!original.should_stop(&state));
     assert!(!cloned.should_stop(&state));
 }
 
-// ---------------------------------------------------------------------------
-// No short-circuit in StopAny (stateful custom strategy with interior mutability)
-// ---------------------------------------------------------------------------
-
-/// A stateful stop strategy that fires after being consulted a fixed number of
-/// times, used to verify StopAny evaluates both sides.
+/// A stateful stop strategy that fires after being consulted a fixed number of times.
+/// Used with interior mutability to count evaluations and verify StopAny's
+/// no-short-circuit guarantee.
 struct StopAfterConsultations {
     threshold: u32,
     count: Cell<u32>,
@@ -380,26 +321,19 @@ impl Stop for StopAfterConsultations {
     }
 }
 
-/// Number of consultations before the custom strategy fires.
 const CONSULTATION_THRESHOLD: u32 = 3;
 
 #[test]
 fn no_short_circuit_in_stop_any() {
-    // Verify both sides are always evaluated even when left fires.
-    // attempts(1) always fires at attempt 1, but the right side should still be consulted.
+    // StopAny must evaluate both sides on every call — it does not short-circuit when
+    // the left side fires, because stateful strategies on the right rely on being called.
     let composite = stop::attempts(1) | StopAfterConsultations::new(CONSULTATION_THRESHOLD);
-
     let state = make_state(1);
 
-    // Even though left fires every time, right must still be called (no short-circuit).
-    assert!(composite.should_stop(&state)); // fires (left), custom count 1
-    assert!(composite.should_stop(&state)); // fires (left), custom count 2
-    assert!(composite.should_stop(&state)); // fires (left+right), custom count 3
+    assert!(composite.should_stop(&state)); // left fires; right count -> 1
+    assert!(composite.should_stop(&state)); // left fires; right count -> 2
+    assert!(composite.should_stop(&state)); // left fires; right count -> 3 (threshold reached)
 }
-
-// ---------------------------------------------------------------------------
-// Named combinators (.or, .and) match operator forms
-// ---------------------------------------------------------------------------
 
 #[test]
 fn stop_named_combinators_match_operator_forms() {

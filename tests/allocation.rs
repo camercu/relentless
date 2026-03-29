@@ -1,4 +1,8 @@
-//! Allocation profile checks for retry execution hot paths.
+//! Verifies that concrete (non-boxed) sync and async retry execution paths allocate
+//! zero heap memory after one-time initialization. The `stats_alloc` instrumented
+//! allocator tracks every allocation, so any regression is caught immediately.
+//! Boxed policies are also tested to confirm that construction allocates but
+//! subsequent execution does not.
 
 use core::time::Duration;
 #[cfg(feature = "alloc")]

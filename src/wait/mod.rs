@@ -23,10 +23,11 @@ pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed,
 
 /// Computes the delay duration between retry attempts.
 ///
-/// Implementations examine the current [`RetryState`] and return a
-/// [`Duration`] representing how long to wait before the next attempt.
-/// The state contains only timing and counting fields - wait strategies
-/// never need to inspect the operation's outcome.
+/// Implementations receive the current [`RetryState`] (attempt count and
+/// elapsed time) and return the duration to sleep before the next attempt.
+/// Wait strategies never inspect the operation's outcome — they depend
+/// only on timing and counting, so the same strategy can be reused across
+/// any operation type.
 ///
 /// Composition and builder methods are provided directly on the trait with
 /// `where Self: Sized` bounds.
@@ -46,10 +47,10 @@ pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed,
 /// }
 /// ```
 pub trait Wait {
-    /// Returns the duration to wait before the next retry attempt.
+    /// Returns the duration to sleep before the next retry attempt.
     fn next_wait(&self, state: &RetryState) -> Duration;
 
-    /// Clamps the computed wait to at most `max`.
+    /// Clamps the returned duration to at most `max`.
     #[must_use]
     fn cap(self, max: Duration) -> WaitCapped<Self>
     where
@@ -58,7 +59,7 @@ pub trait Wait {
         WaitCapped { inner: self, max }
     }
 
-    /// Switches to `other` after `after` attempts.
+    /// Uses this strategy for the first `after` attempts, then switches to `other`.
     #[must_use]
     fn chain<W2: Wait>(self, other: W2, after: u32) -> WaitChain<Self, W2>
     where

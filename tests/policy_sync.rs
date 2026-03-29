@@ -1,13 +1,10 @@
-//! Acceptance tests for policy builder and sync execution.
+//! Acceptance tests for the `RetryPolicy` builder and synchronous execution path.
 //!
-//! These tests verify:
-//! - RetryPolicy::new() type-state and RetryPolicy::default() safe defaults
-//! - Builder methods: .stop(), .wait(), .when()
-//! - SyncRetry via .retry(op).call()
-//! - RetryPolicy is Clone when constituents are Clone
-//! - Reset on each .retry() invocation
-//! - Hook callbacks: before_attempt, after_attempt, on_exit
-//! - Sleep function requirement
+//! Each test exercises a single observable contract: builder type-state transitions,
+//! execution loop invariants (attempt counting, sleep timing, early exit on predicate
+//! rejection), hook firing order, reset across `.retry()` invocations, and the
+//! `RetryPolicy::default()` safe-defaults guarantee. The test harness avoids real
+//! sleeps by supplying no-op or recording sleep functions.
 
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -16,42 +13,22 @@ use std::cell::RefCell;
 use tenacious::{RetryError, RetryPolicy, StopReason};
 use tenacious::{predicate, stop, wait};
 
-// ---------------------------------------------------------------------------
-// Test constants
-// ---------------------------------------------------------------------------
-
-/// Maximum attempts for most retry tests.
 const MAX_ATTEMPTS: u32 = 3;
-
-/// Safe default maximum attempts.
 const DEFAULT_POLICY_MAX_ATTEMPTS: u32 = 3;
-
-/// Fixed wait duration used in tests requiring sleep.
 const WAIT_DURATION: Duration = Duration::from_millis(10);
-
-/// Safe default initial backoff duration.
 const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
-
-/// Arbitrary success value.
 const SUCCESS_VALUE: i32 = 42;
-
-/// Deadline used for deterministic custom-clock elapsed stop tests.
+/// Deadline shorter than `CUSTOM_CLOCK_STEP_MILLIS` so the first attempt always exhausts it.
 const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
-
-/// Simulated operation runtime increment for custom-clock tests.
 const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-
-/// Short wait used by policy-storage ergonomics tests.
 const STORAGE_POLICY_WAIT: Duration = Duration::from_millis(1);
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
-/// A no-op sleep function that doesn't actually sleep (for fast tests).
 fn instant_sleep(_dur: Duration) {}
 
-/// Records each requested sleep duration.
+/// Returns a closure that appends each sleep duration to `recorder`.
+/// Used to assert that the wait strategy produces the expected delay sequence.
 fn recording_sleep(recorder: &RefCell<Vec<Duration>>) -> impl FnMut(Duration) + '_ {
     move |dur| recorder.borrow_mut().push(dur)
 }
@@ -61,10 +38,6 @@ static ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
 fn elapsed_clock_millis() -> Duration {
     Duration::from_millis(ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
 }
-
-// ---------------------------------------------------------------------------
-// RetryPolicy::new() type-state + RetryPolicy::default() safe policy
-// ---------------------------------------------------------------------------
 
 #[test]
 fn new_policy_retries_on_any_error_by_default() {
@@ -107,14 +80,9 @@ fn new_policy_has_exponential_wait_by_default() {
 
     let recorded = sleeps.borrow();
     assert_eq!(recorded.len(), (MAX_ATTEMPTS - 1) as usize);
-    // Default wait is exponential starting at 100ms.
     assert_eq!(recorded[0], Duration::from_millis(100));
     assert_eq!(recorded[1], Duration::from_millis(200));
 }
-
-// ---------------------------------------------------------------------------
-// Builder methods replace type params
-// ---------------------------------------------------------------------------
 
 #[test]
 fn stop_builder_configures_stop_strategy() {
@@ -226,10 +194,6 @@ fn retry_borrows_policy_without_mut() {
     assert_eq!(call_count.get(), 2);
 }
 
-// ---------------------------------------------------------------------------
-// SyncRetry execution
-// ---------------------------------------------------------------------------
-
 #[test]
 fn retry_succeeds_after_transient_failures() {
     let policy = RetryPolicy::new()
@@ -283,15 +247,15 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 
 #[test]
 fn retry_predicate_evaluated_before_stop() {
-    // Predicate is checked before stop.
-    // If predicate says "accept this outcome", return immediately even if
-    // stop hasn't fired yet.
+    // The predicate is consulted before the stop strategy. A non-negative Ok value
+    // satisfies the predicate immediately, so the loop exits even though attempts
+    // remain — stop::attempts is never reached.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0)); // retry on negative Ok values
+        .when(predicate::ok(|v: &i32| *v < 0));
 
     let result = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE)) // positive => predicate accepts
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .call();
 
@@ -300,7 +264,9 @@ fn retry_predicate_evaluated_before_stop() {
 
 #[test]
 fn retry_with_never_stop_still_returns_on_ok() {
-    // stop::never() means never stop, but predicate still accepts Ok.
+    // stop::never() will never fire, so the only exit is a successful outcome
+    // accepted by the predicate. Verifies the loop doesn't require a stop condition
+    // to terminate when Ok is returned.
     let policy = RetryPolicy::new().stop(stop::never());
 
     let call_count = Cell::new(0_u32);
@@ -371,10 +337,6 @@ fn default_policy_uses_exponential_backoff() {
     assert_eq!(durations[1], DEFAULT_POLICY_INITIAL_WAIT.saturating_mul(2),);
 }
 
-// ---------------------------------------------------------------------------
-// Execution loop details — sleep is called with computed delay
-// ---------------------------------------------------------------------------
-
 #[test]
 fn sleep_function_receives_computed_delay() {
     let sleep_durations: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
@@ -388,7 +350,7 @@ fn sleep_function_receives_computed_delay() {
         .call();
 
     let durations = sleep_durations.borrow();
-    // 3 attempts = 2 sleeps (sleep happens between attempts, not after last).
+    // Sleep is injected between attempts, not after the last one.
     assert_eq!(durations.len(), (MAX_ATTEMPTS - 1) as usize);
     for d in durations.iter() {
         assert_eq!(*d, WAIT_DURATION);
@@ -409,15 +371,11 @@ fn exponential_wait_increases_sleep_durations() {
         .call();
 
     let durations = sleep_durations.borrow();
-    assert_eq!(durations.len(), 3); // 4 attempts = 3 sleeps
-    assert_eq!(durations[0], Duration::from_millis(10)); // 10ms * 2^0
-    assert_eq!(durations[1], Duration::from_millis(20)); // 10ms * 2^1
-    assert_eq!(durations[2], Duration::from_millis(40)); // 10ms * 2^2
+    assert_eq!(durations.len(), 3);
+    assert_eq!(durations[0], Duration::from_millis(10));
+    assert_eq!(durations[1], Duration::from_millis(20));
+    assert_eq!(durations[2], Duration::from_millis(40));
 }
-
-// ---------------------------------------------------------------------------
-// RetryPolicy is Clone
-// ---------------------------------------------------------------------------
 
 #[test]
 fn policy_is_clone() {
@@ -455,24 +413,21 @@ fn boxed_policy_erases_strategy_types() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-// ---------------------------------------------------------------------------
-// Reset on each .retry() invocation
-// ---------------------------------------------------------------------------
-
 #[test]
 fn policy_resets_between_retry_invocations() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
-    // First use: exhaust all attempts.
     let result = policy
         .retry(|_| Err::<i32, _>("fail"))
         .sleep(instant_sleep)
         .call();
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 
-    // Second use: should work again with fresh state (reset happened).
+    // A second `.retry()` call on the same policy must start from attempt 1.
+    // If internal state leaked across calls, the counter would already be at
+    // MAX_ATTEMPTS and op would never be invoked.
     let call_count = Cell::new(0_u32);
     let result = policy
         .retry(|_| {
@@ -509,10 +464,6 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
         "hook should not carry over to later retry invocations"
     );
 }
-
-// ---------------------------------------------------------------------------
-// Hook callbacks
-// ---------------------------------------------------------------------------
 
 #[test]
 fn before_attempt_hook_fires_before_each_attempt() {
@@ -556,7 +507,6 @@ fn after_attempt_hook_fires_after_each_attempt() {
 
     let results = hook_results.borrow();
     assert_eq!(results.len(), MAX_ATTEMPTS as usize);
-    // First two are errors, last is success.
     assert_eq!(results[0], (1, false));
     assert_eq!(results[1], (2, false));
     assert_eq!(results[2], (3, true));
@@ -580,7 +530,7 @@ fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
         .call();
 
     let calls = hook_calls.borrow();
-    // Attempts 1,2 retry (Some), attempt 3 terminal (None).
+    // `next_delay` is Some while the loop will continue, None on the terminal attempt.
     assert_eq!(
         *calls,
         vec![
@@ -623,14 +573,12 @@ fn on_exit_hook_fires_on_success() {
     assert_eq!(exit_reason.get(), Some(StopReason::Accepted));
 }
 
-// ---------------------------------------------------------------------------
-// std feature provides default sleep
-// ---------------------------------------------------------------------------
-
 #[test]
 #[cfg(feature = "std")]
 fn std_feature_provides_default_sleep() {
-    // When std is active, .call() should work without explicit .sleep().
+    // Without the `std` feature there is no default sleep provider, so `.call()` requires
+    // an explicit `.sleep(fn)`. With `std` active the implicit provider uses
+    // `std::thread::sleep`, so the builder chain must compile without `.sleep()`.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(Duration::from_millis(1)));
@@ -639,10 +587,6 @@ fn std_feature_provides_default_sleep() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
-
-// ---------------------------------------------------------------------------
-// Edge cases
-// ---------------------------------------------------------------------------
 
 #[test]
 fn retry_with_single_attempt_calls_op_once() {
@@ -679,13 +623,15 @@ fn retry_succeeds_on_first_attempt() {
 
 #[test]
 fn exhausted_returned_for_ok_predicate_exhaustion() {
-    // When using predicate::ok() and stop fires while Ok values keep failing predicate.
+    // predicate::ok retries while the Ok value satisfies the condition. When stop
+    // fires with an Ok value still being rejected, the error variant must be
+    // Exhausted with last=Ok(_), not Rejected (which is reserved for Err outcomes).
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0)); // retry while Ok value is negative
+        .when(predicate::ok(|v: &i32| *v < 0));
 
     let result = policy
-        .retry(|_| Ok::<_, &str>(-1_i32)) // always returns Ok(-1), predicate says retry
+        .retry(|_| Ok::<_, &str>(-1_i32))
         .sleep(instant_sleep)
         .call();
 
@@ -727,7 +673,8 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
 
 #[test]
 fn predicate_rejects_err_means_immediate_return() {
-    // If predicate says "don't retry this error", return Rejected.
+    // When the predicate does not match an Err, the loop exits immediately with
+    // RetryError::Rejected rather than waiting for the stop strategy to fire.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));

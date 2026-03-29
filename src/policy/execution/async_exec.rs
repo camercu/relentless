@@ -466,7 +466,6 @@ type AsyncRetryWithOnExitHook<
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 {
-    /// Sets the async sleep implementation.
     #[must_use]
     pub fn sleep<NewSleep>(
         self,
@@ -485,7 +484,9 @@ impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 {
-    /// Wraps this async retry with statistics collection.
+    /// Wraps this future to also yield [`RetryStats`] on completion.
+    ///
+    /// Does not begin executing; the returned future must still be `.await`ed.
     #[must_use]
     // Intentional: the stats wrapper carries the full builder type-state.
     #[allow(clippy::type_complexity)]
@@ -514,7 +515,10 @@ impl_alloc_hook_chain! {
 impl<'policy, S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     AsyncRetry<'policy, S, W, P, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 {
-    /// Sets the sole before-attempt hook (no-alloc mode).
+    /// Sets the before-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -541,7 +545,10 @@ impl<'policy, S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 impl<'policy, S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     AsyncRetry<'policy, S, W, P, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut>
 {
-    /// Sets the sole after-attempt hook (no-alloc mode).
+    /// Sets the after-attempt hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -568,7 +575,10 @@ impl<'policy, S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 impl<'policy, S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut>
     AsyncRetry<'policy, S, W, P, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut>
 {
-    /// Sets the sole on-exit hook (no-alloc mode).
+    /// Sets the on-exit hook.
+    ///
+    /// Without `alloc`, only one hook per slot is supported; calling this
+    /// twice is a compile error.
     ///
     /// ```compile_fail
     /// use tenacious::{RetryPolicy, stop};
@@ -653,10 +663,6 @@ where
     S: Stop,
     W: Wait,
 {
-    /// Begins configuring async retry execution.
-    ///
-    /// # Examples
-    ///
     /// ```
     /// use tenacious::{RetryPolicy, stop};
     /// use core::time::Duration;

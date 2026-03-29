@@ -1,9 +1,7 @@
-//! Acceptance tests for the Sleeper trait.
+//! Tests for the Sleeper trait and its blanket impl for `Fn(Duration) -> Future`.
 //!
-//! These tests verify:
-//! - Sleeper trait has an associated `Sleep` type and `sleep(&self, Duration)` method
-//! - Blanket impl: `Fn(Duration) -> Fut` satisfies `Sleeper`
-//! - Blanket impl works with different future types
+//! Uses a no-op waker to drive futures to completion without a real async runtime,
+//! and verifies that both direct struct impls and closure-based impls satisfy the trait.
 
 use core::time::Duration;
 use std::future::Future;
@@ -14,10 +12,6 @@ use std::task::{Context, Poll};
 use tenacious::Sleeper;
 
 const ARBITRARY_DURATION: Duration = Duration::from_millis(10);
-
-// ---------------------------------------------------------------------------
-// Sleeper trait — direct impl
-// ---------------------------------------------------------------------------
 
 struct Immediate;
 
@@ -54,10 +48,6 @@ fn sleeper_trait_direct_impl() {
     assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
-// ---------------------------------------------------------------------------
-// Sleeper blanket impl for Fn(Duration) -> Future
-// ---------------------------------------------------------------------------
-
 #[test]
 fn sleeper_blanket_impl_for_closure() {
     let sleeper_fn = |_dur: Duration| Immediate;
@@ -91,10 +81,6 @@ fn sleeper_blanket_impl_different_future_type() {
     assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Pending));
     assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
-
-// ---------------------------------------------------------------------------
-// Feature-gated sleep adapter helpers
-// ---------------------------------------------------------------------------
 
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
 fn block_on<F: Future>(future: F) -> F::Output {

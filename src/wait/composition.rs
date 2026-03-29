@@ -7,7 +7,7 @@ use super::Jittered;
 use super::Wait;
 use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 
-/// A wrapper that clamps the inner strategy's output to a maximum duration.
+/// Clamps an inner wait strategy's output to a maximum duration.
 ///
 /// Created by calling `.cap(max)` on any wait strategy.
 ///
@@ -65,10 +65,7 @@ pub struct WaitCombine<A, B> {
 }
 
 impl<A, B> WaitCombine<A, B> {
-    /// Creates a composite that returns the sum of `left` and `right`.
-    ///
-    /// Prefer the `+` operator or [`Wait::add`] method instead of calling
-    /// this constructor directly.
+    /// Prefer the `+` operator or [`Wait::add`] over calling this directly.
     #[must_use]
     pub fn new(left: A, right: B) -> Self {
         Self { left, right }
@@ -116,8 +113,7 @@ pub struct WaitChain<A, B> {
 }
 
 impl<A, B> WaitChain<A, B> {
-    /// Creates a chain that uses `first` for the first `after` attempts,
-    /// then switches to `second`.
+    /// Prefer [`Wait::chain`] over calling this directly.
     #[must_use]
     pub fn new(first: A, second: B, after: u32) -> Self {
         Self {
@@ -168,7 +164,6 @@ macro_rules! impl_wait_add {
 
 impl_wait_add!(WaitFixed, WaitLinear, WaitExponential);
 
-// Add impl for generic composite types.
 impl<A: Wait, B: Wait, Rhs: Wait> Add<Rhs> for WaitCombine<A, B> {
     type Output = WaitCombine<Self, Rhs>;
 

@@ -5,10 +5,6 @@ use core::time::Duration;
 use std::env;
 use tenacious::{Predicate, Stop, Wait, predicate, stop, wait};
 
-// ---------------------------------------------------------------------------
-// Seeded PRNG helpers
-// ---------------------------------------------------------------------------
-
 const PROPTEST_SEED_ENV: &str = "TENACIOUS_PROPTEST_SEED";
 
 const STREAM_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -80,10 +76,6 @@ fn derive_stream_seed(seed: u64, stream_discriminant: u64) -> u64 {
     splitmix64(&mut mixed)
 }
 
-// ---------------------------------------------------------------------------
-// Test parameters
-// ---------------------------------------------------------------------------
-
 const SAMPLE_COUNT: u32 = 1_024;
 const MAX_ATTEMPT: u32 = 32;
 const MAX_ELAPSED_MILLIS: u64 = 500;
@@ -105,10 +97,6 @@ const LCG_INCREMENT: u64 = 1_442_695_040_888_963_407;
 const STOP_STREAM_DISCRIMINANT: u64 = 1;
 const WAIT_STREAM_DISCRIMINANT: u64 = 2;
 const PREDICATE_STREAM_DISCRIMINANT: u64 = 3;
-
-// ---------------------------------------------------------------------------
-// Sample generators
-// ---------------------------------------------------------------------------
 
 fn next_u64(state: &mut u64) -> u64 {
     *state = state

@@ -1,5 +1,3 @@
-//! RetryError — the error type returned when a retry loop terminates without success.
-
 use crate::stats::StopReason;
 use core::fmt;
 
@@ -45,9 +43,7 @@ pub enum RetryError<T, E> {
     },
 }
 
-/// Convenience alias for retry-returning operations.
-///
-/// Expands to `Result<T, RetryError<T, E>>`.
+/// Convenience alias: `Result<T, RetryError<T, E>>`.
 pub type RetryResult<T, E> = core::result::Result<T, RetryError<T, E>>;
 
 impl<T, E> RetryError<T, E> {
@@ -65,7 +61,8 @@ impl<T, E> RetryError<T, E> {
 
     /// Consumes the error and returns the final attempt outcome, if one exists.
     ///
-    /// Same `None` cases as [`last()`](Self::last).
+    /// Returns `None` for `Rejected`, which stores only `E` — use
+    /// [`into_last_error`](Self::into_last_error) in that case.
     #[must_use]
     pub fn into_last(self) -> Option<Result<T, E>> {
         match self {
@@ -88,7 +85,8 @@ impl<T, E> RetryError<T, E> {
 
     /// Consumes the retry error and returns the last error value, if present.
     ///
-    /// Same `Some` cases as [`last_error()`](Self::last_error).
+    /// Returns `Some` for `Rejected` and for `Exhausted` when the final
+    /// outcome was `Err`; `None` when `Exhausted` with a final `Ok`.
     #[must_use]
     pub fn into_last_error(self) -> Option<E> {
         match self {
@@ -97,7 +95,6 @@ impl<T, E> RetryError<T, E> {
         }
     }
 
-    /// Returns the termination reason as a typed enum.
     #[must_use]
     pub fn stop_reason(&self) -> StopReason {
         match self {

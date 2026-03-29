@@ -1,4 +1,8 @@
-//! Acceptance tests for jitter strategies.
+//! Tests for additive jitter on wait strategies.
+//!
+//! Verifies that jitter stays within [base, base+max], that `.cap()` order does not
+//! affect the cap invariant, and that each policy invocation and each clone produces
+//! a distinct sequence (decorrelation). Seeded tests confirm reproducibility.
 
 use core::time::Duration;
 use std::cell::RefCell;

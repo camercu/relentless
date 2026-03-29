@@ -23,8 +23,8 @@ async fn flaky_call() -> Result<String, &'static str> {
 
 #[tokio::main]
 async fn main() {
-    // --- Pattern 1: tokio::time::timeout ---
-
+    // Pattern 1: tokio::time::timeout wraps the future with an external deadline.
+    // The retry loop is dropped when the timeout fires, no cleanup required.
     let retry_future = retry_async(|state| {
         println!("pattern 1 — attempt {}", state.attempt);
         flaky_call()
@@ -39,11 +39,10 @@ async fn main() {
         Err(_elapsed) => println!("pattern 1: cancelled — deadline exceeded"),
     }
 
-    // --- Pattern 2: tokio::select! with a shutdown signal ---
-
+    // Pattern 2: tokio::select! races the retry future against any async signal —
+    // a oneshot channel here, but the same pattern works for ctrl_c or broadcast channels.
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Fire the shutdown signal after 120 ms.
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(120)).await;
         let _ = shutdown_tx.send(());

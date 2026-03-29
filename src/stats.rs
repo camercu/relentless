@@ -1,5 +1,3 @@
-//! Retry execution statistics.
-
 use crate::compat::Duration;
 use core::fmt;
 
@@ -60,7 +58,6 @@ impl fmt::Display for StopReason {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryStats {
-    /// Number of attempts that were executed.
     pub attempts: u32,
     /// Total wall-clock elapsed time, or `None` when no clock is available.
     pub total_elapsed: Option<Duration>,

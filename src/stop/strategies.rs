@@ -4,7 +4,7 @@ use crate::state::RetryState;
 
 /// Stops after a fixed number of completed attempts.
 ///
-/// Created by [`attempts`]. Fires when `state.attempt >= max`.
+/// Created by [`attempts`].
 ///
 /// # Examples
 ///
@@ -22,8 +22,6 @@ pub struct StopAfterAttempts {
 }
 
 /// Produces a strategy that stops after `max` completed attempts.
-///
-/// The stop fires when `state.attempt >= max`.
 ///
 /// # Panics
 ///
@@ -61,9 +59,7 @@ pub struct StopAfterElapsed {
     deadline: Duration,
 }
 
-/// Produces a strategy that stops when `state.elapsed >= Some(deadline)`.
-///
-/// When no clock is available (`elapsed` is `None`), this strategy never fires.
+/// Produces a strategy that stops when elapsed time meets or exceeds `deadline`.
 #[must_use]
 pub fn elapsed(deadline: Duration) -> StopAfterElapsed {
     StopAfterElapsed { deadline }
@@ -95,7 +91,6 @@ impl Stop for StopAfterElapsed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StopNever;
 
-/// Produces a strategy that always returns `false` — never stops.
 #[must_use]
 pub fn never() -> StopNever {
     StopNever
