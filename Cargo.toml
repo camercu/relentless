@@ -47,6 +47,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 name = "async-polling"
 required-features = ["tokio-sleep"]
 
+[[example]]
+name = "async-cancel"
+required-features = ["tokio-sleep"]
+
 [[bench]]
 name = "retry_hot_paths"
 harness = false
