@@ -4,6 +4,10 @@ This file records notable user-facing changes to `tenacious`.
 
 ## Unreleased
 
+- No unreleased changes yet.
+
+## 0.5.0
+
 ### Breaking
 
 - **Consolidated jitter wrapper types.** `WaitJitter<W>`, `WaitFullJitter<W>`,
