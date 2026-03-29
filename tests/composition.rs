@@ -5,7 +5,7 @@ use core::time::Duration;
 use std::env;
 use tenacious::{Predicate, Stop, Wait, predicate, stop, wait};
 
-#[path = "support/property_seed.rs"]
+#[path = "utils/property_seed.rs"]
 mod property_seed;
 use property_seed::{PROPTEST_SEED_ENV, derive_stream_seed, parse_seed, run_seed};
 
