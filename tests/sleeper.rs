@@ -1,4 +1,4 @@
-//! Acceptance tests for the Sleeper trait (Spec §Core abstractions → Sleeper).
+//! Acceptance tests for the Sleeper trait.
 //!
 //! These tests verify:
 //! - Sleeper trait has an associated `Sleep` type and `sleep(&self, Duration)` method
@@ -93,7 +93,7 @@ fn sleeper_blanket_impl_different_future_type() {
 }
 
 // ---------------------------------------------------------------------------
-// Feature-gated sleep adapter helpers (Spec §Feature-gated APIs → Sleep adapters)
+// Feature-gated sleep adapter helpers
 // ---------------------------------------------------------------------------
 
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]

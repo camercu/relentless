@@ -1,5 +1,4 @@
-//! Acceptance tests for the Predicate trait and predicate factories
-//! (Spec §Core abstractions → Predicate).
+//! Acceptance tests for the Predicate trait and predicate factories.
 //!
 //! These tests verify:
 //! - Predicate trait: should_retry(&self, &Result<T, E>) -> bool, T and E on trait
@@ -349,7 +348,7 @@ fn predicate_and_short_circuits_when_left_rejects() {
 }
 
 // ---------------------------------------------------------------------------
-// 4.9: PredicateUntil negates inner predicate
+// PredicateUntil negates inner predicate
 // ---------------------------------------------------------------------------
 
 #[test]

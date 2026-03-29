@@ -1,5 +1,4 @@
-//! Acceptance tests for the Stop trait and stop strategies
-//! (Spec §Core abstractions → Stop).
+//! Acceptance tests for the Stop trait and stop strategies.
 //!
 //! These tests verify:
 //! - Stop trait: should_stop(&self, &RetryState) -> bool

@@ -1,4 +1,4 @@
-//! Acceptance tests for error types (Spec §Error types → RetryError).
+//! Acceptance tests for error types.
 //!
 //! These tests verify:
 //! - RetryError::Exhausted carries `last: Result<T, E>`

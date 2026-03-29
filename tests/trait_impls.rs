@@ -1,5 +1,4 @@
-//! Acceptance tests for standard trait implementations
-//! (Spec §Thread safety, §Standard trait implementations).
+//! Acceptance tests for standard trait implementations.
 //!
 //! These tests verify:
 //! - Default RetryPolicy is Send + Sync

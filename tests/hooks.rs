@@ -1,4 +1,4 @@
-//! Acceptance tests for hooks (Spec §Hooks).
+//! Acceptance tests for hooks.
 
 use core::cell::Cell;
 use core::time::Duration;

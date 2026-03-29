@@ -1,4 +1,4 @@
-//! Acceptance tests for state types (Spec §Core abstractions → State types).
+//! Acceptance tests for state types.
 //!
 //! These tests verify:
 //! - RetryState has `attempt` (1-indexed) and `elapsed` (Option<Duration>) fields

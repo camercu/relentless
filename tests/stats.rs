@@ -1,12 +1,12 @@
-//! Acceptance tests for Statistics (Spec items 8.1–8.6).
+//! Acceptance tests for retry statistics.
 //!
 //! These tests verify:
-//! - `.with_stats()` on SyncRetry/AsyncRetry changes return type (8.1)
-//! - `RetryStats` struct fields: attempts, total_elapsed, total_wait, stop_reason (8.2)
-//! - `StopReason` variants: Accepted, Exhausted (8.3)
-//! - Stats accumulated inside the execution engine (8.4)
-//! - `total_elapsed` is `Some` when std active (8.5, verified implicitly)
-//! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq (8.6)
+//! - `.with_stats()` on SyncRetry/AsyncRetry changes return type
+//! - `RetryStats` struct fields: attempts, total_elapsed, total_wait, stop_reason
+//! - `StopReason` variants: Accepted, Exhausted
+//! - Stats accumulated inside the execution engine
+//! - `total_elapsed` is `Some` when std active (verified implicitly)
+//! - `RetryStats` derives Debug, Clone; StopReason derives Debug, Clone, Copy, Eq
 
 use core::cell::Cell;
 #[cfg(all(feature = "alloc", feature = "std"))]

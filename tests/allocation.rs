@@ -1,4 +1,4 @@
-//! Allocation profile checks for retry execution hot paths (Spec §Compatibility guarantees).
+//! Allocation profile checks for retry execution hot paths.
 
 use core::time::Duration;
 #[cfg(feature = "alloc")]

@@ -1,5 +1,4 @@
-//! Acceptance tests for the Wait trait and wait strategies
-//! (Spec §Core abstractions → Wait).
+//! Acceptance tests for the Wait trait and wait strategies.
 //!
 //! These tests verify:
 //! - Wait trait: next_wait(&self, &RetryState) -> Duration

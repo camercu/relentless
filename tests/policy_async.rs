@@ -1,17 +1,15 @@
-//! Acceptance tests for Async Execution (Spec items 6.1–6.8).
+//! Acceptance tests for async execution.
 //!
 //! These tests verify:
-//! - `RetryPolicy::retry_async(op)` configures async retry (6.1)
-//! - `AsyncRetry::sleep(...)` sets required sleeper and enables execution (6.2)
-//! - `AsyncRetry` is directly awaitable (6.3)
-//! - Async execution loop behavior matches sync semantics (6.4)
-//! - Async execution is executor-agnostic and deterministic in-process (6.5)
-//! - runtime sleep helper constructors are available behind feature gates
-//! - Async hook callbacks are synchronous and fire at the right points (6.8)
-//!
-//! This file also closes deferred retry-predicate execution behavior checks:
-//! - Predicate evaluated before stop (4.9)
-//! - Default predicate behaves like `on::any_error()` (4.10)
+//! - `RetryPolicy::retry_async(op)` configures async retry
+//! - `AsyncRetry::sleep(...)` sets required sleeper and enables execution
+//! - `AsyncRetry` is directly awaitable
+//! - Async execution loop behavior matches sync semantics
+//! - Async execution is executor-agnostic and deterministic in-process
+//! - Runtime sleep helper constructors are available behind feature gates
+//! - Async hook callbacks are synchronous and fire at the right points
+//! - Predicate is evaluated before stop
+//! - Default predicate behaves like `predicate::any_error()`
 
 use core::cell::Cell;
 use core::future::Future;
@@ -103,7 +101,7 @@ fn async_elapsed_clock_millis() -> Duration {
 }
 
 // ---------------------------------------------------------------------------
-// 6.1, 6.2, 6.3: Async retry setup and awaitability
+// Async retry setup and awaitability
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -208,7 +206,7 @@ fn retry_async_borrows_policy_immutably() {
 }
 
 // ---------------------------------------------------------------------------
-// 6.4: Async loop behavior matches sync semantics
+// Async loop behavior matches sync semantics
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -305,7 +303,7 @@ fn async_sleep_receives_wait_strategy_delays() {
 }
 
 // ---------------------------------------------------------------------------
-// Deferred retry-predicate checks in execution engine (4.9, 4.10)
+// Predicate evaluation and default predicate behavior
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -400,7 +398,7 @@ fn async_elapsed_stop_triggers_after_deadline() {
 }
 
 // ---------------------------------------------------------------------------
-// 6.8: Async hooks are synchronous
+// Async hooks are synchronous
 // ---------------------------------------------------------------------------
 
 #[test]

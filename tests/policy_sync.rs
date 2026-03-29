@@ -1,13 +1,13 @@
-//! Acceptance tests for Policy Builder and Sync Execution (Spec items 5.1–5.10)
+//! Acceptance tests for policy builder and sync execution.
 //!
 //! These tests verify:
-//! - RetryPolicy::new() type-state and RetryPolicy::default() safe defaults (5.1)
-//! - Builder methods: .stop(), .wait(), .when() (5.2, 5.3)
-//! - SyncRetry via .retry(op).call() (5.5, 5.6)
-//! - RetryPolicy is Clone when constituents are Clone (5.7)
-//! - Reset on each .retry() invocation (5.8)
-//! - Hook callbacks: before_attempt, after_attempt, on_exit (5.9, 12.4)
-//! - Sleep function requirement (5.10)
+//! - RetryPolicy::new() type-state and RetryPolicy::default() safe defaults
+//! - Builder methods: .stop(), .wait(), .when()
+//! - SyncRetry via .retry(op).call()
+//! - RetryPolicy is Clone when constituents are Clone
+//! - Reset on each .retry() invocation
+//! - Hook callbacks: before_attempt, after_attempt, on_exit
+//! - Sleep function requirement
 
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -63,7 +63,7 @@ fn elapsed_clock_millis() -> Duration {
 }
 
 // ---------------------------------------------------------------------------
-// 5.1: RetryPolicy::new() type-state + RetryPolicy::default() safe policy
+// RetryPolicy::new() type-state + RetryPolicy::default() safe policy
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -113,7 +113,7 @@ fn new_policy_has_exponential_wait_by_default() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.2, 5.3: Builder methods replace type params
+// Builder methods replace type params
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -227,7 +227,7 @@ fn retry_borrows_policy_without_mut() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.5, 5.6: SyncRetry execution
+// SyncRetry execution
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -283,7 +283,7 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 
 #[test]
 fn retry_predicate_evaluated_before_stop() {
-    // Spec 5.6 step 2: predicate is checked before stop.
+    // Predicate is checked before stop.
     // If predicate says "accept this outcome", return immediately even if
     // stop hasn't fired yet.
     let policy = RetryPolicy::new()
@@ -372,7 +372,7 @@ fn default_policy_uses_exponential_backoff() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.6: Execution loop details — sleep is called with computed delay
+// Execution loop details — sleep is called with computed delay
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -416,7 +416,7 @@ fn exponential_wait_increases_sleep_durations() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.7: RetryPolicy is Clone
+// RetryPolicy is Clone
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -456,7 +456,7 @@ fn boxed_policy_erases_strategy_types() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.8: Reset on each .retry() invocation
+// Reset on each .retry() invocation
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -511,7 +511,7 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.9: Hook callbacks
+// Hook callbacks
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -624,7 +624,7 @@ fn on_exit_hook_fires_on_success() {
 }
 
 // ---------------------------------------------------------------------------
-// 5.10: std feature provides default sleep
+// std feature provides default sleep
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -1,5 +1,5 @@
 //! Seeded property tests verifying Stop, Wait, and Predicate composition
-//! obeys boolean/arithmetic algebra (Spec §Core abstractions).
+//! obeys boolean/arithmetic algebra.
 
 use core::time::Duration;
 use std::env;

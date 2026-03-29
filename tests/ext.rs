@@ -1,4 +1,4 @@
-//! Acceptance tests for extension traits (Spec §Execution model → Extension traits).
+//! Acceptance tests for extension traits.
 #![cfg(feature = "std")]
 
 use core::cell::Cell;
