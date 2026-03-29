@@ -80,6 +80,10 @@ fn derive_stream_seed(seed: u64, stream_discriminant: u64) -> u64 {
     splitmix64(&mut mixed)
 }
 
+// ---------------------------------------------------------------------------
+// Test parameters
+// ---------------------------------------------------------------------------
+
 const SAMPLE_COUNT: u32 = 1_024;
 const MAX_ATTEMPT: u32 = 32;
 const MAX_ELAPSED_MILLIS: u64 = 500;
@@ -102,22 +106,9 @@ const STOP_STREAM_DISCRIMINANT: u64 = 1;
 const WAIT_STREAM_DISCRIMINANT: u64 = 2;
 const PREDICATE_STREAM_DISCRIMINANT: u64 = 3;
 
-fn stream_signature(run_seed: u64, stream_discriminant: u64) -> u64 {
-    let mut seed = derive_stream_seed(run_seed, stream_discriminant);
-    let mut signature = 0_u64;
-
-    for sample_index in 0..REPRO_SEQUENCE_LENGTH {
-        let random_word = next_u64(&mut seed);
-        let sample = u64::from(sample_index + SAMPLE_INDEX_OFFSET);
-        signature = signature
-            .rotate_left(DIGEST_ROTATE_LEFT_BITS)
-            .wrapping_mul(DIGEST_MIX_MULTIPLIER)
-            ^ random_word
-            ^ sample;
-    }
-
-    signature
-}
+// ---------------------------------------------------------------------------
+// Sample generators
+// ---------------------------------------------------------------------------
 
 fn next_u64(state: &mut u64) -> u64 {
     *state = state
@@ -144,10 +135,33 @@ fn make_state(state: &mut u64) -> tenacious::RetryState {
     } else {
         None
     };
-    // Consume the extra random values to keep the stream in sync
+    // Advance the stream by one slot that was reserved for next_delay when
+    // this helper was designed, so all three property tests draw from the
+    // same fixed-width per-sample layout and remain reproducible if new
+    // fields are added later.
     let _next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
 
     tenacious::RetryState::new(attempt, elapsed)
+}
+
+/// Folds `REPRO_SEQUENCE_LENGTH` random draws from a stream into a single
+/// digest. Used by the reproducibility test to verify that a fixed seed
+/// produces the exact same sequence on every run.
+fn stream_signature(run_seed: u64, stream_discriminant: u64) -> u64 {
+    let mut seed = derive_stream_seed(run_seed, stream_discriminant);
+    let mut signature = 0_u64;
+
+    for sample_index in 0..REPRO_SEQUENCE_LENGTH {
+        let random_word = next_u64(&mut seed);
+        let sample = u64::from(sample_index + SAMPLE_INDEX_OFFSET);
+        signature = signature
+            .rotate_left(DIGEST_ROTATE_LEFT_BITS)
+            .wrapping_mul(DIGEST_MIX_MULTIPLIER)
+            ^ random_word
+            ^ sample;
+    }
+
+    signature
 }
 
 #[test]
