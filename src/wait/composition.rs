@@ -3,8 +3,8 @@ use core::ops::Add;
 use crate::compat::Duration;
 use crate::state::RetryState;
 
+use super::Jittered;
 use super::Wait;
-use super::WaitJitter;
 use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 
 /// A wrapper that clamps the inner strategy's output to a maximum duration.
@@ -143,10 +143,10 @@ impl<W> WaitCapped<W> {
     ///
     /// Even when called after `.cap(max)`, the cap remains the final operation.
     #[must_use]
-    pub fn jitter(self, max_jitter: Duration) -> WaitCapped<WaitJitter<W>> {
+    pub fn jitter(self, max_jitter: Duration) -> WaitCapped<Jittered<W>> {
         let WaitCapped { inner, max } = self;
         WaitCapped {
-            inner: WaitJitter::new(inner, max_jitter),
+            inner: Jittered::additive(inner, max_jitter),
             max,
         }
     }
@@ -193,7 +193,7 @@ impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
     }
 }
 
-impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitJitter<W> {
+impl<W: Wait, Rhs: Wait> Add<Rhs> for Jittered<W> {
     type Output = WaitCombine<Self, Rhs>;
 
     fn add(self, rhs: Rhs) -> Self::Output {

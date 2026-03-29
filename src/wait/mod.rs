@@ -16,8 +16,9 @@ mod strategies;
 mod jitter;
 
 pub use composition::{WaitCapped, WaitChain, WaitCombine};
+pub use jitter::Jittered;
+pub use jitter::WaitDecorrelatedJitter;
 pub use jitter::decorrelated_jitter;
-pub use jitter::{WaitDecorrelatedJitter, WaitEqualJitter, WaitFullJitter, WaitJitter};
 pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed, linear};
 
 /// Computes the delay duration between retry attempts.
@@ -89,33 +90,33 @@ pub trait Wait {
 
     /// Adds uniformly distributed jitter in `[0, max_jitter]`.
     #[must_use]
-    fn jitter(self, max_jitter: Duration) -> WaitJitter<Self>
+    fn jitter(self, max_jitter: Duration) -> Jittered<Self>
     where
         Self: Sized,
     {
-        WaitJitter::new(self, max_jitter)
+        Jittered::additive(self, max_jitter)
     }
 
     /// Replaces the computed delay with a random value in `[0, base]`.
     ///
     /// This is the "Full Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
     #[must_use]
-    fn full_jitter(self) -> WaitFullJitter<Self>
+    fn full_jitter(self) -> Jittered<Self>
     where
         Self: Sized,
     {
-        WaitFullJitter::new(self)
+        Jittered::full(self)
     }
 
     /// Keeps half the computed delay and jitters the other half.
     ///
     /// This is the "Equal Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
     #[must_use]
-    fn equal_jitter(self) -> WaitEqualJitter<Self>
+    fn equal_jitter(self) -> Jittered<Self>
     where
         Self: Sized,
     {
-        WaitEqualJitter::new(self)
+        Jittered::equal(self)
     }
 }
 

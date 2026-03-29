@@ -107,13 +107,13 @@ pub trait Wait {
     fn cap(self, max: Duration) -> wait::WaitCapped<Self>
     where Self: Sized { ... }
 
-    fn jitter(self, max_jitter: Duration) -> wait::WaitJitter<Self>
+    fn jitter(self, max_jitter: Duration) -> wait::Jittered<Self>
     where Self: Sized { ... }
 
-    fn full_jitter(self) -> wait::WaitFullJitter<Self>
+    fn full_jitter(self) -> wait::Jittered<Self>
     where Self: Sized { ... }
 
-    fn equal_jitter(self) -> wait::WaitEqualJitter<Self>
+    fn equal_jitter(self) -> wait::Jittered<Self>
     where Self: Sized { ... }
 
     fn chain<W: Wait>(self, other: W, after: u32) -> wait::WaitChain<Self, W>
@@ -1048,8 +1048,7 @@ Standalone constructor:
 - `wait::decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter` —
   random in `[base, last_sleep * 3]`
 
-Exported types: `WaitJitter`, `WaitFullJitter`, `WaitEqualJitter`,
-`WaitDecorrelatedJitter`.
+Exported types: `Jittered`, `WaitDecorrelatedJitter`.
 
 All jitter types support `.with_seed(u64)` and `.with_nonce(u64)` for
 reproducible sequences.
@@ -1089,8 +1088,8 @@ Types:
 Traits:
 
 - `Stop` (includes `.or()`, `.and()` as provided methods)
-- `Wait` (includes `.cap()`, `.chain()`, `.add()` as provided methods;
-  `.jitter()`, `.full_jitter()`, `.equal_jitter()` with `jitter`)
+- `Wait` (includes `.cap()`, `.chain()`, `.add()`, `.jitter()`,
+  `.full_jitter()`, `.equal_jitter()` as provided methods)
 - `Predicate` (includes `.or()`, `.and()` as provided methods)
 - `Sleeper`
 - `RetryExt` (blanket-implemented for `FnMut() -> Result<T, E>`)
@@ -1115,9 +1114,8 @@ Free functions:
 - constructors: `fixed`, `linear`, `exponential`
 - types: `WaitFixed`, `WaitLinear`, `WaitExponential`, `WaitCapped`,
   `WaitChain`, `WaitCombine`
-- conditionally (with `jitter`): `decorrelated_jitter` constructor;
-  `WaitJitter`, `WaitFullJitter`, `WaitEqualJitter`, `WaitDecorrelatedJitter`
-  types
+- jitter: `decorrelated_jitter` constructor;
+  `Jittered`, `WaitDecorrelatedJitter` types
 
 `predicate` module:
 

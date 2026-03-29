@@ -4,7 +4,13 @@ This file records notable user-facing changes to `tenacious`.
 
 ## Unreleased
 
-- No unreleased changes yet.
+### Breaking
+
+- **Consolidated jitter wrapper types.** `WaitJitter<W>`, `WaitFullJitter<W>`,
+  and `WaitEqualJitter<W>` have been merged into a single `Jittered<W>` type.
+  The `.jitter()`, `.full_jitter()`, and `.equal_jitter()` methods on the `Wait`
+  trait now all return `Jittered<Self>`. Code that names these types explicitly
+  must be updated; code that only uses the builder methods is unaffected.
 
 ## 0.4.0
 
