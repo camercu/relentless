@@ -139,7 +139,10 @@ Built-in wait semantics:
 - `linear(initial, increment)` returns
   `initial + (attempt - 1) * increment` with saturating arithmetic
 - `exponential(initial)` returns `initial * 2^(attempt - 1)` with saturating
-  arithmetic
+  arithmetic; `.base(f: f64)` changes the exponential multiplier from the
+  default `2.0` — values below `1.0` (including non-finite values) are clamped
+  to `1.0`; a base of `1.0` produces a constant delay equal to `initial` on
+  every attempt
 - `.chain(other, after)` uses the first strategy when `attempt <= after`, then
   uses `other` when `attempt > after`; when `after` is `0`, the first strategy
   is never consulted
@@ -188,6 +191,10 @@ requests.
 ```
 output = base / 2 + random(0, base / 2)
 ```
+
+Cloning any `Jittered<W>` strategy (additive, full, or equal jitter) produces
+a decorrelated copy — the clone uses a fresh PRNG stream and diverges
+immediately, generating a different jitter sequence from the original.
 
 **Decorrelated jitter** (`wait::decorrelated_jitter(base)`): a standalone
 strategy where each delay is random between `base` and three times the
@@ -534,6 +541,9 @@ Builder methods:
 - `.stop(s: impl Stop) -> RetryPolicy<S2, W, P>`
 - `.boxed() -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, Box<dyn Predicate<T, E> + Send + 'static>>`
   with `alloc`
+- `.boxed_local() -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, Box<dyn Predicate<T, E> + 'static>>`
+  with `alloc` — same as `.boxed()` but without `Send` bounds; for policies
+  that remain on a single thread
 
 `.when(p)` and `.until(p)` both set the predicate. `.when(p)` stores `p`
 directly. `.until(p)` wraps `p` in `PredicateUntil<P>`, which negates
@@ -716,7 +726,8 @@ ordering, and panic behavior.
 Calling `.sleep(...)` on `SyncRetryBuilder` is:
 
 - optional with `std` (defaults to `std::thread::sleep`)
-- required without `std`
+- required without `std`; omitting it is a compile error (`.call()` is not
+  available on the unsleeper type)
 
 Terminal execution:
 
@@ -724,6 +735,11 @@ Terminal execution:
   result
 - `.with_stats()` changes the builder so that `.call()` returns
   `(RetryResult<T, E>, RetryStats)` instead
+
+`SyncRetryWithStats` and `AsyncRetryWithStats` expose only terminal
+execution (`.call()` for sync, `IntoFuture` for async). They do not
+expose hook, sleep, or clock configuration methods. Configure everything
+before calling `.with_stats()`.
 
 The sync loop performs these steps:
 
@@ -820,7 +836,8 @@ Ordering guarantees:
 
 - hooks of the same kind fire in registration order
 - without `alloc`, each hook point stores at most one callback; registering a
-  second callback for the same hook point silently replaces the first
+  second callback for the same hook point is a compile error (the builder's
+  type parameter for that hook slot is no longer `()`)
 - with `alloc`, hooks are stored in a `Vec`; multiple hooks of the same kind
   may be registered and all fire in registration order
 
@@ -1021,6 +1038,9 @@ exceed the deadline by the execution time of the final attempt. This is
 consistent with the crate's guarantee that it never interrupts a user operation
 that is already running.
 
+In debug builds, configuring `.timeout()` without an elapsed clock triggers a
+`debug_assert` at execution start as a misconfiguration warning.
+
 ## Feature-gated APIs
 
 The crate exposes feature-gated helpers in these areas.
@@ -1064,6 +1084,11 @@ With `alloc`:
 `.boxed()` on `RetryPolicy` requires `S: Stop + Send + 'static`,
 `W: Wait + Send + 'static`, `P: Predicate<T, E> + Send + 'static` and returns
 `RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, Box<dyn Predicate<T, E> + Send + 'static>>`.
+
+`.boxed_local()` on `RetryPolicy` requires `S: Stop + 'static`,
+`W: Wait + 'static`, `P: Predicate<T, E> + 'static` (no `Send` bounds) and
+returns `RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, Box<dyn Predicate<T, E> + 'static>>`.
+Use this when the policy does not need to cross thread boundaries.
 
 > Object safety is satisfied because `Stop`, `Wait`, and `Predicate<T, E>`
 > (for fixed `T, E`) each have a single non-generic method with an `&self`
@@ -1139,12 +1164,14 @@ Free functions:
 ### Combinator type opacity
 
 Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
-`WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, etc.) are public for technical
-reasons (they appear in return types of composition methods and `.until()`),
-but users should not name them in function signatures. Use `impl Stop`,
-`impl Wait`, or `impl Predicate<T, E>` instead.
+`WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, `Jittered`,
+`WaitDecorrelatedJitter`, and similar) are **exposed but unstable**: they are
+`pub` for technical reasons (they appear in return types of composition methods
+and `.until()`), but users should not name them in function signatures. Use
+`impl Stop`, `impl Wait`, or `impl Predicate<T, E>` instead.
 
-> Combinator type names may change in minor releases.
+> Combinator type names and their generic parameters may change in minor
+> releases.
 
 ## Standard trait implementations
 
