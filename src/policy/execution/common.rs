@@ -364,6 +364,11 @@ where
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
 
+    debug_assert!(
+        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
+        "timeout configured without an elapsed clock — timeout will have no effect"
+    );
+
     loop {
         fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
 
@@ -447,6 +452,11 @@ where
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
 {
+    debug_assert!(
+        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
+        "timeout configured without an elapsed clock — timeout will have no effect"
+    );
+
     loop {
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
