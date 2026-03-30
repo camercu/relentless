@@ -27,7 +27,6 @@ use crate::stop::Stop;
 use crate::wait;
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
-
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
@@ -164,6 +163,42 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         S: Stop + Send + 'static,
         W: Wait + Send + 'static,
         P: Predicate<T, E> + Send + 'static,
+    {
+        RetryPolicy {
+            stop: Box::new(self.stop),
+            wait: Box::new(self.wait),
+            predicate: Box::new(self.predicate),
+        }
+    }
+
+    /// Erases the generic stop, wait, and predicate parameters behind local trait objects.
+    ///
+    /// Like [`boxed`](Self::boxed) but without `Send` bounds. Use this when
+    /// the policy must be stored without its concrete type parameters but
+    /// does not need to cross thread boundaries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tenacious::RetryPolicy;
+    ///
+    /// let policy = RetryPolicy::new().boxed_local::<(), &str>();
+    /// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
+    /// ```
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn boxed_local<T, E>(
+        self,
+    ) -> RetryPolicy<
+        Box<dyn Stop + 'static>,
+        Box<dyn Wait + 'static>,
+        Box<dyn Predicate<T, E> + 'static>,
+    >
+    where
+        S: Stop + 'static,
+        W: Wait + 'static,
+        P: Predicate<T, E> + 'static,
     {
         RetryPolicy {
             stop: Box::new(self.stop),
