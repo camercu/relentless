@@ -312,6 +312,40 @@ fn async_default_predicate_behaves_like_any_error() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// `.timeout()` stops the async loop when elapsed time meets or exceeds the budget,
+/// even if the stop strategy would allow more attempts.
+#[test]
+fn async_timeout_stops_loop_when_budget_exceeded() {
+    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
+    // loop exits after the first attempt advances the clock past the deadline.
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO));
+    let sleeper = RecordingSleeper::new();
+    let call_count = Cell::new(0_u32);
+
+    let result = block_on(
+        policy
+            .retry_async(|_| {
+                call_count.set(call_count.get().saturating_add(1));
+                async {
+                    ASYNC_ELAPSED_CLOCK_MILLIS
+                        .fetch_add(ASYNC_CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+                    Err::<i32, &str>("fail")
+                }
+            })
+            .elapsed_clock(async_elapsed_clock_millis)
+            .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE)
+            .sleep(sleeper.clone()),
+    );
+
+    // The timeout is tighter than MAX_ATTEMPTS+10 would allow, so only 1 attempt runs.
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
 #[test]
 fn async_custom_elapsed_clock_counts_operation_runtime() {
     ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);

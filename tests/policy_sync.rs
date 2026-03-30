@@ -394,6 +394,73 @@ fn policy_is_clone() {
 
 #[cfg(feature = "alloc")]
 #[test]
+fn boxed_local_erases_policy_types() {
+    let policy: RetryPolicy<
+        Box<dyn tenacious::stop::Stop + 'static>,
+        Box<dyn tenacious::wait::Wait + 'static>,
+        Box<dyn tenacious::predicate::Predicate<(), &str> + 'static>,
+    > = RetryPolicy::new().boxed_local::<(), &str>();
+    let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
+    assert!(result.is_err());
+}
+
+/// `boxed_local` erases types but preserves retry behavior: the loop still
+/// runs the configured number of attempts and returns `Exhausted` on failure.
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_local_runs_full_retry_cycle() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .boxed_local::<i32, &str>();
+
+    let call_count = Cell::new(0_u32);
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            Err::<i32, _>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(
+        call_count.get(),
+        MAX_ATTEMPTS,
+        "should run MAX_ATTEMPTS times"
+    );
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// `boxed_local` policy is not `Send` — the trait objects it contains lack the
+/// `Send` bound. Verify this at compile time via a `compile_fail` doc test on
+/// the method itself; here we verify the positive case: it IS usable on a
+/// single thread without any `Send` requirement.
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_local_is_usable_without_send_bound() {
+    // Rc is !Send — if boxed_local required Send, this would fail to compile.
+    let counter = std::rc::Rc::new(Cell::new(0_u32));
+    let counter_clone = counter.clone();
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .boxed_local::<(), &str>();
+
+    let result = policy
+        .retry(move |_| {
+            counter_clone.set(counter_clone.get().saturating_add(1));
+            Err::<(), _>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(counter.get(), MAX_ATTEMPTS);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
 fn boxed_policy_erases_strategy_types() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -695,6 +762,35 @@ fn predicate_rejects_err_means_immediate_return() {
         }
         other => panic!("expected Rejected with last=\"fatal\", got {:?}", other),
     }
+}
+
+/// `.timeout()` stops the loop when elapsed time meets or exceeds the budget,
+/// even if the stop strategy would allow more attempts.
+#[test]
+fn timeout_stops_loop_when_budget_exceeded() {
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
+    // loop exits after the first attempt advances the clock past the deadline.
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO));
+    let call_count = Cell::new(0_u32);
+
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            Err::<i32, _>("fail")
+        })
+        .elapsed_clock(elapsed_clock_millis)
+        .timeout(CUSTOM_CLOCK_DEADLINE)
+        .sleep(instant_sleep)
+        .call();
+
+    // The timeout is tighter than MAX_ATTEMPTS would allow, so only 1 attempt runs.
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 #[test]
