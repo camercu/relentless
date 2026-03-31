@@ -82,6 +82,25 @@ fn sleeper_blanket_impl_different_future_type() {
     assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
+/// R-SLEEP-1: A bare `fn(Duration) -> Fut` satisfies the `Sleeper` blanket impl.
+///
+/// The blanket impl covers `Fn(Duration) -> Fut`, which includes both closures
+/// and named function items. This test passes a bare function item (not a closure)
+/// to verify the blanket applies.
+#[test]
+fn sleeper_blanket_impl_for_bare_fn_item() {
+    fn immediate_sleep(_dur: Duration) -> Immediate {
+        Immediate
+    }
+
+    // `immediate_sleep` is a bare function item of type `fn(Duration) -> Immediate`.
+    // It must satisfy `Sleeper` via the blanket impl.
+    let mut fut = Sleeper::sleep(&immediate_sleep, ARBITRARY_DURATION);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
+}
+
 #[cfg(any(feature = "futures-timer-sleep", feature = "tokio-sleep"))]
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
