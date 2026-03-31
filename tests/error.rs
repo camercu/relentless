@@ -166,8 +166,7 @@ fn retry_result_alias_matches_retry_error_shape() {
     assert!(result.is_err());
 }
 
-/// R-ERR-8: stop_reason() returns StopReason::Accepted for Rejected,
-/// StopReason::Exhausted for Exhausted.
+/// 4.1.8
 #[test]
 fn retry_error_stop_reason_matches_variant() {
     use tenacious::StopReason;
@@ -183,8 +182,7 @@ fn retry_error_stop_reason_matches_variant() {
     assert_eq!(rejected.stop_reason(), StopReason::Accepted);
 }
 
-/// R-ERR-9: RetryError Display format: lowercase, no trailing punctuation,
-/// pattern "retries exhausted: {error}" / "rejected: {error}".
+/// 4.1.9
 #[test]
 fn retry_error_display_exact_format() {
     let exhausted: tenacious::RetryError<(), String> = tenacious::RetryError::Exhausted {
@@ -212,7 +210,7 @@ fn retry_error_display_exact_format() {
     assert_eq!(msg3, "retries exhausted");
 }
 
-/// R-ERR-4: last() returns Some for Exhausted, None for Rejected.
+/// 4.1.4
 #[test]
 fn retry_error_last_returns_some_for_exhausted_none_for_rejected() {
     let exhausted: tenacious::RetryError<i32, String> = tenacious::RetryError::Exhausted {
@@ -226,7 +224,7 @@ fn retry_error_last_returns_some_for_exhausted_none_for_rejected() {
     assert!(rejected.last().is_none());
 }
 
-/// R-ERR-5: into_last() consuming version for Exhausted/Rejected.
+/// 4.1.5
 #[test]
 fn retry_error_into_last_exhausted_ok_returns_some_ok() {
     let exhausted_ok: tenacious::RetryError<i32, String> =
@@ -234,8 +232,7 @@ fn retry_error_into_last_exhausted_ok_returns_some_ok() {
     assert_eq!(exhausted_ok.into_last(), Some(Ok(99_i32)));
 }
 
-/// R-ERR-6: last_error() returns Some(&E) for Rejected and Exhausted(Err).
-/// None for Exhausted(Ok).
+/// 4.1.6
 #[test]
 fn retry_error_last_error_returns_none_for_exhausted_ok() {
     let exhausted_ok: tenacious::RetryError<i32, String> =
@@ -248,7 +245,7 @@ fn retry_error_last_error_returns_none_for_exhausted_ok() {
     assert_eq!(exhausted_err.last_error(), Some(&"oops".to_string()));
 }
 
-/// R-ERR-7: into_last_error() consuming version.
+/// 4.1.7
 #[test]
 fn retry_error_into_last_error_for_rejected() {
     let rejected: tenacious::RetryError<i32, String> = tenacious::RetryError::Rejected {
@@ -260,7 +257,7 @@ fn retry_error_into_last_error_for_rejected() {
     );
 }
 
-/// R-COMPAT-3: stop_reason() always available regardless of T/E bounds.
+/// 16.5
 #[test]
 fn stop_reason_available_without_extra_bounds() {
     use tenacious::StopReason;

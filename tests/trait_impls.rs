@@ -26,7 +26,7 @@ fn value_types_implement_copy() {
     assert_copy::<tenacious::stop::StopNever>();
 }
 
-/// R-TRAIT-1: All public strategy types (Stop, Wait, Predicate) implement Debug.
+/// §14
 #[test]
 fn all_strategy_types_implement_debug() {
     use core::time::Duration;
@@ -54,8 +54,7 @@ fn all_strategy_types_implement_debug() {
     let _ = format!("{:?}", predicate::any_error());
 }
 
-/// R-TRAIT-2: WaitExponential implements PartialEq but NOT Eq.
-/// Verified compile-time by absence of Eq impl on WaitExponential.
+/// §14
 #[test]
 fn wait_exponential_has_partial_eq_not_eq() {
     use core::time::Duration;
@@ -75,7 +74,7 @@ fn wait_exponential_has_partial_eq_not_eq() {
     // _assert_eq(wait::exponential(Duration::from_millis(10))); // would not compile
 }
 
-/// R-TRAIT-3: StopReason implements Display with "accepted" / "retries exhausted".
+/// 4.2.3
 #[test]
 fn stop_reason_display_values() {
     use tenacious::StopReason;
@@ -84,7 +83,7 @@ fn stop_reason_display_values() {
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 
-/// R-TRAIT-4: RetryError implements Display with correct format.
+/// 4.1.9
 #[test]
 fn retry_error_display_format() {
     use tenacious::RetryError;
@@ -100,7 +99,7 @@ fn retry_error_display_format() {
     assert_eq!(format!("{}", r), "rejected: fatal");
 }
 
-/// R-TRAIT-5: RetryStats implements Clone and Copy.
+/// §14
 #[test]
 fn retry_stats_is_clone_and_copy() {
     use core::time::Duration;
@@ -119,7 +118,7 @@ fn retry_stats_is_clone_and_copy() {
     assert_eq!(stats.attempts, copied.attempts);
 }
 
-/// R-TRAIT-6: RetryState implements Clone, Copy, PartialEq.
+/// §14
 #[test]
 fn retry_state_is_clone_copy_partial_eq() {
     use core::time::Duration;
@@ -133,7 +132,7 @@ fn retry_state_is_clone_copy_partial_eq() {
     assert_ne!(s, RetryState::new(4, None));
 }
 
-/// R-POLICY-7: RetryPolicy is Clone when all components are Clone.
+/// 5.7
 #[test]
 fn retry_policy_is_clone_when_components_are_clone() {
     use core::time::Duration;
@@ -151,7 +150,7 @@ fn retry_policy_is_clone_when_components_are_clone() {
     assert_eq!(result1, result2);
 }
 
-/// R-PRED-10: All predicate types implement Clone (when F: Clone).
+/// §14
 #[test]
 fn all_predicate_types_implement_clone() {
     use tenacious::predicate;

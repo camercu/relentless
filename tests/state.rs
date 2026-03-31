@@ -71,7 +71,7 @@ fn duration_is_core_time_duration() {
     assert_eq!(state.elapsed, Some(Duration::from_millis(10)));
 }
 
-/// R-STATE-2: RetryState is Copy — can pass by value repeatedly without move error.
+/// 3.6.2
 #[test]
 fn retry_state_is_copy() {
     let state = tenacious::RetryState::new(3, Some(Duration::from_secs(1)));
@@ -81,7 +81,7 @@ fn retry_state_is_copy() {
     assert_eq!(a.elapsed, b.elapsed);
 }
 
-/// R-STATE-3: attempt is 1-indexed — verified via actual retry execution.
+/// 3.6.3
 #[test]
 fn retry_state_attempts_are_one_indexed_in_execution() {
     use std::cell::RefCell;
@@ -103,8 +103,7 @@ fn retry_state_attempts_are_one_indexed_in_execution() {
     assert_eq!(*attempts_seen.borrow(), vec![1, 2, 3]);
 }
 
-/// R-STATE-4: before_attempt and operation both see the same attempt value
-/// as the stop/wait strategies see after completion.
+/// 3.6.3
 #[test]
 fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
     use std::cell::RefCell;
@@ -161,7 +160,7 @@ fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
     assert_eq!(*op_attempts.borrow(), vec![1, 2, 3]);
 }
 
-/// R-STATE-5: AttemptState.next_delay is None on final attempt.
+/// 3.6.5
 #[test]
 fn attempt_state_next_delay_none_on_final() {
     use std::cell::RefCell;
@@ -187,7 +186,7 @@ fn attempt_state_next_delay_none_on_final() {
     assert_eq!(delays[2], None, "final attempt should have next_delay=None");
 }
 
-/// R-STATE-6: ExitState.attempt is always >= 1.
+/// 3.6.6
 #[test]
 fn exit_state_attempt_is_at_least_one() {
     use std::cell::Cell;
@@ -207,7 +206,7 @@ fn exit_state_attempt_is_at_least_one() {
     assert!(exit_attempt.get() >= 1);
 }
 
-/// R-STATE-7: ExitState.outcome is the final attempt outcome.
+/// 3.6.7
 #[test]
 fn exit_state_outcome_is_final_attempt_result() {
     use std::cell::RefCell;
@@ -227,10 +226,7 @@ fn exit_state_outcome_is_final_attempt_result() {
     assert_eq!(*final_outcome.borrow(), Some(false));
 }
 
-/// R-STATE-9: All state types are #[non_exhaustive] — cannot be struct-literal
-/// constructed outside the crate. Verified by reading source; this is
-/// compile-time only. This test documents the guarantee by constructing via
-/// the public constructors (the only allowed path from outside the crate).
+/// 3.6.1
 #[test]
 fn state_types_must_be_constructed_via_new() {
     // If these compile, the public constructors exist and work.

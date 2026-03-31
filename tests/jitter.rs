@@ -133,7 +133,7 @@ fn clone_decorrelates_jitter_sequence() {
     );
 }
 
-/// R-JITTER-2: Full jitter output is in range [0, base].
+/// 3.3.2
 #[test]
 fn full_jitter_stays_within_zero_to_base() {
     let strategy = wait::fixed(BASE_WAIT).full_jitter();
@@ -144,7 +144,7 @@ fn full_jitter_stays_within_zero_to_base() {
     }
 }
 
-/// R-JITTER-3: Equal jitter output is in range [base/2, base].
+/// 3.3.3
 #[test]
 fn equal_jitter_stays_within_half_base_to_base() {
     let strategy = wait::fixed(BASE_WAIT).equal_jitter();
@@ -164,8 +164,7 @@ fn equal_jitter_stays_within_half_base_to_base() {
     }
 }
 
-/// R-JITTER-4: Decorrelated jitter first-attempt output is in [base, base*3].
-/// Each iteration uses a fresh strategy so `last_sleep` starts as `base`.
+/// 3.3.5
 #[test]
 fn decorrelated_jitter_first_attempt_range() {
     let base = Duration::from_millis(100);
@@ -184,7 +183,7 @@ fn decorrelated_jitter_first_attempt_range() {
     }
 }
 
-/// R-JITTER-4 continued: Subsequent decorrelated jitter in [base, prev*3].
+/// 3.3.5
 #[test]
 fn decorrelated_jitter_subsequent_attempts_bounded_by_prev_times_3() {
     let base = Duration::from_millis(50);
@@ -197,7 +196,7 @@ fn decorrelated_jitter_subsequent_attempts_bounded_by_prev_times_3() {
     assert!(second <= upper, "should be <= prev*3");
 }
 
-/// R-JITTER-5: Clone of Jittered (full/equal) produces decorrelated copy.
+/// 3.3.4
 #[test]
 fn full_jitter_clone_produces_decorrelated_sequence() {
     let original = wait::fixed(BASE_WAIT).full_jitter();
@@ -226,8 +225,7 @@ fn equal_jitter_clone_produces_decorrelated_sequence() {
     );
 }
 
-/// R-JITTER-6: Clone of WaitDecorrelatedJitter snapshots current last_sleep
-/// and starts fresh PRNG — two clones diverge.
+/// 3.3.6
 #[test]
 fn decorrelated_jitter_clone_diverges() {
     let base = Duration::from_millis(100);
@@ -248,7 +246,7 @@ fn decorrelated_jitter_clone_diverges() {
     );
 }
 
-/// R-JITTER-7 for decorrelated jitter: with_seed produces identical sequence.
+/// 3.3.7
 #[test]
 fn decorrelated_jitter_with_seed_is_reproducible() {
     let base = Duration::from_millis(50);
@@ -271,7 +269,7 @@ fn decorrelated_jitter_with_seed_is_reproducible() {
     }
 }
 
-/// R-JITTER-9: WaitDecorrelatedJitter.cap(max) — output never exceeds max.
+/// 3.3.5
 #[test]
 fn decorrelated_jitter_with_cap_respects_max() {
     let base = Duration::from_millis(100);

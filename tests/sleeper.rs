@@ -82,11 +82,7 @@ fn sleeper_blanket_impl_different_future_type() {
     assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Ready(())));
 }
 
-/// R-SLEEP-1: A bare `fn(Duration) -> Fut` satisfies the `Sleeper` blanket impl.
-///
-/// The blanket impl covers `Fn(Duration) -> Fut`, which includes both closures
-/// and named function items. This test passes a bare function item (not a closure)
-/// to verify the blanket applies.
+/// 3.5.1
 #[test]
 fn sleeper_blanket_impl_for_bare_fn_item() {
     fn immediate_sleep(_dur: Duration) -> Immediate {

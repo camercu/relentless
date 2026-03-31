@@ -505,8 +505,7 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
     );
 }
 
-/// R-WAIT-10: Zero-duration sleep is skipped — the sleep function is never called
-/// when the wait strategy returns Duration::ZERO.
+/// 3.2.8
 #[test]
 fn zero_duration_sleep_is_skipped() {
     use std::cell::Cell;
@@ -531,8 +530,7 @@ fn zero_duration_sleep_is_skipped() {
     );
 }
 
-/// R-WAIT-11: WaitExponential implements PartialEq but NOT Eq.
-/// All other basic wait types implement both PartialEq and Eq.
+/// §14
 #[test]
 fn wait_exponential_is_partial_eq_not_eq() {
     // PartialEq is satisfied (compile-time check + runtime assertion).
@@ -550,7 +548,7 @@ fn wait_exponential_is_partial_eq_not_eq() {
     //   assert_eq_impl(&wait::exponential(BASE)); // compile error: WaitExponential: !Eq
 }
 
-/// R-WAIT-11 continued: Chain and Capped also implement Clone, Debug, PartialEq.
+/// §14
 #[test]
 fn wait_all_basic_types_implement_partial_eq() {
     let fixed1 = wait::fixed(BASE);

@@ -793,7 +793,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// R-EXEC-6: Free function `retry()` uses defaults: attempts(3), exponential(100ms), any_error().
+/// 6.1.1
 #[test]
 fn free_function_retry_uses_default_policy() {
     use tenacious::retry;
@@ -811,7 +811,7 @@ fn free_function_retry_uses_default_policy() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// R-EXEC-7: Free function `retry(op)` provides `RetryState` to the operation.
+/// 6.1.2
 #[test]
 fn free_function_retry_provides_retry_state_to_op() {
     use tenacious::{RetryState, retry};
@@ -829,7 +829,7 @@ fn free_function_retry_provides_retry_state_to_op() {
     assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
 }
 
-/// R-EXEC-8: RetryExt::retry(self) does NOT provide RetryState to the closure.
+/// 6.2.2
 #[test]
 fn retry_ext_closure_takes_no_retry_state() {
     use std::rc::Rc;
@@ -856,15 +856,14 @@ fn retry_ext_closure_takes_no_retry_state() {
     assert_eq!(call_count.get(), 3);
 }
 
-/// R-COMPAT-1: #![forbid(unsafe_code)] is set in lib.rs (compile-time only).
-/// R-COMPAT-2: Duration used is always core::time::Duration.
+/// 16.2, 16.3
 #[test]
 fn compat_duration_is_core_time_duration() {
     let _: tenacious::RetryState =
         tenacious::RetryState::new(1, Some(core::time::Duration::from_millis(5)));
 }
 
-/// R-EXEC-1: retry borrows &self (policy remains usable after retry call).
+/// §6
 #[test]
 fn policy_retry_borrows_self_immutably() {
     let policy = RetryPolicy::new()
@@ -883,7 +882,7 @@ fn policy_retry_borrows_self_immutably() {
     assert_eq!(r2, Ok(2));
 }
 
-/// R-EXEC-5: Multiple concurrent retry loops can share same &RetryPolicy without cloning.
+/// §6
 #[test]
 fn shared_policy_reference_across_multiple_threads() {
     use std::sync::Arc;
@@ -905,7 +904,7 @@ fn shared_policy_reference_across_multiple_threads() {
     assert_eq!(t2.join().unwrap(), Ok(2));
 }
 
-/// R-EXEC-9: .call() returns RetryResult<T, E>.
+/// 6.4.2
 #[test]
 fn call_returns_retry_result_type() {
     let result: tenacious::RetryResult<i32, &str> = RetryPolicy::new()
@@ -916,7 +915,7 @@ fn call_returns_retry_result_type() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// R-EXEC-14: Predicate evaluated before stop.
+/// 7.2.4
 #[test]
 fn predicate_accepted_before_stop_fires() {
     let policy = RetryPolicy::new()
@@ -931,7 +930,7 @@ fn predicate_accepted_before_stop_fires() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
-/// R-EXEC-15: after_attempt fires after every attempt including the final.
+/// 7.2.1
 #[test]
 fn after_attempt_fires_including_final_attempt() {
     let attempt_nums: RefCell<Vec<u32>> = RefCell::new(Vec::new());
@@ -948,7 +947,7 @@ fn after_attempt_fires_including_final_attempt() {
     assert_eq!(*attempt_nums.borrow(), vec![1, 2, 3]);
 }
 
-/// R-EXEC-16: after_attempt.next_delay is None on final attempt, Some(delay) otherwise.
+/// 7.2.2, 7.2.3
 #[test]
 fn after_attempt_next_delay_some_then_none() {
     let next_delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
@@ -970,7 +969,7 @@ fn after_attempt_next_delay_some_then_none() {
     assert_eq!(delays[2], None);
 }
 
-/// R-EXEC-18: on_exit fires exactly once per non-panicking terminal path.
+/// 8.3
 #[test]
 fn on_exit_fires_exactly_once_per_execution() {
     let exit_count = Cell::new(0_u32);
@@ -987,7 +986,7 @@ fn on_exit_fires_exactly_once_per_execution() {
     assert_eq!(exit_count.get(), 1);
 }
 
-/// R-EXEC-19: Sleep occurs AFTER after_attempt hook fires.
+/// §6.4
 #[test]
 fn sleep_occurs_after_after_attempt_hook_fires() {
     let events: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
@@ -1012,7 +1011,7 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
     );
 }
 
-/// R-TIMEOUT-4: Timeout stop reason is Exhausted.
+/// 11.4.4
 #[test]
 fn timeout_stop_reason_is_exhausted() {
     ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
@@ -1057,7 +1056,7 @@ fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// R-POLICY-6: .when() and .until() both set the same predicate slot; last call wins.
+/// 5.4
 #[test]
 fn when_and_until_last_call_wins() {
     // Set .when(any_error()) then override with .until(ok(always_true)).
@@ -1083,7 +1082,7 @@ fn when_and_until_last_call_wins() {
     assert_eq!(call_count.get(), 3);
 }
 
-/// R-POLICY-1/R-POLICY-2: new() and default() both give attempts(3), exponential(100ms), any_error().
+/// 5.1, 5.2
 #[test]
 fn new_and_default_produce_same_policy() {
     // Both should retry 3 times on persistent errors.
@@ -1111,7 +1110,7 @@ fn new_and_default_produce_same_policy() {
     assert_eq!(call_count_def.get(), 3);
 }
 
-/// R-POLICY-3: .stop(), .wait(), .when(), .until() return new policy with changed type param.
+/// 5.3
 #[test]
 fn builder_methods_return_typed_policy() {
     let _p = RetryPolicy::new()
@@ -1123,8 +1122,7 @@ fn builder_methods_return_typed_policy() {
     // chained call would fail to compile. The fact that it compiles is the test.
 }
 
-/// R-SLEEP-2: With std, sync retry uses std::thread::sleep when no explicit sleep set.
-/// This test verifies that omitting .sleep() is valid in std builds.
+/// 3.5.2
 #[test]
 #[cfg(feature = "std")]
 fn std_sync_retry_uses_thread_sleep_by_default() {
@@ -1136,9 +1134,7 @@ fn std_sync_retry_uses_thread_sleep_by_default() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
-/// R-TIMEOUT-1: .timeout(dur) stops when elapsed >= dur.
-/// R-TIMEOUT-2: .timeout(dur) clamps delay to max(0, timeout - elapsed).
-/// R-TIMEOUT-3: Zero clamped delay causes sleep to be skipped.
+/// 11.4.1, 11.4.2, 11.4.3
 #[test]
 fn timeout_clamps_delay_to_remaining_budget() {
     use std::sync::Arc;
@@ -1168,7 +1164,7 @@ fn timeout_clamps_delay_to_remaining_budget() {
     assert_eq!(sleep_calls.get(), 0);
 }
 
-/// R-TIMEOUT-5: With std, .timeout() auto-uses Instant clock.
+/// 11.1.2
 #[test]
 #[cfg(feature = "std")]
 fn timeout_with_std_uses_instant_clock() {

@@ -514,7 +514,7 @@ fn sync_stats_work_alongside_hooks() {
     assert_eq!(hook_calls.get(), MAX_ATTEMPTS);
 }
 
-/// R-STATS-1: RetryStats.attempts >= 1 always.
+/// 4.3.1
 #[test]
 fn stats_attempts_always_at_least_one() {
     // Single-attempt success.
@@ -528,9 +528,7 @@ fn stats_attempts_always_at_least_one() {
     assert_eq!(stats.attempts, 1);
 }
 
-/// R-STATS-3: total_wait = sum of delays that reached the sleep phase.
-/// Excludes delays for attempts where stop fired (final attempt sleeps nothing).
-/// Includes zero-duration delays.
+/// 4.3.3
 #[test]
 fn stats_total_wait_excludes_final_attempt_delay() {
     // With 3 attempts and fixed wait, only 2 sleeps occur (not 3).
@@ -553,7 +551,7 @@ fn stats_total_wait_excludes_final_attempt_delay() {
     assert_eq!(stats.attempts, num_attempts);
 }
 
-/// R-STATS-3 continued: total_wait includes zero-duration delays.
+/// 4.3.3
 #[test]
 fn stats_total_wait_includes_zero_duration_delays() {
     let num_attempts: u32 = 3;
@@ -573,7 +571,7 @@ fn stats_total_wait_includes_zero_duration_delays() {
     assert_eq!(stats.attempts, num_attempts);
 }
 
-/// R-STOPR-1: StopReason::Accepted used when predicate accepted (both Ok and Err).
+/// 4.2.1
 #[test]
 fn stop_reason_accepted_for_predicate_accepted_outcomes() {
     // Accepted Ok
@@ -597,7 +595,7 @@ fn stop_reason_accepted_for_predicate_accepted_outcomes() {
     assert_eq!(stats2.stop_reason, StopReason::Accepted);
 }
 
-/// R-STOPR-2: StopReason::Exhausted used when stop strategy fired.
+/// 4.2.2
 #[test]
 fn stop_reason_exhausted_when_stop_strategy_fires() {
     let policy = RetryPolicy::new()
@@ -611,14 +609,14 @@ fn stop_reason_exhausted_when_stop_strategy_fires() {
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
-/// R-STOPR-3: StopReason Display: "accepted" and "retries exhausted" (lowercase).
+/// 4.2.3
 #[test]
 fn stop_reason_display_format() {
     assert_eq!(format!("{}", StopReason::Accepted), "accepted");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 
-/// R-STATS-5 (trait): RetryStats implements Clone and Copy.
+/// §14
 #[test]
 fn retry_stats_implements_copy() {
     let stats = RetryStats {
