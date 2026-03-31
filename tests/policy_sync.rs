@@ -395,6 +395,7 @@ fn policy_is_clone() {
 #[cfg(feature = "alloc")]
 #[test]
 fn boxed_local_erases_policy_types() {
+    #[allow(clippy::type_complexity)]
     let policy: RetryPolicy<
         Box<dyn tenacious::stop::Stop + 'static>,
         Box<dyn tenacious::wait::Wait + 'static>,
@@ -1137,8 +1138,6 @@ fn std_sync_retry_uses_thread_sleep_by_default() {
 /// 11.4.1, 11.4.2, 11.4.3
 #[test]
 fn timeout_clamps_delay_to_remaining_budget() {
-    use std::sync::Arc;
-
     ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
 
     let sleep_calls = Cell::new(0_u32);

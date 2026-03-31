@@ -8,7 +8,6 @@ use core::time::Duration;
 use std::cell::RefCell;
 use tenacious::RetryPolicy;
 use tenacious::Wait;
-use tenacious::wait::WaitDecorrelatedJitter;
 use tenacious::{stop, wait};
 
 const BASE_WAIT: Duration = Duration::from_millis(20);

@@ -112,8 +112,8 @@ fn retry_stats_is_clone_and_copy() {
         stop_reason: StopReason::Exhausted,
     };
 
-    let cloned = stats.clone();
-    let copied = stats; // Copy — no move
+    let cloned = stats; // Copy — assignment is a copy
+    let copied = stats; // Copy — can copy again
     assert_eq!(stats.attempts, cloned.attempts);
     assert_eq!(stats.attempts, copied.attempts);
 }
@@ -125,8 +125,8 @@ fn retry_state_is_clone_copy_partial_eq() {
     use tenacious::RetryState;
 
     let s = RetryState::new(3, Some(Duration::from_secs(1)));
-    let cloned = s.clone();
-    let copied = s; // Copy
+    let cloned = s; // Copy
+    let copied = s; // Copy again — would fail if s were moved
     assert_eq!(s, cloned);
     assert_eq!(s, copied);
     assert_ne!(s, RetryState::new(4, None));
@@ -155,18 +155,11 @@ fn retry_policy_is_clone_when_components_are_clone() {
 fn all_predicate_types_implement_clone() {
     use tenacious::predicate;
 
-    // PredicateAnyError is Clone
-    let a = predicate::any_error().clone();
-    // PredicateError wrapping a Clone closure is Clone
+    let _ = predicate::any_error().clone();
     let _ = predicate::error(|_e: &&str| true).clone();
-    // PredicateOk wrapping a Clone closure is Clone
     let _ = predicate::ok(|_v: &u32| true).clone();
-    // PredicateResult wrapping a Clone closure is Clone
     let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
-    // PredicateUntil is Clone
     let _ = predicate::until(predicate::any_error()).clone();
-    // PredicateAny and PredicateAll are Clone
     let _ = (predicate::any_error() | predicate::any_error()).clone();
     let _ = (predicate::any_error() & predicate::any_error()).clone();
-    drop(a);
 }

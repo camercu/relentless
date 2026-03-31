@@ -347,9 +347,8 @@ fn no_short_circuit_in_stop_all() {
     assert!(!composite.should_stop(&state)); // left=false; right count -> 3 (threshold reached, but left never fires)
     // Right has hit threshold but left (never()) never fires, so StopAll never fires either.
     // Crucially, right was evaluated all 3 times despite left always returning false.
-    assert_eq!(
-        composite.should_stop(&state),
-        false,
+    assert!(
+        !composite.should_stop(&state),
         "StopAll fires only when both fire; left=never keeps it from firing"
     );
 }

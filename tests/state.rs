@@ -107,36 +107,8 @@ fn retry_state_attempts_are_one_indexed_in_execution() {
 #[test]
 fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
     use std::cell::RefCell;
-    use tenacious::{RetryPolicy, Stop, Wait, stop};
+    use tenacious::{RetryPolicy, stop};
 
-    // Custom stop that records every attempt it sees.
-    struct RecordingStop {
-        inner: tenacious::stop::StopAfterAttempts,
-        seen: RefCell<Vec<u32>>,
-    }
-
-    impl Stop for RecordingStop {
-        fn should_stop(&self, state: &tenacious::RetryState) -> bool {
-            self.seen.borrow_mut().push(state.attempt);
-            self.inner.should_stop(state)
-        }
-    }
-
-    // Custom wait that records every attempt it sees.
-    struct RecordingWait {
-        seen: RefCell<Vec<u32>>,
-    }
-
-    impl Wait for RecordingWait {
-        fn next_wait(&self, state: &tenacious::RetryState) -> Duration {
-            self.seen.borrow_mut().push(state.attempt);
-            Duration::ZERO
-        }
-    }
-
-    // We can't pass custom Stop/Wait to RetryPolicy easily here since its type
-    // params are fixed. Instead, verify the contract via the before_attempt hook
-    // and the op receiving the same attempt as the overall execution counter.
     let before_attempts: RefCell<Vec<u32>> = RefCell::new(Vec::new());
     let op_attempts: RefCell<Vec<u32>> = RefCell::new(Vec::new());
 
