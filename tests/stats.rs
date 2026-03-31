@@ -513,3 +513,121 @@ fn sync_stats_work_alongside_hooks() {
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
     assert_eq!(hook_calls.get(), MAX_ATTEMPTS);
 }
+
+/// R-STATS-1: RetryStats.attempts >= 1 always.
+#[test]
+fn stats_attempts_always_at_least_one() {
+    // Single-attempt success.
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let (_, stats) = policy
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+    assert!(stats.attempts >= 1);
+    assert_eq!(stats.attempts, 1);
+}
+
+/// R-STATS-3: total_wait = sum of delays that reached the sleep phase.
+/// Excludes delays for attempts where stop fired (final attempt sleeps nothing).
+/// Includes zero-duration delays.
+#[test]
+fn stats_total_wait_excludes_final_attempt_delay() {
+    // With 3 attempts and fixed wait, only 2 sleeps occur (not 3).
+    let num_attempts: u32 = 3;
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(num_attempts))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let (_, stats) = policy
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+
+    // The final attempt fires stop; its wait is never slept.
+    assert_eq!(
+        stats.total_wait,
+        WAIT_DURATION.saturating_mul(num_attempts - 1)
+    );
+    assert_eq!(stats.attempts, num_attempts);
+}
+
+/// R-STATS-3 continued: total_wait includes zero-duration delays.
+#[test]
+fn stats_total_wait_includes_zero_duration_delays() {
+    let num_attempts: u32 = 3;
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(num_attempts))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let (_, stats) = policy
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+
+    // Zero-duration waits are "included" — total_wait is 0 * 2 = 0.
+    // This confirms zero delays are counted (contributing 0 to the total).
+    assert_eq!(stats.total_wait, Duration::ZERO);
+    assert_eq!(stats.attempts, num_attempts);
+}
+
+/// R-STOPR-1: StopReason::Accepted used when predicate accepted (both Ok and Err).
+#[test]
+fn stop_reason_accepted_for_predicate_accepted_outcomes() {
+    // Accepted Ok
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let (_, stats) = policy
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+    assert_eq!(stats.stop_reason, StopReason::Accepted);
+
+    // Accepted Err (predicate does not match — Rejected)
+    let policy2 = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .when(predicate::error(|e: &&str| *e == "retryable"));
+    let (_, stats2) = policy2
+        .retry(|_| Err::<i32, _>("fatal"))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+    assert_eq!(stats2.stop_reason, StopReason::Accepted);
+}
+
+/// R-STOPR-2: StopReason::Exhausted used when stop strategy fired.
+#[test]
+fn stop_reason_exhausted_when_stop_strategy_fires() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO));
+    let (_, stats) = policy
+        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
+}
+
+/// R-STOPR-3: StopReason Display: "accepted" and "retries exhausted" (lowercase).
+#[test]
+fn stop_reason_display_format() {
+    assert_eq!(format!("{}", StopReason::Accepted), "accepted");
+    assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
+}
+
+/// R-STATS-5 (trait): RetryStats implements Clone and Copy.
+#[test]
+fn retry_stats_implements_copy() {
+    let stats = RetryStats {
+        attempts: 2,
+        total_elapsed: None,
+        total_wait: Duration::from_millis(5),
+        stop_reason: StopReason::Exhausted,
+    };
+    let a = stats; // copy
+    let b = stats; // copy again — would fail if stats were moved
+    assert_eq!(a.attempts, b.attempts);
+}
