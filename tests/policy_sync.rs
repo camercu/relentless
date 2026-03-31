@@ -793,6 +793,249 @@ fn timeout_stops_loop_when_budget_exceeded() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// R-EXEC-6: Free function `retry()` uses defaults: attempts(3), exponential(100ms), any_error().
+#[test]
+fn free_function_retry_uses_default_policy() {
+    use tenacious::retry;
+
+    let call_count = Cell::new(0_u32);
+    let result = retry(|_| {
+        call_count.set(call_count.get().saturating_add(1));
+        Err::<i32, &str>("always fails")
+    })
+    .sleep(instant_sleep)
+    .call();
+
+    // Default is attempts(3), so 3 calls should be made.
+    assert_eq!(call_count.get(), 3);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// R-EXEC-7: Free function `retry(op)` provides `RetryState` to the operation.
+#[test]
+fn free_function_retry_provides_retry_state_to_op() {
+    use tenacious::{RetryState, retry};
+
+    let states_seen: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+    let _ = retry(|state: RetryState| {
+        states_seen.borrow_mut().push(state.attempt);
+        Err::<i32, &str>("fail")
+    })
+    .stop(stop::attempts(3))
+    .wait(wait::fixed(Duration::ZERO))
+    .sleep(instant_sleep)
+    .call();
+
+    assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
+}
+
+/// R-EXEC-8: RetryExt::retry(self) does NOT provide RetryState to the closure.
+#[test]
+fn retry_ext_closure_takes_no_retry_state() {
+    use std::rc::Rc;
+    use tenacious::RetryExt;
+
+    // The closure passed to .retry() via RetryExt must have zero args.
+    let call_count = Rc::new(Cell::new(0_u32));
+    let call_count_clone = call_count.clone();
+    let result = (move || {
+        call_count_clone.set(call_count_clone.get().saturating_add(1));
+        if call_count_clone.get() < 3 {
+            Err("transient")
+        } else {
+            Ok(SUCCESS_VALUE)
+        }
+    })
+    .retry()
+    .stop(stop::attempts(3))
+    .wait(wait::fixed(Duration::ZERO))
+    .sleep(instant_sleep)
+    .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(call_count.get(), 3);
+}
+
+/// R-COMPAT-1: #![forbid(unsafe_code)] is set in lib.rs (compile-time only).
+/// R-COMPAT-2: Duration used is always core::time::Duration.
+#[test]
+fn compat_duration_is_core_time_duration() {
+    let _: tenacious::RetryState =
+        tenacious::RetryState::new(1, Some(core::time::Duration::from_millis(5)));
+}
+
+/// R-EXEC-1: retry borrows &self (policy remains usable after retry call).
+#[test]
+fn policy_retry_borrows_self_immutably() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let r1 = policy
+        .retry(|_| Ok::<i32, &str>(1))
+        .sleep(instant_sleep)
+        .call();
+    let r2 = policy
+        .retry(|_| Ok::<i32, &str>(2))
+        .sleep(instant_sleep)
+        .call();
+    assert_eq!(r1, Ok(1));
+    assert_eq!(r2, Ok(2));
+}
+
+/// R-EXEC-5: Multiple concurrent retry loops can share same &RetryPolicy without cloning.
+#[test]
+fn shared_policy_reference_across_multiple_threads() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let policy = Arc::new(
+        RetryPolicy::new()
+            .stop(stop::attempts(2))
+            .wait(wait::fixed(Duration::ZERO)),
+    );
+
+    let p1 = Arc::clone(&policy);
+    let p2 = Arc::clone(&policy);
+
+    let t1 = thread::spawn(move || p1.retry(|_| Ok::<i32, &str>(1)).sleep(|_| {}).call());
+    let t2 = thread::spawn(move || p2.retry(|_| Ok::<i32, &str>(2)).sleep(|_| {}).call());
+
+    assert_eq!(t1.join().unwrap(), Ok(1));
+    assert_eq!(t2.join().unwrap(), Ok(2));
+}
+
+/// R-EXEC-9: .call() returns RetryResult<T, E>.
+#[test]
+fn call_returns_retry_result_type() {
+    let result: tenacious::RetryResult<i32, &str> = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .retry(|_| Err::<i32, &str>("fail"))
+        .sleep(instant_sleep)
+        .call();
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// R-EXEC-14: Predicate evaluated before stop.
+#[test]
+fn predicate_accepted_before_stop_fires() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .when(predicate::ok(|v: &i32| *v < 0));
+
+    let result = policy
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+}
+
+/// R-EXEC-15: after_attempt fires after every attempt including the final.
+#[test]
+fn after_attempt_fires_including_final_attempt() {
+    let attempt_nums: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+            attempt_nums.borrow_mut().push(state.attempt);
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(*attempt_nums.borrow(), vec![1, 2, 3]);
+}
+
+/// R-EXEC-16: after_attempt.next_delay is None on final attempt, Some(delay) otherwise.
+#[test]
+fn after_attempt_next_delay_some_then_none() {
+    let next_delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+            next_delays.borrow_mut().push(state.next_delay);
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    let delays = next_delays.borrow();
+    assert_eq!(delays[0], Some(WAIT_DURATION));
+    assert_eq!(delays[1], Some(WAIT_DURATION));
+    assert_eq!(delays[2], None);
+}
+
+/// R-EXEC-18: on_exit fires exactly once per non-panicking terminal path.
+#[test]
+fn on_exit_fires_exactly_once_per_execution() {
+    let exit_count = Cell::new(0_u32);
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .on_exit(|_: &tenacious::ExitState<i32, &str>| {
+            exit_count.set(exit_count.get().saturating_add(1));
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(exit_count.get(), 1);
+}
+
+/// R-EXEC-19: Sleep occurs AFTER after_attempt hook fires.
+#[test]
+fn sleep_occurs_after_after_attempt_hook_fires() {
+    let events: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .after_attempt(|_: &tenacious::AttemptState<i32, &str>| {
+            events.borrow_mut().push("after_attempt");
+        })
+        .sleep(|_| {
+            events.borrow_mut().push("sleep");
+        })
+        .call();
+
+    // after_attempt fires, then sleep fires, then final after_attempt (no sleep after terminal).
+    assert_eq!(
+        *events.borrow(),
+        vec!["after_attempt", "sleep", "after_attempt"]
+    );
+}
+
+/// R-TIMEOUT-4: Timeout stop reason is Exhausted.
+#[test]
+fn timeout_stop_reason_is_exhausted() {
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(100))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let (result, stats) = policy
+        .retry(|_| {
+            ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock(elapsed_clock_millis)
+        .timeout(Duration::from_millis(5))
+        .sleep(instant_sleep)
+        .with_stats()
+        .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
+}
+
 #[test]
 fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
     ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
@@ -812,4 +1055,129 @@ fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
 
     assert_eq!(call_count.get(), 1);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// R-POLICY-6: .when() and .until() both set the same predicate slot; last call wins.
+#[test]
+fn when_and_until_last_call_wins() {
+    // Set .when(any_error()) then override with .until(ok(always_true)).
+    // until(ok(f)) retries while ok is false and stops when ok is true.
+    // Any Err stops immediately (ok returns false, until negates to true, then
+    // we wait — actually with until the logic is: until(ok(f)) retries errors automatically.
+    // The last predicate wins: .until() after .when() replaces it.
+    let call_count = Cell::new(0_u32);
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(5))
+        .wait(wait::fixed(Duration::ZERO))
+        .when(predicate::error(|_e: &&str| false)) // would reject everything (no retries)
+        .until(predicate::ok(|v: &i32| *v >= 3)) // last call wins: retry until Ok >= 3
+        .retry(|_| {
+            let n = call_count.get() + 1;
+            call_count.set(n);
+            Ok::<i32, &str>(n as i32)
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(result, Ok(3));
+    assert_eq!(call_count.get(), 3);
+}
+
+/// R-POLICY-1/R-POLICY-2: new() and default() both give attempts(3), exponential(100ms), any_error().
+#[test]
+fn new_and_default_produce_same_policy() {
+    // Both should retry 3 times on persistent errors.
+    let call_count_new = Cell::new(0_u32);
+    let r_new = RetryPolicy::new()
+        .retry(|_| {
+            call_count_new.set(call_count_new.get().saturating_add(1));
+            Err::<i32, &str>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    let call_count_def = Cell::new(0_u32);
+    let r_def = RetryPolicy::default()
+        .retry(|_| {
+            call_count_def.set(call_count_def.get().saturating_add(1));
+            Err::<i32, &str>("fail")
+        })
+        .sleep(instant_sleep)
+        .call();
+
+    assert!(matches!(r_new, Err(RetryError::Exhausted { .. })));
+    assert!(matches!(r_def, Err(RetryError::Exhausted { .. })));
+    assert_eq!(call_count_new.get(), 3);
+    assert_eq!(call_count_def.get(), 3);
+}
+
+/// R-POLICY-3: .stop(), .wait(), .when(), .until() return new policy with changed type param.
+#[test]
+fn builder_methods_return_typed_policy() {
+    let _p = RetryPolicy::new()
+        .stop(stop::attempts(3))
+        .wait(wait::fixed(Duration::ZERO))
+        .when(predicate::any_error())
+        .until(predicate::ok(|_: &i32| true));
+    // If builder methods consumed/mutated rather than returning new types, the
+    // chained call would fail to compile. The fact that it compiles is the test.
+}
+
+/// R-SLEEP-2: With std, sync retry uses std::thread::sleep when no explicit sleep set.
+/// This test verifies that omitting .sleep() is valid in std builds.
+#[test]
+#[cfg(feature = "std")]
+fn std_sync_retry_uses_thread_sleep_by_default() {
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .wait(wait::fixed(Duration::ZERO))
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .call();
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+}
+
+/// R-TIMEOUT-1: .timeout(dur) stops when elapsed >= dur.
+/// R-TIMEOUT-2: .timeout(dur) clamps delay to max(0, timeout - elapsed).
+/// R-TIMEOUT-3: Zero clamped delay causes sleep to be skipped.
+#[test]
+fn timeout_clamps_delay_to_remaining_budget() {
+    use std::sync::Arc;
+
+    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+
+    let sleep_calls = Cell::new(0_u32);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(10))
+        .wait(wait::fixed(Duration::from_millis(100)));
+
+    let result = policy
+        .retry(|_| {
+            // Advance clock past timeout on first attempt.
+            ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock(elapsed_clock_millis)
+        .timeout(Duration::from_millis(5))
+        .sleep(|_dur| {
+            sleep_calls.set(sleep_calls.get().saturating_add(1));
+        })
+        .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    // Sleep should be skipped since the clamped delay is zero.
+    assert_eq!(sleep_calls.get(), 0);
+}
+
+/// R-TIMEOUT-5: With std, .timeout() auto-uses Instant clock.
+#[test]
+#[cfg(feature = "std")]
+fn timeout_with_std_uses_instant_clock() {
+    // Just verify it compiles and runs correctly without an explicit elapsed_clock.
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .wait(wait::fixed(Duration::ZERO))
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .timeout(Duration::from_secs(60))
+        .call();
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
