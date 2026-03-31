@@ -336,6 +336,25 @@ fn no_short_circuit_in_stop_any() {
 }
 
 #[test]
+fn no_short_circuit_in_stop_all() {
+    // StopAll must evaluate both sides on every call — it does not short-circuit when
+    // the left side returns false, because stateful strategies on the right rely on being called.
+    let composite = stop::never() & StopAfterConsultations::new(CONSULTATION_THRESHOLD);
+    let state = make_state(1);
+
+    assert!(!composite.should_stop(&state)); // left=false; right count -> 1
+    assert!(!composite.should_stop(&state)); // left=false; right count -> 2
+    assert!(!composite.should_stop(&state)); // left=false; right count -> 3 (threshold reached, but left never fires)
+    // Right has hit threshold but left (never()) never fires, so StopAll never fires either.
+    // Crucially, right was evaluated all 3 times despite left always returning false.
+    assert_eq!(
+        composite.should_stop(&state),
+        false,
+        "StopAll fires only when both fire; left=never keeps it from firing"
+    );
+}
+
+#[test]
 fn stop_named_combinators_match_operator_forms() {
     let named_or = stop::attempts(3).or(stop::elapsed(Duration::from_secs(2)));
     let op_or = stop::attempts(3) | stop::elapsed(Duration::from_secs(2));

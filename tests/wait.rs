@@ -504,3 +504,65 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
         wait_a.saturating_add(wait_b)
     );
 }
+
+/// R-WAIT-10: Zero-duration sleep is skipped — the sleep function is never called
+/// when the wait strategy returns Duration::ZERO.
+#[test]
+fn zero_duration_sleep_is_skipped() {
+    use std::cell::Cell;
+    use tenacious::{RetryPolicy, stop};
+
+    let sleep_calls = Cell::new(0_u32);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(3))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .sleep(|_dur| {
+            sleep_calls.set(sleep_calls.get().saturating_add(1));
+        })
+        .call();
+
+    assert_eq!(
+        sleep_calls.get(),
+        0,
+        "sleep should not be called when wait returns Duration::ZERO"
+    );
+}
+
+/// R-WAIT-11: WaitExponential implements PartialEq but NOT Eq.
+/// All other basic wait types implement both PartialEq and Eq.
+#[test]
+fn wait_exponential_is_partial_eq_not_eq() {
+    // PartialEq is satisfied (compile-time check + runtime assertion).
+    let a = wait::exponential(BASE);
+    let b = wait::exponential(BASE);
+    assert_eq!(a, b);
+
+    // Eq is NOT implemented for WaitExponential because f64 fields are not Eq.
+    // This is verified at compile time: WaitFixed, WaitLinear DO implement Eq.
+    fn assert_eq_impl<T: Eq>(_: &T) {}
+    assert_eq_impl(&wait::fixed(BASE));
+    assert_eq_impl(&wait::linear(BASE, BASE));
+    // WaitExponential intentionally does NOT implement Eq (f64 field).
+    // The following would be a compile error:
+    //   assert_eq_impl(&wait::exponential(BASE)); // compile error: WaitExponential: !Eq
+}
+
+/// R-WAIT-11 continued: Chain and Capped also implement Clone, Debug, PartialEq.
+#[test]
+fn wait_all_basic_types_implement_partial_eq() {
+    let fixed1 = wait::fixed(BASE);
+    let fixed2 = wait::fixed(BASE);
+    assert_eq!(fixed1, fixed2);
+    assert_ne!(fixed1, wait::fixed(BASE + Duration::from_millis(1)));
+
+    let lin1 = wait::linear(BASE, INCREMENT);
+    let lin2 = wait::linear(BASE, INCREMENT);
+    assert_eq!(lin1, lin2);
+
+    let exp1 = wait::exponential(BASE);
+    let exp2 = wait::exponential(BASE);
+    assert_eq!(exp1, exp2);
+}

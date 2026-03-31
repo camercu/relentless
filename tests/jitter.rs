@@ -8,6 +8,7 @@ use core::time::Duration;
 use std::cell::RefCell;
 use tenacious::RetryPolicy;
 use tenacious::Wait;
+use tenacious::wait::WaitDecorrelatedJitter;
 use tenacious::{stop, wait};
 
 const BASE_WAIT: Duration = Duration::from_millis(20);
@@ -130,4 +131,160 @@ fn clone_decorrelates_jitter_sequence() {
         orig_delays, clone_delays,
         "cloned jitter strategy should produce a different sequence"
     );
+}
+
+/// R-JITTER-2: Full jitter output is in range [0, base].
+#[test]
+fn full_jitter_stays_within_zero_to_base() {
+    let strategy = wait::fixed(BASE_WAIT).full_jitter();
+    for attempt in 1..=64 {
+        let delay = strategy.next_wait(&state(attempt));
+        assert!(delay >= Duration::ZERO, "full jitter should be >= 0");
+        assert!(delay <= BASE_WAIT, "full jitter should be <= base");
+    }
+}
+
+/// R-JITTER-3: Equal jitter output is in range [base/2, base].
+#[test]
+fn equal_jitter_stays_within_half_base_to_base() {
+    let strategy = wait::fixed(BASE_WAIT).equal_jitter();
+    let lower_bound = BASE_WAIT / 2;
+    for attempt in 1..=64 {
+        let delay = strategy.next_wait(&state(attempt));
+        assert!(
+            delay >= lower_bound,
+            "equal jitter should be >= base/2, got {:?}",
+            delay
+        );
+        assert!(
+            delay <= BASE_WAIT,
+            "equal jitter should be <= base, got {:?}",
+            delay
+        );
+    }
+}
+
+/// R-JITTER-4: Decorrelated jitter first-attempt output is in [base, base*3].
+/// Each iteration uses a fresh strategy so `last_sleep` starts as `base`.
+#[test]
+fn decorrelated_jitter_first_attempt_range() {
+    let base = Duration::from_millis(100);
+    let upper = base.saturating_mul(3);
+
+    for _ in 0..32 {
+        // Fresh strategy each time — last_sleep starts at base.
+        let strategy = wait::decorrelated_jitter(base);
+        let delay = strategy.next_wait(&state(1));
+        assert!(delay >= base, "decorrelated jitter should be >= base");
+        assert!(
+            delay <= upper,
+            "decorrelated jitter first attempt should be <= base*3, got {:?}",
+            delay
+        );
+    }
+}
+
+/// R-JITTER-4 continued: Subsequent decorrelated jitter in [base, prev*3].
+#[test]
+fn decorrelated_jitter_subsequent_attempts_bounded_by_prev_times_3() {
+    let base = Duration::from_millis(50);
+    let strategy = wait::decorrelated_jitter(base);
+
+    let first = strategy.next_wait(&state(1));
+    let second = strategy.next_wait(&state(2));
+    let upper = first.saturating_mul(3);
+    assert!(second >= base, "should be >= base");
+    assert!(second <= upper, "should be <= prev*3");
+}
+
+/// R-JITTER-5: Clone of Jittered (full/equal) produces decorrelated copy.
+#[test]
+fn full_jitter_clone_produces_decorrelated_sequence() {
+    let original = wait::fixed(BASE_WAIT).full_jitter();
+    let cloned = original.clone();
+
+    let orig_delays: Vec<Duration> = (1..=16).map(|a| original.next_wait(&state(a))).collect();
+    let clone_delays: Vec<Duration> = (1..=16).map(|a| cloned.next_wait(&state(a))).collect();
+
+    assert_ne!(
+        orig_delays, clone_delays,
+        "cloned full jitter strategy should produce a different sequence"
+    );
+}
+
+#[test]
+fn equal_jitter_clone_produces_decorrelated_sequence() {
+    let original = wait::fixed(BASE_WAIT).equal_jitter();
+    let cloned = original.clone();
+
+    let orig_delays: Vec<Duration> = (1..=16).map(|a| original.next_wait(&state(a))).collect();
+    let clone_delays: Vec<Duration> = (1..=16).map(|a| cloned.next_wait(&state(a))).collect();
+
+    assert_ne!(
+        orig_delays, clone_delays,
+        "cloned equal jitter strategy should produce a different sequence"
+    );
+}
+
+/// R-JITTER-6: Clone of WaitDecorrelatedJitter snapshots current last_sleep
+/// and starts fresh PRNG — two clones diverge.
+#[test]
+fn decorrelated_jitter_clone_diverges() {
+    let base = Duration::from_millis(100);
+    let original = wait::decorrelated_jitter(base);
+
+    // Advance the original a bit so last_sleep has changed.
+    let _ = original.next_wait(&state(1));
+
+    let clone_a = original.clone();
+    let clone_b = original.clone();
+
+    let a_delays: Vec<Duration> = (1..=8).map(|i| clone_a.next_wait(&state(i))).collect();
+    let b_delays: Vec<Duration> = (1..=8).map(|i| clone_b.next_wait(&state(i))).collect();
+
+    assert_ne!(
+        a_delays, b_delays,
+        "two clones of WaitDecorrelatedJitter should diverge (different PRNG streams)"
+    );
+}
+
+/// R-JITTER-7 for decorrelated jitter: with_seed produces identical sequence.
+#[test]
+fn decorrelated_jitter_with_seed_is_reproducible() {
+    let base = Duration::from_millis(50);
+    let seed = 0xDEADBEEF_u64;
+    let nonce = 42_u64;
+
+    let first = wait::decorrelated_jitter(base)
+        .with_seed(seed)
+        .with_nonce(nonce);
+    let second = wait::decorrelated_jitter(base)
+        .with_seed(seed)
+        .with_nonce(nonce);
+
+    for i in 1..=8_u32 {
+        assert_eq!(
+            first.next_wait(&state(i)),
+            second.next_wait(&state(i)),
+            "same seed+nonce should produce identical sequences"
+        );
+    }
+}
+
+/// R-JITTER-9: WaitDecorrelatedJitter.cap(max) — output never exceeds max.
+#[test]
+fn decorrelated_jitter_with_cap_respects_max() {
+    let base = Duration::from_millis(100);
+    let cap = Duration::from_millis(150);
+    let strategy = wait::decorrelated_jitter(base).cap(cap);
+
+    for attempt in 1..=32 {
+        let delay = strategy.next_wait(&state(attempt));
+        assert!(
+            delay <= cap,
+            "decorrelated jitter with cap should not exceed cap, got {:?} at attempt {}",
+            delay,
+            attempt
+        );
+    }
 }
