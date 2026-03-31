@@ -5,7 +5,7 @@ This document is the normative behavior and public-API contract for
 are part of the supported surface. It does not prescribe internal file layout,
 development workflow, or historical migration steps.
 
-## Overview
+## 1. Overview
 
 `tenacious` is a Rust library for retrying fallible operations and polling for
 conditions. It models retries with three composable parts:
@@ -23,7 +23,7 @@ using natural "done when true" logic. `.when()` provides the direct form:
 "retry when this predicate is true." Both set the same predicate slot;
 `.until(p)` wraps `p` in a `PredicateUntil` inverter. See Predicate for details.
 
-## Support matrix
+## 2. Support matrix
 
 The crate is `#![no_std]` unconditionally. Feature flags add capabilities on
 top of that base.
@@ -51,7 +51,7 @@ Runtime adapter helpers are feature-gated separately:
 closure-based elapsed clocks and registering more than one hook of the same
 kind on a single execution builder.
 
-## Core abstractions
+## 3. Core abstractions
 
 The public model centers on four traits plus a reusable policy type. All four
 core traits (`Stop`, `Wait`, `Predicate`, `Sleeper`) use `&self` receivers.
@@ -61,7 +61,7 @@ Strategies that need internal mutation use interior mutability (`Cell`,
 > The uniform `&self` model means strategies are trivially shareable,
 > cloneable, and object-safe without requiring wrapper types or `Arc`.
 
-### Stop
+### 3.1 Stop
 
 `Stop` decides whether the retry loop should terminate after a completed
 attempt. Composition methods are provided directly on the trait with
@@ -79,7 +79,9 @@ pub trait Stop {
 }
 ```
 
-The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit) so that stateful strategies receive every `should_stop` call.
+**3.1.1** `should_stop` uses `&self` and `&RetryState`; not generic over T or E.
+
+**3.1.2** The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit) so that stateful strategies receive every `should_stop` call.
 
 Built-in strategies:
 
@@ -90,13 +92,12 @@ Built-in strategies:
 Stop semantics:
 
 - `stop::attempts(n)` treats `n` as the maximum number of completed attempts
-- `attempts` fires when `state.attempt >= n`; `n = 1` means "run at most one
-  attempt"
-- `attempts(0)` panics unconditionally
-- `stop::elapsed(dur)` fires when `state.elapsed >= Some(dur)` and never fires
-  when `state.elapsed` is `None`
+- **3.1.3** `attempts` fires when `state.attempt >= n`; `n = 1` means "run at most one attempt"
+- **3.1.4** `attempts(0)` panics unconditionally
+- **3.1.5** `stop::elapsed(dur)` fires when `state.elapsed >= Some(dur)` and never fires when `state.elapsed` is `None`
+- **3.1.6** `stop::never()` always returns false
 
-### Wait
+### 3.2 Wait
 
 `Wait` returns the delay that should be applied before the next attempt.
 Composition and builder methods are provided directly on the trait with
@@ -135,33 +136,33 @@ Built-in strategies:
 
 Built-in wait semantics:
 
-- `fixed(dur)` always returns `dur`
-- `linear(initial, increment)` returns
+- **3.2.2** `fixed(dur)` always returns `dur`
+- **3.2.3** `linear(initial, increment)` returns
   `initial + (attempt - 1) * increment` with saturating arithmetic
-- `exponential(initial)` returns `initial * 2^(attempt - 1)` with saturating
+- **3.2.4** `exponential(initial)` returns `initial * 2^(attempt - 1)` with saturating
   arithmetic; `.base(f: f64)` changes the exponential multiplier from the
   default `2.0` — values below `1.0` (including non-finite values) are clamped
   to `1.0`; a base of `1.0` produces a constant delay equal to `initial` on
   every attempt
-- `.chain(other, after)` uses the first strategy when `attempt <= after`, then
+- **3.2.5** `.chain(other, after)` uses the first strategy when `attempt <= after`, then
   uses `other` when `attempt > after`; when `after` is `0`, the first strategy
   is never consulted
-- the second strategy in `.chain(...)` receives the original global
+- **3.2.6** the second strategy in `.chain(...)` receives the original global
   `RetryState` unchanged; attempt counting is not rebased at the switch point
-- `.add(other)` combines two strategies by summing their outputs. Equivalent to
+- **3.2.7** `.add(other)` combines two strategies by summing their outputs. Equivalent to
   the `+` operator. `(a + b).next_wait(state)` returns
   `a.next_wait(state) + b.next_wait(state)` with saturating arithmetic.
 
-Wait strategies only compute `Duration`. They do not sleep directly.
+**3.2.1** Wait strategies only compute `Duration`. They do not sleep directly.
 
-**Zero-duration sleep rule.** When a wait strategy returns `Duration::ZERO`
+**3.2.8** **Zero-duration sleep rule.** When a wait strategy returns `Duration::ZERO`
 (or any other mechanism reduces the delay to zero), sleep is skipped entirely
 — no sleep call is made and no async yield occurs. This makes
 `wait::fixed(Duration::ZERO)` a valid "no delay" strategy for tight polling
 loops. All other loop behavior (hooks, stop checks) proceeds normally. This
 rule is referenced by the Timeout section and the loop pseudocode (step 10).
 
-### Jitter strategies
+### 3.3 Jitter strategies
 
 Three jitter strategies are decorator methods on the `Wait` trait that
 transform the inner strategy's output. One is a standalone constructor that
@@ -174,6 +175,8 @@ duration in `[0, max_jitter]` to the inner strategy's output.
 output = base + random(0, max_jitter)
 ```
 
+**3.3.1** Additive jitter output = `base + random(0, max_jitter)`.
+
 **Full jitter** (`.full_jitter()`): replaces the inner strategy's output with
 a random value between zero and the computed base. This is the "Full Jitter"
 strategy from the [AWS Architecture Blog][aws-jitter]. It produces the lowest total client
@@ -182,6 +185,8 @@ work under contention.
 ```
 output = random(0, base)
 ```
+
+**3.3.2** Full jitter output = `random(0, base)`.
 
 **Equal jitter** (`.equal_jitter()`): keeps half the computed base and jitters
 the other half. This is the "Equal Jitter" strategy from the [AWS Architecture
@@ -192,7 +197,9 @@ requests.
 output = base / 2 + random(0, base / 2)
 ```
 
-Cloning any `Jittered<W>` strategy (additive, full, or equal jitter) produces
+**3.3.3** Equal jitter output = `base / 2 + random(0, base / 2)`.
+
+**3.3.4** Cloning any `Jittered<W>` strategy (additive, full, or equal jitter) produces
 a decorrelated copy — the clone uses a fresh PRNG stream and diverges
 immediately, generating a different jitter sequence from the original.
 
@@ -206,19 +213,19 @@ mutability (`Cell<Duration>`), consistent with the `&self` model.
 output = random(base, last_sleep * 3)
 ```
 
-On the first attempt, `last_sleep` is `base`. Decorrelated jitter composes
+**3.3.5** Decorrelated jitter output = `random(base, last_sleep * 3)`; on first attempt `last_sleep` is `base`. Decorrelated jitter composes
 with `.cap(max)` to bound the maximum delay.
 
 Because decorrelated jitter is stateful via `Cell<Duration>`, each concurrent
 or sequential retry loop should use its own clone of a decorrelated jitter
-strategy to ensure independent sequences. Cloning snapshots the current
+strategy to ensure independent sequences. **3.3.6** Cloning snapshots the current
 `last_sleep` value and assigns a fresh PRNG stream so the two copies
 diverge immediately.
 
-All jitter strategy types support `.with_seed(u64)` and `.with_nonce(u64)`
+**3.3.7** All jitter strategy types support `.with_seed(u64)` and `.with_nonce(u64)`
 for reproducible sequences.
 
-Jitter decorators (`.jitter()`, `.full_jitter()`, `.equal_jitter()`) apply
+**3.3.8** Jitter decorators (`.jitter()`, `.full_jitter()`, `.equal_jitter()`) apply
 before `.cap(...)`:
 
 ```rust
@@ -228,7 +235,7 @@ wait::exponential(Duration::from_millis(100))
     .cap(Duration::from_secs(30))
 ```
 
-### Predicate
+### 3.4 Predicate
 
 `Predicate<T, E>` decides whether a completed outcome should retry.
 Composition methods are provided directly on the trait with
@@ -246,7 +253,7 @@ pub trait Predicate<T, E> {
 }
 ```
 
-The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit).
+**3.4.1** The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit).
 
 `Predicate` uses `&self`. Most predicates are stateless closures; the rare
 stateful predicate can use interior mutability (`Cell`, `AtomicUsize`).
@@ -256,24 +263,24 @@ stateful predicate can use interior mutability (`Cell`, `AtomicUsize`).
 
 Built-in predicate constructors:
 
-- `predicate::any_error() -> PredicateAnyError`: retries all `Err` values
+- **3.4.2** `predicate::any_error() -> PredicateAnyError`: retries all `Err` values
   (`should_retry` returns `true` for any `Err`, `false` for any `Ok`)
-- `predicate::error(f: impl Fn(&E) -> bool) -> PredicateError<F>`: retries
+- **3.4.3** `predicate::error(f: impl Fn(&E) -> bool) -> PredicateError<F>`: retries
   when `f` returns `true` for the error (`should_retry` returns `true` for
   `Err(e)` when `f(&e)` is `true`, `false` for all `Ok` values, `false` for
   `Err(e)` when `f(&e)` is `false`)
-- `predicate::ok(f: impl Fn(&T) -> bool) -> PredicateOk<F>`: retries when `f`
+- **3.4.4** `predicate::ok(f: impl Fn(&T) -> bool) -> PredicateOk<F>`: retries when `f`
   returns `true` for the ok value (`should_retry` returns `true` for `Ok(v)`
   when `f(&v)` is `true`, `false` for all `Err` values)
-- `predicate::result(f: impl Fn(&Result<T, E>) -> bool) -> PredicateResult<F>`:
+- **3.4.5** `predicate::result(f: impl Fn(&Result<T, E>) -> bool) -> PredicateResult<F>`:
   retries when `f` returns `true`
 
 **`when` vs `until`.** The predicate is set on the policy or execution
 builder via either `.when(p)` or `.until(p)`. Both set the same predicate
 slot; the last call wins.
 
-- `.when(p)` retries while `p.should_retry()` returns `true`.
-- `.until(p)` retries until `p.should_retry()` returns `true` — i.e., it
+- **3.4.6** `.when(p)` retries while `p.should_retry()` returns `true`.
+- **3.4.7** `.until(p)` retries until `p.should_retry()` returns `true` — i.e., it
   wraps `p` in `PredicateUntil`, which negates `should_retry()` results.
 
 `.when()` is natural for error-based retry:
@@ -281,21 +288,21 @@ slot; the last call wins.
 `.until()` is natural for polling: `.until(ok(|s| s.is_ready()))` reads "retry
 until ready."
 
-When using `.until(ok(f))`, errors are retried by default because `ok(f)`
+**3.4.8** When using `.until(ok(f))`, errors are retried by default because `ok(f)`
 returns `false` for all `Err` values, and `until` inverts that to `true`
 (retry). This is the expected behavior for a retry-first API — the user
 reached for `retry()`, so errors are retriable by default. Users who want
 specific errors to terminate during polling compose explicitly:
 `.until(ok(|s| s.is_ready()).or(error(|e| e.is_fatal())))`.
 
-`Predicate` is blanket-implemented for `Fn(&Result<T, E>) -> bool`. Named
+**3.4.9** `Predicate` is blanket-implemented for `Fn(&Result<T, E>) -> bool`. Named
 predicate types (`PredicateAnyError`, `PredicateError<F>`, `PredicateOk<F>`,
 `PredicateResult<F>`) have dedicated `impl Predicate<T, E>` blocks.
 
 > Named types do not rely on the blanket `Fn` impl. This ensures they work
 > consistently regardless of closure trait inference.
 
-### Sleeper
+### 3.5 Sleeper
 
 `Sleeper` abstracts async delay behavior.
 
@@ -306,19 +313,19 @@ pub trait Sleeper {
 }
 ```
 
-It is blanket-implemented for `Fn(Duration) -> Fut` where
+**3.5.1** It is blanket-implemented for `Fn(Duration) -> Fut` where
 `Fut: Future<Output = ()>`.
 
 Sleep adapter helpers (`sleep::tokio()`, etc.) return closures that satisfy the
 blanket `Sleeper` impl. They do not define named sleeper types.
 
-Sync execution does not use `Sleeper`. It uses a blocking sleep function via
+**3.5.2** Sync execution does not use `Sleeper`. It uses a blocking sleep function via
 `.sleep(...)`, or `std::thread::sleep` when the `std` feature is active and no
 explicit sync sleeper is provided.
 
-### State types
+### 3.6 State types
 
-The crate exposes three read-only state types. All are `#[non_exhaustive]` and
+The crate exposes three read-only state types. **3.6.1** All are `#[non_exhaustive]` and
 provide `new(...)` constructors for tests and custom strategy implementations.
 
 > Public fields on `#[non_exhaustive]` structs are a deliberate choice for
@@ -403,7 +410,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
 |`Wait::next_wait`    |just-completed attempt|available|
 |`Stop::should_stop`  |just-completed attempt|available|
 
-The operation receives `RetryState` by value (it is `Copy`). The numeric value
+**3.6.2** The operation receives `RetryState` by value (it is `Copy`). **3.6.3** The numeric value
 of `attempt` is the same across all four contexts within a single loop
 iteration — the semantic distinction is whether the attempt has run yet.
 
@@ -413,21 +420,21 @@ iteration — the semantic distinction is whether the attempt has run yet.
 Field meanings:
 
 - `attempt` is 1-indexed for completed or about-to-start attempts
-- `elapsed` is `None` when no elapsed clock is available
-- `AttemptState.next_delay` is `None` on the final attempt; `Some(delay)` means
+- **3.6.4** `elapsed` is `None` when no elapsed clock is available
+- **3.6.5** `AttemptState.next_delay` is `None` on the final attempt; `Some(delay)` means
   another attempt will follow after the delay
-- `ExitState.attempt` is always the number of completed attempts
-- `ExitState.outcome` is always the outcome of the final attempt
+- **3.6.6** `ExitState.attempt` is always the number of completed attempts
+- **3.6.7** `ExitState.outcome` is always the outcome of the final attempt
 
-## Error types
+## 4. Error types
 
-### RetryError
+### 4.1 RetryError
 
 The predicate's job is binary: retry or don't. When it says don't retry, the
 retry loop terminates regardless of whether the outcome was `Ok` or `Err`. This
 means a predicate-accepted `Ok` and a predicate-accepted `Err` share the same
-stop reason (`Accepted`). Predicate-accepted `Ok` values are returned directly
-as `Ok(T)`. Predicate-accepted `Err` values are wrapped in
+stop reason (`Accepted`). **4.1.1** Predicate-accepted `Ok` values are returned directly
+as `Ok(T)`. **4.1.2** Predicate-accepted `Err` values are wrapped in
 `RetryError::Rejected`.
 
 ```rust
@@ -445,26 +452,28 @@ pub enum RetryError<T, E> {
 
 Accessor methods:
 
-- `last() -> Option<&Result<T, E>>`: the final `Result<T, E>` if the variant
+- **4.1.4** `last() -> Option<&Result<T, E>>`: the final `Result<T, E>` if the variant
   carries one; returns `Some` for `Exhausted`, `None` for `Rejected` (which
   stores only `E`)
-- `into_last() -> Option<Result<T, E>>`: consuming version with the same
+- **4.1.5** `into_last() -> Option<Result<T, E>>`: consuming version with the same
   `None` cases as `last()`
-- `last_error() -> Option<&E>`: the final `E` if the variant carries one;
+- **4.1.6** `last_error() -> Option<&E>`: the final `E` if the variant carries one;
   returns `Some` for `Rejected` and for `Exhausted` when the last outcome is
   `Err`; `None` otherwise
-- `into_last_error() -> Option<E>`: consuming version
-- `stop_reason() -> StopReason`: the termination reason as a typed enum
+- **4.1.7** `into_last_error() -> Option<E>`: consuming version
+- **4.1.8** `stop_reason() -> StopReason`: the termination reason as a typed enum
 
-Display: `RetryError` implements `Display` when `E: Display`. Display output
+**4.1.3** Stop fires while predicate wants retry → `Err(RetryError::Exhausted { last: Result<T, E> })`.
+
+**4.1.9** Display: `RetryError` implements `Display` when `E: Display`. Display output
 is lowercase, without trailing punctuation, following the pattern
 `{variant}: {error}`. Examples: `retries exhausted: connection refused`,
 `rejected: invalid argument`.
 
-`RetryError` implements `std::error::Error` when `std` is active and
+**4.1.10** `RetryError` implements `std::error::Error` when `std` is active and
 `E: std::error::Error + 'static`, `T: fmt::Debug + 'static`.
 
-### StopReason
+### 4.2 StopReason
 
 ```rust
 pub enum StopReason {
@@ -477,7 +486,11 @@ pub enum StopReason {
 }
 ```
 
-`StopReason` implements `Display` with lowercase labels: `"accepted"`,
+**4.2.1** `Accepted` for predicate-accepted outcomes (both `Ok` and `Err`).
+
+**4.2.2** `Exhausted` when the stop strategy fired.
+
+**4.2.3** `StopReason` implements `Display` with lowercase labels: `"accepted"`,
 `"retries exhausted"`.
 
 Mapping from `RetryError` to `StopReason`:
@@ -488,7 +501,7 @@ Mapping from `RetryError` to `StopReason`:
 |Predicate accepts `Err(E)` as terminal|`Rejected { last: E }`|`Accepted`  |
 |Stop fires while retrying             |`Exhausted`           |`Exhausted` |
 
-### RetryStats
+### 4.3 RetryStats
 
 ```rust
 pub struct RetryStats {
@@ -507,10 +520,18 @@ pub struct RetryStats {
 }
 ```
 
-## Policy model
+**4.3.1** `attempts` is always ≥ 1.
+
+**4.3.2** `total_elapsed` is `None` when no elapsed clock is available.
+
+**4.3.3** `total_wait` is the sum of delays that reached the sleep phase (step 9 onward); excludes delays preempted by stop at steps 7–8; includes zero-duration delays.
+
+**4.3.4** `stop_reason` matches the termination reason.
+
+## 5. Policy model
 
 `RetryPolicy<S, W, P>` stores owned stop, wait, and predicate values.
-`RetryPolicy` carries no trait bounds on the struct definition. Bounds appear
+**5.8** `RetryPolicy` carries no trait bounds on the struct definition. Bounds appear
 only on `impl` blocks.
 
 > This follows the Rust API guideline C-STRUCT-BOUNDS and ensures that adding
@@ -528,10 +549,12 @@ impl Default for RetryPolicy<StopAfterAttempts, WaitExponential, PredicateAnyErr
 }
 ```
 
-`new()` creates a ready-to-run policy with bounded retries: `attempts(3)`,
+**5.1** `new()` creates a ready-to-run policy with bounded retries: `attempts(3)`,
 `exponential(100ms)`, and `any_error()`. Because `PredicateAnyError` implements
 `Predicate<T, E>` for all `T, E`, neither `T` nor `E` is fixed by `new()` —
 they are inferred at the call site when the operation is provided.
+
+**5.2** `Default::default()` delegates to `new()`.
 
 Builder methods:
 
@@ -545,7 +568,9 @@ Builder methods:
   with `alloc` — same as `.boxed()` but without `Send` bounds; for policies
   that remain on a single thread
 
-`.when(p)` and `.until(p)` both set the predicate. `.when(p)` stores `p`
+**5.3** `.stop()`, `.wait()`, `.when()`, `.until()` each consume and return a new `RetryPolicy` with changed type parameter.
+
+**5.4** `.when(p)` and `.until(p)` both set the predicate. `.when(p)` stores `p`
 directly. `.until(p)` wraps `p` in `PredicateUntil<P>`, which negates
 `should_retry()` results. The last call wins; they do not compose with each
 other.
@@ -554,12 +579,16 @@ other.
 > `WaitCapped`, and other combinator types. `PredicateUntil` is listed in the
 > combinator type opacity section — users should not name it directly.
 
-`RetryPolicy` is `Clone` when its components are `Clone`. Because all trait
+**5.7** `RetryPolicy` is `Clone` when its components are `Clone`. Because all trait
 methods use `&self`, policies are freely shareable without interior mutability.
 `RetryPolicy<S, W, P>` is a pure composition of three strategy types with no
 other internal state.
 
-## Execution model
+**5.5** `.boxed()` requires `S: Stop + Send + 'static`, `W: Wait + Send + 'static`, `P: Predicate<T, E> + Send + 'static`; erases to `Box<dyn...+Send+'static>`.
+
+**5.6** `.boxed_local()` requires no `Send` bounds; erases to `Box<dyn...+'static>`.
+
+## 6. Execution model
 
 `RetryPolicy::retry(op)` borrows `&self` and returns `SyncRetry`, which
 supports hook configuration and terminal execution. The operation receives
@@ -580,10 +609,10 @@ Because `Stop`, `Wait`, and `Predicate` all use `&self`, the policy holds no
 mutable state. Multiple concurrent retry loops can share the same policy
 without cloning.
 
-### Free function entry points
+### 6.1 Free function entry points
 
 Free functions provide an alternative entry point that does not require
-constructing a `RetryPolicy` first. They use the same defaults as
+constructing a `RetryPolicy` first. **6.1.1** They use the same defaults as
 `RetryPolicy::new()`: `attempts(3)`, `exponential(100ms)`, `any_error()`.
 
 ```rust
@@ -596,12 +625,12 @@ pub fn retry_async<F, T, E, Fut>(op: F) -> AsyncRetryBuilder<...>
 where F: FnMut(RetryState) -> Fut, Fut: Future<Output = Result<T, E>>;
 ```
 
-Free functions accept `FnMut(RetryState) -> ...`, giving the operation access
+**6.1.2** Free functions accept `FnMut(RetryState) -> ...`, giving the operation access
 to attempt number and elapsed time.
 
-### Extension traits
+### 6.2 Extension traits
 
-`RetryExt` and `AsyncRetryExt` provide method-call syntax for closures and
+**6.2.1** `RetryExt` and `AsyncRetryExt` provide method-call syntax for closures and
 functions that return `Result`. They use the same defaults as
 `RetryPolicy::new()`.
 
@@ -618,7 +647,7 @@ where Fut: Future<Output = Result<T, E>>
 ```
 
 Both traits have blanket implementations for all matching closures and function
-pointers. The operation does not receive `RetryState`; the closure is wrapped
+pointers. **6.2.2** The operation does not receive `RetryState`; the closure is wrapped
 internally as `move |_| op()`.
 
 > Extension traits are the convenience path for one-shot retry with minimal
@@ -671,7 +700,7 @@ retry_async(|state| async move {
 .await?;
 ```
 
-### Builder method signatures
+### 6.3 Builder method signatures
 
 All execution builders (`SyncRetry`, `SyncRetryBuilder`, `AsyncRetry`,
 `AsyncRetryBuilder`) are generic over `S: Stop`, `W: Wait`,
@@ -679,7 +708,7 @@ All execution builders (`SyncRetry`, `SyncRetryBuilder`, `AsyncRetry`,
 
 #### Strategy overrides
 
-Strategy overrides are available only on `SyncRetryBuilder` and
+**6.3.1** Strategy overrides are available only on `SyncRetryBuilder` and
 `AsyncRetryBuilder` (the ext-trait / free-function builders that own their
 policy). `SyncRetry` and `AsyncRetry` borrow the policy and do not expose
 these methods.
@@ -691,9 +720,9 @@ these methods.
 
 #### Timing
 
-- `.elapsed_clock(fn() -> Duration)` — sets the elapsed clock to a bare
+- **6.3.2** `.elapsed_clock(fn() -> Duration)` — sets the elapsed clock to a bare
   function pointer; always available, including `no_std` without `alloc`
-- `.elapsed_clock_fn(impl Fn() -> Duration)` with `alloc` — boxes the closure
+- **6.3.3** `.elapsed_clock_fn(impl Fn() -> Duration)` with `alloc` — boxes the closure
   internally, supporting captures for test clocks and runtime state
 - `.timeout(dur: Duration)` — sets a wall-clock deadline for the entire retry
   execution, including all attempts and all sleeps (see Timeout)
@@ -721,9 +750,9 @@ Async-only:
 Hook methods do not change the strategy type parameters. See Hooks for timing,
 ordering, and panic behavior.
 
-### Sync execution
+### 6.4 Sync execution
 
-Calling `.sleep(...)` on `SyncRetryBuilder` is:
+**6.4.1** Calling `.sleep(...)` on `SyncRetryBuilder` is:
 
 - optional with `std` (defaults to `std::thread::sleep`)
 - required without `std`; omitting it is a compile error (`.call()` is not
@@ -731,12 +760,12 @@ Calling `.sleep(...)` on `SyncRetryBuilder` is:
 
 Terminal execution:
 
-- `.call() -> RetryResult<T, E>`: executes the retry loop and returns the
+- **6.4.2** `.call() -> RetryResult<T, E>`: executes the retry loop and returns the
   result
-- `.with_stats()` changes the builder so that `.call()` returns
+- **6.4.3** `.with_stats()` changes the builder so that `.call()` returns
   `(RetryResult<T, E>, RetryStats)` instead
 
-`SyncRetryWithStats` and `AsyncRetryWithStats` expose only terminal
+**6.4.4** `SyncRetryWithStats` and `AsyncRetryWithStats` expose only terminal
 execution (`.call()` for sync, `IntoFuture` for async). They do not
 expose hook, sleep, or clock configuration methods. Configure everything
 before calling `.with_stats()`.
@@ -764,26 +793,28 @@ loop:
     11. attempt += 1, continue to step 1.
 ```
 
-### Async execution
+### 6.5 Async execution
 
-Async execution always requires `.sleep(...)` before the future can run. The
+**6.5.1** Async execution always requires `.sleep(...)` before the future can run. The
 crate never auto-selects an async runtime.
 
 Terminal execution:
 
-- `AsyncRetryBuilder` implements `IntoFuture<Output = RetryResult<T, E>>`,
+- **6.5.2** `AsyncRetryBuilder` implements `IntoFuture<Output = RetryResult<T, E>>`,
   consuming the builder to produce the retry future
-- `.with_stats()` changes the builder to implement
+- **6.5.3** `.with_stats()` changes the builder to implement
   `IntoFuture<Output = (RetryResult<T, E>, RetryStats)>` instead
+
+**6.5.4** `AsyncRetryWithStats` exposes only terminal execution.
 
 The async future is single-use:
 
 - it is directly awaitable via `IntoFuture`
-- polling after completion always panics
+- **6.5.5** polling after completion always panics
 
 The async loop uses the same transition order as sync execution.
 
-### Statistics
+### 6.6 Statistics
 
 Retry execution always tracks statistics internally. The cost is one `u32`
 counter, one `Option<Duration>` accumulator, one `Duration` accumulator, and
@@ -797,12 +828,12 @@ Statistics are accessed via:
 - the `on_exit` hook, which receives `ExitState` containing `attempt`,
   `elapsed`, and `stop_reason`
 
-## Termination semantics
+## 7. Termination semantics
 
 Retry termination is defined by the final accepted outcome, the predicate, and
 the stop strategy.
 
-### Termination table
+### 7.1 Termination table
 
 |Final condition                       |Return value                |`StopReason`|`ExitState.outcome`|
 |--------------------------------------|----------------------------|------------|-------------------|
@@ -810,42 +841,42 @@ the stop strategy.
 |Predicate accepts `Err(E)` as terminal|`Err(RetryError::Rejected)` |`Accepted`  |`&Err(E)`          |
 |Stop fires while retrying             |`Err(RetryError::Exhausted)`|`Exhausted` |`&last_result`     |
 
-### Additional guarantees
+### 7.2 Additional guarantees
 
-- `after_attempt` fires after every completed attempt, including the final one
-- on the final attempt, `after_attempt` fires with `next_delay = None`
-- `next_delay = Some(delay)` means another attempt will follow after the delay
-- predicate evaluation always happens before stop evaluation
-- stop evaluation always happens after wait computation
-- `Exhausted` carries `last: Result<T, E>` — callers match on the inner
+- **7.2.1** `after_attempt` fires after every completed attempt, including the final one
+- **7.2.2** on the final attempt, `after_attempt` fires with `next_delay = None`
+- **7.2.3** `next_delay = Some(delay)` means another attempt will follow after the delay
+- **7.2.4** predicate evaluation always happens before stop evaluation
+- **7.2.5** stop evaluation always happens after wait computation
+- **7.2.6** `Exhausted` carries `last: Result<T, E>` — callers match on the inner
   `Result` to distinguish exhausted-error from unmet-condition cases
 - `RetryResult<T, E>` is `Result<T, RetryError<T, E>>`
-- `ExitState.attempt` is always the number of completed attempts (>= 1)
+- **7.2.7** `ExitState.attempt` is always the number of completed attempts (>= 1)
 
-## Hooks
+## 8. Hooks
 
 Hooks are configured on execution builders, not on `RetryPolicy`.
 
 Timing guarantees:
 
-- `before_attempt` fires before the user operation starts
-- `after_attempt` fires after every completed attempt, including the final one
-- `on_exit` fires exactly once for each non-panicking terminal path
+- **8.1** `before_attempt` fires before the user operation starts
+- **8.2** `after_attempt` fires after every completed attempt, including the final one
+- **8.3** `on_exit` fires exactly once for each non-panicking terminal path
 
 Ordering guarantees:
 
-- hooks of the same kind fire in registration order
-- without `alloc`, each hook point stores at most one callback; registering a
+- **8.4** hooks of the same kind fire in registration order
+- **8.5** without `alloc`, each hook point stores at most one callback; registering a
   second callback for the same hook point is a compile error (the builder's
   type parameter for that hook slot is no longer `()`)
-- with `alloc`, hooks are stored in a `Vec`; multiple hooks of the same kind
+- **8.6** with `alloc`, hooks are stored in a `Vec`; multiple hooks of the same kind
   may be registered and all fire in registration order
 
-Hook panics propagate normally. The crate does not catch them.
+**8.7** Hook panics propagate normally. The crate does not catch them.
 
 Panic behavior:
 
-- if the operation or any hook panics, retry execution aborts immediately
+- **8.8** if the operation or any hook panics, retry execution aborts immediately
 - once a panic starts unwinding, remaining hooks for that execution are not run
   (including `on_exit`)
 - if a hook panics, the operation's return value for that attempt, if any, is
@@ -855,13 +886,13 @@ Panic behavior:
 - if a panic is caught by the caller via `catch_unwind`, `RetryStats` and
   `on_exit` are not recoverable; the execution is in an indeterminate state
 
-## Cancellation guidance
+## 9. Cancellation guidance
 
 The crate does not provide a built-in cancellation mechanism. Async callers use
 standard Rust future cancellation; sync callers use `.timeout()` or in-closure
 checks.
 
-### Async cancellation
+### 9.1 Async cancellation
 
 Dropping the retry future at any `.await` point cleanly terminates the retry
 loop. Standard patterns work as expected:
@@ -888,7 +919,7 @@ behavior as panics and is consistent with the Rust async cancellation model.
 Callers who need guaranteed cleanup should use `Drop` impls on their own types,
 not retry hooks.
 
-### Sync cancellation
+### 9.2 Sync cancellation
 
 For deadline-based cancellation, use `.timeout(dur)`:
 
@@ -927,7 +958,7 @@ terminate immediately as `RetryError::Rejected`.
 > between flag-set and termination is one sleep duration plus one operation
 > execution time. `.timeout()` bounds sleep duration via delay clamping.
 
-## Thread safety
+## 10. Thread safety
 
 Async execution types (`AsyncRetryBuilder`) are `Send` when all of the
 following are `Send`:
@@ -938,7 +969,9 @@ following are `Send`:
 - `Sleeper::Sleep`
 - all registered hooks
 
-Async execution types are `!Send` otherwise. The crate never adds
+**10.1** Async execution types are `Send` when the operation, its future, `T`, `E`, `Sleeper::Sleep`, and all hooks are `Send`.
+
+**10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
 `Predicate`, `Sleeper`). Concrete execution types derive `Send`/`Sync` from
 their components via standard auto-trait rules.
@@ -947,24 +980,24 @@ Sync execution types are `Send` when their components are `Send`. No `Sync`
 bound is required on any execution type because execution is driven by a single
 owner (`.call()` for sync, `Future::poll()` for async).
 
-The crate includes compile-time tests asserting that `RetryPolicy` with default
+**10.3** The crate includes compile-time tests asserting that `RetryPolicy` with default
 type parameters is `Send + Sync`, that `AsyncRetryBuilder` is `Send` when all
 components are `Send`, and that `SyncRetryBuilder` is `Send` when all
 components are `Send`.
 
-## Elapsed time, clocks, and timeout
+## 11. Elapsed time, clocks, and timeout
 
-### Elapsed clock contract
+### 11.1 Elapsed clock contract
 
 The elapsed clock provides wall-clock timing to the retry loop. It is
 configured on the execution builder and is set once per execution.
 
-The clock function must return a monotonic timestamp — a `Duration` since an
+**11.1.1** The clock function must return a monotonic timestamp — a `Duration` since an
 arbitrary fixed epoch (e.g., system boot, program start, or hardware timer
 origin). The library captures a baseline reading when execution starts and
 computes elapsed time as `clock() - baseline` on each subsequent read.
 
-With `std`, the default clock uses `std::time::Instant` internally: the
+**11.1.2** With `std`, the default clock uses `std::time::Instant` internally: the
 library calls `Instant::now()` at execution start and `.elapsed()` thereafter.
 `Instant` does not directly satisfy `fn() -> Duration`; the `std` default is
 handled as a special case. Without `std`, the clock defaults to `None` (no
@@ -974,7 +1007,7 @@ elapsed tracking) unless explicitly configured via `.elapsed_clock()` or
 Statistics do not force additional timing work beyond what the chosen clock
 already provides.
 
-### Hazard: elapsed-based stop without a clock
+### 11.2 Hazard: elapsed-based stop without a clock
 
 `stop::elapsed(dur)` never fires when `elapsed` is `None`. In `no_std`
 environments without a configured elapsed clock, using only elapsed-based stop
@@ -991,7 +1024,7 @@ configuration because whether a clock is present depends on the builder's
 configuration. Users are responsible for ensuring at least one stop condition
 will eventually fire.
 
-### Hazard: elapsed-based stop does not account for upcoming sleep
+### 11.3 Hazard: elapsed-based stop does not account for upcoming sleep
 
 `stop::elapsed(dur)` fires when elapsed time at attempt completion exceeds
 `dur`. The retry loop may schedule a sleep that pushes total wall-clock time
@@ -1002,27 +1035,27 @@ elapsed check passes at 28 seconds and the next sleep is 17 seconds.
 Users who need a wall-clock deadline should use `.timeout(dur)` instead of
 or in addition to `stop::elapsed(dur)`.
 
-### Timeout
+### 11.4 Timeout
 
 `.timeout(dur)` on the execution builder sets a wall-clock deadline for the
 entire retry execution. It combines two behaviors:
 
-1. Implicitly OR's `stop::elapsed(dur)` into the effective stop strategy at
+1. **11.4.1** Implicitly OR's `stop::elapsed(dur)` into the effective stop strategy at
    execution time, so the stop check fires once elapsed time exceeds the
    deadline. The OR is applied to whatever stop strategy is in effect at
    execution time — whether set on the policy, overridden on the builder via
    `.stop()`, or the default. For example,
    `.stop(stop::attempts(5)).timeout(Duration::from_secs(30))` produces an
    effective stop of `stop::attempts(5).or(stop::elapsed(30s))`.
-1. After computing the wait duration (step 5), if `elapsed` is `Some`, clamps
+1. **11.4.2** After computing the wait duration (step 5), if `elapsed` is `Some`, clamps
    the delay to the remaining budget:
    `delay = min(delay, max(0, timeout - elapsed))` (step 6). When `elapsed` is
    `None`, the clamp is skipped (no budget can be computed).
 
-When the clamped delay is zero, sleep is skipped entirely per the zero-duration
+**11.4.3** When the clamped delay is zero, sleep is skipped entirely per the zero-duration
 sleep rule defined in the Wait section.
 
-The stop reason when timeout causes termination is `Exhausted`, since the
+**11.4.4** The stop reason when timeout causes termination is `Exhausted`, since the
 elapsed stop fired. Users can distinguish timeout from attempt exhaustion by
 comparing `RetryStats.total_elapsed` against their timeout duration.
 
@@ -1033,19 +1066,19 @@ configured; if no clock is available, the elapsed stop never fires and the
 delay clamp is skipped, so timeout has no effect. This is the same hazard as
 `stop::elapsed` without a clock.
 
-Timeout does not interrupt a running operation. The total wall-clock time may
+**11.4.5** Timeout does not interrupt a running operation. The total wall-clock time may
 exceed the deadline by the execution time of the final attempt. This is
 consistent with the crate's guarantee that it never interrupts a user operation
 that is already running.
 
-In debug builds, configuring `.timeout()` without an elapsed clock triggers a
+**11.4.6** In debug builds, configuring `.timeout()` without an elapsed clock triggers a
 `debug_assert` at execution start as a misconfiguration warning.
 
-## Feature-gated APIs
+## 12. Feature-gated APIs
 
 The crate exposes feature-gated helpers in these areas.
 
-### Sleep adapters
+### 12.1 Sleep adapters
 
 The `sleep` module exports these helpers when their features are enabled:
 
@@ -1059,7 +1092,7 @@ These return closures satisfying the blanket `Sleeper` impl:
 sleeper types. Callers may always pass their own compatible sleeper function or
 type.
 
-### Jitter
+### 12.2 Jitter
 
 Decorator methods on `Wait`:
 
@@ -1077,7 +1110,7 @@ Exported types: `Jittered`, `WaitDecorrelatedJitter`.
 All jitter types support `.with_seed(u64)` and `.with_nonce(u64)` for
 reproducible sequences.
 
-### Boxed policies
+### 12.3 Boxed policies
 
 With `alloc`:
 
@@ -1098,11 +1131,11 @@ Use this when the policy does not need to cross thread boundaries.
 No public type aliases are provided for boxed policy types. Users who need to
 name the type can write it explicitly or use `impl` return types.
 
-## Public API surface
+## 13. Public API surface
 
 The following items are part of the supported surface for new code.
 
-### Crate root exports
+### 13.1 Crate root exports
 
 Types:
 
@@ -1135,7 +1168,7 @@ Free functions:
 - `retry`
 - `retry_async`
 
-### Module exports
+### 13.2 Module exports
 
 `stop` module:
 
@@ -1161,7 +1194,7 @@ Free functions:
 
 - constructors: `tokio`, `embassy`, `gloo`, `futures_timer` (feature-gated)
 
-### Combinator type opacity
+### 13.3 Combinator type opacity
 
 Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
 `WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, `Jittered`,
@@ -1173,7 +1206,7 @@ and `.until()`), but users should not name them in function signatures. Use
 > Combinator type names and their generic parameters may change in minor
 > releases.
 
-## Standard trait implementations
+## 14. Standard trait implementations
 
 All public types implement `Debug` (C-DEBUG). Types implement `Clone`, `Copy`,
 `PartialEq`, `Eq`, `Hash`, and `Default` when all their components support it.
@@ -1202,30 +1235,71 @@ both `PartialEq` and `Eq`.
 `RetryStats` and `StopReason` do not implement `Default` because there is no
 meaningful default `StopReason`.
 
-## Panic inventory
+## 15. Panic inventory
 
 The following conditions cause a panic. No other public constructor or method
 panics. Saturating arithmetic is used throughout wait computation — overflow
 produces `Duration::MAX`, not a panic.
 
-- `stop::attempts(0)` panics unconditionally
-- Polling the async retry future after it has returned `Poll::Ready` panics
+- **15.1** `stop::attempts(0)` panics unconditionally
+- **15.2** Polling the async retry future after it has returned `Poll::Ready` panics
+
+**15.3** No other public constructor or method panics; saturating arithmetic is used throughout.
 
 All panic conditions are documented with `# Panics` sections in rustdoc.
 
-## Compatibility guarantees
+## 16. Compatibility guarantees
 
 The crate guarantees the following project-wide properties.
 
-- MSRV is Rust `1.85.0`
-- the crate forbids `unsafe` with `#![forbid(unsafe_code)]`
-- `Duration` is always `core::time::Duration`
-- `RetryError` implements `Display` when `E: Display`
-- `RetryError::stop_reason()` is always available regardless of type parameter
+- **16.1** MSRV is Rust `1.85.0`
+- **16.2** the crate forbids `unsafe` with `#![forbid(unsafe_code)]`
+- **16.3** `Duration` is always `core::time::Duration`
+- **16.4** `RetryError` implements `Display` when `E: Display`
+- **16.5** `RetryError::stop_reason()` is always available regardless of type parameter
   bounds
-- `RetryError` implements `std::error::Error` when `std` is active and
+- **16.6** `RetryError` implements `std::error::Error` when `std` is active and
   `E: std::error::Error + 'static`, `T: fmt::Debug + 'static`
-- all public items have rustdoc examples using `?` for error handling
-- license is dual MIT OR Apache-2.0
+- **16.7** all public items have rustdoc examples using `?` for error handling
+- **16.8** license is dual MIT OR Apache-2.0
+
+## 17. Testing strategy
+
+Each test file covers the spec section it corresponds to. Requirement numbers
+appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
+
+| Test file | Spec sections covered |
+|---|---|
+| `tests/stop.rs` | §3.1 |
+| `tests/wait.rs` | §3.2 |
+| `tests/jitter.rs` | §3.3 |
+| `tests/predicate.rs` | §3.4 |
+| `tests/sleeper.rs` | §3.5 |
+| `tests/state.rs` | §3.6 |
+| `tests/error.rs` | §4.1, §4.2 |
+| `tests/stats.rs` | §4.3, §7 |
+| `tests/policy_sync.rs` | §5, §6.1–6.4, §11 |
+| `tests/policy_async.rs` | §6.5 |
+| `tests/hooks.rs` | §8 |
+| `tests/ext.rs` | §6.2 |
+| `tests/allocation.rs` | §12.3 |
+| `tests/trait_impls.rs` | §14 |
+| `tests/composition.rs` | §3.1–3.4 (seeded property tests) |
+| `tests/async_no_alloc.rs` | §2 (no_std/no_alloc async compilation) |
+
+**Seeded property tests.** `tests/composition.rs` verifies that `Stop`, `Wait`,
+and `Predicate` composition obeys boolean and arithmetic algebra across 1,024
+random samples per test. The seed is read from `TENACIOUS_PROPTEST_SEED` at
+runtime; if absent, a random seed is generated and printed on failure for
+reproduction.
+
+**Compile-fail guarantees.** Typestate constraints (no strategy overrides on
+policy-borrowing builders, single hook per hook point without `alloc`,
+`.call()` unavailable without a sleep function in `no_std`) are verified via
+`compile_fail` doctests in the source files rather than integration tests.
+
+**no_std coverage.** `tests/async_no_alloc.rs` verifies that async retry
+compiles and runs without `std` or `alloc`. The §2 support matrix is the
+authoritative reference for which features require which capability tier.
 
 [aws-jitter]: https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
