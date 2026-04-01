@@ -1,3 +1,18 @@
+# [0.6.0](https://github.com/camercu/tenacious/compare/v0.5.0...v0.6.0) (2026-04-01)
+
+
+### Bug Fixes
+
+* **ci:** pass explicit shell.nix to nix-shell in release workflow ([56f91c3](https://github.com/camercu/tenacious/commit/56f91c34df9f31d034f5478049def64134d4eebc))
+* **ci:** skip cargo registry token verification in semantic-release ([6d5237b](https://github.com/camercu/tenacious/commit/6d5237b190f9971508a69101583dd9c3b6417661))
+
+
+### Features
+
+* **examples:** add async-cancel example showing timeout and select! cancellation ([3e7fc44](https://github.com/camercu/tenacious/commit/3e7fc44acba715ad814d559ab8033ac0022e5124))
+* **execution:** debug_assert when timeout is set without an elapsed clock ([2aebde5](https://github.com/camercu/tenacious/commit/2aebde51600c47138ce99a43fcf05f0e99820dee))
+* **policy:** add RetryPolicy::boxed_local() for type erasure without Send ([35f007f](https://github.com/camercu/tenacious/commit/35f007f2d69df91d8d4149a83e8af320f6cc0006))
+
 # Changelog
 
 This file records notable user-facing changes to `tenacious`.
