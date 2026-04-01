@@ -13,7 +13,7 @@
 * **execution:** debug_assert when timeout is set without an elapsed clock ([2aebde5](https://github.com/camercu/tenacious/commit/2aebde51600c47138ce99a43fcf05f0e99820dee))
 * **policy:** add RetryPolicy::boxed_local() for type erasure without Send ([35f007f](https://github.com/camercu/tenacious/commit/35f007f2d69df91d8d4149a83e8af320f6cc0006))
 
-## 0.5.0
+# 0.5.0
 
 ### Breaking
 
@@ -23,7 +23,7 @@
   trait now all return `Jittered<Self>`. Code that names these types explicitly
   must be updated; code that only uses the builder methods is unaffected.
 
-## 0.4.0
+# 0.4.0
 
 ### Breaking
 
@@ -42,7 +42,7 @@
 
 - Removed `rand` dependency. Jitter now uses an inline SplitMix64 PRNG.
 
-## 0.3.1
+# 0.3.1
 
 ### Fixed
 
@@ -60,13 +60,13 @@
   manual async executor with tokio, used `.until()` for polling example.
 - Added `test-examples` target to justfile and wired it into CI.
 
-## 0.3.0
+# 0.3.0
 
 ### Breaking
 
 - Aligned public exports with SPEC: tightened re-exports and module visibility.
 
-## 0.2.0
+# 0.2.0
 
 ### Breaking
 
@@ -86,7 +86,7 @@
   `predicate::until(p)` negate a predicate, reading naturally for polling:
   `.until(predicate::ok(|s| s.is_ready()))`.
 
-## 0.1.0
+# 0.1.0
 
 Initial release.
 
