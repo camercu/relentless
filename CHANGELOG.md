@@ -13,10 +13,6 @@
 * **execution:** debug_assert when timeout is set without an elapsed clock ([2aebde5](https://github.com/camercu/tenacious/commit/2aebde51600c47138ce99a43fcf05f0e99820dee))
 * **policy:** add RetryPolicy::boxed_local() for type erasure without Send ([35f007f](https://github.com/camercu/tenacious/commit/35f007f2d69df91d8d4149a83e8af320f6cc0006))
 
-# Changelog
-
-This file records notable user-facing changes to `tenacious`.
-
 ## 0.5.0
 
 ### Breaking
