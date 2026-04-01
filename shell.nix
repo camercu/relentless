@@ -14,5 +14,6 @@ pkgs.mkShell {
     cargo-deny
     typos
     taplo
+    nodejs
   ];
 }
