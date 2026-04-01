@@ -15,7 +15,7 @@
     "@semantic-release/release-notes-generator",
     [
       "semantic-release-cargo",
-      { "publish": false }
+      { "publish": false, "alwaysVerifyToken": false }
     ],
     "@semantic-release/changelog",
     [
