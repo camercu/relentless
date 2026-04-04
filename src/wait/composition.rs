@@ -14,13 +14,13 @@ use super::strategies::{WaitExponential, WaitFixed, WaitLinear};
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::exponential(Duration::from_millis(100))
 ///     .cap(Duration::from_millis(500));
-/// # let state = tenacious::RetryState::new(10, None);
+/// # let state = relentless::RetryState::new(10, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(500));
 /// ```
 #[derive(Debug, Clone)]
@@ -44,13 +44,13 @@ impl<W: Wait> Wait for WaitCapped<W> {
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::fixed(Duration::from_millis(100))
 ///     + wait::fixed(Duration::from_millis(50));
-/// # let state = tenacious::RetryState::new(1, None);
+/// # let state = relentless::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(150));
 ///
 /// // Equivalent using the named method:
@@ -95,13 +95,13 @@ impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::exponential(Duration::from_millis(100))
 ///     .chain(wait::fixed(Duration::from_secs(5)), 3);
-/// # let state = tenacious::RetryState::new(4, None);
+/// # let state = relentless::RetryState::new(4, None);
 /// // Attempt 4 > 3, so uses the fixed fallback.
 /// assert_eq!(w.next_wait(&state), Duration::from_secs(5));
 /// ```

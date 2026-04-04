@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use tenacious::Sleeper;
+use relentless::Sleeper;
 
 const ARBITRARY_DURATION: Duration = Duration::from_millis(10);
 
@@ -113,10 +113,10 @@ fn block_on<F: Future>(future: F) -> F::Output {
 #[cfg(feature = "tokio-sleep")]
 #[test]
 fn tokio_sleep_helper_is_sleep_compatible() {
-    let helper: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
+    let helper: fn(Duration) -> tokio::time::Sleep = relentless::sleep::tokio();
 
-    let policy = tenacious::RetryPolicy::new().stop(tenacious::stop::attempts(1));
-    let result: Result<(), tenacious::RetryError<(), &str>> = block_on(
+    let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
+    let result: Result<(), relentless::RetryError<(), &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<(), &str>(()) })
             .sleep(helper),
@@ -127,10 +127,10 @@ fn tokio_sleep_helper_is_sleep_compatible() {
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
 fn futures_timer_sleep_helper_is_sleep_compatible() {
-    let helper: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
+    let helper: fn(Duration) -> futures_timer::Delay = relentless::sleep::futures_timer();
 
-    let policy = tenacious::RetryPolicy::new().stop(tenacious::stop::attempts(1));
-    let result: Result<(), tenacious::RetryError<(), &str>> = block_on(
+    let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
+    let result: Result<(), relentless::RetryError<(), &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<(), &str>(()) })
             .sleep(helper),
@@ -141,13 +141,13 @@ fn futures_timer_sleep_helper_is_sleep_compatible() {
 #[cfg(all(feature = "embassy-sleep", target_os = "none"))]
 #[test]
 fn embassy_sleep_helper_is_sleep_compatible() {
-    let helper: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
+    let helper: fn(Duration) -> embassy_time::Timer = relentless::sleep::embassy();
     assert_ne!(helper as usize, 0);
 }
 
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[test]
 fn gloo_sleep_helper_is_sleep_compatible() {
-    let helper: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
+    let helper: fn(Duration) -> gloo_timers::future::TimeoutFuture = relentless::sleep::gloo();
     assert_ne!(helper as usize, 0);
 }

@@ -9,7 +9,7 @@ use core::future::Future;
 /// # Examples
 ///
 /// ```
-/// use tenacious::Sleeper;
+/// use relentless::Sleeper;
 /// use core::time::Duration;
 /// use core::future::Future;
 /// use core::pin::Pin;

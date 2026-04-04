@@ -14,7 +14,7 @@ use crate::compat::Duration;
 /// # Examples
 ///
 /// ```
-/// use tenacious::RetryState;
+/// use relentless::RetryState;
 /// use core::time::Duration;
 ///
 /// fn log_state(state: &RetryState) {
@@ -50,7 +50,7 @@ impl RetryState {
 /// # Examples
 ///
 /// ```
-/// use tenacious::AttemptState;
+/// use relentless::AttemptState;
 /// use core::time::Duration;
 ///
 /// fn log_attempt(state: &AttemptState<i32, String>) {
@@ -102,7 +102,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{ExitState, StopReason};
+/// use relentless::{ExitState, StopReason};
 ///
 /// fn on_exit(state: &ExitState<i32, String>) {
 ///     if state.stop_reason == StopReason::Exhausted {

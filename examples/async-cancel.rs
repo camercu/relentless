@@ -14,7 +14,7 @@
 //!   cargo run --example async-cancel --features tokio-sleep
 
 use core::time::Duration;
-use tenacious::{retry_async, sleep, stop, wait};
+use relentless::{retry_async, sleep, stop, wait};
 
 /// Simulates a flaky operation that never succeeds.
 async fn flaky_call() -> Result<String, &'static str> {

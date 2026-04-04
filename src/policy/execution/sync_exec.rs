@@ -177,7 +177,7 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryCore<Policy, BA, AA, OX, F, 
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, stop};
+/// use relentless::{RetryPolicy, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(2));
 /// let retry = policy
@@ -202,7 +202,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E> fmt::Debug
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 /// ```compile_fail
-/// use tenacious::{RetryPolicy, stop};
+/// use relentless::{RetryPolicy, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let _ = policy.retry(|_| Err::<(), _>("fail")).call();
@@ -217,7 +217,7 @@ fn _sync_call_requires_sleep_in_no_std() {}
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, stop};
+/// use relentless::{RetryPolicy, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let (_result, _stats) = policy
@@ -374,7 +374,7 @@ impl<'policy, S, W, P, AA, OX, F, SleepFn, T, E>
     /// non-`()`).
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
@@ -404,7 +404,7 @@ impl<'policy, S, W, P, BA, OX, F, SleepFn, T, E>
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
@@ -434,7 +434,7 @@ impl<'policy, S, W, P, BA, AA, F, SleepFn, T, E>
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy

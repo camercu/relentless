@@ -2,10 +2,10 @@
 //! obeys boolean/arithmetic algebra.
 
 use core::time::Duration;
+use relentless::{Predicate, Stop, Wait, predicate, stop, wait};
 use std::env;
-use tenacious::{Predicate, Stop, Wait, predicate, stop, wait};
 
-const PROPTEST_SEED_ENV: &str = "TENACIOUS_PROPTEST_SEED";
+const PROPTEST_SEED_ENV: &str = "RELENTLESS_PROPTEST_SEED";
 
 const STREAM_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 const SPLITMIX_INCREMENT: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -113,7 +113,7 @@ fn bounded_u64(state: &mut u64, max_inclusive: u64) -> u64 {
     (next_u64(state) % max_inclusive).saturating_add(1)
 }
 
-fn make_state(state: &mut u64) -> tenacious::RetryState {
+fn make_state(state: &mut u64) -> relentless::RetryState {
     let attempt = bounded_u32(state, MAX_ATTEMPT);
     let elapsed = if next_u64(state) & 1 == 0 {
         Some(Duration::from_millis(bounded_u64(
@@ -129,7 +129,7 @@ fn make_state(state: &mut u64) -> tenacious::RetryState {
     // fields are added later.
     let _next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
 
-    tenacious::RetryState::new(attempt, elapsed)
+    relentless::RetryState::new(attempt, elapsed)
 }
 
 /// Folds `REPRO_SEQUENCE_LENGTH` random draws from a stream into a single

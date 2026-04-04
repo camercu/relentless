@@ -13,7 +13,7 @@ use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use tenacious::{
+use relentless::{
     AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, Stop, StopReason, Wait,
     predicate, stop, wait,
 };
@@ -35,7 +35,7 @@ struct StatefulStop {
 }
 
 impl Stop for StatefulStop {
-    fn should_stop(&self, _state: &tenacious::RetryState) -> bool {
+    fn should_stop(&self, _state: &relentless::RetryState) -> bool {
         let next = self.consultations.get().saturating_add(1);
         self.consultations.set(next);
         next >= self.threshold
@@ -47,7 +47,7 @@ struct StatefulWait {
 }
 
 impl Wait for StatefulWait {
-    fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
+    fn next_wait(&self, _state: &relentless::RetryState) -> Duration {
         let next = self.calls.get().saturating_add(1);
         self.calls.set(next);
         Duration::from_millis(u64::from(next))
@@ -90,7 +90,7 @@ fn retry_ext_function_pointer_form_works() {
 #[test]
 fn default_sync_retry_builder_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
-    type Builder = tenacious::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
+    type Builder = relentless::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn).retry();
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
@@ -101,7 +101,7 @@ fn default_sync_retry_builder_with_stats_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
     type SleepFn = fn(Duration);
     type Builder =
-        tenacious::DefaultSyncRetryBuilderWithStats<SyncWorkFn, SleepFn, i32, &'static str>;
+        relentless::DefaultSyncRetryBuilderWithStats<SyncWorkFn, SleepFn, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn)
         .retry()
@@ -137,7 +137,7 @@ fn retry_ext_with_stats_reports_attempts() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let (result, stats): (Result<i32, RetryError<i32, &str>>, tenacious::RetryStats) =
+    let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
         (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             Err(ERROR_VALUE)
@@ -191,12 +191,12 @@ fn retry_ext_hooks_match_policy_hook_points() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION))
         .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             after_calls
                 .borrow_mut()
                 .push((state.attempt, state.next_delay));
         })
-        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_calls.borrow_mut().push((
                 state.attempt,
                 state.outcome.is_err(),
@@ -344,7 +344,7 @@ mod async_tests {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type Builder =
-            tenacious::DefaultAsyncRetryBuilder<AsyncWorkFn, AsyncWork, i32, &'static str>;
+            relentless::DefaultAsyncRetryBuilder<AsyncWorkFn, AsyncWork, i32, &'static str>;
 
         let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
         let result: Result<i32, RetryError<i32, &str>> =
@@ -358,7 +358,7 @@ mod async_tests {
         type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type SleepFn = fn(Duration) -> core::future::Ready<()>;
         type SleepFuture = core::future::Ready<()>;
-        type Builder = tenacious::DefaultAsyncRetryBuilderWithStats<
+        type Builder = relentless::DefaultAsyncRetryBuilderWithStats<
             AsyncWorkFn,
             AsyncWork,
             SleepFn,
@@ -371,7 +371,7 @@ mod async_tests {
             .retry_async()
             .sleep(ready_sleep as SleepFn)
             .with_stats();
-        let (result, stats): (Result<i32, RetryError<i32, &str>>, tenacious::RetryStats) =
+        let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
             block_on(typed);
         assert_eq!(result, Ok(SUCCESS_VALUE));
         assert_eq!(stats.attempts, 1);
@@ -388,12 +388,12 @@ mod async_tests {
             .stop(stop::attempts(MAX_ATTEMPTS))
             .wait(wait::fixed(WAIT_DURATION))
             .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-            .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+            .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
                 after_calls
                     .borrow_mut()
                     .push((state.attempt, state.next_delay));
             })
-            .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+            .on_exit(|state: &relentless::ExitState<i32, &str>| {
                 exit_calls.borrow_mut().push((
                     state.attempt,
                     state.outcome.is_err(),

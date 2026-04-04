@@ -1,4 +1,4 @@
-//! `tenacious` — a Rust library for retrying fallible operations and polling for conditions.
+//! `relentless` — a Rust library for retrying fallible operations and polling for conditions.
 //!
 //! This crate provides composable retry strategies with support for `std`, `alloc`,
 //! and `no_std` environments.
@@ -7,7 +7,7 @@
 //!
 //! ```
 //! use core::time::Duration;
-//! use tenacious::{RetryState, Wait, wait};
+//! use relentless::{RetryState, Wait, wait};
 //!
 //! struct CustomWait(Duration);
 //!
@@ -27,13 +27,13 @@
 //!
 //! # Extension-first usage
 //!
-//! In sync `std` builds, `.sleep(...)` is optional because `tenacious` falls
+//! In sync `std` builds, `.sleep(...)` is optional because `relentless` falls
 //! back to `std::thread::sleep`. The example below still calls `.sleep(...)`
 //! so it compiles under `no_std` documentation test runs too.
 //!
 //! ```
 //! use core::time::Duration;
-//! use tenacious::{RetryExt, stop, wait};
+//! use relentless::{RetryExt, stop, wait};
 //!
 //! let result = (|| Err::<u32, &str>("transient"))
 //!     .retry()
@@ -93,7 +93,7 @@ pub use wait::Wait;
 /// # Examples
 ///
 /// ```
-/// use tenacious::{retry, stop};
+/// use relentless::{retry, stop};
 ///
 /// let result = retry(|_| Ok::<u32, &str>(42))
 ///     .stop(stop::attempts(1))
@@ -128,7 +128,7 @@ where
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::retry_async;
+/// use relentless::retry_async;
 ///
 /// let retry = retry_async(|_| async { Ok::<u32, &str>(42) })
 ///     .sleep(|_dur: Duration| async {});

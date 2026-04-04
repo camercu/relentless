@@ -13,12 +13,12 @@ use core::pin::Pin;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
+use relentless::{RetryError, RetryPolicy};
+use relentless::{RetryStats, StopReason, predicate, stop, wait};
 #[cfg(all(feature = "alloc", feature = "std"))]
 use std::rc::Rc;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use std::sync::Arc;
-use tenacious::{RetryError, RetryPolicy};
-use tenacious::{RetryStats, StopReason, predicate, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(5);
@@ -55,7 +55,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
 struct InstantSleeper;
 
 #[cfg(all(feature = "alloc", feature = "std"))]
-impl tenacious::Sleeper for InstantSleeper {
+impl relentless::Sleeper for InstantSleeper {
     type Sleep = core::future::Ready<()>;
 
     fn sleep(&self, _dur: Duration) -> Self::Sleep {

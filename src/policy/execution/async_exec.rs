@@ -273,10 +273,10 @@ pin_project! {
     /// # Examples
     ///
     /// ```
-    /// use tenacious::RetryPolicy;
+    /// use relentless::RetryPolicy;
     /// use core::time::Duration;
     ///
-    /// let policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let policy = RetryPolicy::new().stop(relentless::stop::attempts(3));
     /// let retry = policy
     ///     .retry_async(|_| async { Ok::<u32, &str>(1) })
     ///     .before_attempt(|_state| {})
@@ -301,7 +301,7 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> fmt::Debug
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 /// ```compile_fail
-/// use tenacious::{RetryPolicy, stop};
+/// use relentless::{RetryPolicy, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let _ = async {
@@ -319,10 +319,10 @@ pin_project! {
     /// # Examples
     ///
     /// ```
-    /// use tenacious::RetryPolicy;
+    /// use relentless::RetryPolicy;
     /// use core::time::Duration;
     ///
-    /// let policy = RetryPolicy::new().stop(tenacious::stop::attempts(3));
+    /// let policy = RetryPolicy::new().stop(relentless::stop::attempts(3));
     /// let retry = policy
     ///     .retry_async(|_| async { Ok::<u32, &str>(1) })
     ///     .sleep(|_dur: Duration| async {})
@@ -521,7 +521,7 @@ impl<'policy, S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
@@ -551,7 +551,7 @@ impl<'policy, S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
@@ -581,7 +581,7 @@ impl<'policy, S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut>
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(1));
     /// let _ = policy
@@ -664,7 +664,7 @@ where
     W: Wait,
 {
     /// ```
-    /// use tenacious::{RetryPolicy, stop};
+    /// use relentless::{RetryPolicy, stop};
     /// use core::time::Duration;
     ///
     /// let policy = RetryPolicy::new().stop(stop::attempts(3));

@@ -1,6 +1,6 @@
 use core::cell::Cell;
 use core::time::Duration;
-use tenacious::{RetryPolicy, predicate, sleep, stop, wait};
+use relentless::{RetryPolicy, predicate, sleep, stop, wait};
 
 #[tokio::main]
 async fn main() {

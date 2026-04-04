@@ -6,7 +6,7 @@ use core::fmt;
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, StopReason, stop};
+/// use relentless::{RetryPolicy, StopReason, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let (_result, stats) = policy
@@ -41,7 +41,7 @@ impl fmt::Display for StopReason {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, RetryStats, stop, wait};
+/// use relentless::{RetryPolicy, RetryStats, stop, wait};
 /// use core::time::Duration;
 ///
 /// let policy = RetryPolicy::new()

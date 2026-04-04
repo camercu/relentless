@@ -21,7 +21,7 @@ use core::ops::{BitAnd, BitOr};
 /// # Examples
 ///
 /// ```
-/// use tenacious::Predicate;
+/// use relentless::Predicate;
 ///
 /// struct RetryOnError;
 ///
@@ -40,7 +40,7 @@ pub trait Predicate<T, E> {
     /// This is the named equivalent of the `|` operator.
     ///
     /// ```
-    /// use tenacious::{Predicate, predicate};
+    /// use relentless::{Predicate, predicate};
     ///
     /// // These are equivalent:
     /// let a = predicate::error(|e: &&str| *e == "retry").or(predicate::ok(|v: &u32| *v < 2));
@@ -59,7 +59,7 @@ pub trait Predicate<T, E> {
     /// This is the named equivalent of the `&` operator.
     ///
     /// ```
-    /// use tenacious::{Predicate, predicate};
+    /// use relentless::{Predicate, predicate};
     ///
     /// // These are equivalent:
     /// let a = predicate::error(|e: &&str| *e == "retry").and(predicate::ok(|v: &u32| *v < 2));
@@ -78,7 +78,7 @@ pub trait Predicate<T, E> {
 /// without wrapping in a named type.
 ///
 /// ```
-/// use tenacious::Predicate;
+/// use relentless::Predicate;
 ///
 /// let pred = |outcome: &Result<i32, &str>| outcome.is_err();
 /// let err: Result<i32, &str> = Err("boom");
@@ -121,7 +121,7 @@ impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let predicate = predicate::any_error();
 /// let outcome: Result<u32, &str> = Err("boom");
@@ -148,7 +148,7 @@ impl<T, E> Predicate<T, E> for PredicateAnyError {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let predicate = predicate::error(|err: &&str| *err == "retryable");
 /// let retryable: Result<u32, &str> = Err("retryable");
@@ -188,7 +188,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let predicate = predicate::result(|outcome: &Result<u32, &str>| {
 ///     matches!(outcome, Ok(value) if *value < 10)
@@ -231,7 +231,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let predicate = predicate::ok(|value: &u32| *value < 3);
 ///
@@ -282,7 +282,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let p = predicate::until(predicate::ok(|v: &u32| *v >= 10));
 /// assert!(p.should_retry(&Ok::<u32, &str>(3)));   // not ready → retry
@@ -318,7 +318,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let p = predicate::error(|err: &&str| *err == "retryable") | predicate::ok(|value: &u32| *value < 2);
 /// assert!(p.should_retry(&Err("retryable")));
@@ -360,7 +360,7 @@ where
 /// # Examples
 ///
 /// ```
-/// use tenacious::{Predicate, predicate};
+/// use relentless::{Predicate, predicate};
 ///
 /// let p = predicate::result(|outcome: &Result<u32, &str>| outcome.is_err())
 ///     & predicate::error(|err: &&str| *err == "retryable");

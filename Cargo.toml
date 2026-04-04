@@ -1,14 +1,14 @@
 [package]
-name = "tenacious"
+name = "relentless"
 version = "0.6.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 description = "Composable retry policies for fallible operations and polling."
-documentation = "https://docs.rs/tenacious"
+documentation = "https://docs.rs/relentless"
 readme = "README.md"
-homepage = "https://docs.rs/tenacious"
-repository = "https://github.com/camercu/tenacious"
+homepage = "https://docs.rs/relentless"
+repository = "https://github.com/camercu/relentless"
 keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
 categories = ["asynchronous", "no-std", "rust-patterns"]
 

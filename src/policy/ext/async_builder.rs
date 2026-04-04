@@ -32,7 +32,7 @@ where
     ///
     /// ```compile_fail
     /// use core::future::ready;
-    /// use tenacious::AsyncRetryExt;
+    /// use relentless::AsyncRetryExt;
     ///
     /// let _ = async {
     ///     let _ = (|| ready(Ok::<(), &str>(()))).retry_async().await;
@@ -113,7 +113,7 @@ pub type DefaultAsyncRetryBuilderWithStats<F, Fut, SleepImpl, T, E, SleepFut = (
 #[doc(hidden)]
 /// ```compile_fail
 /// use core::future::ready;
-/// use tenacious::AsyncRetryExt;
+/// use relentless::AsyncRetryExt;
 ///
 /// let _ = async {
 ///     let _ = (|| ready(Ok::<(), &str>(())))
@@ -135,7 +135,7 @@ pin_project! {
     /// ```
     /// use core::future::ready;
     /// use core::time::Duration;
-    /// use tenacious::AsyncRetryExt;
+    /// use relentless::AsyncRetryExt;
     ///
     /// let retry = (|| ready(Ok::<u32, &str>(1)))
     ///     .retry_async()
@@ -183,7 +183,7 @@ pin_project! {
     /// ```
     /// use core::future::ready;
     /// use core::time::Duration;
-    /// use tenacious::AsyncRetryExt;
+    /// use relentless::AsyncRetryExt;
     ///
     /// let retry = (|| ready(Ok::<u32, &str>(1)))
     ///     .retry_async()

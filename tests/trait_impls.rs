@@ -8,29 +8,29 @@ fn _assert_send_sync<T: Send + Sync>() {}
 
 #[test]
 fn default_retry_policy_is_send_and_sync() {
-    _assert_send_sync::<tenacious::RetryPolicy>();
+    _assert_send_sync::<relentless::RetryPolicy>();
 }
 
 #[test]
 fn value_types_implement_copy() {
     fn assert_copy<T: Copy>() {}
 
-    assert_copy::<tenacious::RetryState>();
-    assert_copy::<tenacious::RetryStats>();
-    assert_copy::<tenacious::StopReason>();
-    assert_copy::<tenacious::wait::WaitFixed>();
-    assert_copy::<tenacious::wait::WaitLinear>();
-    assert_copy::<tenacious::wait::WaitExponential>();
-    assert_copy::<tenacious::stop::StopAfterAttempts>();
-    assert_copy::<tenacious::stop::StopAfterElapsed>();
-    assert_copy::<tenacious::stop::StopNever>();
+    assert_copy::<relentless::RetryState>();
+    assert_copy::<relentless::RetryStats>();
+    assert_copy::<relentless::StopReason>();
+    assert_copy::<relentless::wait::WaitFixed>();
+    assert_copy::<relentless::wait::WaitLinear>();
+    assert_copy::<relentless::wait::WaitExponential>();
+    assert_copy::<relentless::stop::StopAfterAttempts>();
+    assert_copy::<relentless::stop::StopAfterElapsed>();
+    assert_copy::<relentless::stop::StopNever>();
 }
 
 /// §14
 #[test]
 fn all_strategy_types_implement_debug() {
     use core::time::Duration;
-    use tenacious::{predicate, stop, wait};
+    use relentless::{predicate, stop, wait};
 
     let _ = format!("{:?}", stop::attempts(3));
     let _ = format!("{:?}", stop::elapsed(Duration::from_secs(10)));
@@ -58,7 +58,7 @@ fn all_strategy_types_implement_debug() {
 #[test]
 fn wait_exponential_has_partial_eq_not_eq() {
     use core::time::Duration;
-    use tenacious::wait;
+    use relentless::wait;
 
     let a = wait::exponential(Duration::from_millis(100));
     let b = wait::exponential(Duration::from_millis(100));
@@ -77,7 +77,7 @@ fn wait_exponential_has_partial_eq_not_eq() {
 /// 4.2.3
 #[test]
 fn stop_reason_display_values() {
-    use tenacious::StopReason;
+    use relentless::StopReason;
 
     assert_eq!(format!("{}", StopReason::Accepted), "accepted");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
@@ -86,7 +86,7 @@ fn stop_reason_display_values() {
 /// 4.1.9
 #[test]
 fn retry_error_display_format() {
-    use tenacious::RetryError;
+    use relentless::RetryError;
 
     let e: RetryError<(), String> = RetryError::Exhausted {
         last: Err("network timeout".to_string()),
@@ -103,7 +103,7 @@ fn retry_error_display_format() {
 #[test]
 fn retry_stats_is_clone_and_copy() {
     use core::time::Duration;
-    use tenacious::{RetryStats, StopReason};
+    use relentless::{RetryStats, StopReason};
 
     let stats = RetryStats {
         attempts: 2,
@@ -122,7 +122,7 @@ fn retry_stats_is_clone_and_copy() {
 #[test]
 fn retry_state_is_clone_copy_partial_eq() {
     use core::time::Duration;
-    use tenacious::RetryState;
+    use relentless::RetryState;
 
     let s = RetryState::new(3, Some(Duration::from_secs(1)));
     let cloned = s; // Copy
@@ -136,7 +136,7 @@ fn retry_state_is_clone_copy_partial_eq() {
 #[test]
 fn retry_policy_is_clone_when_components_are_clone() {
     use core::time::Duration;
-    use tenacious::{RetryPolicy, stop, wait};
+    use relentless::{RetryPolicy, stop, wait};
 
     let policy = RetryPolicy::new()
         .stop(stop::attempts(3))
@@ -153,7 +153,7 @@ fn retry_policy_is_clone_when_components_are_clone() {
 /// §14
 #[test]
 fn all_predicate_types_implement_clone() {
-    use tenacious::predicate;
+    use relentless::predicate;
 
     let _ = predicate::any_error().clone();
     let _ = predicate::error(|_e: &&str| true).clone();

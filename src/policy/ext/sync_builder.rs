@@ -31,7 +31,7 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// documentation tests.
     ///
     /// ```
-    /// use tenacious::RetryExt;
+    /// use relentless::RetryExt;
     ///
     /// let _ = (|| Ok::<(), &str>(()))
     ///     .retry()
@@ -109,7 +109,7 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWi
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 /// ```compile_fail
-/// use tenacious::RetryExt;
+/// use relentless::RetryExt;
 ///
 /// let _ = (|| Err::<(), &str>("fail"))
 ///     .retry()
@@ -124,7 +124,7 @@ fn _sync_retry_builder_requires_sleep_in_no_std() {}
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::{RetryExt, stop};
+/// use relentless::{RetryExt, stop};
 ///
 /// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
@@ -166,7 +166,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E> fmt::Debug
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::RetryExt;
+/// use relentless::RetryExt;
 ///
 /// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
@@ -322,7 +322,7 @@ impl<S, W, P, AA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, (), AA, OX, F,
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryExt, stop};
+    /// use relentless::{RetryExt, stop};
     ///
     /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()
@@ -350,7 +350,7 @@ impl<S, W, P, BA, OX, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, (), OX, F,
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryExt, stop};
+    /// use relentless::{RetryExt, stop};
     ///
     /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()
@@ -378,7 +378,7 @@ impl<S, W, P, BA, AA, F, SleepFn, T, E> SyncRetryBuilder<S, W, P, BA, AA, (), F,
     /// twice is a compile error.
     ///
     /// ```compile_fail
-    /// use tenacious::{RetryExt, stop};
+    /// use relentless::{RetryExt, stop};
     ///
     /// let _ = (|| Err::<(), _>("fail"))
     ///     .retry()

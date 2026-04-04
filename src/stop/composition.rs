@@ -15,8 +15,8 @@ use core::ops::{BitAnd, BitOr};
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::Stop;
-/// use tenacious::stop;
+/// use relentless::Stop;
+/// use relentless::stop;
 ///
 /// // Stop after 5 attempts OR after 30 seconds, whichever comes first.
 /// let s = stop::attempts(5) | stop::elapsed(Duration::from_secs(30));
@@ -74,8 +74,8 @@ impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::Stop;
-/// use tenacious::stop;
+/// use relentless::Stop;
+/// use relentless::stop;
 ///
 /// // Stop only when BOTH conditions are true.
 /// let s = stop::attempts(5) & stop::elapsed(Duration::from_secs(30));

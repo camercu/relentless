@@ -35,7 +35,7 @@ pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed,
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryState, Wait};
+/// use relentless::{RetryState, Wait};
 /// use core::time::Duration;
 ///
 /// struct FixedDelay(Duration);
@@ -74,7 +74,7 @@ pub trait Wait {
     /// the sum of both strategies' outputs (saturating on overflow).
     ///
     /// ```
-    /// use tenacious::{Wait, wait};
+    /// use relentless::{Wait, wait};
     /// use core::time::Duration;
     ///
     /// // These are equivalent:

@@ -11,13 +11,13 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+#[cfg(feature = "alloc")]
+use relentless::sleep::Sleeper;
+use relentless::{RetryPolicy, stop, wait};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 #[cfg(feature = "alloc")]
 use std::{cell::Cell, pin::pin};
-#[cfg(feature = "alloc")]
-use tenacious::sleep::Sleeper;
-use tenacious::{RetryPolicy, stop, wait};
 
 #[global_allocator]
 static GLOBAL: &StatsAlloc<std::alloc::System> = &INSTRUMENTED_SYSTEM;

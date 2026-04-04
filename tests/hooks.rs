@@ -6,9 +6,9 @@
 
 use core::cell::Cell;
 use core::time::Duration;
+use relentless::RetryPolicy;
+use relentless::{StopReason, predicate, stop, wait};
 use std::cell::RefCell;
-use tenacious::RetryPolicy;
-use tenacious::{StopReason, predicate, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
@@ -30,7 +30,7 @@ fn before_attempt_and_after_attempt_fire_at_defined_points() {
             Err::<i32, _>("fail")
         })
         .before_attempt(|state| events.borrow_mut().push(('b', state.attempt)))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             events.borrow_mut().push(('a', state.attempt));
         })
         .sleep(instant_sleep)
@@ -66,7 +66,7 @@ fn after_attempt_runs_after_predicate_evaluation() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
             after_observed.borrow_mut().push(predicate_calls.get());
         })
         .sleep(instant_sleep)
@@ -84,7 +84,7 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             seen.borrow_mut().push((state.attempt, state.next_delay));
         })
         .sleep(instant_sleep)
@@ -108,7 +108,7 @@ fn on_exit_fires_once_with_final_state() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exits
                 .borrow_mut()
                 .push((state.attempt, state.outcome.is_err(), state.stop_reason));
@@ -131,7 +131,7 @@ fn on_exit_reports_non_retryable_error_reason() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fatal"))
-        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
             reasons.borrow_mut().push(state.stop_reason);
         })
         .sleep(instant_sleep)
@@ -151,14 +151,14 @@ fn multiple_hooks_of_same_kind_fire_in_registration_order() {
         .retry(|_| Err::<i32, _>("fail"))
         .before_attempt(|_state| calls.borrow_mut().push("before_1"))
         .before_attempt(|_state| calls.borrow_mut().push("before_2"))
-        .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
             calls.borrow_mut().push("after_1")
         })
-        .after_attempt(|_state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
             calls.borrow_mut().push("after_2")
         })
-        .on_exit(|_state: &tenacious::ExitState<i32, &str>| calls.borrow_mut().push("exit_1"))
-        .on_exit(|_state: &tenacious::ExitState<i32, &str>| calls.borrow_mut().push("exit_2"))
+        .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_1"))
+        .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_2"))
         .sleep(instant_sleep)
         .call();
 

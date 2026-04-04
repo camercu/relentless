@@ -18,7 +18,7 @@ use core::fmt;
 /// # Examples
 ///
 /// ```
-/// use tenacious::RetryError;
+/// use relentless::RetryError;
 ///
 /// let err: RetryError<(), String> = RetryError::Exhausted {
 ///     last: Err("connection refused".to_string()),

@@ -1,5 +1,5 @@
 use core::time::Duration;
-use tenacious::{RetryError, RetryExt, predicate, stop, wait};
+use relentless::{RetryError, RetryExt, predicate, stop, wait};
 
 fn main() {
     // Represents a remote health check that is permanently unavailable.
@@ -13,7 +13,7 @@ fn main() {
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::from_millis(5)))
         .when(predicate::any_error())
-        .after_attempt(|state: &tenacious::AttemptState<(), &str>| {
+        .after_attempt(|state: &relentless::AttemptState<(), &str>| {
             if let Err(error) = state.outcome {
                 eprintln!("attempt {} failed: {error}", state.attempt);
             }

@@ -1,8 +1,8 @@
 use core::time::Duration;
+use relentless::{RetryPolicy, stop, wait};
 use std::env;
 use std::hint::black_box;
 use std::time::Instant;
-use tenacious::{RetryPolicy, stop, wait};
 
 const WARMUP_ITERS: u32 = 2_000;
 const BENCH_ITERS: u32 = 50_000;
@@ -97,7 +97,7 @@ fn run_named_case(name: &str) -> Result<(), &'static str> {
 }
 
 fn run_all_cases() {
-    println!("tenacious micro-benchmarks (deterministic in-process):");
+    println!("relentless micro-benchmarks (deterministic in-process):");
     for (name, case) in BENCH_CASES {
         run_case(name, *case);
     }

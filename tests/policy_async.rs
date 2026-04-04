@@ -12,11 +12,11 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
+use relentless::{RetryError, RetryPolicy};
+use relentless::{predicate, sleep::Sleeper, stop, wait};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use tenacious::{RetryError, RetryPolicy};
-use tenacious::{predicate, sleep::Sleeper, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
@@ -107,9 +107,9 @@ fn retry_async_executes_when_sleeper_is_set() {
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity)]
     fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
-        retry: tenacious::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
+        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
     ) where
-        F: FnMut(tenacious::RetryState) -> Fut,
+        F: FnMut(relentless::RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
         let _ = retry;
@@ -418,10 +418,10 @@ fn async_hooks_fire_in_expected_places() {
             .before_attempt(move |state| {
                 before_attempt_ref.borrow_mut().push(state.attempt);
             })
-            .after_attempt(move |state: &tenacious::AttemptState<'_, i32, &str>| {
+            .after_attempt(move |state: &relentless::AttemptState<'_, i32, &str>| {
                 after_attempt_ref.borrow_mut().push(state.attempt);
             })
-            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(sleeper),
@@ -432,7 +432,7 @@ fn async_hooks_fire_in_expected_places() {
 
     assert_eq!(*before_attempt, vec![1, 2, 3]);
     assert_eq!(*after_attempt, vec![1, 2, 3]);
-    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Exhausted));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Exhausted));
 }
 
 #[test]
@@ -444,14 +444,14 @@ fn async_on_exit_reports_success_reason() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(RecordingSleeper::new()),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Accepted));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Accepted));
 }
 
 #[test]
@@ -465,14 +465,14 @@ fn async_on_exit_reports_non_retryable_error_reason() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>("fatal") })
-            .on_exit(move |state: &tenacious::ExitState<'_, i32, &str>| {
+            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
             .sleep(RecordingSleeper::new()),
     );
 
     assert!(matches!(result, Err(RetryError::Rejected { .. })));
-    assert_eq!(exit_reason.get(), Some(tenacious::StopReason::Accepted));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Accepted));
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
     let _ = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .on_exit(move |_state: &tenacious::ExitState<'_, i32, &str>| {
+            .on_exit(move |_state: &relentless::ExitState<'_, i32, &str>| {
                 exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
             })
             .sleep(RecordingSleeper::new()),
@@ -502,7 +502,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 #[cfg(feature = "tokio-sleep")]
 #[test]
 fn tokio_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> tokio::time::Sleep = tenacious::sleep::tokio();
+    let sleep_fn: fn(Duration) -> tokio::time::Sleep = relentless::sleep::tokio();
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
@@ -515,7 +515,7 @@ fn tokio_sleep_helper_is_available() {
 #[cfg(all(feature = "embassy-sleep", target_os = "none"))]
 #[test]
 fn embassy_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> embassy_time::Timer = tenacious::sleep::embassy();
+    let sleep_fn: fn(Duration) -> embassy_time::Timer = relentless::sleep::embassy();
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
@@ -528,7 +528,7 @@ fn embassy_sleep_helper_is_available() {
 #[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
 #[test]
 fn gloo_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = tenacious::sleep::gloo();
+    let sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = relentless::sleep::gloo();
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
@@ -541,7 +541,7 @@ fn gloo_sleep_helper_is_available() {
 #[cfg(feature = "futures-timer-sleep")]
 #[test]
 fn futures_timer_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> futures_timer::Delay = tenacious::sleep::futures_timer();
+    let sleep_fn: fn(Duration) -> futures_timer::Delay = relentless::sleep::futures_timer();
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy

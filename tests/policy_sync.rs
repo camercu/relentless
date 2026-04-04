@@ -9,9 +9,9 @@
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
+use relentless::{RetryError, RetryPolicy, StopReason};
+use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
-use tenacious::{RetryError, RetryPolicy, StopReason};
-use tenacious::{predicate, stop, wait};
 
 const MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_POLICY_MAX_ATTEMPTS: u32 = 3;
@@ -224,7 +224,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let retry = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep);
-    let typed: tenacious::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    let typed: relentless::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
@@ -397,9 +397,9 @@ fn policy_is_clone() {
 fn boxed_local_erases_policy_types() {
     #[allow(clippy::type_complexity)]
     let policy: RetryPolicy<
-        Box<dyn tenacious::stop::Stop + 'static>,
-        Box<dyn tenacious::wait::Wait + 'static>,
-        Box<dyn tenacious::predicate::Predicate<(), &str> + 'static>,
+        Box<dyn relentless::stop::Stop + 'static>,
+        Box<dyn relentless::wait::Wait + 'static>,
+        Box<dyn relentless::predicate::Predicate<(), &str> + 'static>,
     > = RetryPolicy::new().boxed_local::<(), &str>();
     let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
     assert!(result.is_err());
@@ -566,7 +566,7 @@ fn after_attempt_hook_fires_after_each_attempt() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             let is_ok = state.outcome.is_ok();
             hook_results.borrow_mut().push((state.attempt, is_ok));
         })
@@ -589,7 +589,7 @@ fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             hook_calls
                 .borrow_mut()
                 .push((state.attempt, state.next_delay));
@@ -616,7 +616,7 @@ fn on_exit_hook_fires_when_stop_triggers() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_reason.set(Some(state.stop_reason));
         })
         .sleep(instant_sleep)
@@ -632,7 +632,7 @@ fn on_exit_hook_fires_on_success() {
 
     let _ = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .on_exit(|state: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_reason.set(Some(state.stop_reason));
         })
         .sleep(instant_sleep)
@@ -797,7 +797,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
 /// 6.1.1
 #[test]
 fn free_function_retry_uses_default_policy() {
-    use tenacious::retry;
+    use relentless::retry;
 
     let call_count = Cell::new(0_u32);
     let result = retry(|_| {
@@ -815,7 +815,7 @@ fn free_function_retry_uses_default_policy() {
 /// 6.1.2
 #[test]
 fn free_function_retry_provides_retry_state_to_op() {
-    use tenacious::{RetryState, retry};
+    use relentless::{RetryState, retry};
 
     let states_seen: RefCell<Vec<u32>> = RefCell::new(Vec::new());
     let _ = retry(|state: RetryState| {
@@ -833,8 +833,8 @@ fn free_function_retry_provides_retry_state_to_op() {
 /// 6.2.2
 #[test]
 fn retry_ext_closure_takes_no_retry_state() {
+    use relentless::RetryExt;
     use std::rc::Rc;
-    use tenacious::RetryExt;
 
     // The closure passed to .retry() via RetryExt must have zero args.
     let call_count = Rc::new(Cell::new(0_u32));
@@ -860,8 +860,8 @@ fn retry_ext_closure_takes_no_retry_state() {
 /// 16.2, 16.3
 #[test]
 fn compat_duration_is_core_time_duration() {
-    let _: tenacious::RetryState =
-        tenacious::RetryState::new(1, Some(core::time::Duration::from_millis(5)));
+    let _: relentless::RetryState =
+        relentless::RetryState::new(1, Some(core::time::Duration::from_millis(5)));
 }
 
 /// §6
@@ -908,7 +908,7 @@ fn shared_policy_reference_across_multiple_threads() {
 /// 6.4.2
 #[test]
 fn call_returns_retry_result_type() {
-    let result: tenacious::RetryResult<i32, &str> = RetryPolicy::new()
+    let result: relentless::RetryResult<i32, &str> = RetryPolicy::new()
         .stop(stop::attempts(1))
         .retry(|_| Err::<i32, &str>("fail"))
         .sleep(instant_sleep)
@@ -939,7 +939,7 @@ fn after_attempt_fires_including_final_attempt() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             attempt_nums.borrow_mut().push(state.attempt);
         })
         .sleep(instant_sleep)
@@ -958,7 +958,7 @@ fn after_attempt_next_delay_some_then_none() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|state: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             next_delays.borrow_mut().push(state.next_delay);
         })
         .sleep(instant_sleep)
@@ -978,7 +978,7 @@ fn on_exit_fires_exactly_once_per_execution() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|_: &tenacious::ExitState<i32, &str>| {
+        .on_exit(|_: &relentless::ExitState<i32, &str>| {
             exit_count.set(exit_count.get().saturating_add(1));
         })
         .sleep(instant_sleep)
@@ -997,7 +997,7 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|_: &tenacious::AttemptState<i32, &str>| {
+        .after_attempt(|_: &relentless::AttemptState<i32, &str>| {
             events.borrow_mut().push("after_attempt");
         })
         .sleep(|_| {

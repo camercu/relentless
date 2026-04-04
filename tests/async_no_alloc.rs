@@ -6,7 +6,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use std::sync::Arc;
 
-use tenacious::{AsyncRetryExt, RetryError, RetryPolicy, stop};
+use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
 
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";

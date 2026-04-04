@@ -1,13 +1,13 @@
-# tenacious specification
+# relentless specification
 
 This document is the normative behavior and public-API contract for
-`tenacious`. It defines what the crate guarantees at runtime and which items
+`relentless`. It defines what the crate guarantees at runtime and which items
 are part of the supported surface. It does not prescribe internal file layout,
 development workflow, or historical migration steps.
 
 ## 1. Overview
 
-`tenacious` is a Rust library for retrying fallible operations and polling for
+`relentless` is a Rust library for retrying fallible operations and polling for
 conditions. It models retries with three composable parts:
 
 - `Predicate`: which outcomes should retry
@@ -657,9 +657,9 @@ internally as `move |_| op()`.
 Usage:
 
 ```rust
-use tenacious::{retry, retry_async, RetryExt, AsyncRetryExt};
-use tenacious::{stop, wait, sleep};
-use tenacious::predicate::{any_error, error, ok};
+use relentless::{retry, retry_async, RetryExt, AsyncRetryExt};
+use relentless::{stop, wait, sleep};
+use relentless::predicate::{any_error, error, ok};
 
 // Ext: one-shot retry with zero config
 (|| fetch_data()).retry().call()?;
@@ -1289,7 +1289,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 
 **Seeded property tests.** `tests/composition.rs` verifies that `Stop`, `Wait`,
 and `Predicate` composition obeys boolean and arithmetic algebra across 1,024
-random samples per test. The seed is read from `TENACIOUS_PROPTEST_SEED` at
+random samples per test. The seed is read from `RELENTLESS_PROPTEST_SEED` at
 runtime; if absent, a random seed is generated and printed on failure for
 reproduction.
 

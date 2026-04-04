@@ -1,8 +1,8 @@
-# tenacious
+# relentless
 
-[![crates.io](https://img.shields.io/crates/v/tenacious.svg)](https://crates.io/crates/tenacious)
-[![docs.rs](https://docs.rs/tenacious/badge.svg)](https://docs.rs/tenacious)
-[![CI](https://github.com/camercu/tenacious/actions/workflows/ci.yml/badge.svg)](https://github.com/camercu/tenacious/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/relentless.svg)](https://crates.io/crates/relentless)
+[![docs.rs](https://docs.rs/relentless/badge.svg)](https://docs.rs/relentless)
+[![CI](https://github.com/camercu/relentless/actions/workflows/ci.yml/badge.svg)](https://github.com/camercu/relentless/actions/workflows/ci.yml)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
 
 Retry and polling for Rust — with composable strategies, policy reuse, and
@@ -10,7 +10,7 @@ first-class support for polling workflows where `Ok(_)` doesn't always mean
 "done."
 
 Most retry libraries handle the simple case well: call a function, retry on
-error, back off. `tenacious` handles that too, but it also handles the cases
+error, back off. `relentless` handles that too, but it also handles the cases
 those libraries make awkward:
 
 - **Polling**, where `Ok("pending")` means "keep going" and you need
@@ -33,7 +33,7 @@ strategy algebra) and Rust's [`backon`](https://crates.io/crates/backon)
 ## Install
 
 ```bash
-cargo add tenacious
+cargo add relentless
 ```
 
 ### Feature flags
@@ -53,7 +53,7 @@ Async retry does not require `alloc`.
 
 ## Examples
 
-For full docs, see <https://docs.rs/tenacious>. Behavior spec:
+For full docs, see <https://docs.rs/relentless>. Behavior spec:
 [docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
 [`examples/`](./examples).
 
@@ -67,7 +67,7 @@ The `.retry()` extension trait is the fastest way to add retries. Defaults: 3
 attempts, exponential backoff from 100 ms, retry on any `Err`.
 
 ```rust,no_run
-use tenacious::RetryExt;
+use relentless::RetryExt;
 
 fn fetch_job_output() -> Result<String, std::io::Error> {
     std::fs::read_to_string("/var/run/background_job.output")
@@ -85,7 +85,7 @@ stop.
 
 ```rust,no_run
 use core::time::Duration;
-use tenacious::{Wait, retry, predicate, stop, wait};
+use relentless::{Wait, retry, predicate, stop, wait};
 
 let body = retry(|state| {
     println!("attempt {}", state.attempt);
@@ -109,7 +109,7 @@ stop strategies with `|` or `&`.
 
 ```rust,no_run
 use core::time::Duration;
-use tenacious::{RetryPolicy, stop, wait};
+use relentless::{RetryPolicy, stop, wait};
 
 fn check_health() -> Result<String, std::io::Error> { todo!() }
 fn fetch_invoice(id: &str) -> Result<String, std::io::Error> { todo!() }
@@ -133,7 +133,7 @@ Unlike `.when()`, which retries on matching outcomes, `.until()` retries on
 everything *except* the matching outcome.
 
 ```rust,no_run
-use tenacious::{RetryPolicy, predicate};
+use relentless::{RetryPolicy, predicate};
 
 #[derive(Debug, PartialEq)]
 enum Status { Pending, Done }
@@ -149,7 +149,7 @@ let result = RetryPolicy::new()
 To also retry selected errors during polling, use `predicate::result`:
 
 ```rust,no_run
-use tenacious::{RetryPolicy, predicate};
+use relentless::{RetryPolicy, predicate};
 
 #[derive(Debug)]
 enum Status { Pending, Done }
@@ -172,7 +172,7 @@ let result = RetryPolicy::new()
 Pass an async sleep adapter — here via the `tokio-sleep` feature.
 
 ```rust,no_run
-use tenacious::retry_async;
+use relentless::retry_async;
 
 async fn fetch(url: &str) -> Result<String, reqwest::Error> {
     reqwest::get(url).await?.text().await
@@ -181,7 +181,7 @@ async fn fetch(url: &str) -> Result<String, reqwest::Error> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let body = retry_async(|_| fetch("https://api.example.com/data"))
-        .sleep(tenacious::sleep::tokio())
+        .sleep(relentless::sleep::tokio())
         .await?;
     Ok(())
 }
@@ -190,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 6) Hooks & stats
 
 ```rust
-use tenacious::retry;
+use relentless::retry;
 
 let (result, stats) = retry(|_| Ok::<_, &str>("done"))
     .before_attempt(|state| {
@@ -212,7 +212,7 @@ println!("attempts: {}, total wait: {:?}", stats.attempts, stats.total_wait);
 ### 7) Error handling
 
 ```rust,no_run
-use tenacious::{retry, RetryError};
+use relentless::{retry, RetryError};
 
 match retry(|_| Err::<(), &str>("boom")).call() {
     Ok(val) => println!("success: {val:?}"),

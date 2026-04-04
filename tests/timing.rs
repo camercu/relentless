@@ -10,8 +10,8 @@ use core::cell::Cell;
 use core::time::Duration;
 use std::cell::RefCell;
 
-use tenacious::stop;
-use tenacious::{RetryError, RetryPolicy};
+use relentless::stop;
+use relentless::{RetryError, RetryPolicy};
 
 const OPERATION_RUNTIME: Duration = Duration::from_millis(5);
 const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);

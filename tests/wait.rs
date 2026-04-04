@@ -5,16 +5,16 @@
 //! via `+` (WaitCombine), and that provided methods work on user-defined Wait impls.
 
 use core::time::Duration;
-use tenacious::Wait;
-use tenacious::wait;
+use relentless::Wait;
+use relentless::wait;
 
 const BASE: Duration = Duration::from_millis(100);
 const INCREMENT: Duration = Duration::from_millis(50);
 const CAP: Duration = Duration::from_millis(500);
 const CHAIN_AFTER: u32 = 3;
 
-fn make_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, None)
+fn make_state(attempt: u32) -> relentless::RetryState {
+    relentless::RetryState::new(attempt, None)
 }
 
 /// Minimal Wait implementation used to verify the trait contract.
@@ -23,7 +23,7 @@ struct FixedWait {
 }
 
 impl Wait for FixedWait {
-    fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
+    fn next_wait(&self, _state: &relentless::RetryState) -> Duration {
         self.dur
     }
 }
@@ -436,7 +436,7 @@ struct StepWait {
 }
 
 impl Wait for StepWait {
-    fn next_wait(&self, state: &tenacious::RetryState) -> Duration {
+    fn next_wait(&self, state: &relentless::RetryState) -> Duration {
         let step = self
             .increment
             .checked_mul(state.attempt.saturating_sub(1))
@@ -493,7 +493,7 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
     #[derive(Clone, Copy)]
     struct CustomWait(Duration);
     impl Wait for CustomWait {
-        fn next_wait(&self, _state: &tenacious::RetryState) -> Duration {
+        fn next_wait(&self, _state: &relentless::RetryState) -> Duration {
             self.0
         }
     }
@@ -508,8 +508,8 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
 /// 3.2.8
 #[test]
 fn zero_duration_sleep_is_skipped() {
+    use relentless::{RetryPolicy, stop};
     use std::cell::Cell;
-    use tenacious::{RetryPolicy, stop};
 
     let sleep_calls = Cell::new(0_u32);
     let policy = RetryPolicy::new()

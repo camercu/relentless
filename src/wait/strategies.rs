@@ -14,12 +14,12 @@ use super::math::{
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::fixed(Duration::from_millis(100));
-/// # let state = tenacious::RetryState::new(1, None);
+/// # let state = relentless::RetryState::new(1, None);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,12 +46,12 @@ impl Wait for WaitFixed {
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
-/// # let state = tenacious::RetryState::new(3, None);
+/// # let state = relentless::RetryState::new(3, None);
 /// // 100ms + (3-1)*50ms = 200ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
@@ -86,12 +86,12 @@ impl Wait for WaitLinear {
 /// # Examples
 ///
 /// ```
-/// use tenacious::wait;
-/// use tenacious::Wait;
+/// use relentless::wait;
+/// use relentless::Wait;
 /// use core::time::Duration;
 ///
 /// let w = wait::exponential(Duration::from_millis(100));
-/// # let state = tenacious::RetryState::new(3, None);
+/// # let state = relentless::RetryState::new(3, None);
 /// // 100ms * 2^2 = 400ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```

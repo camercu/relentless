@@ -1,6 +1,6 @@
 # Contributing
 
-This guide explains how to work on `tenacious` with the same toolchain and
+This guide explains how to work on `relentless` with the same toolchain and
 checks used by the repository. Use it when you set up a new clone, install Git
 hooks, or want to understand which commands are part of the normal development
 loop.
@@ -12,7 +12,7 @@ CI guidance in this document rather than in the spec.
 
 ## Development environment
 
-`tenacious` uses a pinned Rust toolchain and a pinned Nix shell so contributors
+`relentless` uses a pinned Rust toolchain and a pinned Nix shell so contributors
 run the same checks with the same tool versions.
 
 - [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.85.0`, `clippy`,
@@ -79,7 +79,7 @@ changes early, but the pinned `just ci` gate remains the source of truth.
 
 ## Toolchain policy
 
-`tenacious` supports Rust `1.85.0` as its minimum supported Rust version
+`relentless` supports Rust `1.85.0` as its minimum supported Rust version
 (MSRV). That matches the crate metadata and the Rust 2024 edition used by the
 project.
 

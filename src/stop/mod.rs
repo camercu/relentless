@@ -22,7 +22,7 @@ pub use strategies::{StopAfterAttempts, StopAfterElapsed, StopNever, attempts, e
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryState, Stop};
+/// use relentless::{RetryState, Stop};
 ///
 /// struct StopAfterThree;
 ///
@@ -43,7 +43,7 @@ pub trait Stop {
     /// receive every `should_stop` call.
     ///
     /// ```
-    /// use tenacious::{Stop, stop};
+    /// use relentless::{Stop, stop};
     /// use core::time::Duration;
     ///
     /// // These are equivalent:
@@ -65,7 +65,7 @@ pub trait Stop {
     /// receive every `should_stop` call.
     ///
     /// ```
-    /// use tenacious::{Stop, stop};
+    /// use relentless::{Stop, stop};
     /// use core::time::Duration;
     ///
     /// // These are equivalent:

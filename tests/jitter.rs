@@ -5,10 +5,10 @@
 //! a distinct sequence (decorrelation). Seeded tests confirm reproducibility.
 
 use core::time::Duration;
+use relentless::RetryPolicy;
+use relentless::Wait;
+use relentless::{stop, wait};
 use std::cell::RefCell;
-use tenacious::RetryPolicy;
-use tenacious::Wait;
-use tenacious::{stop, wait};
 
 const BASE_WAIT: Duration = Duration::from_millis(20);
 const MAX_JITTER: Duration = Duration::from_millis(10);
@@ -18,8 +18,8 @@ const SEEDED_NONCE_B: u64 = 8;
 const SEEDED_ATTEMPT_COUNT: u32 = 8;
 const SEEDED_JITTER_SEED: u64 = 0x11;
 
-fn state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, None)
+fn state(attempt: u32) -> relentless::RetryState {
+    relentless::RetryState::new(attempt, None)
 }
 
 #[test]

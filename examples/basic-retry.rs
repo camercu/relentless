@@ -1,6 +1,6 @@
 use core::cell::Cell;
 use core::time::Duration;
-use tenacious::{RetryExt, stop, wait};
+use relentless::{RetryExt, stop, wait};
 
 fn main() {
     // Represents a remote call that fails transiently before eventually succeeding.

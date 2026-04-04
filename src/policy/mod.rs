@@ -44,7 +44,7 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryPolicy, stop, wait};
+/// use relentless::{RetryPolicy, stop, wait};
 /// use core::time::Duration;
 ///
 /// let policy = RetryPolicy::new()
@@ -55,7 +55,7 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 /// ```
 ///
 /// ```compile_fail
-/// use tenacious::{RetryPolicy, stop};
+/// use relentless::{RetryPolicy, stop};
 ///
 /// let _ = RetryPolicy::new()
 ///     .stop(stop::attempts(1))
@@ -77,7 +77,7 @@ impl RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::Pred
     /// `any_error()`.
     ///
     /// ```
-    /// use tenacious::RetryPolicy;
+    /// use relentless::RetryPolicy;
     ///
     /// let policy = RetryPolicy::new();
     /// let _ = policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
@@ -180,7 +180,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     /// # Examples
     ///
     /// ```
-    /// use tenacious::RetryPolicy;
+    /// use relentless::RetryPolicy;
     ///
     /// let policy = RetryPolicy::new().boxed_local::<(), &str>();
     /// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();

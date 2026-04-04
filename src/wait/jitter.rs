@@ -89,7 +89,7 @@ enum JitterKind {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryState, Wait, wait};
+/// use relentless::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
 /// // Additive jitter: base + random(0, max_jitter)
@@ -103,7 +103,7 @@ enum JitterKind {
 /// ```
 ///
 /// ```
-/// use tenacious::{RetryState, Wait, wait};
+/// use relentless::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
 /// // Full jitter: random(0, base)
@@ -116,7 +116,7 @@ enum JitterKind {
 /// ```
 ///
 /// ```
-/// use tenacious::{RetryState, Wait, wait};
+/// use relentless::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
 /// // Equal jitter: base/2 + random(0, base/2)
@@ -235,7 +235,7 @@ impl<W: Wait> Wait for Jittered<W> {
 /// # Examples
 ///
 /// ```
-/// use tenacious::{RetryState, Wait, wait};
+/// use relentless::{RetryState, Wait, wait};
 /// use core::time::Duration;
 ///
 /// let strategy = wait::decorrelated_jitter(Duration::from_millis(100))

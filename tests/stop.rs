@@ -6,18 +6,18 @@
 
 use core::cell::Cell;
 use core::time::Duration;
-use tenacious::Stop;
-use tenacious::stop;
+use relentless::Stop;
+use relentless::stop;
 
 const MAX_ATTEMPTS: u32 = 5;
 const DEADLINE: Duration = Duration::from_secs(30);
 
-fn make_state(attempt: u32) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, None)
+fn make_state(attempt: u32) -> relentless::RetryState {
+    relentless::RetryState::new(attempt, None)
 }
 
-fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> tenacious::RetryState {
-    tenacious::RetryState::new(attempt, Some(elapsed))
+fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> relentless::RetryState {
+    relentless::RetryState::new(attempt, Some(elapsed))
 }
 
 /// Minimal Stop implementation used to verify the trait contract.
@@ -27,7 +27,7 @@ struct StopAfter {
 }
 
 impl Stop for StopAfter {
-    fn should_stop(&self, state: &tenacious::RetryState) -> bool {
+    fn should_stop(&self, state: &relentless::RetryState) -> bool {
         state.attempt >= self.max
     }
 }
@@ -314,7 +314,7 @@ impl StopAfterConsultations {
 }
 
 impl Stop for StopAfterConsultations {
-    fn should_stop(&self, _state: &tenacious::RetryState) -> bool {
+    fn should_stop(&self, _state: &relentless::RetryState) -> bool {
         let n = self.count.get() + 1;
         self.count.set(n);
         n >= self.threshold

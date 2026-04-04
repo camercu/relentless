@@ -5,8 +5,8 @@
 //! the `until` inversion wrapper, and the closure blanket impl.
 
 use core::cell::Cell;
-use tenacious::Predicate;
-use tenacious::predicate;
+use relentless::Predicate;
+use relentless::predicate;
 
 // READY_VALUE is the threshold at which a polling result is "ready".
 // ARBITRARY_NOT_READY_VALUE is any value below that threshold.
@@ -336,7 +336,7 @@ fn predicate_until_composes_with_operators() {
 #[test]
 fn policy_until_sets_predicate() {
     use core::time::Duration;
-    use tenacious::{RetryPolicy, stop, wait};
+    use relentless::{RetryPolicy, stop, wait};
 
     let policy = RetryPolicy::new()
         .stop(stop::attempts(15))
@@ -360,7 +360,7 @@ fn policy_until_sets_predicate() {
 #[test]
 fn builder_until_sets_predicate() {
     use core::time::Duration;
-    use tenacious::{RetryExt, stop, wait};
+    use relentless::{RetryExt, stop, wait};
 
     let counter = Cell::new(0u32);
     let result = (|| {
@@ -384,7 +384,7 @@ fn until_ok_retries_errors_by_default() {
     // .until(ok(f)) retries errors automatically: ok(f) returns false for Err variants,
     // and until inverts to true (keep retrying).
     use core::time::Duration;
-    use tenacious::{RetryPolicy, stop, wait};
+    use relentless::{RetryPolicy, stop, wait};
 
     let counter = Cell::new(0u32);
     let result = RetryPolicy::new()

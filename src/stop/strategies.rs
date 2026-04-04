@@ -9,11 +9,11 @@ use crate::state::RetryState;
 /// # Examples
 ///
 /// ```
-/// use tenacious::Stop;
-/// use tenacious::stop;
+/// use relentless::Stop;
+/// use relentless::stop;
 ///
 /// let s = stop::attempts(3);
-/// # let state = tenacious::RetryState::new(3, None);
+/// # let state = relentless::RetryState::new(3, None);
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,11 +47,11 @@ impl Stop for StopAfterAttempts {
 ///
 /// ```
 /// use core::time::Duration;
-/// use tenacious::Stop;
-/// use tenacious::stop;
+/// use relentless::Stop;
+/// use relentless::stop;
 ///
 /// let s = stop::elapsed(Duration::from_secs(30));
-/// # let state = tenacious::RetryState::new(1, Some(Duration::from_secs(31)));
+/// # let state = relentless::RetryState::new(1, Some(Duration::from_secs(31)));
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,11 +81,11 @@ impl Stop for StopAfterElapsed {
 /// # Examples
 ///
 /// ```
-/// use tenacious::Stop;
-/// use tenacious::stop;
+/// use relentless::Stop;
+/// use relentless::stop;
 ///
 /// let s = stop::never();
-/// # let state = tenacious::RetryState::new(u32::MAX, None);
+/// # let state = relentless::RetryState::new(u32::MAX, None);
 /// assert!(!s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
