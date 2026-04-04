@@ -106,12 +106,14 @@ test-readme-strict:
 test-examples:
     cargo run --example basic-retry
     cargo run --example hooks-and-stats
+    cargo run --example sync-cancel
     cargo run --example async-polling --features tokio-sleep
     cargo run --example async-cancel --features tokio-sleep
 
 test-examples-strict:
     RUSTFLAGS="{{warning_flags}}" cargo run --example basic-retry
     RUSTFLAGS="{{warning_flags}}" cargo run --example hooks-and-stats
+    RUSTFLAGS="{{warning_flags}}" cargo run --example sync-cancel
     RUSTFLAGS="{{warning_flags}}" cargo run --example async-polling --features tokio-sleep
     RUSTFLAGS="{{warning_flags}}" cargo run --example async-cancel --features tokio-sleep
 

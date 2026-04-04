@@ -41,7 +41,8 @@ futures-timer = { version = "3", optional = true }
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["blocking"] }
 stats_alloc = "0.1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [[example]]
 name = "async-polling"
@@ -50,6 +51,9 @@ required-features = ["tokio-sleep"]
 [[example]]
 name = "async-cancel"
 required-features = ["tokio-sleep"]
+
+[[example]]
+name = "sync-cancel"
 
 [[bench]]
 name = "retry_hot_paths"

@@ -19,17 +19,20 @@
 //! hard cancellation; use `.timeout()` when you want runtime-agnostic
 //! deadline bounding that works in sync contexts too.
 //!
-//! Two cancellation patterns are shown:
+//! Three cancellation patterns are shown:
 //!
 //! 1. `tokio::time::timeout` — simplest hard deadline.
-//! 2. `tokio::select!` — general form, works with any async signal:
-//!    shutdown channels, `ctrl_c`, broadcast receivers, etc.
+//! 2. `tokio::select!` with a `CancellationToken` — idiomatic structured
+//!    shutdown for services; a single token can be shared across many tasks.
+//! 3. `tokio::select!` with a oneshot channel — ad-hoc signal from a
+//!    spawned task; generalises to `ctrl_c`, broadcast receivers, etc.
 //!
 //! Run with:
 //!   cargo run --example async-cancel --features tokio-sleep
 
 use core::time::Duration;
 use relentless::{RetryError, retry_async, sleep, stop, wait};
+use tokio_util::sync::CancellationToken;
 
 /// Simulates a flaky network call: takes 40 ms per attempt and never succeeds.
 ///
@@ -68,15 +71,59 @@ async fn main() {
         Err(_elapsed) => println!("pattern 1 — deadline exceeded (cancelled mid-sleep)"),
     }
 
-    // ── Pattern 2: tokio::select! ───────────────────────────────────────────
+    // ── Pattern 2: CancellationToken ───────────────────────────────────────
+    //
+    // `CancellationToken` from `tokio-util` is the idiomatic way to propagate
+    // structured shutdown across an async service. A single token can be
+    // cloned and shared across many tasks; calling `.cancel()` on any clone
+    // wakes all `.cancelled()` futures simultaneously.
+    //
+    // This is the right pattern when:
+    //   - Multiple retry loops or tasks need to stop together (e.g., on
+    //     SIGTERM or a health-check failure).
+    //   - You want to cancel from anywhere in the call tree without threading
+    //     a channel sender through every layer.
+
+    let token = CancellationToken::new();
+
+    // Simulate a shutdown signal arriving after 120 ms (e.g., from a signal
+    // handler or a supervisor task that detected a fatal condition).
+    tokio::spawn({
+        let token = token.clone();
+        async move {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            token.cancel(); // wakes all `.cancelled()` futures on this token
+        }
+    });
+
+    tokio::select! {
+        result = retry_async(|state| flaky_network_call(state.attempt))
+            .stop(stop::attempts(10))
+            .wait(wait::fixed(Duration::from_millis(50)))
+            .sleep(sleep::tokio()) =>
+        {
+            match result {
+                Ok(val) => println!("pattern 2 — success: {val}"),
+                Err(e) => println!("pattern 2 — retries exhausted: {e:?}"),
+            }
+        }
+        // token.cancelled() resolves once token.cancel() is called on any clone.
+        // The retry future is dropped here. on_exit does not fire.
+        () = token.cancelled() => {
+            println!("pattern 2 — cancellation token fired (cancelled mid-sleep)");
+        }
+    }
+
+    // ── Pattern 3: tokio::select! with a oneshot channel ───────────────────
     //
     // Races the retry future against any async signal. A oneshot channel is
     // used here, but the same arms work with tokio::signal::ctrl_c(),
     // broadcast::Receiver::recv(), or any other async signal source.
     //
-    // Unlike pattern 1, the cancellation trigger is not a simple timer —
-    // it can fire from application logic (e.g., a user-initiated abort,
-    // a peer closing a connection, or a coordinated shutdown sequence).
+    // Unlike pattern 2, the cancellation trigger is a one-shot event from a
+    // specific source rather than a shared, cloneable shutdown token. Use this
+    // when the cancel signal originates from a single place (e.g., a peer
+    // closing a connection, or a user-initiated abort from a request handler).
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -94,13 +141,13 @@ async fn main() {
             .sleep(sleep::tokio()) =>
         {
             match result {
-                Ok(val) => println!("pattern 2 — success: {val}"),
-                Err(e) => println!("pattern 2 — retries exhausted: {e:?}"),
+                Ok(val) => println!("pattern 3 — success: {val}"),
+                Err(e) => println!("pattern 3 — retries exhausted: {e:?}"),
             }
         }
         _ = shutdown_rx => {
             // The retry future is dropped here. on_exit does not fire.
-            println!("pattern 2 — shutdown signal received (cancelled mid-sleep)");
+            println!("pattern 3 — shutdown signal received (cancelled mid-sleep)");
         }
     }
 }
