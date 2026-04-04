@@ -1,3 +1,12 @@
+## [0.7.0](https://github.com/camercu/relentless/compare/v0.6.0...v0.7.0) (2026-04-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **crate:** crate name changed
+
+* **crate:** rename crate from 'tenacious' to 'relentless' ([98d16e6](https://github.com/camercu/relentless/commit/98d16e697ccdde8028448e16f095cac49f932884))
+
 # [0.6.0](https://github.com/camercu/relentless/compare/v0.5.0...v0.6.0) (2026-04-01)
 
 
