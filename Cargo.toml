@@ -54,6 +54,7 @@ required-features = ["tokio-sleep"]
 
 [[example]]
 name = "sync-cancel"
+required-features = ["std"]
 
 [[bench]]
 name = "retry_hot_paths"
