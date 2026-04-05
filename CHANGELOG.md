@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/camercu/relentless/compare/v0.7.0...v0.7.1) (2026-04-05)
+
+
+### Bug Fixes
+
+* add required-features to sync-cancel example ([0244edc](https://github.com/camercu/relentless/commit/0244edc18693d78b23537312d3c95f6be98cc0c9))
+
 ## [0.7.0](https://github.com/camercu/relentless/compare/v0.6.0...v0.7.0) (2026-04-04)
 
 
