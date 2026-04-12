@@ -5,15 +5,15 @@ no_std_target := "thumbv7m-none-eabi"
 wasm_target := "wasm32-unknown-unknown"
 wasm_features := "alloc,gloo-timers-sleep"
 benchmark_target := "retry_hot_paths"
-warning_flags := "-D warnings"
+warnings := "-D warnings"
 stable_toolchain := "+stable"
 
 default:
     @just --list
 
-fmt:
-    just fmt-rust
-    just fmt-taplo
+# ── Formatting ──────────────────────────────────────────────
+
+fmt: fmt-rust fmt-taplo
 
 fmt-rust:
     cargo fmt --all
@@ -21,9 +21,7 @@ fmt-rust:
 fmt-taplo:
     taplo fmt {{toml_files}}
 
-fmt-check:
-    just fmt-check-rust
-    just fmt-check-taplo
+fmt-check: fmt-check-rust fmt-check-taplo
 
 fmt-check-rust:
     cargo fmt --all --check
@@ -31,7 +29,9 @@ fmt-check-rust:
 fmt-check-taplo:
     taplo fmt --check {{toml_files}}
 
-lint: lint-clippy lint-taplo lint-typos lint-deny
+# ── Linting ─────────────────────────────────────────────────
+
+lint: fmt-check lint-clippy lint-typos lint-deny
 
 lint-clippy:
     cargo clippy --all-targets --all-features -- -D warnings
@@ -39,69 +39,34 @@ lint-clippy:
 lint-clippy-stable:
     cargo {{stable_toolchain}} clippy --all-targets --all-features
 
-lint-taplo: fmt-check-taplo
-
 lint-typos:
     typos
 
 lint-deny:
     cargo deny check advisories licenses bans sources
 
+# ── Testing ─────────────────────────────────────────────────
+
 test:
     cargo test --all-targets
 
-test-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo test --all-targets
-
-test-stable:
-    cargo {{stable_toolchain}} test --all-targets
+test-all-features:
+    cargo test --all-features --all-targets
 
 test-no-default:
     cargo test --no-default-features --tests
 
+test-alloc:
+    cargo test --no-default-features --features alloc --tests
+
+test-doc:
+    RUSTDOCFLAGS="{{warnings}}" cargo test --doc
+
 test-doc-no-default:
-    RUSTDOCFLAGS="-D warnings" cargo test --no-default-features --doc
-
-test-doc-no-default-strict:
-    RUSTFLAGS="{{warning_flags}}" RUSTDOCFLAGS="-D warnings" cargo test --no-default-features --doc
-
-test-no-default-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo test --no-default-features
-
-build:
-    cargo build --all-targets
-
-build-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo build --all-targets
-
-build-stable:
-    cargo {{stable_toolchain}} build --all-targets
-
-doc:
-    RUSTDOCFLAGS="-D warnings" cargo test --doc
-    RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
-
-doc-strict:
-    RUSTFLAGS="{{warning_flags}}" RUSTDOCFLAGS="-D warnings" cargo test --doc
-    RUSTFLAGS="{{warning_flags}}" RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
-
-check-no-std:
-    cargo build --target {{no_std_target}} --no-default-features
-
-check-no-std-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo build --target {{no_std_target}} --no-default-features
-
-check-wasm:
-    cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
-
-check-wasm-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
+    RUSTDOCFLAGS="{{warnings}}" cargo test --no-default-features --doc
 
 test-readme:
     cargo test --features tokio-sleep --doc -- readme_doctests
-
-test-readme-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo test --features tokio-sleep --doc -- readme_doctests
 
 test-examples:
     cargo run --example basic-retry
@@ -110,18 +75,53 @@ test-examples:
     cargo run --example async-polling --features tokio-sleep
     cargo run --example async-cancel --features tokio-sleep
 
-test-examples-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo run --example basic-retry
-    RUSTFLAGS="{{warning_flags}}" cargo run --example hooks-and-stats
-    RUSTFLAGS="{{warning_flags}}" cargo run --example sync-cancel
-    RUSTFLAGS="{{warning_flags}}" cargo run --example async-polling --features tokio-sleep
-    RUSTFLAGS="{{warning_flags}}" cargo run --example async-cancel --features tokio-sleep
+test-tokio-sleep:
+    cargo test --test policy_async --features tokio-sleep
+
+test-futures-timer-sleep:
+    cargo test --test policy_async --features futures-timer-sleep
+
+test-allocation:
+    cargo test --test allocation -- --test-threads=1
+
+test-stable:
+    cargo {{stable_toolchain}} test --all-targets
+
+# ── Building / checking ─────────────────────────────────────
+
+build:
+    cargo build --all-targets
+
+build-stable:
+    cargo {{stable_toolchain}} build --all-targets
+
+check-no-std:
+    cargo build --target {{no_std_target}} --no-default-features
+
+check-wasm:
+    cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
+
+check-embassy:
+    cargo check --features embassy-sleep
+
+check-alloc:
+    cargo check --no-default-features --features alloc
+
+# ── Documentation ───────────────────────────────────────────
+
+doc:
+    RUSTDOCFLAGS="{{warnings}}" cargo test --doc --all-features
+    RUSTDOCFLAGS="{{warnings}}" cargo doc --all-features --no-deps
+
+# ── Benchmarks ──────────────────────────────────────────────
+
+bench:
+    cargo bench --bench {{benchmark_target}}
 
 bench-no-run:
     cargo bench --bench {{benchmark_target}} --no-run
 
-bench-no-run-strict:
-    RUSTFLAGS="{{warning_flags}}" cargo bench --bench {{benchmark_target}} --no-run
+# ── Tool versions ───────────────────────────────────────────
 
 check-tool-versions:
     #!/usr/bin/env bash
@@ -148,14 +148,34 @@ check-tool-versions:
         echo "all tool versions match .tool-versions"
     fi
 
+# ── Setup ───────────────────────────────────────────────────
+
+setup:
+    ./scripts/setup-dev.sh
+
+# ── Hooks ───────────────────────────────────────────────────
+
 pre-commit: fmt-check lint-typos
+    cargo check --all-targets --quiet
 
-pre-push: lint-clippy test-strict doc-strict
+pre-push:
+    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test doc
 
-ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict test-readme-strict test-examples-strict bench-no-run-strict
+# ── CI ──────────────────────────────────────────────────────
+
+ci:
+    just lint
+    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just \
+        test test-all-features test-no-default test-alloc test-doc-no-default doc \
+        check-no-std check-wasm check-embassy \
+        test-readme test-examples \
+        test-tokio-sleep test-futures-timer-sleep test-allocation \
+        bench-no-run
 
 ci-stable: build-stable test-stable lint-clippy-stable
 
+# ── Release ─────────────────────────────────────────────────
+
 release:
-  npm ci
-  npx semantic-release
+    npm ci
+    npx semantic-release

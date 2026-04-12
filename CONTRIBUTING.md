@@ -38,7 +38,7 @@ development.
 
 The script installs:
 
-- a `pre-commit` hook for fast formatting and typo checks
+- a `pre-commit` hook for formatting, typo, and compilation checks
 - a `pre-push` hook for clippy and test coverage
 
 ## Daily workflow

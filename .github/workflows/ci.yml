@@ -28,6 +28,7 @@ jobs:
           toolchain: ${{ steps.tools.outputs.rust }}
           targets: thumbv7m-none-eabi,wasm32-unknown-unknown
           components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }}
@@ -44,86 +45,9 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: just
       - name: just ci-stable
         run: just ci-stable
-
-  runtime-sleep-features:
-    name: Runtime sleep features (${{ matrix.features }})
-    needs: canonical-gate
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-          - tokio-sleep
-          - futures-timer-sleep
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse .tool-versions
-        id: tools
-        run: |
-          while read -r name version; do
-            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
-          done < <(grep -v '^#' .tool-versions | grep -v '^$')
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.tools.outputs.rust }}
-      - name: cargo test policy_async
-        run: cargo test --test policy_async --features "${{ matrix.features }}"
-
-  embassy-sleep-compile:
-    name: Embassy sleep compile check
-    needs: canonical-gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse .tool-versions
-        id: tools
-        run: |
-          while read -r name version; do
-            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
-          done < <(grep -v '^#' .tool-versions | grep -v '^$')
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.tools.outputs.rust }}
-      - name: cargo check embassy-sleep
-        run: cargo check --features embassy-sleep
-
-  allocation-profile:
-    name: Allocation profile (single-thread)
-    needs: canonical-gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse .tool-versions
-        id: tools
-        run: |
-          while read -r name version; do
-            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
-          done < <(grep -v '^#' .tool-versions | grep -v '^$')
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.tools.outputs.rust }}
-      - name: cargo test allocation
-        run: cargo test --test allocation -- --test-threads=1
-
-  alloc-compat:
-    name: alloc-only compatibility
-    needs: canonical-gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse .tool-versions
-        id: tools
-        run: |
-          while read -r name version; do
-            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
-          done < <(grep -v '^#' .tool-versions | grep -v '^$')
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.tools.outputs.rust }}
-      - name: cargo check --no-default-features --features alloc
-        run: cargo check --no-default-features --features alloc
