@@ -10,7 +10,8 @@
           { "type": "feat", "release": "minor" },
           { "type": "fix", "scope": "ci", "release": false },
           { "type": "fix", "release": "patch" },
-          { "type": "perf", "release": "patch" }
+          { "type": "perf", "release": "patch" },
+          { "type": "revert", "release": "patch" }
         ]
       }
     ],
