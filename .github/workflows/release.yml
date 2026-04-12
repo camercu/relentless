@@ -1,14 +1,18 @@
 name: Release
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: release
 
@@ -19,11 +23,8 @@ jobs:
 
       - uses: cachix/install-nix-action@v27
 
-      - name: Install Node dependencies
-        run: nix-shell shell.nix --run 'npm ci'
-
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
-        run: nix-shell shell.nix --run 'npx semantic-release'
+        run: nix-shell shell.nix --run 'just release'

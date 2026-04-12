@@ -155,3 +155,7 @@ pre-push: lint-clippy test-strict doc-strict
 ci: fmt-check lint test-strict test-no-default-strict test-doc-no-default-strict doc-strict check-no-std-strict check-wasm-strict test-readme-strict test-examples-strict bench-no-run-strict
 
 ci-stable: build-stable test-stable lint-clippy-stable
+
+release:
+  npm ci
+  npx semantic-release
