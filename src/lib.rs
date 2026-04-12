@@ -135,6 +135,7 @@
 //!             eprintln!("attempt {} failed: {e}", state.attempt);
 //!         }
 //!     })
+//!     .sleep(|_| {})
 //!     .with_stats()
 //!     .call();
 //!
