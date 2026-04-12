@@ -155,7 +155,7 @@ setup:
 
 # ── Hooks ───────────────────────────────────────────────────
 
-pre-commit: fmt-check lint-typos
+pre-commit: check-tool-versions fmt-check lint-typos
     cargo check --all-targets --quiet
 
 pre-push:
