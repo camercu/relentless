@@ -1,3 +1,10 @@
+## [0.7.2](https://github.com/camercu/relentless/compare/v0.7.1...v0.7.2) (2026-04-12)
+
+
+### Bug Fixes
+
+* **docs:** add missing sleep call in hooks-and-stats doctest ([92bf9cd](https://github.com/camercu/relentless/commit/92bf9cd0916939ee9dbbcbbd5ecc0b851ddd3a08))
+
 ## [0.7.1](https://github.com/camercu/relentless/compare/v0.7.0...v0.7.1) (2026-04-05)
 
 
