@@ -12,6 +12,7 @@ pkgs.mkShell {
     just
     pre-commit
     cargo-deny
+    cargo-nextest
     typos
     taplo
     nodejs

@@ -48,16 +48,16 @@ lint-deny:
 # ── Testing ─────────────────────────────────────────────────
 
 test:
-    cargo test --all-targets
+    cargo nextest run
 
 test-all-features:
-    cargo test --all-features --all-targets
+    cargo nextest run --all-features
 
 test-no-default:
-    cargo test --no-default-features --tests
+    cargo nextest run --no-default-features
 
 test-alloc:
-    cargo test --no-default-features --features alloc --tests
+    cargo nextest run --no-default-features --features alloc
 
 test-doc:
     RUSTDOCFLAGS="{{warnings}}" cargo test --doc
@@ -76,16 +76,16 @@ test-examples:
     cargo run --example async-cancel --features tokio-sleep
 
 test-tokio-sleep:
-    cargo test --test policy_async --features tokio-sleep
+    cargo nextest run --test policy_async --features tokio-sleep
 
 test-futures-timer-sleep:
-    cargo test --test policy_async --features futures-timer-sleep
+    cargo nextest run --test policy_async --features futures-timer-sleep
 
 test-allocation:
-    cargo test --test allocation -- --test-threads=1
+    cargo nextest run --test allocation -j 1
 
 test-stable:
-    cargo {{stable_toolchain}} test --all-targets
+    cargo {{stable_toolchain}} nextest run
 
 # ── Building / checking ─────────────────────────────────────
 
@@ -134,6 +134,7 @@ check-tool-versions:
             cargo-deny) actual=$(cargo-deny --version | awk '{print $2}') ;;
             typos-cli)  actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)  actual=$(taplo --version | awk '{print $2}') ;;
+            cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then
