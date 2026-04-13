@@ -32,10 +32,16 @@ jobs:
           toolchain: ${{ steps.tools.outputs.rust }}
           targets: thumbv7m-none-eabi,wasm32-unknown-unknown
           components: clippy,rustfmt
+      - name: Install MSRV toolchain
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['rust_version'])")
+          if [ "$msrv" != "${{ steps.tools.outputs.rust }}" ]; then
+            rustup toolchain install "$msrv" --profile minimal
+          fi
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }}
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }}
       - name: just ci
         run: just ci
 

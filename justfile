@@ -107,6 +107,15 @@ check-embassy:
 check-alloc:
     cargo check --no-default-features --features alloc
 
+check-msrv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    msrv=$(cargo metadata --format-version 1 --no-deps | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['rust_version'])")
+    cargo "+${msrv}" check --quiet
+
+semver-check:
+    cargo semver-checks check-release
+
 # ── Documentation ───────────────────────────────────────────
 
 doc:
@@ -120,6 +129,11 @@ bench:
 
 bench-no-run:
     cargo bench --bench {{benchmark_target}} --no-run
+
+# ── Mutation testing ───────────────────────────────────────
+
+mutants *args:
+    cargo mutants {{args}}
 
 # ── Tool versions ───────────────────────────────────────────
 
@@ -135,6 +149,8 @@ check-tool-versions:
             typos-cli)  actual=$(typos --version | awk '{print $2}') ;;
             taplo-cli)  actual=$(taplo --version | awk '{print $2}') ;;
             cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
+            cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
+            cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then
@@ -168,10 +184,10 @@ ci:
     just lint
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just \
         test test-all-features test-no-default test-alloc test-doc-no-default doc \
-        check-no-std check-wasm check-embassy \
+        check-no-std check-wasm check-embassy check-msrv \
         test-readme test-examples \
         test-tokio-sleep test-futures-timer-sleep test-allocation \
-        bench-no-run
+        bench-no-run semver-check
 
 ci-stable: build-stable test-stable lint-clippy-stable
 

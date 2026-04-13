@@ -6,3 +6,5 @@ cargo-deny 0.19.0
 typos-cli 1.41.0
 taplo-cli 0.10.0
 cargo-nextest 0.9.116
+cargo-semver-checks 0.45.0
+cargo-mutants 26.0.0

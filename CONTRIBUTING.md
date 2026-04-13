@@ -18,7 +18,7 @@ run the same checks with the same tool versions.
 - [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.85.0`, `clippy`,
   `rustfmt`, and the required cross-compilation targets.
 - [shell.nix](./shell.nix) provides `just`, `pre-commit`, `taplo`, `typos`,
-  and `cargo-deny`.
+  `cargo-deny`, `cargo-semver-checks`, and `cargo-mutants`.
 
 To enter the pinned shell, run:
 
@@ -76,6 +76,15 @@ just ci-stable
 
 `just ci-stable` is informational. It helps you spot new warnings or behavior
 changes early, but the pinned `just ci` gate remains the source of truth.
+
+## Semver and MSRV checks
+
+`just semver-check` uses `cargo-semver-checks` to verify that changes do not
+accidentally break the public API. `just check-msrv` compiles the crate with
+the declared minimum supported Rust version. Both run as part of `just ci`.
+
+`just mutants` runs `cargo-mutants` for mutation testing. This is not part of
+CI — run it periodically to find test coverage gaps.
 
 ## Toolchain policy
 
