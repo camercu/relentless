@@ -1,6 +1,6 @@
 //! Tests for state types passed to Stop strategies and hooks.
 //!
-//! Verifies the public field layout of RetryState, AttemptState, and ExitState,
+//! Verifies the public field layout of `RetryState`, `AttemptState`, and `ExitState`,
 //! including 1-indexed attempt numbers and Option<Duration> for elapsed time.
 
 use core::time::Duration;

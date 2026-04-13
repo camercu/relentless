@@ -34,6 +34,7 @@ use core::future::Future;
 /// }
 /// ```
 pub trait Sleeper {
+    /// The future returned by [`sleep`](Sleeper::sleep).
     type Sleep: Future<Output = ()>;
 
     /// Returns a future that completes after `dur`.

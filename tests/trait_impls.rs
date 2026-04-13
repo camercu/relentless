@@ -1,14 +1,14 @@
 //! Acceptance tests for standard trait implementations.
 //!
 //! These tests verify:
-//! - Default RetryPolicy is Send + Sync
+//! - Default `RetryPolicy` is Send + Sync
 //! - Public value types implement Copy
 
-fn _assert_send_sync<T: Send + Sync>() {}
+fn assert_send_sync<T: Send + Sync>() {}
 
 #[test]
 fn default_retry_policy_is_send_and_sync() {
-    _assert_send_sync::<relentless::RetryPolicy>();
+    assert_send_sync::<relentless::RetryPolicy>();
 }
 
 #[test]
@@ -65,13 +65,13 @@ fn wait_exponential_has_partial_eq_not_eq() {
     assert_eq!(a, b); // PartialEq works
 
     // Eq is absent on WaitExponential (f64 field). WaitFixed has Eq:
-    fn _assert_eq<T: Eq>(_: T) {}
-    _assert_eq(wait::fixed(Duration::from_millis(10)));
-    _assert_eq(wait::linear(
+    fn assert_eq_bound<T: Eq>(_: T) {}
+    assert_eq_bound(wait::fixed(Duration::from_millis(10)));
+    assert_eq_bound(wait::linear(
         Duration::from_millis(10),
         Duration::from_millis(5),
     ));
-    // _assert_eq(wait::exponential(Duration::from_millis(10))); // would not compile
+    // assert_eq_bound(wait::exponential(Duration::from_millis(10))); // would not compile
 }
 
 /// 4.2.3
@@ -91,12 +91,12 @@ fn retry_error_display_format() {
     let e: RetryError<(), String> = RetryError::Exhausted {
         last: Err("network timeout".to_string()),
     };
-    assert_eq!(format!("{}", e), "retries exhausted: network timeout");
+    assert_eq!(format!("{e}"), "retries exhausted: network timeout");
 
     let r: RetryError<i32, String> = RetryError::Rejected {
         last: "fatal".to_string(),
     };
-    assert_eq!(format!("{}", r), "rejected: fatal");
+    assert_eq!(format!("{r}"), "rejected: fatal");
 }
 
 /// §14

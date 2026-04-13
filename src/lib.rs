@@ -204,6 +204,7 @@
 
 #![no_std]
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 // Compile-test README code examples as doctests.
 // Gated on `tokio-sleep` because the async example uses `sleep::tokio()`.
@@ -222,6 +223,7 @@ mod compat;
 mod error;
 mod policy;
 pub mod predicate;
+/// Async sleep abstractions used by the retry engine between attempts.
 pub mod sleep;
 mod state;
 mod stats;

@@ -32,7 +32,7 @@ fn allocation_test_guard() -> MutexGuard<'static, ()> {
     ALLOC_TEST_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn instant_sleep(_dur: Duration) {}

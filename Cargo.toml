@@ -60,6 +60,15 @@ required-features = ["std"]
 name = "retry_hot_paths"
 harness = false
 
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Duration math uses guarded numeric casts that clippy cannot reason about.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+# Test helpers defined near their call site are clearer than hoisted to module top.
+items_after_statements = "allow"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3", default-features = false, features = [
   "futures",

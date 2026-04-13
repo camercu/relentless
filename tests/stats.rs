@@ -1,8 +1,8 @@
 //! Tests for retry statistics (`RetryStats`, `StopReason`, `.with_stats()`).
 //!
 //! Verifies that stats are accumulated fresh per invocation, that attempt counts and
-//! total_wait match expected values, that StopReason correctly distinguishes Accepted from
-//! Exhausted (including the Accepted-when-Rejected edge case), and that total_elapsed is
+//! `total_wait` match expected values, that `StopReason` correctly distinguishes Accepted from
+//! Exhausted (including the Accepted-when-Rejected edge case), and that `total_elapsed` is
 //! Some only when the `std` feature is active.
 
 use core::cell::Cell;
@@ -295,7 +295,7 @@ fn sync_stop_reason_exhausted_on_condition_not_met() {
         Err(RetryError::Exhausted { last, .. }) => {
             assert_eq!(last, Ok(-1));
         }
-        other => panic!("expected Exhausted, got {:?}", other),
+        other => panic!("expected Exhausted, got {other:?}"),
     }
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
@@ -442,7 +442,7 @@ fn retry_stats_implements_debug_and_clone() {
     let cloned = stats;
     assert_eq!(stats, cloned);
 
-    let debug = format!("{:?}", stats);
+    let debug = format!("{stats:?}");
     assert!(debug.contains("RetryStats"), "Debug output: {debug}");
 }
 
@@ -456,7 +456,7 @@ fn stop_reason_implements_debug_clone_copy_eq() {
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&reason); // Clone (compile-time check)
 
-    let debug = format!("{:?}", reason);
+    let debug = format!("{reason:?}");
     assert!(debug.contains("Accepted"), "Debug output: {debug}");
 
     assert_ne!(StopReason::Accepted, StopReason::Exhausted); // Eq, both variants distinct

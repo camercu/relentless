@@ -27,6 +27,7 @@ pub struct WaitFixed {
     duration: Duration,
 }
 
+/// Creates a wait strategy that waits a fixed duration between attempts.
 #[must_use]
 pub fn fixed(dur: Duration) -> WaitFixed {
     WaitFixed { duration: dur }
@@ -61,6 +62,7 @@ pub struct WaitLinear {
     increment: Duration,
 }
 
+/// Creates a linearly increasing wait strategy.
 #[must_use]
 pub fn linear(initial: Duration, increment: Duration) -> WaitLinear {
     WaitLinear { initial, increment }

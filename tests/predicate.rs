@@ -1,7 +1,7 @@
 //! Tests for the Predicate trait and built-in predicate factories.
 //!
 //! Covers the type-parameterization of Predicate<T, E>, the behavior of each factory
-//! (error, any_error, result, ok), short-circuit semantics of `|`/`&` composition,
+//! (error, `any_error`, result, ok), short-circuit semantics of `|`/`&` composition,
 //! the `until` inversion wrapper, and the closure blanket impl.
 
 use core::cell::Cell;
@@ -25,6 +25,7 @@ type TestResult = Result<u32, TestError>;
 
 fn assert_predicate_impl<T, E, P: Predicate<T, E>>(_predicate: &P) {}
 
+#[allow(clippy::unnecessary_wraps)]
 fn ok(value: u32) -> TestResult {
     Ok(value)
 }
@@ -423,15 +424,15 @@ fn closure_implements_predicate_trait() {
 
 #[test]
 fn closure_predicate_can_be_used_in_generic_context() {
-    fn evaluate<P: Predicate<u32, TestError>>(predicate: P, outcome: TestResult) -> bool {
+    fn evaluate<P: Predicate<u32, TestError>>(predicate: &P, outcome: TestResult) -> bool {
         predicate.should_retry(&outcome)
     }
 
     let closure = |outcome: &TestResult| matches!(outcome, Err(TestError::Retryable));
 
-    assert!(evaluate(closure, Err(TestError::Retryable)));
-    assert!(!evaluate(closure, Err(TestError::Fatal)));
-    assert!(!evaluate(closure, Ok(ARBITRARY_OK_VALUE)));
+    assert!(evaluate(&closure, Err(TestError::Retryable)));
+    assert!(!evaluate(&closure, Err(TestError::Fatal)));
+    assert!(!evaluate(&closure, Ok(ARBITRARY_OK_VALUE)));
 }
 
 #[test]

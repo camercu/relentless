@@ -65,7 +65,7 @@ async fn main() {
     match result {
         Ok(Ok(val)) => println!("pattern 1 — success: {val}"),
         Ok(Err(RetryError::Exhausted { last })) => {
-            println!("pattern 1 — retries exhausted, last: {last:?}")
+            println!("pattern 1 — retries exhausted, last: {last:?}");
         }
         Ok(Err(e)) => println!("pattern 1 — rejected: {e:?}"),
         Err(_elapsed) => println!("pattern 1 — deadline exceeded (cancelled mid-sleep)"),

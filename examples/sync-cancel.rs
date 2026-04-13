@@ -57,7 +57,7 @@ fn main() {
     match result {
         Ok(val) => println!("pattern 1 — success: {val}"),
         Err(RetryError::Exhausted { last }) => {
-            println!("pattern 1 — deadline exceeded, last: {last:?}")
+            println!("pattern 1 — deadline exceeded, last: {last:?}");
         }
         Err(e) => println!("pattern 1 — rejected: {e:?}"),
     }
@@ -116,10 +116,10 @@ fn main() {
     match result {
         Ok(val) => println!("pattern 2 — success: {val:?}"),
         Err(RetryError::Rejected { last }) => {
-            println!("pattern 2 — cancelled after flag set, error: {last:?}")
+            println!("pattern 2 — cancelled after flag set, error: {last:?}");
         }
         Err(RetryError::Exhausted { last }) => {
-            println!("pattern 2 — exhausted: {last:?}")
+            println!("pattern 2 — exhausted: {last:?}");
         }
     }
 }

@@ -1,4 +1,4 @@
-//! RetryPolicy builder and sync/async execution engines.
+//! `RetryPolicy` builder and sync/async execution engines.
 //!
 //! This module exposes three related entry-point families:
 //!
@@ -101,6 +101,7 @@ impl Default
 }
 
 impl<S, W, P> RetryPolicy<S, W, P> {
+    /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P> {
         RetryPolicy {
@@ -110,6 +111,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
+    /// Sets the wait strategy used between retry attempts.
     #[must_use]
     pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P> {
         RetryPolicy {
@@ -119,6 +121,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
+    /// Sets the predicate that decides whether a failed attempt should be retried.
     #[must_use]
     pub fn when<NewPredicate>(self, predicate: NewPredicate) -> RetryPolicy<S, W, NewPredicate> {
         RetryPolicy {
@@ -246,6 +249,7 @@ macro_rules! impl_alloc_hook_chain {
         impl<$($gen)*> $Builder
         $(where $($wc)*)?
         {
+            /// Registers a hook that runs before each retry attempt.
             #[must_use]
             pub fn before_attempt<Hook>(
                 self,
@@ -257,6 +261,7 @@ macro_rules! impl_alloc_hook_chain {
                 self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
             }
 
+            /// Registers a hook that runs after each retry attempt.
             #[must_use]
             pub fn after_attempt<Hook>(
                 self,
@@ -268,6 +273,7 @@ macro_rules! impl_alloc_hook_chain {
                 self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
             }
 
+            /// Registers a hook that runs when the retry loop exits.
             #[must_use]
             pub fn on_exit<Hook>(
                 self,

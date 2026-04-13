@@ -36,6 +36,7 @@ pub struct RetryState {
 }
 
 impl RetryState {
+    /// Creates a new `RetryState` with the given attempt number and elapsed time.
     #[must_use]
     pub const fn new(attempt: u32, elapsed: Option<Duration>) -> Self {
         Self { attempt, elapsed }
@@ -77,6 +78,7 @@ pub struct AttemptState<'a, T, E> {
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
+    /// Creates a new `AttemptState` with the given fields.
     #[must_use]
     pub const fn new(
         attempt: u32,
@@ -123,10 +125,12 @@ pub struct ExitState<'a, T, E> {
     /// A reference to the final outcome.
     pub outcome: &'a Result<T, E>,
 
+    /// The reason the retry loop stopped.
     pub stop_reason: crate::stats::StopReason,
 }
 
 impl<'a, T, E> ExitState<'a, T, E> {
+    /// Creates a new `ExitState` with the given fields.
     #[must_use]
     pub const fn new(
         attempt: u32,

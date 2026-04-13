@@ -77,6 +77,7 @@ fn retry_ext_closure_form_retries_until_success() {
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn do_work() -> Result<i32, &'static str> {
     Ok(SUCCESS_VALUE)
 }

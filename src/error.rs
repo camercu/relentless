@@ -95,6 +95,7 @@ impl<T, E> RetryError<T, E> {
         }
     }
 
+    /// Returns the [`StopReason`] that caused the retry loop to terminate.
     #[must_use]
     pub fn stop_reason(&self) -> StopReason {
         match self {

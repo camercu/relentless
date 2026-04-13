@@ -34,6 +34,7 @@ pub use strategies::{StopAfterAttempts, StopAfterElapsed, StopNever, attempts, e
 /// }
 /// ```
 pub trait Stop {
+    /// Returns `true` if the retry loop should stop given the current state.
     fn should_stop(&self, state: &RetryState) -> bool;
 
     /// Returns a strategy that stops when either side stops.

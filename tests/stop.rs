@@ -244,7 +244,7 @@ fn attempts_is_clone_and_debug() {
     let s = stop::attempts(MAX_ATTEMPTS);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&s);
-    let debug = format!("{:?}", s);
+    let debug = format!("{s:?}");
     assert!(debug.contains("StopAfterAttempts"));
 }
 
@@ -253,7 +253,7 @@ fn elapsed_is_clone_and_debug() {
     let s = stop::elapsed(DEADLINE);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&s);
-    let debug = format!("{:?}", s);
+    let debug = format!("{s:?}");
     assert!(debug.contains("StopAfterElapsed"));
 }
 
@@ -262,7 +262,7 @@ fn never_is_clone_and_debug() {
     let s = stop::never();
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&s);
-    let debug = format!("{:?}", s);
+    let debug = format!("{s:?}");
     assert!(debug.contains("StopNever"));
 }
 
@@ -270,7 +270,7 @@ fn never_is_clone_and_debug() {
 fn stop_any_is_clone_and_debug() {
     let s = stop::attempts(MAX_ATTEMPTS) | stop::elapsed(DEADLINE);
     let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    let debug = format!("{s2:?}");
     assert!(debug.contains("StopAny"));
 }
 
@@ -278,7 +278,7 @@ fn stop_any_is_clone_and_debug() {
 fn stop_all_is_clone_and_debug() {
     let s = stop::attempts(MAX_ATTEMPTS) & stop::elapsed(DEADLINE);
     let s2 = s.clone();
-    let debug = format!("{:?}", s2);
+    let debug = format!("{s2:?}");
     assert!(debug.contains("StopAll"));
 }
 
@@ -297,7 +297,7 @@ fn cloned_strategy_is_independent() {
 }
 
 /// A stateful stop strategy that fires after being consulted a fixed number of times.
-/// Used with interior mutability to count evaluations and verify StopAny's
+/// Used with interior mutability to count evaluations and verify `StopAny`'s
 /// no-short-circuit guarantee.
 struct StopAfterConsultations {
     threshold: u32,

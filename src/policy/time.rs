@@ -6,7 +6,7 @@ use crate::compat::Box;
 #[cfg(feature = "std")]
 use std::time::Instant;
 
-/// Function pointer type used to supply elapsed time in no_std or custom runtimes.
+/// Function pointer type used to supply elapsed time in `no_std` or custom runtimes.
 pub(crate) type ElapsedClockFn = fn() -> Duration;
 
 enum ClockSource {

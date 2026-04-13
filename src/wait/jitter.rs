@@ -17,7 +17,7 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Fast, non-cryptographic PRNG for jitter decorrelation.
 ///
-/// SplitMix64 has excellent avalanche properties and is widely used for
+/// `SplitMix64` has excellent avalanche properties and is widely used for
 /// seeding other PRNGs (e.g., in Java's `SplittableRandom`). It is more
 /// than sufficient for retry jitter where the goal is decorrelation, not
 /// cryptographic security.
@@ -319,7 +319,7 @@ impl Wait for WaitDecorrelatedJitter {
             if range_nanos == 0 {
                 lower
             } else {
-                let max_nanos = range_nanos.min(u64::MAX as u128) as u64;
+                let max_nanos = range_nanos.min(u128::from(u64::MAX)) as u64;
                 let random = self.rng.borrow_mut().next_bounded(max_nanos);
                 lower.saturating_add(Duration::from_nanos(random))
             }

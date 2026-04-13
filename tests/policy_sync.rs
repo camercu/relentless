@@ -147,7 +147,7 @@ fn when_builder_configures_predicate() {
         Err(RetryError::Rejected { last }) => {
             assert_eq!(last, "fatal");
         }
-        other => panic!("expected Rejected with last=\"fatal\", got {:?}", other),
+        other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
     }
 }
 
@@ -241,7 +241,7 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
         Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Err("always fails"));
         }
-        other => panic!("expected Exhausted, got {:?}", other),
+        other => panic!("expected Exhausted, got {other:?}"),
     }
 }
 
@@ -707,7 +707,7 @@ fn exhausted_returned_for_ok_predicate_exhaustion() {
         Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Ok(-1));
         }
-        other => panic!("expected Exhausted, got {:?}", other),
+        other => panic!("expected Exhausted, got {other:?}"),
     }
 }
 
@@ -761,7 +761,7 @@ fn predicate_rejects_err_means_immediate_return() {
         Err(RetryError::Rejected { last }) => {
             assert_eq!(last, "fatal");
         }
-        other => panic!("expected Rejected with last=\"fatal\", got {:?}", other),
+        other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
     }
 }
 
@@ -1065,7 +1065,7 @@ fn when_and_until_last_call_wins() {
     // Any Err stops immediately (ok returns false, until negates to true, then
     // we wait — actually with until the logic is: until(ok(f)) retries errors automatically.
     // The last predicate wins: .until() after .when() replaces it.
-    let call_count = Cell::new(0_u32);
+    let call_count = Cell::new(0_i32);
     let result = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::ZERO))
@@ -1074,7 +1074,7 @@ fn when_and_until_last_call_wins() {
         .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
-            Ok::<i32, &str>(n as i32)
+            Ok::<i32, &str>(n)
         })
         .sleep(instant_sleep)
         .call();

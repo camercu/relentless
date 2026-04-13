@@ -57,15 +57,13 @@ fn run_seed() -> u64 {
     *RUN_SEED.get_or_init(|| match env::var(PROPTEST_SEED_ENV) {
         Ok(raw_seed) => parse_seed(&raw_seed).unwrap_or_else(|err| {
             panic!(
-                "invalid {} value {:?}: {}; expected decimal or 0x-prefixed hex u64",
-                PROPTEST_SEED_ENV, raw_seed, err
+                "invalid {PROPTEST_SEED_ENV} value {raw_seed:?}: {err}; expected decimal or 0x-prefixed hex u64"
             )
         }),
         Err(env::VarError::NotPresent) => random_default_seed(),
         Err(env::VarError::NotUnicode(raw_seed)) => {
             panic!(
-                "invalid {} value {:?}: expected valid UTF-8",
-                PROPTEST_SEED_ENV, raw_seed
+                "invalid {PROPTEST_SEED_ENV} value {raw_seed:?}: expected valid UTF-8"
             )
         }
     })
@@ -174,18 +172,12 @@ fn stop_composition_matches_boolean_algebra() {
         assert_eq!(
             either.should_stop(&state),
             left_value || right_value,
-            "repro: {}={:#018x}; sample={}; invariant=stop-or",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=stop-or"
         );
         assert_eq!(
             both.should_stop(&state),
             left_value && right_value,
-            "repro: {}={:#018x}; sample={}; invariant=stop-and",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=stop-and"
         );
     }
 }
@@ -212,19 +204,13 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
         assert_eq!(
             combined.next_wait(&state),
             left_value.saturating_add(right_value),
-            "repro: {}={:#018x}; sample={}; invariant=wait-add",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=wait-add"
         );
 
         let capped = wait::linear(initial, increment).cap(cap);
         assert!(
             capped.next_wait(&state) <= cap,
-            "repro: {}={:#018x}; sample={}; invariant=wait-cap",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=wait-cap"
         );
 
         let chained =
@@ -237,10 +223,7 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
         assert_eq!(
             chained.next_wait(&state),
             expected,
-            "repro: {}={:#018x}; sample={}; invariant=wait-chain",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=wait-chain"
         );
     }
 }
@@ -272,18 +255,12 @@ fn predicate_composition_matches_boolean_algebra() {
         assert_eq!(
             either.should_retry(&outcome),
             left_value || right_value,
-            "repro: {}={:#018x}; sample={}; invariant=predicate-or",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=predicate-or"
         );
         assert_eq!(
             both.should_retry(&outcome),
             left_value && right_value,
-            "repro: {}={:#018x}; sample={}; invariant=predicate-and",
-            PROPTEST_SEED_ENV,
-            run_seed,
-            sample
+            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=predicate-and"
         );
     }
 }
@@ -296,38 +273,33 @@ fn seeded_run_is_exactly_reproducible_when_seed_env_is_set() {
 
     let expected_seed = parse_seed(&raw_seed).unwrap_or_else(|err| {
         panic!(
-            "invalid {} value {:?}: {}; expected decimal or 0x-prefixed hex u64",
-            PROPTEST_SEED_ENV, raw_seed, err
+            "invalid {PROPTEST_SEED_ENV} value {raw_seed:?}: {err}; expected decimal or 0x-prefixed hex u64"
         )
     });
     let effective_seed = run_seed();
     assert_eq!(
         effective_seed, expected_seed,
-        "repro seed mismatch: env {}={}; effective={:#018x}",
-        PROPTEST_SEED_ENV, raw_seed, effective_seed
+        "repro seed mismatch: env {PROPTEST_SEED_ENV}={raw_seed}; effective={effective_seed:#018x}"
     );
 
     let first_digest = stream_signature(effective_seed, STOP_STREAM_DISCRIMINANT);
     let second_digest = stream_signature(effective_seed, STOP_STREAM_DISCRIMINANT);
     assert_eq!(
         first_digest, second_digest,
-        "stop stream mismatch under fixed seed: {}={:#018x}",
-        PROPTEST_SEED_ENV, effective_seed
+        "stop stream mismatch under fixed seed: {PROPTEST_SEED_ENV}={effective_seed:#018x}"
     );
 
     let first_digest = stream_signature(effective_seed, WAIT_STREAM_DISCRIMINANT);
     let second_digest = stream_signature(effective_seed, WAIT_STREAM_DISCRIMINANT);
     assert_eq!(
         first_digest, second_digest,
-        "wait stream mismatch under fixed seed: {}={:#018x}",
-        PROPTEST_SEED_ENV, effective_seed
+        "wait stream mismatch under fixed seed: {PROPTEST_SEED_ENV}={effective_seed:#018x}"
     );
 
     let first_digest = stream_signature(effective_seed, PREDICATE_STREAM_DISCRIMINANT);
     let second_digest = stream_signature(effective_seed, PREDICATE_STREAM_DISCRIMINANT);
     assert_eq!(
         first_digest, second_digest,
-        "predicate stream mismatch under fixed seed: {}={:#018x}",
-        PROPTEST_SEED_ENV, effective_seed
+        "predicate stream mismatch under fixed seed: {PROPTEST_SEED_ENV}={effective_seed:#018x}"
     );
 }

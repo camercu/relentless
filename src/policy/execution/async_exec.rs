@@ -466,6 +466,7 @@ type AsyncRetryWithOnExitHook<
 impl<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
     AsyncRetry<'policy, S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 {
+    /// Sets the async sleep implementation used between retry attempts.
     #[must_use]
     pub fn sleep<NewSleep>(
         self,

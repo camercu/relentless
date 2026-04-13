@@ -239,6 +239,7 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
+    /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
@@ -250,6 +251,7 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
+    /// Sets the wait strategy used between retry attempts.
     #[must_use]
     pub fn wait<NewWait>(
         self,
@@ -261,6 +263,7 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         }
     }
 
+    /// Sets the predicate that decides whether a failed attempt should be retried.
     #[must_use]
     pub fn when<NewPredicate>(
         self,
@@ -353,6 +356,7 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
     AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
 {
+    /// Sets the async sleep implementation used between retry attempts.
     #[must_use]
     #[allow(clippy::type_complexity)]
     pub fn sleep<NewSleep>(

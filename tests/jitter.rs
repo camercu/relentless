@@ -152,13 +152,11 @@ fn equal_jitter_stays_within_half_base_to_base() {
         let delay = strategy.next_wait(&state(attempt));
         assert!(
             delay >= lower_bound,
-            "equal jitter should be >= base/2, got {:?}",
-            delay
+            "equal jitter should be >= base/2, got {delay:?}"
         );
         assert!(
             delay <= BASE_WAIT,
-            "equal jitter should be <= base, got {:?}",
-            delay
+            "equal jitter should be <= base, got {delay:?}"
         );
     }
 }
@@ -176,8 +174,7 @@ fn decorrelated_jitter_first_attempt_range() {
         assert!(delay >= base, "decorrelated jitter should be >= base");
         assert!(
             delay <= upper,
-            "decorrelated jitter first attempt should be <= base*3, got {:?}",
-            delay
+            "decorrelated jitter first attempt should be <= base*3, got {delay:?}"
         );
     }
 }
@@ -249,7 +246,7 @@ fn decorrelated_jitter_clone_diverges() {
 #[test]
 fn decorrelated_jitter_with_seed_is_reproducible() {
     let base = Duration::from_millis(50);
-    let seed = 0xDEADBEEF_u64;
+    let seed = 0xDEAD_BEEF_u64;
     let nonce = 42_u64;
 
     let first = wait::decorrelated_jitter(base)
@@ -279,9 +276,7 @@ fn decorrelated_jitter_with_cap_respects_max() {
         let delay = strategy.next_wait(&state(attempt));
         assert!(
             delay <= cap,
-            "decorrelated jitter with cap should not exceed cap, got {:?} at attempt {}",
-            delay,
-            attempt
+            "decorrelated jitter with cap should not exceed cap, got {delay:?} at attempt {attempt}"
         );
     }
 }

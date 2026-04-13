@@ -293,6 +293,7 @@ impl<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E>
 impl<'policy, S, W, P, BA, AA, OX, F, T, E>
     SyncRetry<'policy, S, W, P, BA, AA, OX, F, NoSyncSleep, T, E>
 {
+    /// Sets the blocking sleep function used between retry attempts.
     #[must_use]
     pub fn sleep<SleepFn>(
         self,
@@ -317,6 +318,12 @@ where
     F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
+    /// Executes the retry loop and returns the final result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RetryError`] if all attempts are exhausted or a non-retryable
+    /// error is encountered.
     pub fn call(self) -> Result<T, RetryError<T, E>> {
         self.execute::<false>().0
     }
@@ -349,6 +356,12 @@ where
     F: super::common::RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
+    /// Executes the retry loop and returns both the result and collected stats.
+    ///
+    /// # Panics
+    ///
+    /// Panics if stats collection fails internally (should not happen in
+    /// practice).
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats) {
         let (result, stats) = self.inner.execute::<true>();
         (result, stats.expect("sync retry completed without stats"))
@@ -459,6 +472,7 @@ where
     S: Stop,
     W: Wait,
 {
+    /// Creates a synchronous retry execution for the given operation.
     #[must_use]
     pub fn retry<T, E, F>(&self, op: F) -> SyncRetry<'_, S, W, P, (), (), (), F, NoSyncSleep, T, E>
     where

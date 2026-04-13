@@ -130,6 +130,7 @@ impl<T, E> Predicate<T, E> for Box<dyn Predicate<T, E> + Send + Sync + '_> {
 #[derive(Debug, Clone)]
 pub struct PredicateAnyError;
 
+/// Creates a predicate that retries on any `Err` value.
 #[must_use]
 pub fn any_error() -> PredicateAnyError {
     PredicateAnyError
@@ -202,6 +203,7 @@ pub struct PredicateResult<F> {
     matcher: F,
 }
 
+/// Creates a predicate that retries when `matcher` returns `true` for the outcome.
 #[must_use]
 pub fn result<F>(matcher: F) -> PredicateResult<F> {
     PredicateResult { matcher }

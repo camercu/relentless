@@ -2,7 +2,7 @@
 //!
 //! Verifies the formula contracts for fixed, linear, and exponential backoff (including
 //! saturation on overflow), the boundary behavior of `.cap()` and `.chain()`, composition
-//! via `+` (WaitCombine), and that provided methods work on user-defined Wait impls.
+//! via `+` (`WaitCombine`), and that provided methods work on user-defined Wait impls.
 
 use core::time::Duration;
 use relentless::Wait;
@@ -319,7 +319,7 @@ fn fixed_is_clone_and_debug() {
     let w = wait::fixed(BASE);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&w);
-    let debug = format!("{:?}", w);
+    let debug = format!("{w:?}");
     assert!(!debug.is_empty());
 }
 
@@ -328,7 +328,7 @@ fn linear_is_clone_and_debug() {
     let w = wait::linear(BASE, INCREMENT);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&w);
-    let debug = format!("{:?}", w);
+    let debug = format!("{w:?}");
     assert!(!debug.is_empty());
 }
 
@@ -337,7 +337,7 @@ fn exponential_is_clone_and_debug() {
     let w = wait::exponential(BASE);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&w);
-    let debug = format!("{:?}", w);
+    let debug = format!("{w:?}");
     assert!(!debug.is_empty());
 }
 
@@ -346,7 +346,7 @@ fn exponential_with_base_is_clone_and_debug() {
     let w = wait::exponential(BASE).base(3.0);
     fn assert_clone<T: Clone>(_value: &T) {}
     assert_clone(&w);
-    let debug = format!("{:?}", w);
+    let debug = format!("{w:?}");
     assert!(!debug.is_empty());
 }
 
@@ -354,7 +354,7 @@ fn exponential_with_base_is_clone_and_debug() {
 fn capped_is_clone_and_debug() {
     let w = wait::exponential(BASE).cap(CAP);
     let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    let debug = format!("{w2:?}");
     assert!(!debug.is_empty());
 }
 
@@ -362,7 +362,7 @@ fn capped_is_clone_and_debug() {
 fn combine_is_clone_and_debug() {
     let w = wait::fixed(BASE) + wait::fixed(Duration::from_millis(50));
     let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    let debug = format!("{w2:?}");
     assert!(debug.contains("WaitCombine"));
 }
 
@@ -370,7 +370,7 @@ fn combine_is_clone_and_debug() {
 fn chain_is_clone_and_debug() {
     let w = wait::fixed(BASE).chain(wait::fixed(Duration::from_secs(1)), CHAIN_AFTER);
     let w2 = w.clone();
-    let debug = format!("{:?}", w2);
+    let debug = format!("{w2:?}");
     assert!(debug.contains("WaitChain"));
 }
 

@@ -1,7 +1,7 @@
-//! Tests for before_attempt, after_attempt, and on_exit hooks.
+//! Tests for `before_attempt`, `after_attempt`, and `on_exit` hooks.
 //!
 //! Verifies call ordering relative to the operation and predicate evaluation,
-//! the `next_delay` field in AttemptState (Some for retried attempts, None for terminal),
+//! the `next_delay` field in `AttemptState` (Some for retried attempts, None for terminal),
 //! and that multiple hooks of the same kind fire in registration order.
 
 use core::cell::Cell;
@@ -152,10 +152,10 @@ fn multiple_hooks_of_same_kind_fire_in_registration_order() {
         .before_attempt(|_state| calls.borrow_mut().push("before_1"))
         .before_attempt(|_state| calls.borrow_mut().push("before_2"))
         .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
-            calls.borrow_mut().push("after_1")
+            calls.borrow_mut().push("after_1");
         })
         .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
-            calls.borrow_mut().push("after_2")
+            calls.borrow_mut().push("after_2");
         })
         .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_1"))
         .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_2"))

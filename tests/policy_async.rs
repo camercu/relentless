@@ -105,7 +105,7 @@ fn retry_async_executes_when_sleeper_is_set() {
 
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
     fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
         retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
     ) where
@@ -196,7 +196,7 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
         Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Err(ERROR_VALUE));
         }
-        other => panic!("expected Exhausted, got {:?}", other),
+        other => panic!("expected Exhausted, got {other:?}"),
     }
 }
 
@@ -217,7 +217,7 @@ fn async_retry_returns_exhausted_for_ok_exhaustion() {
         Err(RetryError::Exhausted { last }) => {
             assert_eq!(last, Ok(-1));
         }
-        other => panic!("expected Exhausted, got {:?}", other),
+        other => panic!("expected Exhausted, got {other:?}"),
     }
 }
 

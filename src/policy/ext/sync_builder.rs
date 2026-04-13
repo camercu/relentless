@@ -212,6 +212,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
+    /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
@@ -222,6 +223,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
+    /// Sets the wait strategy used between retry attempts.
     #[must_use]
     pub fn wait<NewWait>(
         self,
@@ -232,6 +234,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
+    /// Sets the predicate that decides whether a failed attempt should be retried.
     #[must_use]
     pub fn when<NewPredicate>(
         self,
@@ -295,6 +298,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         }
     }
 
+    /// Sets the blocking sleep function used between retry attempts.
     #[must_use]
     pub fn sleep<NewSleep>(
         self,
@@ -412,6 +416,12 @@ where
     F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
+    /// Executes the retry loop and returns the final result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RetryError`] if all attempts are exhausted or a non-retryable
+    /// error is encountered.
     pub fn call(self) -> Result<T, RetryError<T, E>> {
         self.execute::<false>().0
     }
@@ -444,6 +454,12 @@ where
     F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
+    /// Executes the retry loop and returns both the result and collected stats.
+    ///
+    /// # Panics
+    ///
+    /// Panics if stats collection fails internally (should not happen in
+    /// practice).
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats) {
         let (result, stats) = self.inner.execute::<true>();
         (

@@ -91,6 +91,7 @@ impl Stop for StopAfterElapsed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StopNever;
 
+/// Creates a stop strategy that never stops retrying.
 #[must_use]
 pub fn never() -> StopNever {
     StopNever

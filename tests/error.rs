@@ -1,8 +1,8 @@
-//! Tests for RetryError and RetryResult.
+//! Tests for `RetryError` and `RetryResult`.
 //!
 //! Verifies the variant payloads (Exhausted carries last: Result<T,E>; Rejected carries last: E),
-//! Display output, the std::error::Error source chain under the `std` feature, accessor methods,
-//! and the RetryResult type alias.
+//! Display output, the `std::error::Error` source chain under the `std` feature, accessor methods,
+//! and the `RetryResult` type alias.
 
 #[test]
 fn retry_error_exhausted_variant() {
@@ -14,7 +14,7 @@ fn retry_error_exhausted_variant() {
         relentless::RetryError::Exhausted { ref last } => {
             assert_eq!(last, &Err("connection refused".to_string()));
         }
-        _ => panic!("expected Exhausted variant"),
+        relentless::RetryError::Rejected { .. } => panic!("expected Exhausted variant"),
     }
 }
 
@@ -28,7 +28,7 @@ fn retry_error_rejected_variant() {
         relentless::RetryError::Rejected { ref last } => {
             assert_eq!(last, "fatal");
         }
-        _ => panic!("expected Rejected variant"),
+        relentless::RetryError::Exhausted { .. } => panic!("expected Rejected variant"),
     }
 }
 
@@ -48,7 +48,7 @@ fn retry_error_display_includes_meaningful_content() {
         last: Err("timeout".to_string()),
     };
 
-    let msg = format!("{}", err);
+    let msg = format!("{err}");
     assert!(
         msg.contains("timeout"),
         "Display should include the error message: {msg}"
@@ -57,7 +57,7 @@ fn retry_error_display_includes_meaningful_content() {
     let err2: relentless::RetryError<i32, String> = relentless::RetryError::Rejected {
         last: "fatal".to_string(),
     };
-    let msg2 = format!("{}", err2);
+    let msg2 = format!("{err2}");
     assert!(
         msg2.contains("fatal"),
         "Display should include the error message: {msg2}"
@@ -189,7 +189,7 @@ fn retry_error_display_exact_format() {
     let exhausted: relentless::RetryError<(), String> = relentless::RetryError::Exhausted {
         last: Err("connection refused".to_string()),
     };
-    let msg = format!("{}", exhausted);
+    let msg = format!("{exhausted}");
     assert_eq!(
         msg, "retries exhausted: connection refused",
         "Exhausted Display format should match spec"
@@ -198,7 +198,7 @@ fn retry_error_display_exact_format() {
     let rejected: relentless::RetryError<i32, String> = relentless::RetryError::Rejected {
         last: "fatal error".to_string(),
     };
-    let msg2 = format!("{}", rejected);
+    let msg2 = format!("{rejected}");
     assert_eq!(
         msg2, "rejected: fatal error",
         "Rejected Display format should match spec"
@@ -207,7 +207,7 @@ fn retry_error_display_exact_format() {
     // Exhausted with Ok(T) — no error to display, just "retries exhausted"
     let exhausted_ok: relentless::RetryError<i32, String> =
         relentless::RetryError::Exhausted { last: Ok(42) };
-    let msg3 = format!("{}", exhausted_ok);
+    let msg3 = format!("{exhausted_ok}");
     assert_eq!(msg3, "retries exhausted");
 }
 
