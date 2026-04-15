@@ -114,7 +114,7 @@ check-msrv:
     cargo "+${msrv}" check --quiet
 
 semver-check:
-    cargo semver-checks check-release
+    cargo +stable semver-checks check-release
 
 # ── Documentation ───────────────────────────────────────────
 

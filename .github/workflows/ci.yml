@@ -38,6 +38,8 @@ jobs:
           if [ "$msrv" != "${{ steps.tools.outputs.rust }}" ]; then
             rustup toolchain install "$msrv" --profile minimal
           fi
+      - name: Install stable toolchain (for semver-checks)
+        run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
