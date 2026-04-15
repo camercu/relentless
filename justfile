@@ -165,6 +165,12 @@ check-tool-versions:
         echo "all tool versions match .tool-versions"
     fi
 
+tool-versions-update:
+    ./scripts/update-tool-versions.sh
+
+tool-versions-update-check:
+    ./scripts/update-tool-versions.sh --check
+
 # ── Setup ───────────────────────────────────────────────────
 
 setup:
