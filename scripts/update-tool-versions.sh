@@ -125,4 +125,30 @@ sed -i.bak \
     "$SHELL_NIX_FILE"
 rm -f "${SHELL_NIX_FILE}.bak"
 
+# ── Update rust-toolchain.toml ───────────────────────────────
+rust_version="${LATEST[rust]:-}"
+if [[ -n "$rust_version" ]]; then
+    RUST_TOOLCHAIN_FILE="rust-toolchain.toml"
+    echo "Updating $RUST_TOOLCHAIN_FILE..."
+    sed -i.bak \
+        "s|^channel = \".*\"|channel = \"${rust_version}\"|" \
+        "$RUST_TOOLCHAIN_FILE"
+    rm -f "${RUST_TOOLCHAIN_FILE}.bak"
+
+    echo "Installing Rust toolchain ${rust_version}..."
+    # Read targets and components from rust-toolchain.toml
+    targets=$(grep '^targets' "$RUST_TOOLCHAIN_FILE" | sed 's/targets = \[//;s/\]//;s/"//g;s/,/ /g;s/  */ /g' | xargs)
+    components=$(grep '^components' "$RUST_TOOLCHAIN_FILE" | sed 's/components = \[//;s/\]//;s/"//g;s/,/ /g;s/  */ /g' | xargs)
+    target_args=""
+    for t in $targets; do
+        target_args+=" --target $t"
+    done
+    component_args=""
+    if [[ -n "$components" ]]; then
+        component_args="--component $components"
+    fi
+    # shellcheck disable=SC2086
+    rustup toolchain install "$rust_version" $component_args $target_args
+fi
+
 echo "Done. Review changes with 'git diff' before committing."
