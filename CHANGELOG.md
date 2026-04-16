@@ -1,3 +1,17 @@
+## [0.8.0](https://github.com/camercu/relentless/compare/v0.7.2...v0.8.0) (2026-04-16)
+
+
+### Features
+
+* add tool-versions-update and tool-versions-update-check recipes ([88d2eb2](https://github.com/camercu/relentless/commit/88d2eb2d3de0181a6a13e661704be6ae623db87a))
+* update rust-toolchain.toml and install toolchain in update script ([9c7b615](https://github.com/camercu/relentless/commit/9c7b615e7de56ffd5a71539f1b26ed4124aa870f))
+
+
+### Bug Fixes
+
+* **ci:** run semver-checks with stable toolchain ([f07c471](https://github.com/camercu/relentless/commit/f07c4713d4684f5794a9bce190f558d93f410db9))
+* resolve unchecked Duration subtraction clippy lint ([ed41f40](https://github.com/camercu/relentless/commit/ed41f40ced5ee142d1fbda54317ff2d4e3ee7550))
+
 ## [0.7.2](https://github.com/camercu/relentless/compare/v0.7.1...v0.7.2) (2026-04-12)
 
 
