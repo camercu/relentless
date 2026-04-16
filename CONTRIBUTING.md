@@ -15,7 +15,7 @@ CI guidance in this document rather than in the spec.
 `relentless` uses a pinned Rust toolchain and a pinned Nix shell so contributors
 run the same checks with the same tool versions.
 
-- [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.85.0`, `clippy`,
+- [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.94.1`, `clippy`,
   `rustfmt`, and the required cross-compilation targets.
 - [shell.nix](./shell.nix) provides `just`, `pre-commit`, `taplo`, `typos`,
   `cargo-deny`, `cargo-semver-checks`, and `cargo-mutants`.
