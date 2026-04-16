@@ -118,7 +118,7 @@ fn attempts_with_zero_panics() {
 #[test]
 fn elapsed_does_not_fire_below_deadline() {
     let s = stop::elapsed(DEADLINE);
-    let state = make_state_with_elapsed(1, DEADLINE - Duration::from_millis(1));
+    let state = make_state_with_elapsed(1, DEADLINE.checked_sub(Duration::from_millis(1)).unwrap());
     assert!(!s.should_stop(&state));
 }
 
