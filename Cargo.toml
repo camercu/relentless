@@ -10,6 +10,27 @@ readme = "README.md"
 homepage = "https://docs.rs/relentless"
 repository = "https://github.com/camercu/relentless"
 keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
+exclude = [
+  ".envrc",
+  ".github/",
+  ".pre-commit-config.yaml",
+  ".prettierrc.yaml",
+  ".releaserc.json",
+  ".tool-versions",
+  ".typos.toml",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "CONTRIBUTING.md",
+  "commitlint.config.js",
+  "deny.toml",
+  "docs/",
+  "justfile",
+  "node_modules/",
+  "package-lock.json",
+  "package.json",
+  "scripts/",
+  "shell.nix",
+]
 categories = ["asynchronous", "no-std", "rust-patterns"]
 
 [features]
