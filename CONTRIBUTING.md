@@ -18,7 +18,7 @@ run the same checks with the same tool versions.
 - [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.94.1`, `clippy`,
   `rustfmt`, and the required cross-compilation targets.
 - [shell.nix](./shell.nix) provides `just`, `pre-commit`, `taplo`, `typos`,
-  `cargo-deny`, `cargo-semver-checks`, and `cargo-mutants`.
+  `cargo-deny`, `cargo-semver-checks`, `cargo-mutants`, and `cargo-llvm-cov`.
 
 To enter the pinned shell, run:
 
@@ -85,6 +85,15 @@ the declared minimum supported Rust version. Both run as part of `just ci`.
 
 `just mutants` runs `cargo-mutants` for mutation testing. This is not part of
 CI — run it periodically to find test coverage gaps.
+
+## Code coverage
+
+`just coverage` generates an HTML coverage report using `cargo-llvm-cov`.
+`just coverage-text` prints a summary table to stdout. `just coverage-lcov`
+produces an LCOV file for tooling integration.
+
+Coverage runs as an infallible step at the end of `just ci` — it reports
+results but does not fail the build.
 
 ## Toolchain policy
 

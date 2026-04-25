@@ -164,6 +164,7 @@ check-tool-versions:
             cargo-nextest) actual=$(cargo nextest --version | head -1 | awk '{print $2}') ;;
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
+            cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then

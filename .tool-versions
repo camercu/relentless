@@ -8,3 +8,4 @@ taplo-cli 0.10.0
 cargo-nextest 0.9.133
 cargo-semver-checks 0.47.0
 cargo-mutants 27.0.0
+cargo-llvm-cov 0.8.5
