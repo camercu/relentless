@@ -385,3 +385,17 @@ fn stop_named_combinators_match_operator_forms() {
         op_and.should_stop(&both_hit)
     );
 }
+
+#[test]
+fn stop_any_bitand_produces_stop_all() {
+    // Tests the BitAnd impl on StopAny: (a | b) & c.
+    let s = (stop::attempts(MAX_ATTEMPTS) | stop::elapsed(DEADLINE)) & stop::attempts(MAX_ATTEMPTS);
+
+    // Only attempts met — the | fires, and the right & fires too.
+    let state = make_state(MAX_ATTEMPTS);
+    assert!(s.should_stop(&state));
+
+    // Only elapsed met — the | fires, but the right & doesn't.
+    let state = make_state_with_elapsed(1, DEADLINE);
+    assert!(!s.should_stop(&state));
+}

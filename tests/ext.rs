@@ -26,6 +26,9 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
 const DEFAULT_WAIT_SEQUENCE: [Duration; 2] = [DEFAULT_INITIAL_WAIT, DEFAULT_SECOND_WAIT];
 const STATEFUL_STOP_THRESHOLD: u32 = 2;
+const UNTIL_TARGET: u32 = 3;
+const CLOCK_STEP_MILLIS: u64 = 100;
+const TIMEOUT_DEADLINE: Duration = Duration::from_millis(50);
 
 fn instant_sleep(_dur: Duration) {}
 
@@ -253,6 +256,65 @@ fn retry_ext_non_retryable_error_returns_immediately() {
             ..
         })
     ));
+}
+
+#[test]
+fn retry_ext_until_retries_until_predicate_fires() {
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+
+    let result = (move || {
+        attempts_ref.set(attempts_ref.get().saturating_add(1));
+        Ok::<u32, &str>(attempts_ref.get())
+    })
+    .retry()
+    .stop(stop::attempts(5))
+    .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
+    .sleep(instant_sleep)
+    .call();
+
+    assert_eq!(result, Ok(UNTIL_TARGET));
+    assert_eq!(attempts.get(), UNTIL_TARGET);
+}
+
+#[test]
+fn retry_ext_timeout_stops_on_deadline() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let clock_millis = Arc::new(AtomicU64::new(0));
+    let clock_ref = Arc::clone(&clock_millis);
+
+    let result = (|| {
+        clock_ref.fetch_add(CLOCK_STEP_MILLIS, Ordering::Relaxed);
+        Err::<i32, &str>(ERROR_VALUE)
+    })
+    .retry()
+    .stop(stop::attempts(100))
+    .wait(wait::fixed(WAIT_DURATION))
+    .elapsed_clock_fn(move || Duration::from_millis(clock_millis.load(Ordering::Relaxed)))
+    .timeout(TIMEOUT_DEADLINE)
+    .sleep(instant_sleep)
+    .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+#[test]
+fn sync_retry_builder_debug_format() {
+    let builder = (|| Ok::<i32, &str>(1)).retry().sleep(instant_sleep);
+    let debug = format!("{builder:?}");
+    assert!(debug.contains("SyncRetryBuilder"));
+}
+
+#[test]
+fn sync_retry_builder_with_stats_debug_format() {
+    let builder = (|| Ok::<i32, &str>(1))
+        .retry()
+        .sleep(instant_sleep)
+        .with_stats();
+    let debug = format!("{builder:?}");
+    assert!(debug.contains("SyncRetryBuilderWithStats"));
 }
 
 #[cfg(feature = "alloc")]
@@ -483,6 +545,85 @@ mod async_tests {
             let _ = Future::poll(Pin::as_mut(&mut retry), &mut cx);
         }));
         assert!(second_poll.is_err());
+    }
+
+    #[test]
+    fn free_function_retry_async_uses_default_policy() {
+        let attempts = Rc::new(Cell::new(0_u32));
+        let attempts_ref = Rc::clone(&attempts);
+
+        let result = block_on(
+            relentless::retry_async(move |_| {
+                attempts_ref.set(attempts_ref.get().saturating_add(1));
+                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+            })
+            .sleep(|_dur| ready(())),
+        );
+
+        assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    }
+
+    #[test]
+    fn async_retry_ext_until_retries_until_predicate_fires() {
+        let attempts = Rc::new(Cell::new(0_u32));
+        let attempts_ref = Rc::clone(&attempts);
+
+        let result = block_on(
+            (move || {
+                attempts_ref.set(attempts_ref.get().saturating_add(1));
+                ready(Ok::<u32, &str>(attempts_ref.get()))
+            })
+            .retry_async()
+            .stop(stop::attempts(5))
+            .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
+            .sleep(|_dur| ready(())),
+        );
+
+        assert_eq!(result, Ok(UNTIL_TARGET));
+        assert_eq!(attempts.get(), UNTIL_TARGET);
+    }
+
+    #[test]
+    fn async_retry_ext_timeout_stops_on_deadline() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        let clock_millis = Arc::new(AtomicU64::new(0));
+        let clock_ref = Arc::clone(&clock_millis);
+
+        let result = block_on(
+            (move || {
+                clock_ref.fetch_add(CLOCK_STEP_MILLIS, Ordering::Relaxed);
+                ready(Err::<i32, &str>(ERROR_VALUE))
+            })
+            .retry_async()
+            .stop(stop::attempts(100))
+            .wait(wait::fixed(WAIT_DURATION))
+            .elapsed_clock_fn(move || Duration::from_millis(clock_millis.load(Ordering::Relaxed)))
+            .timeout(TIMEOUT_DEADLINE)
+            .sleep(|_dur| ready(())),
+        );
+
+        assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    }
+
+    #[test]
+    fn async_retry_builder_debug_format() {
+        let builder = (|| ready(Ok::<i32, &str>(1)))
+            .retry_async()
+            .sleep(|_dur: Duration| ready(()));
+        let debug = format!("{builder:?}");
+        assert!(debug.contains("AsyncRetryBuilder"));
+    }
+
+    #[test]
+    fn async_retry_builder_with_stats_debug_format() {
+        let builder = (|| ready(Ok::<i32, &str>(1)))
+            .retry_async()
+            .sleep(|_dur: Duration| ready(()))
+            .with_stats();
+        let debug = format!("{builder:?}");
+        assert!(debug.contains("AsyncRetryBuilderWithStats"));
     }
 }
 

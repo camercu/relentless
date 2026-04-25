@@ -12,6 +12,10 @@ const BASE: Duration = Duration::from_millis(100);
 const INCREMENT: Duration = Duration::from_millis(50);
 const CAP: Duration = Duration::from_millis(500);
 const CHAIN_AFTER: u32 = 3;
+const ARBITRARY_ADDEND: Duration = Duration::from_millis(50);
+const ARBITRARY_SMALL_ADDEND: Duration = Duration::from_millis(5);
+const ARBITRARY_JITTER_MAX: Duration = Duration::from_millis(20);
+const ARBITRARY_FALLBACK: Duration = Duration::from_secs(1);
 
 fn make_state(attempt: u32) -> relentless::RetryState {
     relentless::RetryState::new(attempt, None)
@@ -528,6 +532,55 @@ fn zero_duration_sleep_is_skipped() {
         0,
         "sleep should not be called when wait returns Duration::ZERO"
     );
+}
+
+#[test]
+fn chain_plus_fixed_combines_via_add() {
+    let chained = wait::exponential(BASE).chain(wait::fixed(ARBITRARY_FALLBACK), CHAIN_AFTER);
+    let combined = chained + wait::fixed(ARBITRARY_ADDEND);
+
+    let state = make_state(1);
+    assert_eq!(
+        combined.next_wait(&state),
+        BASE.saturating_add(ARBITRARY_ADDEND)
+    );
+
+    let state = make_state(CHAIN_AFTER + 1);
+    assert_eq!(
+        combined.next_wait(&state),
+        ARBITRARY_FALLBACK.saturating_add(ARBITRARY_ADDEND)
+    );
+}
+
+#[test]
+fn capped_plus_fixed_combines_via_add() {
+    let capped = wait::exponential(BASE).cap(CAP);
+    let combined = capped + wait::fixed(ARBITRARY_SMALL_ADDEND);
+
+    let state = make_state(1);
+    assert_eq!(
+        combined.next_wait(&state),
+        BASE.saturating_add(ARBITRARY_SMALL_ADDEND)
+    );
+
+    let state = make_state(10);
+    assert_eq!(
+        combined.next_wait(&state),
+        CAP.saturating_add(ARBITRARY_SMALL_ADDEND)
+    );
+}
+
+#[test]
+fn jittered_plus_fixed_combines_via_add() {
+    let jittered = wait::fixed(BASE).jitter(ARBITRARY_JITTER_MAX);
+    let combined = jittered + wait::fixed(ARBITRARY_SMALL_ADDEND);
+
+    let state = make_state(1);
+    let result = combined.next_wait(&state);
+    let lower = BASE.saturating_add(ARBITRARY_SMALL_ADDEND);
+    let upper = lower.saturating_add(ARBITRARY_JITTER_MAX);
+    assert!(result >= lower);
+    assert!(result <= upper);
 }
 
 /// §14
