@@ -15,6 +15,7 @@ pkgs.mkShell {
     cargo-nextest
     cargo-semver-checks
     cargo-mutants
+    cargo-llvm-cov
     typos
     taplo
     nodejs

@@ -130,6 +130,19 @@ bench:
 bench-no-run:
     cargo bench --bench {{benchmark_target}} --no-run
 
+# ── Code coverage ──────────────────────────────────────────
+
+coverage:
+    cargo llvm-cov --all-features --html
+    @echo "HTML report: target/llvm-cov/html/index.html"
+
+coverage-text:
+    cargo llvm-cov --all-features
+
+coverage-lcov:
+    cargo llvm-cov --all-features --lcov --output-path target/llvm-cov/lcov.info
+    @echo "LCOV report: target/llvm-cov/lcov.info"
+
 # ── Mutation testing ───────────────────────────────────────
 
 mutants *args:
@@ -194,6 +207,7 @@ ci:
         test-readme test-examples \
         test-tokio-sleep test-futures-timer-sleep test-allocation \
         bench-no-run semver-check
+    -just coverage-text
 
 ci-stable: build-stable test-stable lint-clippy-stable
 
