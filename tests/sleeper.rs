@@ -138,7 +138,7 @@ fn futures_timer_sleep_helper_is_sleep_compatible() {
     assert_eq!(result, Ok(()));
 }
 
-#[cfg(all(feature = "embassy-sleep", target_os = "none"))]
+#[cfg(feature = "embassy-sleep")]
 #[test]
 fn embassy_sleep_helper_is_sleep_compatible() {
     let helper: fn(Duration) -> embassy_time::Timer = relentless::sleep::embassy();
