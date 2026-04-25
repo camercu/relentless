@@ -1,3 +1,15 @@
+## [0.9.0](https://github.com/camercu/relentless/compare/v0.8.0...v0.9.0) (2026-04-25)
+
+
+### Features
+
+* add code coverage targets with cargo-llvm-cov ([e3bc875](https://github.com/camercu/relentless/commit/e3bc8759da1b59c4e72e8a85cc07496f85826f42))
+
+
+### Bug Fixes
+
+* **test:** remove target_os gate from embassy sleep test ([6d6b150](https://github.com/camercu/relentless/commit/6d6b150a415b413ce4fce333836c369c348468b4))
+
 ## [0.8.0](https://github.com/camercu/relentless/compare/v0.7.2...v0.8.0) (2026-04-16)
 
 
