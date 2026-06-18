@@ -67,6 +67,37 @@ fn exit_state_from<'a, T, E>(
     )
 }
 
+/// Clamps the next sleep delay to the remaining timeout budget, then fires the
+/// `after_attempt` hook with the clamped value.
+///
+/// Shared by the sync and async loops so the hook always observes a truthful
+/// delay (never an unclamped value) on every non-terminal path. Returns the
+/// clamped delay for the caller to sleep on.
+fn clamp_and_fire_after_attempt<BA, AA, OX, T, E>(
+    hooks: &mut ExecutionHooks<BA, AA, OX>,
+    attempt: u32,
+    elapsed: Option<Duration>,
+    last_result: &Result<T, E>,
+    next_delay: Duration,
+    timeout: Option<Duration>,
+) -> Duration
+where
+    AA: AttemptHook<T, E>,
+{
+    // Prevent sleeping past the deadline: cap the delay to the remaining
+    // timeout budget so the loop terminates on time.
+    let clamped = match (timeout, elapsed) {
+        (Some(timeout_dur), Some(elapsed)) => next_delay.min(timeout_dur.saturating_sub(elapsed)),
+        _ => next_delay,
+    };
+
+    let retry_state = RetryState::new(attempt, elapsed);
+    let attempt_state = attempt_state_from(&retry_state, last_result, Some(clamped));
+    hooks.after_attempt.call(&attempt_state);
+
+    clamped
+}
+
 #[derive(Clone, Copy)]
 enum TerminalOutcomeKind {
     AcceptedOutcome,
@@ -386,23 +417,17 @@ where
         ) {
             AttemptTransition::Finished { result, stats } => return (result, stats),
             AttemptTransition::Sleep {
-                mut next_delay,
+                next_delay,
                 last_result: attempt_last_result,
             } => {
-                // Prevent sleeping past the deadline: cap the delay to the
-                // remaining timeout budget so the loop terminates on time.
-                if let (Some(timeout_dur), Some(elapsed)) = (timeout, elapsed_tracker.elapsed()) {
-                    next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
-                }
-
-                // after_attempt receives the clamped next_delay so the hook
-                // always sees a truthful value on every non-terminal path.
-                {
-                    let retry_state = RetryState::new(attempt, elapsed_tracker.elapsed());
-                    let attempt_state =
-                        attempt_state_from(&retry_state, &attempt_last_result, Some(next_delay));
-                    hooks.after_attempt.call(&attempt_state);
-                }
+                let next_delay = clamp_and_fire_after_attempt(
+                    hooks,
+                    attempt,
+                    elapsed_tracker.elapsed(),
+                    &attempt_last_result,
+                    next_delay,
+                    timeout,
+                );
 
                 // Avoid a blocking syscall for zero-duration waits (e.g. when
                 // the timeout budget is already exhausted).
@@ -483,27 +508,17 @@ where
                     return finish_async_poll(phase, final_stats, result, stats);
                 }
                 AsyncOperationPoll::Sleep {
-                    mut next_delay,
+                    next_delay,
                     last_result: attempt_last_result,
                 } => {
-                    // Prevent sleeping past the deadline: cap the delay to the
-                    // remaining timeout budget so the loop terminates on time.
-                    if let (Some(timeout_dur), Some(elapsed)) = (timeout, elapsed_tracker.elapsed())
-                    {
-                        next_delay = next_delay.min(timeout_dur.saturating_sub(elapsed));
-                    }
-
-                    // after_attempt receives the clamped next_delay so the hook
-                    // always sees a truthful value on every non-terminal path.
-                    {
-                        let retry_state = RetryState::new(*attempt, elapsed_tracker.elapsed());
-                        let attempt_state = attempt_state_from(
-                            &retry_state,
-                            &attempt_last_result,
-                            Some(next_delay),
-                        );
-                        hooks.after_attempt.call(&attempt_state);
-                    }
+                    let next_delay = clamp_and_fire_after_attempt(
+                        hooks,
+                        *attempt,
+                        elapsed_tracker.elapsed(),
+                        &attempt_last_result,
+                        next_delay,
+                        timeout,
+                    );
 
                     *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
