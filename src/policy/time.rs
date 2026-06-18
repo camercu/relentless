@@ -32,19 +32,23 @@ struct ClockStart {
 
 pub(crate) struct ElapsedTracker {
     start_clock: Option<ClockStart>,
+    // Only the `std` Instant fallback is captured here, and only when no
+    // custom clock is configured — a custom clock always wins in `elapsed()`,
+    // so taking `Instant::now()` then would be a wasted syscall.
     #[cfg(feature = "std")]
-    start: Instant,
+    start: Option<Instant>,
 }
 
 impl ElapsedTracker {
     pub(crate) fn new(clock: Option<ElapsedClockFn>) -> Self {
+        let start_clock = clock.map(|clock| ClockStart {
+            origin: clock(),
+            source: ClockSource::FnPtr(clock),
+        });
         Self {
-            start_clock: clock.map(|clock| ClockStart {
-                origin: clock(),
-                source: ClockSource::FnPtr(clock),
-            }),
             #[cfg(feature = "std")]
-            start: Instant::now(),
+            start: std_instant_fallback(start_clock.is_some()),
+            start_clock,
         }
     }
 
@@ -56,8 +60,9 @@ impl ElapsedTracker {
                 source: ClockSource::Boxed(clock),
                 origin,
             }),
+            // A custom clock is always present here, so no Instant fallback.
             #[cfg(feature = "std")]
-            start: Instant::now(),
+            start: None,
         }
     }
 
@@ -68,7 +73,7 @@ impl ElapsedTracker {
             .or({
                 #[cfg(feature = "std")]
                 {
-                    Some(self.start.elapsed())
+                    self.start.map(|start| start.elapsed())
                 }
 
                 #[cfg(not(feature = "std"))]
@@ -76,5 +81,15 @@ impl ElapsedTracker {
                     None
                 }
             })
+    }
+}
+
+/// Captures `Instant::now()` only when no custom clock is configured.
+#[cfg(feature = "std")]
+fn std_instant_fallback(has_custom_clock: bool) -> Option<Instant> {
+    if has_custom_clock {
+        None
+    } else {
+        Some(Instant::now())
     }
 }
