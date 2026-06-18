@@ -304,7 +304,8 @@ fn retry_ext_timeout_stops_on_deadline() {
 fn sync_retry_builder_debug_format() {
     let builder = (|| Ok::<i32, &str>(1)).retry().sleep(instant_sleep);
     let debug = format!("{builder:?}");
-    assert!(debug.contains("SyncRetryBuilder"));
+    // `SyncRetryBuilder` is a type alias over the shared `SyncRetryExec` engine.
+    assert!(debug.contains("SyncRetryExec"));
 }
 
 #[test]
@@ -314,7 +315,7 @@ fn sync_retry_builder_with_stats_debug_format() {
         .sleep(instant_sleep)
         .with_stats();
     let debug = format!("{builder:?}");
-    assert!(debug.contains("SyncRetryBuilderWithStats"));
+    assert!(debug.contains("SyncRetryExecWithStats"));
 }
 
 #[cfg(feature = "alloc")]
@@ -613,7 +614,8 @@ mod async_tests {
             .retry_async()
             .sleep(|_dur: Duration| ready(()));
         let debug = format!("{builder:?}");
-        assert!(debug.contains("AsyncRetryBuilder"));
+        // `AsyncRetryBuilder` is a type alias over the shared `AsyncRetryExec` engine.
+        assert!(debug.contains("AsyncRetryExec"));
     }
 
     #[test]
@@ -623,7 +625,7 @@ mod async_tests {
             .sleep(|_dur: Duration| ready(()))
             .with_stats();
         let debug = format!("{builder:?}");
-        assert!(debug.contains("AsyncRetryBuilderWithStats"));
+        assert!(debug.contains("AsyncRetryExecWithStats"));
     }
 }
 

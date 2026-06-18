@@ -1,24 +1,11 @@
-use core::fmt;
 use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
 
-use crate::compat::Duration;
-use pin_project_lite::pin_project;
-
-#[cfg(feature = "alloc")]
-use super::super::HookChain;
-use super::super::execution::async_exec::{AsyncRetryCore, NoAsyncSleep};
+use super::super::execution::async_exec::{AsyncRetryExec, AsyncRetryExecWithStats, NoAsyncSleep};
+use super::super::execution::common::AsyncRetryOp;
 use super::super::time::ElapsedTracker;
-use super::super::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
-use crate::predicate::Predicate;
-use crate::sleep::Sleeper;
-use crate::state::{AttemptState, ExitState, RetryState};
-use crate::{
-    RetryError, RetryStats, predicate,
-    stop::{self, Stop},
-    wait::{self, Wait},
-};
+use super::super::{ExecutionHooks, RetryPolicy};
+use crate::state::RetryState;
+use crate::{predicate, stop, wait};
 
 /// Extension trait to start async retries directly from a closure/function.
 #[allow(clippy::type_complexity)]
@@ -46,8 +33,8 @@ where
 #[doc(hidden)]
 pub struct StatelessAsyncOp<F>(F);
 
-impl<T, E, Fut: Future<Output = Result<T, E>>, F: FnMut() -> Fut>
-    super::super::execution::common::AsyncRetryOp<T, E, Fut> for StatelessAsyncOp<F>
+impl<T, E, Fut: Future<Output = Result<T, E>>, F: FnMut() -> Fut> AsyncRetryOp<T, E, Fut>
+    for StatelessAsyncOp<F>
 {
     fn call_op(&mut self, _state: RetryState) -> Fut {
         (self.0)()
@@ -60,17 +47,57 @@ where
     Fut: Future<Output = Result<T, E>>,
 {
     fn retry_async(self) -> DefaultAsyncRetryBuilder<Self, Fut, T, E> {
-        AsyncRetryBuilder {
-            inner: AsyncRetryCore::new(
-                RetryPolicy::default(),
-                ExecutionHooks::new(),
-                StatelessAsyncOp(self),
-                NoAsyncSleep,
-                ElapsedTracker::new(None),
-            ),
-        }
+        AsyncRetryExec::new(
+            RetryPolicy::default(),
+            ExecutionHooks::new(),
+            StatelessAsyncOp(self),
+            NoAsyncSleep,
+            ElapsedTracker::new(None),
+        )
     }
 }
+
+/// Owned async retry builder created from [`AsyncRetryExt::retry_async`] or
+/// [`crate::retry_async`].
+///
+/// Backed by [`AsyncRetryExec`] with an owned [`RetryPolicy`]; the owned policy
+/// is what enables the `stop`/`wait`/`when`/`until` builder methods. This
+/// future is single-use; polling after completion is misuse and always panics.
+///
+/// # Examples
+///
+/// ```
+/// use core::future::ready;
+/// use core::time::Duration;
+/// use relentless::AsyncRetryExt;
+///
+/// let retry = (|| ready(Ok::<u32, &str>(1)))
+///     .retry_async()
+///     .sleep(|_dur: Duration| async {});
+///
+/// let _ = retry;
+/// ```
+pub type AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()> =
+    AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>;
+
+/// Owned async retry builder wrapper that returns statistics.
+///
+/// # Examples
+///
+/// ```
+/// use core::future::ready;
+/// use core::time::Duration;
+/// use relentless::AsyncRetryExt;
+///
+/// let retry = (|| ready(Ok::<u32, &str>(1)))
+///     .retry_async()
+///     .sleep(|_dur: Duration| async {})
+///     .with_stats();
+///
+/// let _ = retry;
+/// ```
+pub type AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()> =
+    AsyncRetryExecWithStats<RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>;
 
 /// Alias for the default owned async retry builder returned by
 /// [`AsyncRetryExt::retry_async`].
@@ -124,131 +151,38 @@ pub type DefaultAsyncRetryBuilderWithStats<F, Fut, SleepImpl, T, E, SleepFut = (
 #[allow(dead_code)]
 fn _async_retry_builder_requires_sleep_before_await() {}
 
-pin_project! {
-    /// Owned async retry builder created from [`AsyncRetryExt::retry_async`].
-    ///
-    /// This future is single-use. Polling after completion is misuse and
-    /// always panics.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use core::future::ready;
-    /// use core::time::Duration;
-    /// use relentless::AsyncRetryExt;
-    ///
-    /// let retry = (|| ready(Ok::<u32, &str>(1)))
-    ///     .retry_async()
-    ///     .sleep(|_dur: Duration| async {});
-    ///
-    /// let _ = retry;
-    /// ```
-    pub struct AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
-    {
-        #[pin]
-        inner: AsyncRetryCore<RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>,
-    }
-}
-
-impl<S, W, P, F, Fut, T, E> AsyncRetryBuilder<S, W, P, (), (), (), F, Fut, NoAsyncSleep, T, E, ()>
+impl<S, W, P, F, Fut, T, E>
+    AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, Fut, NoAsyncSleep, T, E, ()>
 where
     F: FnMut(RetryState) -> Fut,
 {
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
-        AsyncRetryBuilder {
-            inner: AsyncRetryCore::new(
-                policy,
-                ExecutionHooks::new(),
-                op,
-                NoAsyncSleep,
-                ElapsedTracker::new(None),
-            ),
-        }
+        AsyncRetryExec::new(
+            policy,
+            ExecutionHooks::new(),
+            op,
+            NoAsyncSleep,
+            ElapsedTracker::new(None),
+        )
     }
 }
 
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> fmt::Debug
-    for AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AsyncRetryBuilder").finish_non_exhaustive()
-    }
-}
-
-pin_project! {
-    /// Owned async retry builder wrapper that returns statistics.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use core::future::ready;
-    /// use core::time::Duration;
-    /// use relentless::AsyncRetryExt;
-    ///
-    /// let retry = (|| ready(Ok::<u32, &str>(1)))
-    ///     .retry_async()
-    ///     .sleep(|_dur: Duration| async {})
-    ///     .with_stats();
-    ///
-    /// let _ = retry;
-    /// ```
-    pub struct AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()>
-    {
-        #[pin]
-        inner: AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>,
-    }
-}
-
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> fmt::Debug
-    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AsyncRetryBuilderWithStats")
-            .finish_non_exhaustive()
-    }
-}
-
-type AsyncBuilderWithSleep<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E> =
-    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, <SleepImpl as Sleeper>::Sleep>;
-
-#[cfg(feature = "alloc")]
-type AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> =
-    AsyncRetryBuilder<S, W, P, HookChain<BA, Hook>, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>;
-
-#[cfg(feature = "alloc")]
-type AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> =
-    AsyncRetryBuilder<S, W, P, BA, HookChain<AA, Hook>, OX, F, Fut, SleepImpl, T, E, SleepFut>;
-
-#[cfg(feature = "alloc")]
-type AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> =
-    AsyncRetryBuilder<S, W, P, BA, AA, HookChain<OX, Hook>, F, Fut, SleepImpl, T, E, SleepFut>;
-
-// Intentional: hook/type-state plumbing keeps full static guarantees and
+/// Policy-mutating builder methods, available only when the policy is owned.
+//
+// Intentional: threading the full type-state (including `SleepFut`) keeps the
 // zero-cost generics, which naturally yields long concrete return types.
 #[allow(clippy::type_complexity)]
 impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 {
-    fn map_hooks<NewBA, NewAA, NewOX>(
-        self,
-        map: impl FnOnce(ExecutionHooks<BA, AA, OX>) -> ExecutionHooks<NewBA, NewAA, NewOX>,
-    ) -> AsyncRetryBuilder<S, W, P, NewBA, NewAA, NewOX, F, Fut, SleepImpl, T, E, SleepFut> {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.map_hooks(map),
-        }
-    }
-
     /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> AsyncRetryBuilder<NewStop, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.map_policy(|policy| policy.stop(stop)),
-        }
+    ) -> AsyncRetryExec<RetryPolicy<NewStop, W, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    {
+        self.map_policy(|policy| policy.stop(stop))
     }
 
     /// Sets the wait strategy used between retry attempts.
@@ -256,11 +190,9 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> AsyncRetryBuilder<S, NewWait, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.map_policy(|policy| policy.wait(wait)),
-        }
+    ) -> AsyncRetryExec<RetryPolicy<S, NewWait, P>, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    {
+        self.map_policy(|policy| policy.wait(wait))
     }
 
     /// Sets the predicate that decides whether a failed attempt should be retried.
@@ -268,25 +200,8 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> AsyncRetryBuilder<S, W, NewPredicate, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.map_policy(|policy| policy.when(predicate)),
-        }
-    }
-
-    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
-    ///
-    /// Wraps `p` in [`PredicateUntil`](crate::predicate::PredicateUntil).
-    /// Natural for polling: `.until(ok(|s| s.is_ready()))`.
-    #[must_use]
-    pub fn until<NewPredicate>(
-        self,
-        predicate: NewPredicate,
-    ) -> AsyncRetryBuilder<
-        S,
-        W,
-        predicate::PredicateUntil<NewPredicate>,
+    ) -> AsyncRetryExec<
+        RetryPolicy<S, W, NewPredicate>,
         BA,
         AA,
         OX,
@@ -297,197 +212,29 @@ impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         E,
         SleepFut,
     > {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.map_policy(|policy| policy.until(predicate)),
-        }
+        self.map_policy(|policy| policy.when(predicate))
     }
 
-    /// Configures a custom elapsed clock for elapsed-based stop conditions.
-    #[must_use]
-    pub fn elapsed_clock(self, clock: fn() -> Duration) -> Self {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.set_elapsed_clock(clock),
-        }
-    }
-
-    /// Configures a custom elapsed clock from a boxed closure.
+    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
     ///
-    /// This variant supports closures with captures for test clocks and
-    /// runtime state. Requires the `alloc` feature.
-    #[cfg(feature = "alloc")]
+    /// Wraps `p` in [`PredicateUntil`](crate::predicate::PredicateUntil).
+    /// Natural for polling: `.until(ok(|s| s.is_ready()))`.
     #[must_use]
-    pub fn elapsed_clock_fn(self, clock: impl Fn() -> Duration + 'static) -> Self {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.set_elapsed_clock_fn(crate::compat::Box::new(clock)),
-        }
-    }
-
-    /// Sets a wall-clock deadline for the entire retry execution.
-    ///
-    /// See [`SyncRetryBuilder::timeout`](super::sync_builder::SyncRetryBuilder::timeout)
-    /// for full semantics.
-    #[must_use]
-    pub fn timeout(self, dur: Duration) -> Self {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.set_timeout(dur),
-        }
-    }
-
-    /// Wraps this builder to also yield [`RetryStats`] on completion.
-    ///
-    /// Does not begin executing; the returned future must still be `.await`ed.
-    #[must_use]
-    pub fn with_stats(
+    pub fn until<NewPredicate>(
         self,
-    ) -> AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilderWithStats {
-            inner: AsyncRetryBuilder {
-                inner: inner.with_stats(),
-            },
-        }
-    }
-}
-
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E>
-    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, ()>
-{
-    /// Sets the async sleep implementation used between retry attempts.
-    #[must_use]
-    #[allow(clippy::type_complexity)]
-    pub fn sleep<NewSleep>(
-        self,
-        sleeper: NewSleep,
-    ) -> AsyncBuilderWithSleep<S, W, P, BA, AA, OX, F, Fut, NewSleep, T, E>
-    where
-        NewSleep: Sleeper,
-    {
-        let AsyncRetryBuilder { inner } = self;
-        AsyncRetryBuilder {
-            inner: inner.with_sleeper(sleeper, "NoAsyncSleep cannot create sleeping futures"),
-        }
-    }
-}
-
-impl_alloc_hook_chain! {
-    impl[S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut]
-    AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    =>
-    before_attempt -> { AsyncBuilderWithBeforeHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> },
-    after_attempt -> { AsyncBuilderWithAfterHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> },
-    on_exit -> { AsyncBuilderWithOnExitHook<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut, Hook> },
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryBuilder<S, W, P, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole before-attempt hook (no-alloc mode).
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryBuilder<S, W, P, Hook, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: FnMut(&RetryState),
-    {
-        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryBuilder<S, W, P, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole after-attempt hook (no-alloc mode).
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryBuilder<S, W, P, BA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<S, W, P, BA, AA, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryBuilder<S, W, P, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole on-exit hook (no-alloc mode).
-    #[must_use]
-    pub fn on_exit<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryBuilder<S, W, P, BA, AA, Hook, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_on_exit(hook))
-    }
-}
-
-#[allow(private_bounds)]
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetryBuilder<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-where
-    S: Stop,
-    W: Wait,
-    P: Predicate<T, E>,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<T, E>,
-    OX: ExitHook<T, E>,
-    F: super::super::execution::common::AsyncRetryOp<T, E, Fut>,
-    Fut: Future<Output = Result<T, E>>,
-    SleepImpl: Sleeper<Sleep = SleepFut>,
-    SleepFut: Future<Output = ()>,
-{
-    type Output = Result<T, RetryError<T, E>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project()
-            .inner
-            .poll::<S, W, P>(cx, "AsyncRetryBuilder")
-    }
-}
-
-#[allow(private_bounds)]
-impl<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-where
-    S: Stop,
-    W: Wait,
-    P: Predicate<T, E>,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<T, E>,
-    OX: ExitHook<T, E>,
-    F: super::super::execution::common::AsyncRetryOp<T, E, Fut>,
-    Fut: Future<Output = Result<T, E>>,
-    SleepImpl: Sleeper<Sleep = SleepFut>,
-    SleepFut: Future<Output = ()>,
-{
-    type Output = (Result<T, RetryError<T, E>>, RetryStats);
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        match this.inner.as_mut().poll(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(result) => {
-                let stats = this
-                    .inner
-                    .as_mut()
-                    .project()
-                    .inner
-                    .take_final_stats()
-                    .expect("async retry builder completed without final stats");
-                Poll::Ready((result, stats))
-            }
-        }
+        predicate: NewPredicate,
+    ) -> AsyncRetryExec<
+        RetryPolicy<S, W, predicate::PredicateUntil<NewPredicate>>,
+        BA,
+        AA,
+        OX,
+        F,
+        Fut,
+        SleepImpl,
+        T,
+        E,
+        SleepFut,
+    > {
+        self.map_policy(|policy| policy.until(predicate))
     }
 }

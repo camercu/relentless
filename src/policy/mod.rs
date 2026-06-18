@@ -214,17 +214,35 @@ impl<S, W, P> RetryPolicy<S, W, P> {
 /// Abstracts over owned (`RetryPolicy<S,W,P>`) and borrowed (`&RetryPolicy<S,W,P>`)
 /// storage so that `SyncRetry`/`AsyncRetry` (which borrow) and the ext-trait
 /// builders (which own) can share the same execution engine.
-pub(crate) trait PolicyHandle<S, W, P> {
-    fn policy_ref(&self) -> &RetryPolicy<S, W, P>;
+///
+/// The stop/wait/predicate types are exposed as associated types so that the
+/// shared `SyncRetryExec`/`AsyncRetryExec` engines can name them through the
+/// stored policy without carrying `S`, `W`, and `P` as redundant type
+/// parameters — important for the async `Future` impl, whose `poll` signature
+/// cannot introduce method-level generics.
+pub(crate) trait PolicyHandle {
+    type Stop;
+    type Wait;
+    type Predicate;
+
+    fn policy_ref(&self) -> &RetryPolicy<Self::Stop, Self::Wait, Self::Predicate>;
 }
 
-impl<S, W, P> PolicyHandle<S, W, P> for RetryPolicy<S, W, P> {
+impl<S, W, P> PolicyHandle for RetryPolicy<S, W, P> {
+    type Stop = S;
+    type Wait = W;
+    type Predicate = P;
+
     fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
         self
     }
 }
 
-impl<S, W, P> PolicyHandle<S, W, P> for &RetryPolicy<S, W, P> {
+impl<S, W, P> PolicyHandle for &RetryPolicy<S, W, P> {
+    type Stop = S;
+    type Wait = W;
+    type Predicate = P;
+
     fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
         self
     }
@@ -291,12 +309,16 @@ macro_rules! impl_alloc_hook_chain {
 mod execution;
 mod ext;
 mod time;
-pub use execution::async_exec::{AsyncRetry, AsyncRetryWithStats, NoAsyncSleep};
+pub use execution::async_exec::{
+    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryWithStats, NoAsyncSleep,
+};
 #[cfg(feature = "alloc")]
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
 pub use execution::sync_exec::NoSyncSleep;
-pub use execution::sync_exec::{SyncRetry, SyncRetryWithStats};
+pub use execution::sync_exec::{
+    SyncRetry, SyncRetryExec, SyncRetryExecWithStats, SyncRetryWithStats,
+};
 pub use ext::{
     AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
     DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,

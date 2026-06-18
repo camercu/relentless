@@ -232,13 +232,16 @@ pub mod wait;
 
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
-pub use policy::{AsyncRetry, AsyncRetryExt, AsyncRetryWithStats};
+pub use policy::{
+    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryExt, AsyncRetryWithStats,
+};
 pub use policy::{
     AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
     DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
     SyncRetryBuilder, SyncRetryBuilderWithStats,
 };
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
+pub use policy::{SyncRetryExec, SyncRetryExecWithStats};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
