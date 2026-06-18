@@ -46,22 +46,6 @@ impl<A: Stop, B: Stop> Stop for StopAny<A, B> {
     }
 }
 
-impl<A: Stop, B: Stop, Rhs: Stop> BitOr<Rhs> for StopAny<A, B> {
-    type Output = StopAny<Self, Rhs>;
-
-    fn bitor(self, rhs: Rhs) -> Self::Output {
-        StopAny::new(self, rhs)
-    }
-}
-
-impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAny<A, B> {
-    type Output = StopAll<Self, Rhs>;
-
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        StopAll::new(self, rhs)
-    }
-}
-
 /// Composite strategy that stops only when **both** constituents stop.
 ///
 /// Created by combining two [`Stop`] strategies with the `&` operator
@@ -105,44 +89,31 @@ impl<A: Stop, B: Stop> Stop for StopAll<A, B> {
     }
 }
 
-impl<A: Stop, B: Stop, Rhs: Stop> BitAnd<Rhs> for StopAll<A, B> {
-    type Output = StopAll<Self, Rhs>;
-
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        StopAll::new(self, rhs)
-    }
-}
-
-impl<A: Stop, B: Stop, Rhs: Stop> BitOr<Rhs> for StopAll<A, B> {
-    type Output = StopAny<Self, Rhs>;
-
-    fn bitor(self, rhs: Rhs) -> Self::Output {
-        StopAny::new(self, rhs)
-    }
-}
-
-/// Generates `BitOr` and `BitAnd` impls for a concrete (non-generic) [`Stop`] type,
-/// producing [`StopAny`] and [`StopAll`] composites respectively.
+/// Generates `BitOr` / `BitAnd` operator impls for a [`Stop`] type, producing
+/// [`StopAny`] / [`StopAll`] composites respectively. Trailing `$param`s name
+/// the type's own generic parameters so composites and leaves share one macro.
 macro_rules! impl_stop_ops {
-    ($($ty:ty),+ $(,)?) => {
-        $(
-            impl<Rhs: Stop> BitOr<Rhs> for $ty {
-                type Output = StopAny<Self, Rhs>;
+    ($ty:ty $(, $param:ident)*) => {
+        impl<$($param,)* Rhs> BitOr<Rhs> for $ty {
+            type Output = StopAny<Self, Rhs>;
 
-                fn bitor(self, rhs: Rhs) -> Self::Output {
-                    StopAny::new(self, rhs)
-                }
+            fn bitor(self, rhs: Rhs) -> Self::Output {
+                StopAny::new(self, rhs)
             }
+        }
 
-            impl<Rhs: Stop> BitAnd<Rhs> for $ty {
-                type Output = StopAll<Self, Rhs>;
+        impl<$($param,)* Rhs> BitAnd<Rhs> for $ty {
+            type Output = StopAll<Self, Rhs>;
 
-                fn bitand(self, rhs: Rhs) -> Self::Output {
-                    StopAll::new(self, rhs)
-                }
+            fn bitand(self, rhs: Rhs) -> Self::Output {
+                StopAll::new(self, rhs)
             }
-        )+
+        }
     };
 }
 
-impl_stop_ops!(StopAfterAttempts, StopAfterElapsed, StopNever);
+impl_stop_ops!(StopAfterAttempts);
+impl_stop_ops!(StopAfterElapsed);
+impl_stop_ops!(StopNever);
+impl_stop_ops!(StopAny<A, B>, A, B);
+impl_stop_ops!(StopAll<A, B>, A, B);

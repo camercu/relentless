@@ -148,50 +148,25 @@ impl<W> WaitCapped<W> {
     }
 }
 
-/// Generates `Add<Rhs>` impl for a concrete (non-generic) [`Wait`] type,
-/// producing a [`WaitCombine`].
+/// Generates an `Add<Rhs>` impl producing a [`WaitCombine`]. Trailing `$param`s
+/// name the type's own generic parameters so composites and leaves share one
+/// macro.
 macro_rules! impl_wait_add {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl<Rhs: Wait> Add<Rhs> for $ty {
+    ($ty:ty $(, $param:ident)*) => {
+        impl<$($param,)* Rhs> Add<Rhs> for $ty {
             type Output = WaitCombine<Self, Rhs>;
 
             fn add(self, rhs: Rhs) -> Self::Output {
                 WaitCombine::new(self, rhs)
             }
         }
-    )+};
+    };
 }
 
-impl_wait_add!(WaitFixed, WaitLinear, WaitExponential);
-
-impl<A: Wait, B: Wait, Rhs: Wait> Add<Rhs> for WaitCombine<A, B> {
-    type Output = WaitCombine<Self, Rhs>;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        WaitCombine::new(self, rhs)
-    }
-}
-
-impl<A: Wait, B: Wait, Rhs: Wait> Add<Rhs> for WaitChain<A, B> {
-    type Output = WaitCombine<Self, Rhs>;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        WaitCombine::new(self, rhs)
-    }
-}
-
-impl<W: Wait, Rhs: Wait> Add<Rhs> for WaitCapped<W> {
-    type Output = WaitCombine<Self, Rhs>;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        WaitCombine::new(self, rhs)
-    }
-}
-
-impl<W: Wait, Rhs: Wait> Add<Rhs> for Jittered<W> {
-    type Output = WaitCombine<Self, Rhs>;
-
-    fn add(self, rhs: Rhs) -> Self::Output {
-        WaitCombine::new(self, rhs)
-    }
-}
+impl_wait_add!(WaitFixed);
+impl_wait_add!(WaitLinear);
+impl_wait_add!(WaitExponential);
+impl_wait_add!(WaitCombine<A, B>, A, B);
+impl_wait_add!(WaitChain<A, B>, A, B);
+impl_wait_add!(WaitCapped<W>, W);
+impl_wait_add!(Jittered<W>, W);
