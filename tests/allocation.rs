@@ -110,7 +110,7 @@ fn boxed_policy_construction_performs_heap_allocation() {
         let _policy = RetryPolicy::new()
             .stop(stop::attempts(MAX_ATTEMPTS))
             .wait(wait::fixed(Duration::ZERO))
-            .boxed::<i32, &str>();
+            .boxed();
     });
 
     assert!(min_allocations > 0, "boxed construction should allocate");
@@ -124,7 +124,7 @@ fn boxed_sync_retry_execution_is_allocation_free_after_warmup() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .boxed::<i32, &str>();
+        .boxed();
 
     let _ = policy
         .retry(|_| Err::<i32, &str>(ERROR_VALUE))

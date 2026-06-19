@@ -562,9 +562,11 @@ Builder methods:
 - `.until(p: impl Predicate<T, E>) -> RetryPolicy<S, W, P2>`
 - `.wait(w: impl Wait) -> RetryPolicy<S, W2, P>`
 - `.stop(s: impl Stop) -> RetryPolicy<S2, W, P>`
-- `.boxed() -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, Box<dyn Predicate<T, E> + Send + 'static>>`
-  with `alloc`
-- `.boxed_local() -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, Box<dyn Predicate<T, E> + 'static>>`
+- `.boxed() -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, P>`
+  with `alloc` — erases stop and wait only; the predicate `P` is left intact so
+  a default-predicate policy stays reusable across operations with different
+  `(T, E)`
+- `.boxed_local() -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, P>`
   with `alloc` — same as `.boxed()` but without `Send` bounds; for policies
   that remain on a single thread
 
@@ -584,9 +586,16 @@ methods use `&self`, policies are freely shareable without interior mutability.
 `RetryPolicy<S, W, P>` is a pure composition of three strategy types with no
 other internal state.
 
-**5.5** `.boxed()` requires `S: Stop + Send + 'static`, `W: Wait + Send + 'static`, `P: Predicate<T, E> + Send + 'static`; erases to `Box<dyn...+Send+'static>`.
+**5.5** `.boxed()` requires `S: Stop + Send + 'static`, `W: Wait + Send + 'static`;
+erases stop and wait to `Box<dyn...+Send+'static>`. The predicate is **not**
+erased: it is left as the generic parameter `P`. Boxing the predicate to
+`Box<dyn Predicate<T, E>>` would pin the policy to one `(T, E)`; leaving it
+generic lets the default predicate (`PredicateAnyError`, which implements
+`Predicate<T, E>` for all `T, E`) be reused across operations with different
+success and error types.
 
-**5.6** `.boxed_local()` requires no `Send` bounds; erases to `Box<dyn...+'static>`.
+**5.6** `.boxed_local()` requires no `Send` bounds; erases stop and wait to
+`Box<dyn...+'static>`, leaving the predicate as `P`.
 
 ## 6. Execution model
 
@@ -1115,12 +1124,14 @@ reproducible sequences.
 With `alloc`:
 
 `.boxed()` on `RetryPolicy` requires `S: Stop + Send + 'static`,
-`W: Wait + Send + 'static`, `P: Predicate<T, E> + Send + 'static` and returns
-`RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, Box<dyn Predicate<T, E> + Send + 'static>>`.
+`W: Wait + Send + 'static` and returns
+`RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, P>`.
+Only stop and wait are erased; the predicate `P` is preserved so a
+default-predicate policy remains reusable across different `(T, E)`.
 
 `.boxed_local()` on `RetryPolicy` requires `S: Stop + 'static`,
-`W: Wait + 'static`, `P: Predicate<T, E> + 'static` (no `Send` bounds) and
-returns `RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, Box<dyn Predicate<T, E> + 'static>>`.
+`W: Wait + 'static` (no `Send` bounds) and returns
+`RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, P>`.
 Use this when the policy does not need to cross thread boundaries.
 
 > Object safety is satisfied because `Stop`, `Wait`, and `Predicate<T, E>`

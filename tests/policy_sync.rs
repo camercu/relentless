@@ -395,14 +395,36 @@ fn policy_is_clone() {
 #[cfg(feature = "alloc")]
 #[test]
 fn boxed_local_erases_policy_types() {
-    #[allow(clippy::type_complexity)]
+    // `.boxed_local()` erases stop+wait only; the predicate keeps its concrete
+    // type (here the default `PredicateAnyError`, via the third defaulted param).
     let policy: RetryPolicy<
         Box<dyn relentless::stop::Stop + 'static>,
         Box<dyn relentless::wait::Wait + 'static>,
-        Box<dyn relentless::predicate::Predicate<(), &str> + 'static>,
-    > = RetryPolicy::new().boxed_local::<(), &str>();
+    > = RetryPolicy::new().boxed_local();
     let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
     assert!(result.is_err());
+}
+
+/// A boxed default-predicate policy is reusable across operations with
+/// different `Ok` types, because the predicate is left generic rather than
+/// pinned to one `(T, E)` via `Box<dyn Predicate<T, E>>`.
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_policy_reuses_across_different_ok_types() {
+    let policy: RetryPolicy<Box<dyn relentless::Stop + Send>, Box<dyn relentless::Wait + Send>> =
+        RetryPolicy::new()
+            .stop(stop::attempts(MAX_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .boxed();
+
+    let s = policy
+        .retry(|_| Ok::<String, &str>("v".to_string()))
+        .sleep(|_| {})
+        .call();
+    let u = policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
+
+    assert_eq!(s.unwrap(), "v");
+    assert_eq!(u.unwrap(), ());
 }
 
 /// `boxed_local` erases types but preserves retry behavior: the loop still
@@ -413,7 +435,7 @@ fn boxed_local_runs_full_retry_cycle() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .boxed_local::<i32, &str>();
+        .boxed_local();
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -446,7 +468,7 @@ fn boxed_local_is_usable_without_send_bound() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .boxed_local::<(), &str>();
+        .boxed_local();
 
     let result = policy
         .retry(move |_| {
@@ -466,7 +488,7 @@ fn boxed_policy_erases_strategy_types() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .boxed::<i32, &str>();
+        .boxed();
 
     let call_count = Cell::new(0_u32);
     let result = policy

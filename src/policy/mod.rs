@@ -19,8 +19,6 @@
 use crate::compat::Box;
 use crate::compat::Duration;
 use crate::predicate;
-#[cfg(feature = "alloc")]
-use crate::predicate::Predicate;
 use crate::stop;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;
@@ -148,65 +146,88 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         }
     }
 
-    /// Erases the generic stop, wait, and predicate parameters behind trait objects.
+    /// Erases the generic stop and wait parameters behind trait objects,
+    /// leaving the predicate type intact.
     ///
-    /// Useful when the policy must be stored or passed without its concrete type
-    /// parameters, such as in heterogeneous collections or across API boundaries.
+    /// This produces a single, nameable type —
+    /// `RetryPolicy<Box<dyn Stop + Send>, Box<dyn Wait + Send>, P>` — suitable
+    /// for a struct field or a heterogeneous collection, without spelling out
+    /// the full nested stop/wait generics.
+    ///
+    /// The predicate is deliberately **not** erased. The default predicate
+    /// ([`PredicateAnyError`](predicate::PredicateAnyError)) implements
+    /// [`Predicate<T, E>`] for *every* `T` and `E`, so a default-predicate boxed
+    /// policy can be reused across operations with **different** success and
+    /// error types. Boxing the predicate (as `Box<dyn Predicate<T, E>>`) would
+    /// pin it to one `(T, E)` and defeat that reuse — which is why only stop and
+    /// wait are erased here.
+    ///
+    /// # Examples
+    ///
+    /// Store one customized policy in a struct and reuse it across operations
+    /// whose `Ok` types differ:
+    ///
+    /// ```
+    /// use core::time::Duration;
+    /// use relentless::{RetryPolicy, Stop, Wait, stop, wait};
+    ///
+    /// struct Client {
+    ///     policy: RetryPolicy<Box<dyn Stop + Send>, Box<dyn Wait + Send>>,
+    /// }
+    ///
+    /// let client = Client {
+    ///     policy: RetryPolicy::new()
+    ///         .stop(stop::attempts(3) | stop::elapsed(Duration::from_secs(2)))
+    ///         .wait(wait::fixed(Duration::from_millis(10)))
+    ///         .boxed(),
+    /// };
+    ///
+    /// let a: Result<u32, _> = client.policy.retry(|_| Ok::<u32, &str>(1)).sleep(|_| {}).call();
+    /// let b: Result<(), _> = client.policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// assert_eq!(a.unwrap(), 1);
+    /// assert_eq!(b.unwrap(), ());
+    /// ```
     #[cfg(feature = "alloc")]
     #[must_use]
-    #[allow(clippy::type_complexity)]
-    pub fn boxed<T, E>(
+    pub fn boxed(
         self,
-    ) -> RetryPolicy<
-        Box<dyn Stop + Send + 'static>,
-        Box<dyn Wait + Send + 'static>,
-        Box<dyn Predicate<T, E> + Send + 'static>,
-    >
+    ) -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, P>
     where
         S: Stop + Send + 'static,
         W: Wait + Send + 'static,
-        P: Predicate<T, E> + Send + 'static,
     {
         RetryPolicy {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
-            predicate: Box::new(self.predicate),
+            predicate: self.predicate,
         }
     }
 
-    /// Erases the generic stop, wait, and predicate parameters behind local trait objects.
+    /// Erases the generic stop and wait parameters behind local trait objects,
+    /// leaving the predicate type intact.
     ///
-    /// Like [`boxed`](Self::boxed) but without `Send` bounds. Use this when
-    /// the policy must be stored without its concrete type parameters but
-    /// does not need to cross thread boundaries.
+    /// Like [`boxed`](Self::boxed) but without `Send` bounds, for policies that
+    /// do not cross thread boundaries.
     ///
     /// # Examples
     ///
     /// ```
     /// use relentless::RetryPolicy;
     ///
-    /// let policy = RetryPolicy::new().boxed_local::<(), &str>();
+    /// let policy = RetryPolicy::new().boxed_local();
     /// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
     /// ```
     #[cfg(feature = "alloc")]
     #[must_use]
-    #[allow(clippy::type_complexity)]
-    pub fn boxed_local<T, E>(
-        self,
-    ) -> RetryPolicy<
-        Box<dyn Stop + 'static>,
-        Box<dyn Wait + 'static>,
-        Box<dyn Predicate<T, E> + 'static>,
-    >
+    pub fn boxed_local(self) -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, P>
     where
         S: Stop + 'static,
         W: Wait + 'static,
-        P: Predicate<T, E> + 'static,
     {
         RetryPolicy {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
-            predicate: Box::new(self.predicate),
+            predicate: self.predicate,
         }
     }
 }
