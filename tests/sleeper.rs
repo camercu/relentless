@@ -119,7 +119,8 @@ fn tokio_sleep_helper_is_sleep_compatible() {
     let result: Result<(), relentless::RetryError<(), &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<(), &str>(()) })
-            .sleep(helper),
+            .sleep(helper)
+            .call(),
     );
     assert_eq!(result, Ok(()));
 }
@@ -133,7 +134,8 @@ fn futures_timer_sleep_helper_is_sleep_compatible() {
     let result: Result<(), relentless::RetryError<(), &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<(), &str>(()) })
-            .sleep(helper),
+            .sleep(helper)
+            .call(),
     );
     assert_eq!(result, Ok(()));
 }

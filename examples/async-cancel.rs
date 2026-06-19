@@ -1,6 +1,6 @@
 //! Demonstrates cancellation of an async retry loop.
 //!
-//! Because `retry_async` returns a plain `Future`, it is cancel-safe:
+//! Because `.call()` returns a plain `Future`, it is cancel-safe:
 //! dropping the future at any `.await` point stops the loop immediately,
 //! even mid-sleep or mid-operation. No in-flight state is left dangling.
 //! Note that `on_exit` does **not** fire when the future is dropped — only
@@ -58,7 +58,8 @@ async fn main() {
         retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio()),
+            .sleep(sleep::tokio())
+            .call(),
     )
     .await;
 
@@ -100,7 +101,7 @@ async fn main() {
         result = retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio()) =>
+            .sleep(sleep::tokio()).call() =>
         {
             match result {
                 Ok(val) => println!("pattern 2 — success: {val}"),
@@ -138,7 +139,7 @@ async fn main() {
         result = retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio()) =>
+            .sleep(sleep::tokio()).call() =>
         {
             match result {
                 Ok(val) => println!("pattern 3 — success: {val}"),

@@ -372,7 +372,8 @@ mod async_tests {
         .retry_async()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
-        .sleep(|_dur| ready(()));
+        .sleep(|_dur| ready(()))
+        .call();
 
         let result: Result<i32, RetryError<i32, &str>> = block_on(future);
         assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -395,7 +396,8 @@ mod async_tests {
             .sleep(move |dur| {
                 sleeps_ref.borrow_mut().push(dur);
                 ready(())
-            }),
+            })
+            .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -412,7 +414,7 @@ mod async_tests {
 
         let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
         let result: Result<i32, RetryError<i32, &str>> =
-            block_on(typed.sleep(|_dur: Duration| async {}));
+            block_on(typed.sleep(|_dur: Duration| async {}).call());
         assert_eq!(result, Ok(SUCCESS_VALUE));
     }
 
@@ -436,7 +438,7 @@ mod async_tests {
             .sleep(ready_sleep as SleepFn)
             .with_stats();
         let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
-            block_on(typed);
+            block_on(typed.call());
         assert_eq!(result, Ok(SUCCESS_VALUE));
         assert_eq!(stats.attempts, 1);
     }
@@ -464,7 +466,8 @@ mod async_tests {
                     state.stop_reason,
                 ));
             })
-            .sleep(|_dur| ready(()));
+            .sleep(|_dur| ready(()))
+            .call();
 
         let _ = block_on(future);
 
@@ -490,7 +493,8 @@ mod async_tests {
             .stop(stop::attempts(2))
             .when(predicate::any_error())
             .sleep(|_dur| ready(()))
-            .with_stats();
+            .with_stats()
+            .call();
 
         let (result, stats) = block_on(future);
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -520,7 +524,8 @@ mod async_tests {
             .sleep(move |dur| {
                 sleeps_ref.borrow_mut().push(dur);
                 ready(())
-            }),
+            })
+            .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -534,7 +539,8 @@ mod async_tests {
             (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
                 .retry_async()
                 .stop(stop::attempts(1))
-                .sleep(|_dur| ready(())),
+                .sleep(|_dur| ready(()))
+                .call(),
         );
         let waker = noop_waker();
         let mut cx = Context::from_waker(&waker);
@@ -558,7 +564,8 @@ mod async_tests {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ERROR_VALUE))
             })
-            .sleep(|_dur| ready(())),
+            .sleep(|_dur| ready(()))
+            .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -578,7 +585,8 @@ mod async_tests {
             .retry_async()
             .stop(stop::attempts(5))
             .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
-            .sleep(|_dur| ready(())),
+            .sleep(|_dur| ready(()))
+            .call(),
         );
 
         assert_eq!(result, Ok(UNTIL_TARGET));
@@ -602,7 +610,8 @@ mod async_tests {
             .wait(wait::fixed(WAIT_DURATION))
             .elapsed_clock_fn(move || Duration::from_millis(clock_millis.load(Ordering::Relaxed)))
             .timeout(TIMEOUT_DEADLINE)
-            .sleep(|_dur| ready(())),
+            .sleep(|_dur| ready(()))
+            .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));

@@ -443,8 +443,8 @@ impl<Policy, BA, AA, F, Fut, SleepImpl, T, E, SleepFut>
 }
 
 #[allow(private_bounds)]
-impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetryExec<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetryExec<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
     Policy: PolicyHandle,
     Policy::Stop: Stop,
@@ -458,9 +458,10 @@ where
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
 {
-    type Output = Result<T, RetryError<T, E>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    pub(crate) fn poll_inner(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<T, RetryError<T, E>>> {
         let mut this = self.project();
         let policy = this.policy.policy_ref();
         poll_async_loop(
@@ -481,11 +482,104 @@ where
             "AsyncRetryExec",
         )
     }
+
+    /// Runs the configured retry loop, returning a future that resolves to the
+    /// final result.
+    ///
+    /// This is the async terminator, mirroring the synchronous
+    /// [`SyncRetry::call`](crate::SyncRetry::call). Dropping the returned future
+    /// cancels the loop at the next `.await` point (cancel-safe); `on_exit` does
+    /// not fire on drop.
+    pub fn call(self) -> impl Future<Output = Result<T, RetryError<T, E>>> {
+        AsyncRetryCall { exec: self }
+    }
+}
+
+#[allow(private_bounds)]
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncRetryExecWithStats<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    Policy: PolicyHandle,
+    Policy::Stop: Stop,
+    Policy::Wait: Wait,
+    Policy::Predicate: Predicate<T, E>,
+    BA: BeforeAttemptHook,
+    AA: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
+    F: AsyncRetryOp<T, E, Fut>,
+    Fut: Future<Output = Result<T, E>>,
+    SleepImpl: Sleeper<Sleep = SleepFut>,
+    SleepFut: Future<Output = ()>,
+{
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn poll_inner(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<(Result<T, RetryError<T, E>>, RetryStats)> {
+        let mut this = self.project();
+        match this.inner.as_mut().poll_inner(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                let stats = this
+                    .inner
+                    .as_mut()
+                    .take_final_stats()
+                    .expect("async retry completed without final stats");
+                Poll::Ready((result, stats))
+            }
+        }
+    }
+
+    /// Runs the configured retry loop, returning a future that resolves to the
+    /// result paired with [`RetryStats`].
+    pub fn call(self) -> impl Future<Output = (Result<T, RetryError<T, E>>, RetryStats)> {
+        AsyncRetryCallWithStats { exec: self }
+    }
+}
+
+pin_project! {
+    /// Future returned by [`AsyncRetryExec::call`]. Surfaced as `impl Future`.
+    struct AsyncRetryCall<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()> {
+        #[pin]
+        exec: AsyncRetryExec<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>,
+    }
 }
 
 #[allow(private_bounds)]
 impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
-    for AsyncRetryExecWithStats<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    for AsyncRetryCall<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+where
+    Policy: PolicyHandle,
+    Policy::Stop: Stop,
+    Policy::Wait: Wait,
+    Policy::Predicate: Predicate<T, E>,
+    BA: BeforeAttemptHook,
+    AA: AttemptHook<T, E>,
+    OX: ExitHook<T, E>,
+    F: AsyncRetryOp<T, E, Fut>,
+    Fut: Future<Output = Result<T, E>>,
+    SleepImpl: Sleeper<Sleep = SleepFut>,
+    SleepFut: Future<Output = ()>,
+{
+    type Output = Result<T, RetryError<T, E>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().exec.poll_inner(cx)
+    }
+}
+
+pin_project! {
+    /// Future returned by [`AsyncRetryExecWithStats::call`]. Surfaced as
+    /// `impl Future`.
+    struct AsyncRetryCallWithStats<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut = ()> {
+        #[pin]
+        exec: AsyncRetryExecWithStats<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>,
+    }
+}
+
+#[allow(private_bounds)]
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> Future
+    for AsyncRetryCallWithStats<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
     Policy: PolicyHandle,
     Policy::Stop: Stop,
@@ -502,18 +596,7 @@ where
     type Output = (Result<T, RetryError<T, E>>, RetryStats);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        match this.inner.as_mut().poll(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(result) => {
-                let stats = this
-                    .inner
-                    .as_mut()
-                    .take_final_stats()
-                    .expect("async retry completed without final stats");
-                Poll::Ready((result, stats))
-            }
-        }
+        self.project().exec.poll_inner(cx)
     }
 }
 

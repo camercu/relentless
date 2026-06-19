@@ -317,9 +317,14 @@ where
 /// use core::time::Duration;
 /// use relentless::retry_async;
 ///
-/// let retry = retry_async(|_| async { Ok::<u32, &str>(42) })
-///     .sleep(|_dur: Duration| async {});
-/// let _ = retry;
+/// # async fn doc() {
+/// // Async terminates with `.call().await` (mirroring the sync `.call()`).
+/// let result = retry_async(|_| async { Ok::<u32, &str>(42) })
+///     .sleep(|_dur: Duration| async {})
+///     .call()
+///     .await;
+/// assert_eq!(result.unwrap(), 42);
+/// # }
 /// ```
 pub fn retry_async<F, T, E, Fut>(
     op: F,

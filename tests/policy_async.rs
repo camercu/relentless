@@ -98,7 +98,7 @@ fn retry_async_executes_when_sleeper_is_set() {
         }
     });
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(future.sleep(sleeper.clone()));
+    let result: Result<i32, RetryError<i32, &str>> = block_on(future.sleep(sleeper.clone()).call());
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
 }
@@ -123,18 +123,20 @@ fn async_retry_type_is_nameable_from_crate_root() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(|_dur: Duration| async {}),
+            .sleep(|_dur: Duration| async {})
+            .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 #[test]
-fn async_retry_is_directly_awaitable() {
+fn async_retry_call_returns_an_awaitable_future() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let sleeper = RecordingSleeper::new();
     let async_retry = policy
         .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-        .sleep(sleeper);
+        .sleep(sleeper)
+        .call();
 
     let result: Result<i32, RetryError<i32, &str>> = block_on(async_retry);
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -146,7 +148,8 @@ fn async_retry_repoll_after_completion_panics() {
     let mut retry = Box::pin(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(|_dur: Duration| async {}),
+            .sleep(|_dur: Duration| async {})
+            .call(),
     );
     let waker = noop_waker();
     let mut cx = Context::from_waker(&waker);
@@ -174,7 +177,8 @@ fn retry_async_borrows_policy_immutably() {
                 call_count.set(call_count.get().saturating_add(1));
                 async move { Err::<i32, &str>(ERROR_VALUE) }
             })
-            .sleep(|_dur: Duration| async {}),
+            .sleep(|_dur: Duration| async {})
+            .call(),
     );
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -189,7 +193,8 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     match result {
@@ -210,7 +215,8 @@ fn async_retry_returns_exhausted_for_ok_exhaustion() {
     let result = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(-1) })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     match result {
@@ -246,7 +252,8 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
                     }
                 }
             })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -263,7 +270,8 @@ fn async_sleep_receives_wait_strategy_delays() {
     let _result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(sleeper.clone()),
+            .sleep(sleeper.clone())
+            .call(),
     );
 
     let calls = sleeper.calls.borrow();
@@ -287,7 +295,8 @@ fn async_predicate_is_evaluated_before_stop() {
     let result = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -305,7 +314,8 @@ fn async_default_predicate_behaves_like_any_error() {
                 call_count.set(call_count.get().saturating_add(1));
                 async { Err::<i32, &str>(ERROR_VALUE) }
             })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
@@ -338,7 +348,8 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
             })
             .elapsed_clock(async_elapsed_clock_millis)
             .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE)
-            .sleep(sleeper.clone()),
+            .sleep(sleeper.clone())
+            .call(),
     );
 
     // The timeout is tighter than MAX_ATTEMPTS+10 would allow, so only 1 attempt runs.
@@ -364,7 +375,8 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
                 }
             })
             .elapsed_clock(async_elapsed_clock_millis)
-            .sleep(sleeper.clone()),
+            .sleep(sleeper.clone())
+            .call(),
     );
 
     assert_eq!(call_count.get(), 1);
@@ -391,7 +403,8 @@ fn async_elapsed_stop_triggers_after_deadline() {
                 }
             })
             .elapsed_clock(async_elapsed_clock_millis)
-            .sleep(sleeper.clone()),
+            .sleep(sleeper.clone())
+            .call(),
     );
 
     assert_eq!(call_count.get(), 1);
@@ -424,7 +437,8 @@ fn async_hooks_fire_in_expected_places() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(sleeper),
+            .sleep(sleeper)
+            .call(),
     );
 
     let before_attempt = before_attempt_calls.borrow();
@@ -447,7 +461,8 @@ fn async_on_exit_reports_success_reason() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(RecordingSleeper::new()),
+            .sleep(RecordingSleeper::new())
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -468,7 +483,8 @@ fn async_on_exit_reports_non_retryable_error_reason() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(RecordingSleeper::new()),
+            .sleep(RecordingSleeper::new())
+            .call(),
     );
 
     assert!(matches!(result, Err(RetryError::Rejected { .. })));
@@ -487,14 +503,16 @@ fn async_hooks_are_per_call_and_do_not_persist() {
             .on_exit(move |_state: &relentless::ExitState<'_, i32, &str>| {
                 exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
             })
-            .sleep(RecordingSleeper::new()),
+            .sleep(RecordingSleeper::new())
+            .call(),
     );
     assert_eq!(exit_calls.get(), 1);
 
     let _ = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(RecordingSleeper::new()),
+            .sleep(RecordingSleeper::new())
+            .call(),
     );
     assert_eq!(exit_calls.get(), 1);
 }
@@ -507,7 +525,8 @@ fn tokio_sleep_helper_is_available() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn),
+            .sleep(sleep_fn)
+            .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
@@ -520,7 +539,8 @@ fn embassy_sleep_helper_is_available() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn),
+            .sleep(sleep_fn)
+            .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
@@ -533,7 +553,8 @@ fn gloo_sleep_helper_is_available() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn),
+            .sleep(sleep_fn)
+            .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
@@ -546,7 +567,8 @@ fn futures_timer_sleep_helper_is_available() {
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn),
+            .sleep(sleep_fn)
+            .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }

@@ -695,6 +695,7 @@ use relentless::predicate::{any_error, error, ok};
 // Ext: one-shot async
 (|| fetch_data()).retry_async()
     .sleep(sleep::tokio())
+    .call()
     .await?;
 
 // Ext: polling
@@ -718,6 +719,7 @@ retry_async(|state| async move {
     fetch_data_with_timeout(timeout).await
 })
 .sleep(sleep::tokio())
+.call()
 .await?;
 ```
 
@@ -828,10 +830,12 @@ Terminal execution:
 
 **6.5.4** `AsyncRetryWithStats` exposes only terminal execution.
 
-The async future is single-use:
+The async builder is terminated with `.call()`, which returns a single-use
+`Future`:
 
-- it is directly awaitable via `IntoFuture`
-- **6.5.5** polling after completion always panics
+- the builder itself does **not** implement `Future`; you must call `.call()`
+  (mirroring the synchronous `.call()`) and `.await` the returned future
+- **6.5.5** polling the returned future after completion always panics
 
 The async loop uses the same transition order as sync execution.
 
@@ -844,7 +848,7 @@ clock already provides.
 
 Statistics are accessed via:
 
-- `.with_stats().call()` (sync) or `.with_stats().await` (async): returns
+- `.with_stats().call()` (sync) or `.with_stats().call().await` (async): returns
   `(RetryResult<T, E>, RetryStats)` alongside the result
 - the `on_exit` hook, which receives `ExitState` containing `attempt`,
   `elapsed`, and `stop_reason`
@@ -921,7 +925,7 @@ loop. Standard patterns work as expected:
 ```rust
 // Timeout
 tokio::time::timeout(Duration::from_secs(30),
-    (|| fetch_data()).retry_async().sleep(sleep::tokio())
+    (|| fetch_data()).retry_async().sleep(sleep::tokio()).call()
 ).await??;
 
 // Select

@@ -171,7 +171,8 @@ fn async_retry_execution_is_allocation_free_after_warmup() {
                         }
                     }
                 })
-                .sleep(InstantSleeper),
+                .sleep(InstantSleeper)
+                .call(),
         )
     };
 

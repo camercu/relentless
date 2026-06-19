@@ -27,6 +27,7 @@ async fn main() {
     let result = policy
         .retry_async(check_deploy_status)
         .sleep(sleep::tokio())
+        .call()
         .await;
 
     assert_eq!(result, Ok("ready"));

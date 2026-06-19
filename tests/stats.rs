@@ -119,7 +119,8 @@ fn async_with_stats_returns_result_and_stats() {
                 }
             })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -312,7 +313,8 @@ fn async_stop_reason_exhausted_on_exhaustion() {
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert_eq!(stats.attempts, MAX_ATTEMPTS);
@@ -332,7 +334,8 @@ fn async_first_attempt_success_has_minimal_stats() {
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -352,7 +355,8 @@ fn async_stop_reason_condition_not_met() {
         policy
             .retry_async(|_| async { Ok::<i32, &str>(-1) })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert!(matches!(
@@ -374,7 +378,8 @@ fn async_stop_reason_accepted_for_custom_predicate_on_ok() {
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -421,7 +426,8 @@ fn async_total_elapsed_is_some_with_std() {
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .sleep(InstantSleeper)
-            .with_stats(),
+            .with_stats()
+            .call(),
     );
 
     assert!(

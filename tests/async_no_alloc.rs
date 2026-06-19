@@ -51,7 +51,8 @@ fn policy_async_retry_remains_available_without_alloc() {
             .before_attempt(|_state| {})
             .after_attempt(|_state| {})
             .on_exit(|_state| {})
-            .sleep(|_dur| ready(())),
+            .sleep(|_dur| ready(()))
+            .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -76,7 +77,8 @@ fn async_retry_ext_remains_available_without_alloc() {
         .before_attempt(|_state| {})
         .after_attempt(|_state| {})
         .on_exit(|_state| {})
-        .sleep(|_dur| ready(())),
+        .sleep(|_dur| ready(()))
+        .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));

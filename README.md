@@ -184,6 +184,7 @@ async fn fetch(url: &str) -> Result<String, reqwest::Error> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let body = retry_async(|_| fetch("https://api.example.com/data"))
         .sleep(relentless::sleep::tokio())
+        .call()
         .await?;
     Ok(())
 }
