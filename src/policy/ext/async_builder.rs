@@ -8,6 +8,14 @@ use crate::state::RetryState;
 use crate::{predicate, stop, wait};
 
 /// Extension trait to start async retries directly from a closure/function.
+///
+/// The operation takes no parameters. Use the free function
+/// [`crate::retry_async`] when you need access to [`crate::RetryState`]. This
+/// is the deliberate two-tier split: the ext method is the stateless shortcut,
+/// the free function is the stateful form. The method is `retry_async` (not
+/// `retry`): `_async` is the conventional async-variant naming, and async
+/// closures (`FnMut() -> Future`) are a different type than the sync ext
+/// trait's `FnMut() -> Result`.
 #[allow(clippy::type_complexity)]
 pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
 where

@@ -211,7 +211,17 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, OX, F, 
         self
     }
 
-    /// Sets a wall-clock deadline for the entire retry execution.
+    /// Sets a wall-clock budget for the entire retry execution.
+    ///
+    /// This is a **boundary check, not a preemptive timeout.** It is evaluated
+    /// between attempts: the next inter-attempt sleep is clamped so the loop
+    /// terminates close to the deadline, and the loop stops once the elapsed
+    /// time exceeds `dur`. It **cannot** interrupt an operation or a sleep that
+    /// is already in progress.
+    ///
+    /// For a hard wall-clock cancellation that can preempt in-flight work, wrap
+    /// the retry future in your async runtime's timeout (e.g.
+    /// `tokio::time::timeout`); see the `async-cancel` example.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);

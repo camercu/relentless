@@ -3,6 +3,17 @@ use core::fmt;
 
 /// Error returned when a retry loop terminates without producing an accepted result.
 ///
+/// `RetryError` implements [`Display`](core::fmt::Display) and (with `std`)
+/// [`std::error::Error`], so the simplest handling is to **propagate it
+/// directly** — `?` into `anyhow::Error`/`Box<dyn Error>`, or a `thiserror`
+/// `#[from]` field — rather than unwrapping it.
+///
+/// Note that [`Exhausted::last`](RetryError::Exhausted) is the full
+/// `Result<T, E>` (a polling loop can exhaust on a non-accepted `Ok`), **not**
+/// the bare error. Printing the `RetryError` itself uses `Display`; destructure
+/// `last` only when you specifically need the final outcome. To collapse to the
+/// underlying error use [`into_last_error`](Self::into_last_error).
+///
 /// # Type Parameters
 ///
 /// - `T`: The `Ok` value type from the retried operation.

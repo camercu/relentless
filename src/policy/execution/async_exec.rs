@@ -263,10 +263,11 @@ impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
         self
     }
 
-    /// Sets a wall-clock deadline for the entire retry execution.
+    /// Sets a wall-clock budget for the entire retry execution.
     ///
-    /// See [`SyncRetryBuilder::timeout`](crate::SyncRetryBuilder::timeout) for
-    /// full semantics.
+    /// A **boundary check, not a preemptive timeout** — see
+    /// [`SyncRetryBuilder::timeout`](crate::SyncRetryBuilder::timeout) for full
+    /// semantics and how to get hard preemption.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);
