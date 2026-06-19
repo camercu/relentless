@@ -74,6 +74,10 @@ enum JitterKind {
     Full,
     /// `base/2 + random(0, base/2)`
     Equal,
+    /// `random(base, previous_delay * 3)` — AWS decorrelated jitter. The floor
+    /// is the inner strategy's output; the upper bound feeds back the previous
+    /// (post-clamp) delay from [`RetryState::previous_delay`].
+    Decorrelated,
 }
 
 /// Applies jitter to an inner wait strategy's output.
@@ -85,6 +89,12 @@ enum JitterKind {
 /// Jitter uses a fast PRNG intended for retry backoff behavior, not for
 /// cryptographic use. Cloning a `Jittered` strategy produces a decorrelated
 /// copy — the clone will generate a different jitter sequence.
+///
+/// The default PRNG seed is fixed (there is no entropy source in `no_std`), so
+/// without [`with_seed`](Self::with_seed) the jitter sequence is **deterministic
+/// across process restarts** (instances within a run are still decorrelated by a
+/// per-instance nonce). Call `with_seed` with a runtime-sourced value if you
+/// need run-to-run variation.
 ///
 /// # Examples
 ///
@@ -161,6 +171,10 @@ impl<W> Jittered<W> {
         Self::new(inner, JitterKind::Equal)
     }
 
+    pub(super) fn decorrelated(inner: W) -> Self {
+        Self::new(inner, JitterKind::Decorrelated)
+    }
+
     /// Sets an explicit PRNG seed for reproducible jitter sequences.
     ///
     /// Combine with [`with_nonce`](Self::with_nonce) to fully pin the PRNG
@@ -213,24 +227,46 @@ impl<W: Wait> Wait for Jittered<W> {
                 let jitter = random_jitter_duration(half, &self.rng);
                 half.saturating_add(jitter)
             }
+            JitterKind::Decorrelated => {
+                // Floor is the inner strategy's output; upper bound feeds back
+                // the previous (post-clamp) delay from the retry state. On the
+                // first attempt there is no previous delay, so the floor is used.
+                let lower = base;
+                let last = state.previous_delay.unwrap_or(lower);
+                let upper = last.saturating_mul(3);
+                if upper <= lower {
+                    lower
+                } else {
+                    let range_nanos = upper.as_nanos().saturating_sub(lower.as_nanos());
+                    if range_nanos == 0 {
+                        lower
+                    } else {
+                        let max_nanos = range_nanos.min(u128::from(u64::MAX)) as u64;
+                        let random = self.rng.borrow_mut().next_bounded(max_nanos);
+                        lower.saturating_add(Duration::from_nanos(random))
+                    }
+                }
+            }
         }
     }
 }
 
-/// A standalone jitter strategy where each delay is random between `base` and
-/// three times the previous delay.
+/// Produces a decorrelated jitter strategy: each delay is random between `base`
+/// and three times the previous (post-clamp) delay.
 ///
 /// This is the "Decorrelated Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
-/// State is tracked via interior mutability (`Cell<Duration>`), consistent
-/// with the `&self` model.
+/// The feedback — the previous delay — is read from
+/// [`RetryState::previous_delay`](crate::RetryState::previous_delay), so the
+/// strategy carries no per-attempt state of its own (only its PRNG) and is
+/// freely shareable across reused policies. On the first attempt there is no
+/// previous delay, so the result is `random(base, base * 3)`.
 ///
-/// On the first attempt, `last_sleep` is `base`. Decorrelated jitter composes
-/// with `.cap(max)` to bound the maximum delay.
+/// Compose with [`.cap(max)`](Wait::cap) to bound the maximum delay, and use
+/// [`Jittered::with_seed`]/[`Jittered::with_nonce`] for deterministic output.
 ///
-/// Because decorrelated jitter is stateful, each concurrent or sequential
-/// retry loop should use its own clone. Cloning produces a decorrelated
-/// copy with a fresh PRNG stream and snapshots the current `last_sleep`
-/// value.
+/// To build a *custom* feedback strategy, implement [`Wait`] and read
+/// `state.previous_delay` directly; bring your own PRNG (e.g. a small
+/// `SplitMix64`) via interior mutability if you need randomness.
 ///
 /// # Examples
 ///
@@ -246,88 +282,9 @@ impl<W: Wait> Wait for Jittered<W> {
 /// assert!(next >= Duration::from_millis(100));
 /// assert!(next <= Duration::from_millis(300));
 /// ```
-#[derive(Debug)]
-pub struct WaitDecorrelatedJitter {
-    base: Duration,
-    last_sleep: core::cell::Cell<Duration>,
-    seed: u64,
-    nonce: u64,
-    rng: RefCell<SplitMix64>,
-}
-
-/// Produces a decorrelated jitter strategy: `random(base, last_sleep * 3)`.
 #[must_use]
-pub fn decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter {
-    let nonce = next_jitter_nonce();
-    WaitDecorrelatedJitter {
-        base,
-        last_sleep: core::cell::Cell::new(base),
-        seed: DEFAULT_JITTER_SEED,
-        nonce,
-        rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
-    }
-}
-
-impl WaitDecorrelatedJitter {
-    /// Sets an explicit PRNG seed for reproducible jitter sequences.
-    ///
-    /// Combine with [`with_nonce`](Self::with_nonce) to fully pin the PRNG
-    /// state for deterministic testing.
-    #[must_use]
-    pub fn with_seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
-        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
-        self
-    }
-
-    /// Overrides the instance-decorrelation nonce.
-    ///
-    /// By default, each instance (including clones) receives a unique nonce
-    /// so concurrent retry loops produce different jitter sequences. Set an
-    /// explicit nonce when you need deterministic output, such as in tests.
-    #[must_use]
-    pub fn with_nonce(mut self, nonce: u64) -> Self {
-        self.nonce = nonce;
-        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
-        self
-    }
-}
-
-impl Clone for WaitDecorrelatedJitter {
-    fn clone(&self) -> Self {
-        let nonce = next_jitter_nonce();
-        Self {
-            base: self.base,
-            last_sleep: self.last_sleep.clone(),
-            seed: self.seed,
-            nonce,
-            rng: RefCell::new(seeded_rng(self.seed, nonce)),
-        }
-    }
-}
-
-impl Wait for WaitDecorrelatedJitter {
-    fn next_wait(&self, _state: &RetryState) -> Duration {
-        let last = self.last_sleep.get();
-        let upper = last.saturating_mul(3);
-        let lower = self.base;
-
-        let delay = if upper <= lower {
-            lower
-        } else {
-            let range_nanos = upper.as_nanos().saturating_sub(lower.as_nanos());
-            if range_nanos == 0 {
-                lower
-            } else {
-                let max_nanos = range_nanos.min(u128::from(u64::MAX)) as u64;
-                let random = self.rng.borrow_mut().next_bounded(max_nanos);
-                lower.saturating_add(Duration::from_nanos(random))
-            }
-        };
-
-        self.last_sleep.set(delay);
-        delay
-    }
+pub fn decorrelated_jitter(base: Duration) -> Jittered<super::WaitFixed> {
+    Jittered::decorrelated(super::fixed(base))
 }
 
 /// Generates a random jitter duration in `[0, max_jitter]`.

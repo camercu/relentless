@@ -33,13 +33,35 @@ pub struct RetryState {
     /// Wall-clock time elapsed since the first attempt began.
     /// `None` when no clock is available (e.g. `no_std` without a time source).
     pub elapsed: Option<Duration>,
+
+    /// The delay applied before this attempt — the previous inter-attempt sleep,
+    /// after cap/timeout clamping — or `None` on the first attempt.
+    ///
+    /// Wait strategies use this for feedback backoff. For example, decorrelated
+    /// jitter computes `random(base, previous_delay * 3)`.
+    pub previous_delay: Option<Duration>,
 }
 
 impl RetryState {
     /// Creates a new `RetryState` with the given attempt number and elapsed time.
+    ///
+    /// [`previous_delay`](Self::previous_delay) defaults to `None`; set it with
+    /// [`with_previous_delay`](Self::with_previous_delay).
     #[must_use]
     pub const fn new(attempt: u32, elapsed: Option<Duration>) -> Self {
-        Self { attempt, elapsed }
+        Self {
+            attempt,
+            elapsed,
+            previous_delay: None,
+        }
+    }
+
+    /// Sets [`previous_delay`](Self::previous_delay), consuming and returning
+    /// `self` for chaining.
+    #[must_use]
+    pub const fn with_previous_delay(mut self, previous_delay: Option<Duration>) -> Self {
+        self.previous_delay = previous_delay;
+        self
     }
 }
 

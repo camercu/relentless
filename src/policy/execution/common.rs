@@ -251,6 +251,7 @@ pub(crate) fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed_tracker: &ElapsedTracker,
+    previous_delay: Option<Duration>,
     total_wait: Duration,
     collect_stats: bool,
     timeout: Option<Duration>,
@@ -271,6 +272,7 @@ where
             outcome,
             attempt,
             elapsed_tracker.elapsed(),
+            previous_delay,
             total_wait,
             collect_stats,
             timeout,
@@ -352,6 +354,7 @@ pub(super) fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     outcome: Result<T, E>,
     attempt: u32,
     elapsed: Option<Duration>,
+    previous_delay: Option<Duration>,
     total_wait: Duration,
     collect_stats: bool,
     timeout: Option<Duration>,
@@ -363,7 +366,7 @@ where
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
-    let retry_state = RetryState::new(attempt, elapsed);
+    let retry_state = RetryState::new(attempt, elapsed).with_previous_delay(previous_delay);
 
     process_attempt_transition(
         policy,
@@ -396,6 +399,9 @@ where
 {
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
+    // The clamped delay applied before the current attempt, fed forward so
+    // feedback wait strategies (e.g. decorrelated jitter) can read it.
+    let mut previous_delay: Option<Duration> = None;
 
     debug_assert!(
         timeout.is_none() || elapsed_tracker.elapsed().is_some(),
@@ -405,7 +411,8 @@ where
     loop {
         fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
 
-        let state = RetryState::new(attempt, elapsed_tracker.elapsed());
+        let state =
+            RetryState::new(attempt, elapsed_tracker.elapsed()).with_previous_delay(previous_delay);
         let outcome = op.call_op(state);
         match transition_from_outcome(
             policy,
@@ -413,6 +420,7 @@ where
             outcome,
             attempt,
             elapsed_tracker.elapsed(),
+            previous_delay,
             total_wait,
             COLLECT_STATS,
             timeout,
@@ -437,6 +445,8 @@ where
                     sleeper.sleep(next_delay);
                 }
                 total_wait = total_wait.saturating_add(next_delay);
+                // Feed the post-clamp delay forward to the next attempt's state.
+                previous_delay = Some(next_delay);
 
                 attempt = attempt.saturating_add(1);
             }
@@ -461,6 +471,7 @@ pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, Slee
     mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
     attempt: &mut u32,
     total_wait: &mut Duration,
+    previous_delay: &mut Option<Duration>,
     collect_stats: bool,
     final_stats: &mut Option<RetryStats>,
     elapsed_tracker: &ElapsedTracker,
@@ -489,7 +500,8 @@ where
             AsyncPhaseProj::ReadyToStartAttempt => {
                 fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed());
 
-                let state = RetryState::new(*attempt, elapsed_tracker.elapsed());
+                let state = RetryState::new(*attempt, elapsed_tracker.elapsed())
+                    .with_previous_delay(*previous_delay);
                 phase.set(AsyncPhase::PollingOperation {
                     op_future: op.call_op(state),
                 });
@@ -501,6 +513,7 @@ where
                 hooks,
                 *attempt,
                 elapsed_tracker,
+                *previous_delay,
                 *total_wait,
                 collect_stats,
                 timeout,
@@ -524,6 +537,8 @@ where
 
                     *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
+                    // Feed the post-clamp delay forward to the next attempt.
+                    *previous_delay = Some(next_delay);
 
                     // Avoid spawning a zero-duration sleep future (e.g. when
                     // the timeout budget is already exhausted).

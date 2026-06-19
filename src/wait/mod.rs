@@ -17,7 +17,6 @@ mod jitter;
 
 pub use composition::{WaitCapped, WaitChain, WaitCombine};
 pub use jitter::Jittered;
-pub use jitter::WaitDecorrelatedJitter;
 pub use jitter::decorrelated_jitter;
 pub use strategies::{WaitExponential, WaitFixed, WaitLinear, exponential, fixed, linear};
 

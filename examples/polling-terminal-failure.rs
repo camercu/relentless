@@ -4,7 +4,8 @@
 //! The key modeling rule: a retry predicate returns a single bool, and stopping
 //! on an `Ok` always resolves to **success**. There is no way to make an
 //! `Ok(_)` terminate as a failure. So a *terminal failure* must live in the
-//! `Err` channel, and the fail-fast condition is ORed *inside* `.until(...)`:
+//! `Err` channel, and the fail-fast condition is combined (with `|`) *inside*
+//! `.until(...)`:
 //!
 //! ```text
 //! .until( ok(is_done) | error(is_fatal) )

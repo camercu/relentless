@@ -132,7 +132,7 @@ Built-in strategies:
 - `wait::fixed(dur: Duration) -> WaitFixed`
 - `wait::linear(initial: Duration, increment: Duration) -> WaitLinear`
 - `wait::exponential(initial: Duration) -> WaitExponential`
-- `wait::decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter`
+- `wait::decorrelated_jitter(base: Duration) -> Jittered<WaitFixed>`
 
 Built-in wait semantics:
 
@@ -203,24 +203,26 @@ output = base / 2 + random(0, base / 2)
 a decorrelated copy — the clone uses a fresh PRNG stream and diverges
 immediately, generating a different jitter sequence from the original.
 
-**Decorrelated jitter** (`wait::decorrelated_jitter(base)`): a standalone
-strategy where each delay is random between `base` and three times the
-previous delay. This is the "Decorrelated Jitter" strategy from the [AWS
-Architecture Blog][aws-jitter]. It is stateful, tracking the previous delay via interior
-mutability (`Cell<Duration>`), consistent with the `&self` model.
+**Decorrelated jitter** (`wait::decorrelated_jitter(base)`): a `Jittered`
+strategy (over `wait::fixed(base)`) where each delay is random between `base`
+and three times the previous delay. This is the "Decorrelated Jitter" strategy
+from the [AWS Architecture Blog][aws-jitter]. The feedback (the previous delay)
+is read from `RetryState::previous_delay`, so the strategy carries no
+per-attempt state of its own (only its PRNG) and is freely shareable across
+reused policies.
 
 ```
-output = random(base, last_sleep * 3)
+output = random(base, previous_delay * 3)
 ```
 
-**3.3.5** Decorrelated jitter output = `random(base, last_sleep * 3)`; on first attempt `last_sleep` is `base`. Decorrelated jitter composes
-with `.cap(max)` to bound the maximum delay.
+**3.3.5** Decorrelated jitter output = `random(base, previous_delay * 3)`; on
+the first attempt `previous_delay` is `None`, so the output is
+`random(base, base * 3)`. Decorrelated jitter composes with `.cap(max)` to bound
+the maximum delay.
 
-Because decorrelated jitter is stateful via `Cell<Duration>`, each concurrent
-or sequential retry loop should use its own clone of a decorrelated jitter
-strategy to ensure independent sequences. **3.3.6** Cloning snapshots the current
-`last_sleep` value and assigns a fresh PRNG stream so the two copies
-diverge immediately.
+Because the feedback lives in `RetryState`, the strategy is stateless apart from
+its PRNG. **3.3.6** Cloning assigns a fresh PRNG stream so two copies diverge
+immediately.
 
 **3.3.7** All jitter strategy types support `.with_seed(u64)` and `.with_nonce(u64)`
 for reproducible sequences.
@@ -343,6 +345,10 @@ pub struct RetryState {
     /// Wall-clock time since retry execution started, or `None` when
     /// no elapsed clock is available.
     pub elapsed: Option<Duration>,
+    /// The delay applied before this attempt (the previous inter-attempt sleep,
+    /// after cap/timeout clamping), or `None` on the first attempt. Wait
+    /// strategies use this for feedback backoff (e.g. decorrelated jitter).
+    pub previous_delay: Option<Duration>,
 }
 ```
 
@@ -1117,10 +1123,10 @@ Decorator methods on `Wait`:
 
 Standalone constructor:
 
-- `wait::decorrelated_jitter(base: Duration) -> WaitDecorrelatedJitter` —
+- `wait::decorrelated_jitter(base: Duration) -> Jittered<WaitFixed>` —
   random in `[base, last_sleep * 3]`
 
-Exported types: `Jittered`, `WaitDecorrelatedJitter`.
+Exported types: `Jittered`.
 
 All jitter types support `.with_seed(u64)` and `.with_nonce(u64)` for
 reproducible sequences.
@@ -1199,7 +1205,7 @@ Free functions:
 - types: `WaitFixed`, `WaitLinear`, `WaitExponential`, `WaitCapped`,
   `WaitChain`, `WaitCombine`
 - jitter: `decorrelated_jitter` constructor;
-  `Jittered`, `WaitDecorrelatedJitter` types
+  `Jittered` type
 
 `predicate` module:
 
@@ -1215,7 +1221,7 @@ Free functions:
 
 Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
 `WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, `Jittered`,
-`WaitDecorrelatedJitter`, and similar) are **exposed but unstable**: they are
+`Jittered`, and similar) are **exposed but unstable**: they are
 `pub` for technical reasons (they appear in return types of composition methods
 and `.until()`), but users should not name them in function signatures. Use
 `impl Stop`, `impl Wait`, or `impl Predicate<T, E>` instead.

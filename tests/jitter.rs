@@ -168,7 +168,7 @@ fn decorrelated_jitter_first_attempt_range() {
     let upper = base.saturating_mul(3);
 
     for _ in 0..32 {
-        // Fresh strategy each time — last_sleep starts at base.
+        // Fresh strategy each time; the first attempt has no previous delay.
         let strategy = wait::decorrelated_jitter(base);
         let delay = strategy.next_wait(&state(1));
         assert!(delay >= base, "decorrelated jitter should be >= base");
@@ -185,11 +185,16 @@ fn decorrelated_jitter_subsequent_attempts_bounded_by_prev_times_3() {
     let base = Duration::from_millis(50);
     let strategy = wait::decorrelated_jitter(base);
 
-    let first = strategy.next_wait(&state(1));
-    let second = strategy.next_wait(&state(2));
-    let upper = first.saturating_mul(3);
-    assert!(second >= base, "should be >= base");
-    assert!(second <= upper, "should be <= prev*3");
+    // Feedback is supplied by the engine via RetryState::previous_delay, so the
+    // upper bound is previous_delay * 3 (not the strategy's own prior output).
+    let prev = Duration::from_millis(200);
+    let upper = prev.saturating_mul(3);
+    let st = relentless::RetryState::new(2, None).with_previous_delay(Some(prev));
+    for _ in 0..32 {
+        let delay = strategy.next_wait(&st);
+        assert!(delay >= base, "should be >= base");
+        assert!(delay <= upper, "should be <= previous_delay*3");
+    }
 }
 
 /// 3.3.4
@@ -227,9 +232,6 @@ fn decorrelated_jitter_clone_diverges() {
     let base = Duration::from_millis(100);
     let original = wait::decorrelated_jitter(base);
 
-    // Advance the original a bit so last_sleep has changed.
-    let _ = original.next_wait(&state(1));
-
     let clone_a = original.clone();
     let clone_b = original.clone();
 
@@ -238,7 +240,7 @@ fn decorrelated_jitter_clone_diverges() {
 
     assert_ne!(
         a_delays, b_delays,
-        "two clones of WaitDecorrelatedJitter should diverge (different PRNG streams)"
+        "two clones of decorrelated jitter should diverge (different PRNG streams)"
     );
 }
 
