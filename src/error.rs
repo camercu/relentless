@@ -100,7 +100,7 @@ impl<T, E> RetryError<T, E> {
     pub fn stop_reason(&self) -> StopReason {
         match self {
             RetryError::Exhausted { .. } => StopReason::Exhausted,
-            RetryError::Rejected { .. } => StopReason::Accepted,
+            RetryError::Rejected { .. } => StopReason::Rejected,
         }
     }
 }

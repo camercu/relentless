@@ -180,7 +180,7 @@ fn retry_error_stop_reason_matches_variant() {
     let rejected: relentless::RetryError<i32, String> = relentless::RetryError::Rejected {
         last: "fatal".to_string(),
     };
-    assert_eq!(rejected.stop_reason(), StopReason::Accepted);
+    assert_eq!(rejected.stop_reason(), StopReason::Rejected);
 }
 
 /// 4.1.9
@@ -273,5 +273,5 @@ fn stop_reason_available_without_extra_bounds() {
 
     let rejected: relentless::RetryError<Opaque, Opaque> =
         relentless::RetryError::Rejected { last: Opaque };
-    assert_eq!(rejected.stop_reason(), StopReason::Accepted);
+    assert_eq!(rejected.stop_reason(), StopReason::Rejected);
 }

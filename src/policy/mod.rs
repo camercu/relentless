@@ -156,7 +156,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     ///
     /// The predicate is deliberately **not** erased. The default predicate
     /// ([`PredicateAnyError`](predicate::PredicateAnyError)) implements
-    /// [`Predicate<T, E>`] for *every* `T` and `E`, so a default-predicate boxed
+    /// [`Predicate<T, E>`](crate::Predicate) for *every* `T` and `E`, so a default-predicate boxed
     /// policy can be reused across operations with **different** success and
     /// error types. Boxing the predicate (as `Box<dyn Predicate<T, E>>`) would
     /// pin it to one `(T, E)` and defeat that reuse — which is why only stop and

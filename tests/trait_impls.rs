@@ -79,7 +79,7 @@ fn wait_exponential_has_partial_eq_not_eq() {
 fn stop_reason_display_values() {
     use relentless::StopReason;
 
-    assert_eq!(format!("{}", StopReason::Accepted), "accepted");
+    assert_eq!(format!("{}", StopReason::Succeeded), "succeeded");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 

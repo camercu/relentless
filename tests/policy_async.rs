@@ -451,7 +451,7 @@ fn async_on_exit_reports_success_reason() {
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Accepted));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Succeeded));
 }
 
 #[test]
@@ -472,7 +472,7 @@ fn async_on_exit_reports_non_retryable_error_reason() {
     );
 
     assert!(matches!(result, Err(RetryError::Rejected { .. })));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Accepted));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Rejected));
 }
 
 #[test]

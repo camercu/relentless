@@ -432,8 +432,8 @@ Field meanings:
 
 The predicate's job is binary: retry or don't. When it says don't retry, the
 retry loop terminates regardless of whether the outcome was `Ok` or `Err`. This
-means a predicate-accepted `Ok` and a predicate-accepted `Err` share the same
-stop reason (`Accepted`). **4.1.1** Predicate-accepted `Ok` values are returned directly
+means a predicate-accepted `Ok` terminates with stop reason `Succeeded` and a
+predicate-accepted `Err` with `Rejected`. **4.1.1** Predicate-accepted `Ok` values are returned directly
 as `Ok(T)`. **4.1.2** Predicate-accepted `Err` values are wrapped in
 `RetryError::Rejected`.
 
@@ -476,29 +476,35 @@ is lowercase, without trailing punctuation, following the pattern
 ### 4.2 StopReason
 
 ```rust
+#[non_exhaustive]
 pub enum StopReason {
-    /// The predicate accepted the outcome (did not request retry).
-    /// Covers both predicate-accepted `Ok` (returned as `Ok(T)`) and
-    /// predicate-accepted `Err` (returned as `RetryError::Rejected`).
-    Accepted,
+    /// The predicate accepted an `Ok` outcome — the loop succeeded.
+    Succeeded,
+    /// The predicate accepted an `Err` outcome as terminal (returned as
+    /// `RetryError::Rejected`).
+    Rejected,
     /// The stop strategy fired while the predicate still wanted to retry.
     Exhausted,
 }
 ```
 
-**4.2.1** `Accepted` for predicate-accepted outcomes (both `Ok` and `Err`).
+**4.2.1** `Succeeded` for a predicate-accepted `Ok`; `Rejected` for a
+predicate-accepted `Err`.
 
 **4.2.2** `Exhausted` when the stop strategy fired.
 
-**4.2.3** `StopReason` implements `Display` with lowercase labels: `"accepted"`,
-`"retries exhausted"`.
+**4.2.3** `StopReason` implements `Display` with lowercase labels: `"succeeded"`,
+`"rejected"`, `"retries exhausted"`.
+
+**4.2.4** `StopReason` is `#[non_exhaustive]`; downstream matches must include a
+wildcard arm.
 
 Mapping from `RetryError` to `StopReason`:
 
 |Terminal condition                    |`RetryError` variant  |`StopReason`|
 |--------------------------------------|----------------------|------------|
-|Predicate accepts `Ok(T)`             |(not an error)        |`Accepted`  |
-|Predicate accepts `Err(E)` as terminal|`Rejected { last: E }`|`Accepted`  |
+|Predicate accepts `Ok(T)`             |(not an error)        |`Succeeded` |
+|Predicate accepts `Err(E)` as terminal|`Rejected { last: E }`|`Rejected`  |
 |Stop fires while retrying             |`Exhausted`           |`Exhausted` |
 
 ### 4.3 RetryStats
@@ -846,8 +852,8 @@ the stop strategy.
 
 |Final condition                       |Return value                |`StopReason`|`ExitState.outcome`|
 |--------------------------------------|----------------------------|------------|-------------------|
-|Predicate accepts `Ok(T)`             |`Ok(T)`                     |`Accepted`  |`&Ok(T)`           |
-|Predicate accepts `Err(E)` as terminal|`Err(RetryError::Rejected)` |`Accepted`  |`&Err(E)`          |
+|Predicate accepts `Ok(T)`             |`Ok(T)`                     |`Succeeded` |`&Ok(T)`           |
+|Predicate accepts `Err(E)` as terminal|`Err(RetryError::Rejected)` |`Rejected`  |`&Err(E)`          |
 |Stop fires while retrying             |`Err(RetryError::Exhausted)`|`Exhausted` |`&last_result`     |
 
 ### 7.2 Additional guarantees

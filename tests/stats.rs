@@ -1,8 +1,8 @@
 //! Tests for retry statistics (`RetryStats`, `StopReason`, `.with_stats()`).
 //!
 //! Verifies that stats are accumulated fresh per invocation, that attempt counts and
-//! `total_wait` match expected values, that `StopReason` correctly distinguishes Accepted from
-//! Exhausted (including the Accepted-when-Rejected edge case), and that `total_elapsed` is
+//! `total_wait` match expected values, that `StopReason` correctly distinguishes Succeeded/Rejected from
+//! Exhausted (including the rejected-error case), and that `total_elapsed` is
 //! Some only when the `std` feature is active.
 
 use core::cell::Cell;
@@ -94,7 +94,7 @@ fn sync_with_stats_returns_result_and_stats() {
     assert!(stats.total_elapsed.is_some());
     #[cfg(not(feature = "std"))]
     assert!(stats.total_elapsed.is_none());
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn async_with_stats_returns_result_and_stats() {
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
     assert!(stats.total_elapsed.is_some());
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn sync_first_attempt_success_has_minimal_stats() {
     assert!(stats.total_elapsed.is_some());
     #[cfg(not(feature = "std"))]
     assert!(stats.total_elapsed.is_none());
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn sync_stop_reason_accepted_with_default_predicate() {
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn sync_stop_reason_accepted_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn sync_stop_reason_accepted_for_result_predicate_on_ok() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -257,13 +257,13 @@ fn sync_stop_reason_accepted_for_error_predicate_on_ok() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
 fn sync_stop_reason_accepted_when_error_rejected() {
-    // A non-retryable error (rejected by the predicate) exits immediately with Accepted,
-    // because the predicate "accepted" the decision to stop — it was not exhausted.
+    // A non-retryable error (rejected by the predicate) exits immediately with Rejected,
+    // because the predicate "succeeded" the decision to stop — it was not exhausted.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
@@ -276,7 +276,7 @@ fn sync_stop_reason_accepted_when_error_rejected() {
 
     assert!(matches!(result, Err(RetryError::Rejected { .. })));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Rejected);
 }
 
 #[test]
@@ -338,7 +338,7 @@ fn async_first_attempt_success_has_minimal_stats() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -380,7 +380,7 @@ fn async_stop_reason_accepted_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -436,7 +436,7 @@ fn retry_stats_implements_debug_and_clone() {
         attempts: MAX_ATTEMPTS,
         total_elapsed: Some(Duration::from_secs(1)),
         total_wait: WAIT_DURATION,
-        stop_reason: StopReason::Accepted,
+        stop_reason: StopReason::Succeeded,
     };
 
     let cloned = stats;
@@ -448,7 +448,7 @@ fn retry_stats_implements_debug_and_clone() {
 
 #[test]
 fn stop_reason_implements_debug_clone_copy_eq() {
-    let reason = StopReason::Accepted;
+    let reason = StopReason::Succeeded;
 
     let copied = reason; // Copy
     assert_eq!(reason, copied);
@@ -457,9 +457,9 @@ fn stop_reason_implements_debug_clone_copy_eq() {
     assert_clone(&reason); // Clone (compile-time check)
 
     let debug = format!("{reason:?}");
-    assert!(debug.contains("Accepted"), "Debug output: {debug}");
+    assert!(debug.contains("Succeeded"), "Debug output: {debug}");
 
-    assert_ne!(StopReason::Accepted, StopReason::Exhausted); // Eq, both variants distinct
+    assert_ne!(StopReason::Succeeded, StopReason::Exhausted); // Eq, both variants distinct
 }
 
 #[test]
@@ -484,7 +484,7 @@ fn sync_stats_are_fresh_after_policy_reuse() {
     assert_eq!(result2, Ok(SUCCESS_VALUE));
     assert_eq!(stats2.attempts, 1);
     assert_eq!(stats2.total_wait, Duration::ZERO);
-    assert_eq!(stats2.stop_reason, StopReason::Accepted);
+    assert_eq!(stats2.stop_reason, StopReason::Succeeded);
 }
 
 #[test]
@@ -574,16 +574,16 @@ fn stats_total_wait_includes_zero_duration_delays() {
 /// 4.2.1
 #[test]
 fn stop_reason_accepted_for_predicate_accepted_outcomes() {
-    // Accepted Ok
+    // Succeeded Ok
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let (_, stats) = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
         .sleep(instant_sleep)
         .with_stats()
         .call();
-    assert_eq!(stats.stop_reason, StopReason::Accepted);
+    assert_eq!(stats.stop_reason, StopReason::Succeeded);
 
-    // Accepted Err (predicate does not match — Rejected)
+    // Rejected Err (predicate does not match — Rejected)
     let policy2 = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
@@ -592,7 +592,7 @@ fn stop_reason_accepted_for_predicate_accepted_outcomes() {
         .sleep(instant_sleep)
         .with_stats()
         .call();
-    assert_eq!(stats2.stop_reason, StopReason::Accepted);
+    assert_eq!(stats2.stop_reason, StopReason::Rejected);
 }
 
 /// 4.2.2
@@ -612,7 +612,7 @@ fn stop_reason_exhausted_when_stop_strategy_fires() {
 /// 4.2.3
 #[test]
 fn stop_reason_display_format() {
-    assert_eq!(format!("{}", StopReason::Accepted), "accepted");
+    assert_eq!(format!("{}", StopReason::Succeeded), "succeeded");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 

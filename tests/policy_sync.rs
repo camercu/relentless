@@ -660,7 +660,7 @@ fn on_exit_hook_fires_on_success() {
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(exit_reason.get(), Some(StopReason::Accepted));
+    assert_eq!(exit_reason.get(), Some(StopReason::Succeeded));
 }
 
 #[test]

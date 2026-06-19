@@ -137,7 +137,7 @@ fn on_exit_reports_non_retryable_error_reason() {
         .sleep(instant_sleep)
         .call();
 
-    assert_eq!(*reasons.borrow(), vec![StopReason::Accepted]);
+    assert_eq!(*reasons.borrow(), vec![StopReason::Rejected]);
 }
 
 #[cfg(feature = "alloc")]

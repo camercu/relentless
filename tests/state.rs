@@ -205,5 +205,5 @@ fn state_types_must_be_constructed_via_new() {
     let _ = relentless::RetryState::new(1, None);
     let outcome: Result<i32, &str> = Ok(1);
     let _ = relentless::AttemptState::new(1, None, &outcome, None);
-    let _ = relentless::ExitState::new(1, None, &outcome, relentless::StopReason::Accepted);
+    let _ = relentless::ExitState::new(1, None, &outcome, relentless::StopReason::Succeeded);
 }

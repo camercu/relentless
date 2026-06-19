@@ -136,7 +136,9 @@ where
     OX: ExitHook<T, E>,
 {
     let reason = match outcome_kind {
-        TerminalOutcomeKind::AcceptedOutcome => StopReason::Accepted,
+        // An accepted outcome resolves to success on `Ok` and rejection on `Err`.
+        TerminalOutcomeKind::AcceptedOutcome if outcome.is_ok() => StopReason::Succeeded,
+        TerminalOutcomeKind::AcceptedOutcome => StopReason::Rejected,
         TerminalOutcomeKind::StopStrategyTriggered => StopReason::Exhausted,
     };
 
