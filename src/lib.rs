@@ -249,6 +249,31 @@ pub use stats::{RetryStats, StopReason};
 pub use stop::Stop;
 pub use wait::Wait;
 
+/// Commonly used traits, glob-imported to enable the builder DSL.
+///
+/// The combinator methods (`.cap()`, `.full_jitter()`, `.chain()` on [`Wait`];
+/// `.or()`/`.and()` on [`Stop`] and [`Predicate`]) and the closure extensions
+/// (`.retry()` on [`RetryExt`], `.retry_async()` on [`AsyncRetryExt`]) are trait
+/// methods, so the trait must be in scope to call them. Glob-import this module
+/// to bring them all in at once:
+///
+/// ```
+/// use relentless::prelude::*;
+/// use relentless::wait;
+/// use core::time::Duration;
+///
+/// // `.full_jitter()` and `.cap()` resolve without naming `Wait`.
+/// let _ = wait::exponential(Duration::from_millis(100))
+///     .full_jitter()
+///     .cap(Duration::from_secs(5));
+/// ```
+///
+/// Strategy constructors (`wait::exponential`, `stop::attempts`, …) are *not*
+/// re-exported here; import them explicitly by name.
+pub mod prelude {
+    pub use crate::{AsyncRetryExt, Predicate, RetryExt, Sleeper, Stop, Wait};
+}
+
 /// Returns a [`SyncRetryBuilder`] with default policy: `attempts(3)`,
 /// `exponential(100ms)`, `any_error()`.
 ///
