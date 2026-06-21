@@ -228,8 +228,9 @@ impl<W: Wait> Wait for Jittered<W> {
                 half.saturating_add(jitter)
             }
             JitterKind::Decorrelated => {
-                // First attempt has no previous delay, so the upper bound falls
-                // back to the floor (`base`) and the result is `base`.
+                // On the first attempt there is no previous delay, so the upper
+                // bound falls back to the floor (`base`) before tripling,
+                // yielding `random(base, base * 3)`.
                 let lower = base;
                 let upper = state.previous_delay.unwrap_or(lower).saturating_mul(3);
                 random_duration_in(lower, upper, &self.rng)
