@@ -80,8 +80,14 @@ changes early, but the pinned `just ci` gate remains the source of truth.
 ## Semver and MSRV checks
 
 `just semver-check` uses `cargo-semver-checks` to verify that changes do not
-accidentally break the public API. `just check-msrv` compiles the crate with
-the declared minimum supported Rust version. Both run as part of `just ci`.
+accidentally break the public API. It runs automatically during release
+(semantic-release's `prepare` step, after the version is bumped), so an
+unintended break aborts the publish before it happens; run it manually any time
+to check early. It is deliberately **not** part of `just ci`: `cargo-semver-checks`
+compares against the published version, but semantic-release defers the version
+bump to release time, so an intentional breaking change would otherwise fail the
+pre-release gate and deadlock the release. `just check-msrv` compiles the crate
+with the declared minimum supported Rust version and runs as part of `just ci`.
 
 `just mutants` runs `cargo-mutants` for mutation testing. This is not part of
 CI — run it periodically to find test coverage gaps.

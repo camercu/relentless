@@ -27,4 +27,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
-        run: nix-shell shell.nix --run 'just release'
+        # semantic-release's prepare step runs `just semver-check` (cargo +stable
+        # semver-checks) against the freshly bumped version, so stable must be
+        # installed in the same nix-shell env before release runs.
+        run: nix-shell shell.nix --run 'rustup toolchain install stable --profile minimal && just release'

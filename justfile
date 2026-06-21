@@ -207,7 +207,7 @@ ci:
         check-no-std check-wasm check-embassy check-msrv \
         test-readme test-examples \
         test-tokio-sleep test-futures-timer-sleep test-allocation \
-        bench-no-run semver-check
+        bench-no-run
     -just coverage-text
 
 ci-stable: build-stable test-stable lint-clippy-stable

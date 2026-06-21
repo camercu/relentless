@@ -40,6 +40,10 @@
       "semantic-release-cargo",
       { "publish": true, "alwaysVerifyToken": false }
     ],
+    [
+      "@semantic-release/exec",
+      { "prepareCmd": "just semver-check" }
+    ],
     "@semantic-release/changelog",
     [
       "@semantic-release/git",
