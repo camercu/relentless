@@ -7,7 +7,6 @@
 //! sleeps by supplying no-op or recording sleep functions.
 
 use core::cell::Cell;
-use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy, RetryState, StopReason};
 use relentless::{predicate, stop, wait};
@@ -33,10 +32,25 @@ fn recording_sleep(recorder: &RefCell<Vec<Duration>>) -> impl FnMut(Duration) + 
     move |dur| recorder.borrow_mut().push(dur)
 }
 
-static ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    /// Per-test elapsed clock. Thread-local rather than a shared `static` so the
+    /// parallel test harness (one thread per test) gives every test its own
+    /// isolated clock — eliminating the cross-test race a shared global would
+    /// have. Read through the bare `fn` seam below, so it also exercises the
+    /// no-alloc `elapsed_clock(fn)` path.
+    static ELAPSED_CLOCK_MILLIS: Cell<u64> = const { Cell::new(0) };
+}
 
 fn elapsed_clock_millis() -> Duration {
-    Duration::from_millis(ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
+    Duration::from_millis(ELAPSED_CLOCK_MILLIS.with(Cell::get))
+}
+
+fn reset_elapsed_clock() {
+    ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(0));
+}
+
+fn advance_elapsed_clock(millis: u64) {
+    ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(clock.get().saturating_add(millis)));
 }
 
 #[test]
@@ -791,7 +805,7 @@ fn predicate_rejects_err_means_immediate_return() {
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn timeout_stops_loop_when_budget_exceeded() {
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_elapsed_clock();
 
     // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
@@ -803,7 +817,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
-            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            advance_elapsed_clock(CUSTOM_CLOCK_STEP_MILLIS);
             Err::<i32, _>("fail")
         })
         .elapsed_clock(elapsed_clock_millis)
@@ -1136,7 +1150,7 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
 /// 11.4.4
 #[test]
 fn timeout_stop_reason_is_exhausted() {
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_elapsed_clock();
 
     let policy = RetryPolicy::new()
         .stop(stop::attempts(100))
@@ -1144,7 +1158,7 @@ fn timeout_stop_reason_is_exhausted() {
 
     let (result, stats) = policy
         .retry(|_| {
-            ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+            advance_elapsed_clock(10);
             Err::<i32, &str>("fail")
         })
         .elapsed_clock(elapsed_clock_millis)
@@ -1159,7 +1173,7 @@ fn timeout_stop_reason_is_exhausted() {
 
 #[test]
 fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_elapsed_clock();
 
     let policy = RetryPolicy::new().stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE));
     let call_count = Cell::new(0_u32);
@@ -1167,7 +1181,7 @@ fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
-            ELAPSED_CLOCK_MILLIS.fetch_add(CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            advance_elapsed_clock(CUSTOM_CLOCK_STEP_MILLIS);
             Err::<i32, _>("clocked failure")
         })
         .elapsed_clock(elapsed_clock_millis)
@@ -1259,7 +1273,7 @@ fn std_sync_retry_uses_thread_sleep_by_default() {
 /// 11.4.1, 11.4.2, 11.4.3
 #[test]
 fn timeout_clamps_delay_to_remaining_budget() {
-    ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_elapsed_clock();
 
     let sleep_calls = Cell::new(0_u32);
     let policy = RetryPolicy::new()
@@ -1269,7 +1283,7 @@ fn timeout_clamps_delay_to_remaining_budget() {
     let result = policy
         .retry(|_| {
             // Advance clock past timeout on first attempt.
-            ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+            advance_elapsed_clock(10);
             Err::<i32, &str>("fail")
         })
         .elapsed_clock(elapsed_clock_millis)

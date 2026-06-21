@@ -9,7 +9,6 @@
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicU64, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy};
@@ -74,10 +73,24 @@ impl Sleeper for RecordingSleeper {
     }
 }
 
-static ASYNC_ELAPSED_CLOCK_MILLIS: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    /// Per-test elapsed clock. Thread-local rather than a shared `static` so the
+    /// parallel test harness gives each test its own isolated clock — no
+    /// cross-test race. `block_on` polls on the test thread, so the op's writes
+    /// and the clock fn's reads share this thread-local.
+    static ASYNC_ELAPSED_CLOCK_MILLIS: Cell<u64> = const { Cell::new(0) };
+}
 
 fn async_elapsed_clock_millis() -> Duration {
-    Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
+    Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.with(Cell::get))
+}
+
+fn reset_async_elapsed_clock() {
+    ASYNC_ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(0));
+}
+
+fn advance_async_elapsed_clock(millis: u64) {
+    ASYNC_ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(clock.get().saturating_add(millis)));
 }
 
 /// End-to-end: the async loop feeds each attempt's post-clamp delay forward as
@@ -369,7 +382,7 @@ fn async_default_predicate_behaves_like_any_error() {
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn async_timeout_stops_loop_when_budget_exceeded() {
-    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_async_elapsed_clock();
 
     // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
@@ -384,8 +397,7 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    ASYNC_ELAPSED_CLOCK_MILLIS
-                        .fetch_add(ASYNC_CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+                    advance_async_elapsed_clock(ASYNC_CUSTOM_CLOCK_STEP_MILLIS);
                     Err::<i32, &str>("fail")
                 }
             })
@@ -402,7 +414,7 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
 
 #[test]
 fn async_custom_elapsed_clock_counts_operation_runtime() {
-    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_async_elapsed_clock();
     let policy = RetryPolicy::new().stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE));
     let sleeper = RecordingSleeper::new();
     let call_count = Cell::new(0_u32);
@@ -412,8 +424,7 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    ASYNC_ELAPSED_CLOCK_MILLIS
-                        .fetch_add(ASYNC_CUSTOM_CLOCK_STEP_MILLIS, Ordering::Relaxed);
+                    advance_async_elapsed_clock(ASYNC_CUSTOM_CLOCK_STEP_MILLIS);
                     Err::<i32, &str>("slow failure")
                 }
             })
@@ -429,7 +440,7 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
 
 #[test]
 fn async_elapsed_stop_triggers_after_deadline() {
-    ASYNC_ELAPSED_CLOCK_MILLIS.store(0, Ordering::Relaxed);
+    reset_async_elapsed_clock();
     let policy = RetryPolicy::new()
         .stop(stop::elapsed(Duration::from_millis(5)))
         .wait(wait::fixed(Duration::from_millis(1)));
@@ -441,7 +452,7 @@ fn async_elapsed_stop_triggers_after_deadline() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    ASYNC_ELAPSED_CLOCK_MILLIS.fetch_add(10, Ordering::Relaxed);
+                    advance_async_elapsed_clock(10);
                     Err::<i32, &str>("would exceed budget")
                 }
             })
