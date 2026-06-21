@@ -791,8 +791,8 @@ Terminal execution:
   `(RetryResult<T, E>, RetryStats)` instead
 
 **6.4.4** `SyncRetryWithStats` and `AsyncRetryWithStats` expose only terminal
-execution (`.call()` for sync, `IntoFuture` for async). They do not
-expose hook, sleep, or clock configuration methods. Configure everything
+execution (`.call()` for both; the async `.call()` returns a future). They do
+not expose hook, sleep, or clock configuration methods. Configure everything
 before calling `.with_stats()`.
 
 The sync loop performs these steps:
@@ -825,10 +825,11 @@ crate never auto-selects an async runtime.
 
 Terminal execution:
 
-- **6.5.2** `AsyncRetryBuilder` implements `IntoFuture<Output = RetryResult<T, E>>`,
-  consuming the builder to produce the retry future
-- **6.5.3** `.with_stats()` changes the builder to implement
-  `IntoFuture<Output = (RetryResult<T, E>, RetryStats)>` instead
+- **6.5.2** `AsyncRetryBuilder::call` consumes the builder and returns a future
+  with `Output = RetryResult<T, E>`. The builder itself does not implement
+  `Future`/`IntoFuture`.
+- **6.5.3** `.with_stats()` changes the builder so that `.call()` returns a
+  future with `Output = (RetryResult<T, E>, RetryStats)` instead
 
 **6.5.4** `AsyncRetryWithStats` exposes only terminal execution.
 
@@ -1130,7 +1131,7 @@ Decorator methods on `Wait`:
 Standalone constructor:
 
 - `wait::decorrelated_jitter(base: Duration) -> Jittered<WaitFixed>` —
-  random in `[base, last_sleep * 3]`
+  random in `[base, previous_delay * 3]`
 
 Exported types: `Jittered`.
 
