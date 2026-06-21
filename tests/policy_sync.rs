@@ -816,6 +816,49 @@ fn timeout_stops_loop_when_budget_exceeded() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// End-to-end: the engine feeds each attempt's post-clamp delay forward as the
+/// next attempt's `RetryState::previous_delay`. The unit tests construct
+/// `RetryState` by hand; this proves the sync loop actually wires it, without
+/// which feedback strategies (decorrelated jitter) silently degrade.
+#[test]
+fn engine_feeds_previous_delay_forward_sync() {
+    struct RecordingWait<'a> {
+        seen: &'a RefCell<Vec<Option<Duration>>>,
+        delay: Duration,
+    }
+    impl relentless::Wait for RecordingWait<'_> {
+        fn next_wait(&self, state: &RetryState) -> Duration {
+            self.seen.borrow_mut().push(state.previous_delay);
+            self.delay
+        }
+    }
+
+    const FEEDBACK_DELAY: Duration = Duration::from_millis(7);
+    let seen: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
+
+    let _ = RetryPolicy::new()
+        .stop(stop::attempts(4))
+        .wait(RecordingWait {
+            seen: &seen,
+            delay: FEEDBACK_DELAY,
+        })
+        .retry(|_| Err::<i32, &str>("fail"))
+        .sleep(instant_sleep)
+        .call();
+
+    // First attempt has no previous delay; every later attempt sees the prior
+    // (constant) delay fed forward by the engine.
+    assert_eq!(
+        *seen.borrow(),
+        vec![
+            None,
+            Some(FEEDBACK_DELAY),
+            Some(FEEDBACK_DELAY),
+            Some(FEEDBACK_DELAY)
+        ]
+    );
+}
+
 /// The elapsed clock is read twice per attempt: once for the `RetryState` the
 /// operation receives (attempt start) and again after the operation completes,
 /// for the stop/wait evaluation. A clock that advances during the operation

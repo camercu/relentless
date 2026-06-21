@@ -80,6 +80,49 @@ fn async_elapsed_clock_millis() -> Duration {
     Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.load(Ordering::Relaxed))
 }
 
+/// End-to-end: the async loop feeds each attempt's post-clamp delay forward as
+/// the next attempt's `RetryState::previous_delay`. The async wiring (a pinned
+/// struct field threaded through `poll_async_loop`) is separate code from the
+/// sync path, so it needs its own coverage.
+#[test]
+fn engine_feeds_previous_delay_forward_async() {
+    struct RecordingWait {
+        seen: Rc<RefCell<Vec<Option<Duration>>>>,
+        delay: Duration,
+    }
+    impl relentless::Wait for RecordingWait {
+        fn next_wait(&self, state: &relentless::RetryState) -> Duration {
+            self.seen.borrow_mut().push(state.previous_delay);
+            self.delay
+        }
+    }
+
+    const FEEDBACK_DELAY: Duration = Duration::from_millis(7);
+    let seen: Rc<RefCell<Vec<Option<Duration>>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let _: Result<i32, RetryError<i32, &str>> = block_on(
+        RetryPolicy::new()
+            .stop(stop::attempts(4))
+            .wait(RecordingWait {
+                seen: Rc::clone(&seen),
+                delay: FEEDBACK_DELAY,
+            })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .sleep(RecordingSleeper::new())
+            .call(),
+    );
+
+    assert_eq!(
+        *seen.borrow(),
+        vec![
+            None,
+            Some(FEEDBACK_DELAY),
+            Some(FEEDBACK_DELAY),
+            Some(FEEDBACK_DELAY)
+        ]
+    );
+}
+
 #[test]
 fn retry_async_executes_when_sleeper_is_set() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
