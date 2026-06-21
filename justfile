@@ -116,6 +116,26 @@ check-msrv:
 semver-check:
     cargo +stable semver-checks check-release
 
+# ── Public API surface ──────────────────────────────────────
+# cargo-public-api builds rustdoc JSON, which is nightly-only, so these
+# recipes require a nightly toolchain (rustup installs one on demand).
+
+# Print the current public API surface (--simplified omits blanket/auto-trait
+# impl noise, keeping the snapshot readable and stable across toolchains).
+public-api:
+    cargo public-api --all-features --simplified
+
+# Regenerate the committed public API snapshot after an intended change.
+public-api-bless:
+    cargo public-api --all-features --simplified > public-api.txt
+
+# Fail if the public API has drifted from the committed snapshot.
+public-api-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo public-api --all-features --simplified | diff -u public-api.txt - \
+        || { echo "public API drifted from public-api.txt — review, then run 'just public-api-bless'"; exit 1; }
+
 # ── Documentation ───────────────────────────────────────────
 
 doc:
@@ -165,6 +185,7 @@ check-tool-versions:
             cargo-semver-checks) actual=$(cargo semver-checks --version | awk '{print $2}') ;;
             cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
+            cargo-public-api) actual=$(cargo public-api --version | awk '{print $2}') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then

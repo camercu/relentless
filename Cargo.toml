@@ -28,6 +28,7 @@ exclude = [
   "node_modules/",
   "package-lock.json",
   "package.json",
+  "public-api.txt",
   "scripts/",
   "shell.nix",
 ]

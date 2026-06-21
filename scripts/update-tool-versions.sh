@@ -21,6 +21,7 @@ declare -A NIX_ATTR=(
     [cargo-nextest]="cargo-nextest"
     [cargo-semver-checks]="cargo-semver-checks"
     [cargo-mutants]="cargo-mutants"
+    [cargo-public-api]="cargo-public-api"
     [typos-cli]="typos"
     [taplo-cli]="taplo"
 )
