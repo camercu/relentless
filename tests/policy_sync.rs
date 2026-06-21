@@ -9,7 +9,7 @@
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
-use relentless::{RetryError, RetryPolicy, StopReason};
+use relentless::{RetryError, RetryPolicy, RetryState, StopReason};
 use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
 
@@ -814,6 +814,62 @@ fn timeout_stops_loop_when_budget_exceeded() {
     // The timeout is tighter than MAX_ATTEMPTS would allow, so only 1 attempt runs.
     assert_eq!(call_count.get(), 1);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// The elapsed clock is read twice per attempt: once for the `RetryState` the
+/// operation receives (attempt start) and again after the operation completes,
+/// for the stop/wait evaluation. A clock that advances during the operation
+/// must therefore show the operation an *earlier* elapsed than the wait
+/// strategy sees for the same attempt. This guards the two-snapshot semantics
+/// so engine refactors that thread `RetryState` as a unit cannot silently
+/// collapse the pre-op and post-op snapshots into one.
+#[cfg(feature = "alloc")]
+#[test]
+fn elapsed_is_snapshotted_separately_for_op_and_wait() {
+    use std::rc::Rc;
+
+    struct RecordingWait {
+        seen: Rc<RefCell<Vec<Option<Duration>>>>,
+    }
+    impl relentless::Wait for RecordingWait {
+        fn next_wait(&self, state: &relentless::RetryState) -> Duration {
+            self.seen.borrow_mut().push(state.elapsed);
+            Duration::ZERO
+        }
+    }
+
+    let clock = Rc::new(Cell::new(0_u64));
+    let op_elapsed: Rc<Cell<Option<Duration>>> = Rc::new(Cell::new(None));
+    let wait_elapsed: Rc<RefCell<Vec<Option<Duration>>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let clock_reader = Rc::clone(&clock);
+    let clock_op = Rc::clone(&clock);
+    let op_elapsed_ref = Rc::clone(&op_elapsed);
+
+    let _ = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(RecordingWait {
+            seen: Rc::clone(&wait_elapsed),
+        })
+        .retry(move |state: RetryState| {
+            // Record the elapsed the op sees on the first attempt, then advance
+            // the clock so the post-op read differs.
+            if op_elapsed_ref.get().is_none() {
+                op_elapsed_ref.set(state.elapsed);
+            }
+            clock_op.set(clock_op.get() + CUSTOM_CLOCK_STEP_MILLIS);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock_fn(move || Duration::from_millis(clock_reader.get()))
+        .sleep(instant_sleep)
+        .call();
+
+    let op_saw = op_elapsed.get().expect("op ran at least once");
+    let wait_saw = wait_elapsed.borrow()[0].expect("wait ran with a clock configured");
+    assert!(
+        wait_saw > op_saw,
+        "wait should see post-op elapsed ({wait_saw:?}), later than the op ({op_saw:?})"
+    );
 }
 
 /// 6.1.1
