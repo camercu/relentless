@@ -445,7 +445,6 @@ where
                     sleeper.sleep(next_delay);
                 }
                 total_wait = total_wait.saturating_add(next_delay);
-                // Feed the post-clamp delay forward to the next attempt's state.
                 previous_delay = Some(next_delay);
 
                 attempt = attempt.saturating_add(1);
@@ -537,7 +536,6 @@ where
 
                     *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
-                    // Feed the post-clamp delay forward to the next attempt.
                     *previous_delay = Some(next_delay);
 
                     // Avoid spawning a zero-duration sleep future (e.g. when

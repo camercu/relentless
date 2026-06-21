@@ -228,24 +228,11 @@ impl<W: Wait> Wait for Jittered<W> {
                 half.saturating_add(jitter)
             }
             JitterKind::Decorrelated => {
-                // Floor is the inner strategy's output; upper bound feeds back
-                // the previous (post-clamp) delay from the retry state. On the
-                // first attempt there is no previous delay, so the floor is used.
+                // First attempt has no previous delay, so the upper bound falls
+                // back to the floor (`base`) and the result is `base`.
                 let lower = base;
-                let last = state.previous_delay.unwrap_or(lower);
-                let upper = last.saturating_mul(3);
-                if upper <= lower {
-                    lower
-                } else {
-                    let range_nanos = upper.as_nanos().saturating_sub(lower.as_nanos());
-                    if range_nanos == 0 {
-                        lower
-                    } else {
-                        let max_nanos = range_nanos.min(u128::from(u64::MAX)) as u64;
-                        let random = self.rng.borrow_mut().next_bounded(max_nanos);
-                        lower.saturating_add(Duration::from_nanos(random))
-                    }
-                }
+                let upper = state.previous_delay.unwrap_or(lower).saturating_mul(3);
+                random_duration_in(lower, upper, &self.rng)
             }
         }
     }
@@ -289,15 +276,20 @@ pub fn decorrelated_jitter(base: Duration) -> Jittered<super::WaitFixed> {
 
 /// Generates a random jitter duration in `[0, max_jitter]`.
 fn random_jitter_duration(max_jitter: Duration, rng: &RefCell<SplitMix64>) -> Duration {
-    if max_jitter.is_zero() {
-        return Duration::ZERO;
+    random_duration_in(Duration::ZERO, max_jitter, rng)
+}
+
+/// Returns a uniformly random `Duration` in `[lower, upper]`, or `lower` when
+/// `upper <= lower`. The nanosecond range is clamped to `u64::MAX`.
+fn random_duration_in(lower: Duration, upper: Duration, rng: &RefCell<SplitMix64>) -> Duration {
+    const MAX_RANGE_NANOS: u128 = u64::MAX as u128;
+    let range_nanos = upper.as_nanos().saturating_sub(lower.as_nanos());
+    if range_nanos == 0 {
+        return lower;
     }
-
-    const MAX_JITTER_NANOS: u128 = u64::MAX as u128;
-    let upper = max_jitter.as_nanos().min(MAX_JITTER_NANOS) as u64;
-    let random = rng.borrow_mut().next_bounded(upper);
-
-    Duration::from_nanos(random)
+    let max_nanos = range_nanos.min(MAX_RANGE_NANOS) as u64;
+    let random = rng.borrow_mut().next_bounded(max_nanos);
+    lower.saturating_add(Duration::from_nanos(random))
 }
 
 #[cfg(target_has_atomic = "ptr")]
