@@ -14,7 +14,7 @@ fn retry_error_exhausted_variant() {
         relentless::RetryError::Exhausted { ref last } => {
             assert_eq!(last, &Err("connection refused".to_string()));
         }
-        relentless::RetryError::Rejected { .. } => panic!("expected Exhausted variant"),
+        _ => panic!("expected Exhausted variant"),
     }
 }
 
@@ -28,7 +28,7 @@ fn retry_error_rejected_variant() {
         relentless::RetryError::Rejected { ref last } => {
             assert_eq!(last, "fatal");
         }
-        relentless::RetryError::Exhausted { .. } => panic!("expected Rejected variant"),
+        _ => panic!("expected Rejected variant"),
     }
 }
 

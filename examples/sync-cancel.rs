@@ -121,5 +121,6 @@ fn main() {
         Err(RetryError::Exhausted { last }) => {
             println!("pattern 2 — exhausted: {last:?}");
         }
+        Err(_) => unreachable!("no other RetryError variants reachable here"),
     }
 }

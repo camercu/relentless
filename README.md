@@ -227,6 +227,8 @@ match retry(|_| Err::<(), &str>("boom")).call() {
         // Predicate decided this error is non-retryable.
         println!("non-retryable: {last}");
     }
+    // `RetryError` is `#[non_exhaustive]`; match future variants here.
+    Err(_) => {}
 }
 ```
 

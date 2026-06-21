@@ -444,6 +444,7 @@ as `Ok(T)`. **4.1.2** Predicate-accepted `Err` values are wrapped in
 `RetryError::Rejected`.
 
 ```rust
+#[non_exhaustive]
 pub enum RetryError<T, E> {
     /// Retries exhausted — the stop strategy fired while the predicate
     /// still wanted to retry. The last outcome is preserved.
@@ -454,7 +455,8 @@ pub enum RetryError<T, E> {
 }
 ```
 
-`RetryResult<T, E>` is `Result<T, RetryError<T, E>>`.
+`RetryError` is `#[non_exhaustive]`; downstream exhaustive matches must include a
+wildcard arm. `RetryResult<T, E>` is `Result<T, RetryError<T, E>>`.
 
 Accessor methods:
 

@@ -159,6 +159,8 @@
 //!     Err(RetryError::Rejected { last }) => {
 //!         println!("non-retryable: {last}");
 //!     }
+//!     // `RetryError` is `#[non_exhaustive]`; match future variants here.
+//!     Err(_) => {}
 //! }
 //! ```
 //!

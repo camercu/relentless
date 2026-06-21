@@ -38,6 +38,7 @@ use core::fmt;
 /// println!("{}", err);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RetryError<T, E> {
     /// Retries exhausted — the stop strategy fired while the predicate
     /// still wanted to retry. The last outcome is preserved.
