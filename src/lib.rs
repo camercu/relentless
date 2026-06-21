@@ -164,6 +164,24 @@
 //! }
 //! ```
 //!
+//! # Cancellation
+//!
+//! By design, the retry engine has no built-in cancellation primitive — it
+//! composes with the cancellation your environment already provides, observed at
+//! attempt boundaries (a running operation or sleep is never interrupted
+//! mid-flight).
+//!
+//! - **Async:** the future returned by [`.call()`](AsyncRetryExec::call) is
+//!   cancel-safe — drop it (e.g. via `tokio::time::timeout` or `select!`) to
+//!   stop at the next `.await`. Note `on_exit` does **not** fire on drop; use
+//!   `Drop` on your own types for guaranteed cleanup. See the `async-cancel`
+//!   example.
+//! - **Sync:** bound the wall-clock with [`.timeout()`](SyncRetryBuilder::timeout),
+//!   or check a flag inside the operation and return a sentinel error. With the
+//!   default `any_error()` predicate that sentinel is *retried*, so make it
+//!   non-retryable via [`.when()`](SyncRetryBuilder::when) (it then terminates as
+//!   [`RetryError::Rejected`]). See the `sync-cancel` example.
+//!
 //! # Custom wait strategies
 //!
 //! Implement [`Wait`] to build your own wait strategies. All combinators
