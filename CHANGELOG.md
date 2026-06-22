@@ -1,3 +1,47 @@
+## [0.10.0](https://github.com/camercu/relentless/compare/v0.9.0...v0.10.0) (2026-06-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **error:** `RetryError` is now `#[non_exhaustive]`; exhaustive matches on
+it must add a wildcard `_` arm.
+* **async:** async retry builders no longer implement `Future`. Replace
+`builder.await` with `builder.call().await` (and `with_stats().await` with
+`with_stats().call().await`).
+* **wait:** the `WaitDecorrelatedJitter` type is removed;
+`wait::decorrelated_jitter` now returns `Jittered<WaitFixed>`. `RetryState`
+gains a `previous_delay` field (it is `#[non_exhaustive]`, so this is additive
+for matches but affects exhaustive struct literals).
+* **stats:** `StopReason::Accepted` is removed; use `Succeeded` or
+`Rejected`. `StopReason` is now `#[non_exhaustive]`, so exhaustive matches
+require a wildcard arm. `Display` now emits "succeeded"/"rejected" instead of
+"accepted".
+* **policy:** `.boxed()`/`.boxed_local()` no longer take `<T, E>` type
+arguments and no longer box the predicate; the returned type's third parameter
+is now the original predicate `P` instead of `Box<dyn Predicate<T, E>>`.
+* **policy:** SyncRetry, SyncRetryBuilder, AsyncRetry, and
+AsyncRetryBuilder (and their WithStats variants) are now type aliases
+over SyncRetryExec/AsyncRetryExec. Debug output prints the engine type
+name (e.g. "SyncRetryExec") rather than the alias name.
+
+* **error:** mark RetryError #[non_exhaustive] ([db4bc6e](https://github.com/camercu/relentless/commit/db4bc6ecbfb849566bc110775e2441ef5f0eedbd))
+* **policy:** boxed() erases stop+wait only, predicate stays generic ([4e4b59e](https://github.com/camercu/relentless/commit/4e4b59e32bd2de9e03005987cf3ba98f6e9e0b02))
+* **policy:** collapse sync/async retry wrappers into one engine each ([96b4c1f](https://github.com/camercu/relentless/commit/96b4c1f5b84967ae1f352c059576dd55db7b20a7))
+
+
+### Features
+
+* **api:** re-export NoSyncSleep/NoAsyncSleep at the crate root ([5da7d3e](https://github.com/camercu/relentless/commit/5da7d3e9a9004ee2eb62ce924ad2a446e73cb31d))
+* **async:** terminate async retries with .call(), mirroring sync ([2ceeceb](https://github.com/camercu/relentless/commit/2ceeceba962de8888b90719bedc19037e231742e))
+* **prelude:** add prelude module re-exporting DSL traits ([4db8b21](https://github.com/camercu/relentless/commit/4db8b21f826a8a4ebf2f4a8413c081652e08536c))
+* **stats:** split StopReason::Accepted into Succeeded and Rejected ([6481aed](https://github.com/camercu/relentless/commit/6481aedc6d2277641f95c7f44cb91ae05f389aa9))
+* **wait:** feedback jitter via RetryState.previous_delay; fold decorrelated ([76f24f9](https://github.com/camercu/relentless/commit/76f24f960e86eb31fde9c1c7c9da54703fd8a7a7))
+
+
+### Performance Improvements
+
+* **time:** skip Instant::now() when custom clock configured ([36e0c94](https://github.com/camercu/relentless/commit/36e0c944497830cda5b6aa442ce15c0d6bae30da))
+
 ## [0.9.0](https://github.com/camercu/relentless/compare/v0.8.0...v0.9.0) (2026-04-25)
 
 
