@@ -262,6 +262,9 @@ pub use policy::{
 };
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use policy::{SyncRetryExec, SyncRetryExecWithStats};
+// Sleeper sentinels for the "no sleep configured" type-state. Exported so the
+// return types of `retry`/`retry_async` (which mention them) are nameable.
+pub use policy::{NoAsyncSleep, NoSyncSleep};
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
