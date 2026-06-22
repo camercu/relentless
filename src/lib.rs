@@ -69,6 +69,14 @@
 //! assert!(result.is_err());
 //! ```
 //!
+//! To bound the **total** wall-clock time across all attempts and sleeps, add
+//! [`.timeout(dur)`](SyncRetryBuilder::timeout). It OR-folds an elapsed deadline
+//! into the stop strategy and clamps each inter-attempt sleep to the remaining
+//! budget; it does not interrupt an attempt already running. See [Cancellation]
+//! for the runtime-agnostic deadline pattern.
+//!
+//! [Cancellation]: #cancellation
+//!
 //! # Policy reuse
 //!
 //! [`RetryPolicy`] captures retry rules once. Compose wait strategies with `+`
