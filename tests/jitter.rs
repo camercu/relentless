@@ -143,6 +143,28 @@ fn jitter_with_seed_resets_prior_nonce() {
     }
 }
 
+/// 3.3.4 — cloning re-nonces even when the original was seeded, so a clone
+/// diverges from its seeded original.
+#[test]
+fn jitter_clone_of_seeded_strategy_diverges() {
+    let original = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED);
+    let cloned = original.clone();
+
+    let orig_delays: Vec<Duration> = (1..=SEEDED_ATTEMPT_COUNT)
+        .map(|a| original.next_wait(&state(a)))
+        .collect();
+    let clone_delays: Vec<Duration> = (1..=SEEDED_ATTEMPT_COUNT)
+        .map(|a| cloned.next_wait(&state(a)))
+        .collect();
+
+    assert_ne!(
+        orig_delays, clone_delays,
+        "clone of a seeded strategy should still decorrelate"
+    );
+}
+
 #[test]
 fn jitter_nonce_changes_sequence_for_same_seed() {
     let first = wait::fixed(BASE_WAIT)

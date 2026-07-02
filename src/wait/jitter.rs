@@ -83,22 +83,6 @@ impl SplitMix64 {
         let range = max + 1;
         self.next_u64() % range
     }
-
-    #[cfg(target_has_atomic = "64")]
-    fn current_state(&self) -> u64 {
-        self.state.load(Ordering::Relaxed)
-    }
-
-    #[cfg(not(target_has_atomic = "64"))]
-    fn current_state(&self) -> u64 {
-        self.state.get()
-    }
-}
-
-impl Clone for SplitMix64 {
-    fn clone(&self) -> Self {
-        Self::new(self.current_state())
-    }
 }
 
 impl fmt::Debug for SplitMix64 {
