@@ -1,3 +1,15 @@
+## [0.11.0](https://github.com/camercu/relentless/compare/v0.10.0...v0.11.0) (2026-07-02)
+
+
+### Features
+
+* **wait:** make jittered strategies Sync via atomic PRNG state ([6ccb31c](https://github.com/camercu/relentless/commit/6ccb31c2f9c7973860050f129746aff2775de0e5))
+
+
+### Bug Fixes
+
+* **wait:** with_seed alone pins the jitter sequence ([903781b](https://github.com/camercu/relentless/commit/903781b6f5cb9563e5e6c578e6399bfeb05d38cd))
+
 ## [0.10.0](https://github.com/camercu/relentless/compare/v0.9.0...v0.10.0) (2026-06-22)
 
 
