@@ -202,6 +202,10 @@ output = base / 2 + random(0, base / 2)
 **3.3.4** Cloning any `Jittered<W>` strategy (additive, full, or equal jitter) produces
 a decorrelated copy — the clone uses a fresh PRNG stream and diverges
 immediately, generating a different jitter sequence from the original.
+Caveat: instance/clone decorrelation relies on an atomic nonce counter and is
+unavailable on targets without pointer-width atomic read-modify-write ops
+(e.g. `thumbv6m`); there, default-configured instances and clones share one
+stream. Use `.with_nonce(n)` to decorrelate manually on such targets.
 
 **Decorrelated jitter** (`wait::decorrelated_jitter(base)`): a `Jittered`
 strategy (over `wait::fixed(base)`) where each delay is random between `base`
@@ -600,9 +604,10 @@ other.
 > combinator type opacity section — users should not name it directly.
 
 **5.7** `RetryPolicy` is `Clone` when its components are `Clone`. Because all trait
-methods use `&self`, policies are freely shareable without interior mutability.
-`RetryPolicy<S, W, P>` is a pure composition of three strategy types with no
-other internal state.
+methods use `&self`, policies are freely shareable. `RetryPolicy<S, W, P>` is a
+pure composition of three strategy types with no other internal state. The only
+built-in strategy with interior state is `Jittered` (its PRNG), which uses an
+atomic and stays `Sync` on targets with 64-bit atomics (see §10).
 
 **5.5** `.boxed()` requires `S: Stop + Send + 'static`, `W: Wait + Send + 'static`;
 erases stop and wait to `Box<dyn...+Send+'static>`. The predicate is **not**
@@ -632,9 +637,11 @@ share the same method surface as `SyncRetryBuilder` / `AsyncRetryBuilder`
 (`.stop()`, `.wait()`, `.when()`, `.until()`) because those are configured on
 the policy itself.
 
-Because `Stop`, `Wait`, and `Predicate` all use `&self`, the policy holds no
-mutable state. Multiple concurrent retry loops can share the same policy
-without cloning.
+Because `Stop`, `Wait`, and `Predicate` all use `&self`, multiple concurrent
+retry loops can share the same policy without cloning. Jittered strategies keep
+their PRNG state in an atomic (on targets with 64-bit atomics), so this holds
+for jittered policies too; concurrent loops interleave draws from one PRNG
+stream.
 
 ### 6.1 Free function entry points
 
@@ -1016,6 +1023,10 @@ owner (`.call()` for sync, `Future::poll()` for async).
 type parameters is `Send + Sync`, that `AsyncRetryBuilder` is `Send` when all
 components are `Send`, and that `SyncRetryBuilder` is `Send` when all
 components are `Send`.
+
+**10.4** `Jittered<W>` is `Send + Sync` when `W` is: its PRNG state is a single
+atomic (`AtomicU64`) on targets with 64-bit atomics. On targets without
+64-bit atomics it falls back to `Cell`-based state and is `!Sync` there.
 
 ## 11. Elapsed time, clocks, and timeout
 
