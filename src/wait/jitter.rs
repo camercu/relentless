@@ -185,19 +185,16 @@ pub struct Jittered<W> {
     inner: W,
     kind: JitterKind,
     seed: u64,
-    nonce: u64,
     rng: SplitMix64,
 }
 
 impl<W> Jittered<W> {
     fn new(inner: W, kind: JitterKind) -> Self {
-        let nonce = next_jitter_nonce();
         Self {
             inner,
             kind,
             seed: DEFAULT_JITTER_SEED,
-            nonce,
-            rng: seeded_rng(DEFAULT_JITTER_SEED, nonce),
+            rng: seeded_rng(DEFAULT_JITTER_SEED, next_jitter_nonce()),
         }
     }
 
@@ -230,8 +227,7 @@ impl<W> Jittered<W> {
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
-        self.nonce = derive_nonce(seed);
-        self.rng = seeded_rng(seed, self.nonce);
+        self.rng = seeded_rng(seed, derive_nonce(seed));
         self
     }
 
@@ -244,7 +240,6 @@ impl<W> Jittered<W> {
     /// [`with_seed`](Self::with_seed), which resets the nonce.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
-        self.nonce = nonce;
         self.rng = seeded_rng(self.seed, nonce);
         self
     }
@@ -252,13 +247,11 @@ impl<W> Jittered<W> {
 
 impl<W: Clone> Clone for Jittered<W> {
     fn clone(&self) -> Self {
-        let nonce = next_jitter_nonce();
         Self {
             inner: self.inner.clone(),
             kind: self.kind,
             seed: self.seed,
-            nonce,
-            rng: seeded_rng(self.seed, nonce),
+            rng: seeded_rng(self.seed, next_jitter_nonce()),
         }
     }
 }
