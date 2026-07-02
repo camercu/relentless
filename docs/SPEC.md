@@ -225,7 +225,11 @@ its PRNG. **3.3.6** Cloning assigns a fresh PRNG stream so two copies diverge
 immediately.
 
 **3.3.7** All jitter strategy types support `.with_seed(u64)` and `.with_nonce(u64)`
-for reproducible sequences.
+for reproducible sequences. `.with_seed(s)` alone fully pins the sequence: it
+sets the seed and re-derives the instance nonce from it, replacing any prior
+nonce. `.with_nonce(n)` decorrelates same-seed instances; call it after
+`.with_seed`, which resets the nonce. Cloning still assigns a fresh nonce
+(3.3.4), so a clone diverges from its seeded original.
 
 **3.3.8** Jitter decorators (`.jitter()`, `.full_jitter()`, `.equal_jitter()`) apply
 before `.cap(...)`:

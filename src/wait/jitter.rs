@@ -65,6 +65,12 @@ fn seeded_rng(seed: u64, nonce: u64) -> SplitMix64 {
     SplitMix64::new(seed ^ nonce)
 }
 
+/// Derives the instance nonce from an explicit seed so that `with_seed` alone
+/// fully pins the jitter sequence.
+fn derive_nonce(seed: u64) -> u64 {
+    SplitMix64::new(seed).next_u64()
+}
+
 /// Selects which jitter formula `Jittered<W>` applies to the base duration.
 #[derive(Debug, Clone, Copy)]
 enum JitterKind {
@@ -177,11 +183,18 @@ impl<W> Jittered<W> {
 
     /// Sets an explicit PRNG seed for reproducible jitter sequences.
     ///
-    /// Combine with [`with_nonce`](Self::with_nonce) to fully pin the PRNG
-    /// state for deterministic testing.
+    /// The seed alone fully pins the sequence: the instance-decorrelation
+    /// nonce is re-derived from the seed, replacing any prior nonce (default
+    /// or explicit). Two instances given the same seed produce identical
+    /// sequences. To decorrelate same-seed instances, call
+    /// [`with_nonce`](Self::with_nonce) *after* `with_seed`.
+    ///
+    /// Cloning still decorrelates: a clone receives a fresh nonce and
+    /// diverges from the seeded original.
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
+        self.nonce = derive_nonce(seed);
         self.rng = RefCell::new(seeded_rng(seed, self.nonce));
         self
     }
@@ -190,8 +203,9 @@ impl<W> Jittered<W> {
     ///
     /// By default, each `Jittered` instance (including clones) receives a
     /// unique nonce so independent retry loops produce different jitter
-    /// sequences. Set an explicit nonce when you need deterministic output,
-    /// such as in tests.
+    /// sequences. Set an explicit nonce to decorrelate instances that share
+    /// a seed while keeping each stream deterministic. Call it after
+    /// [`with_seed`](Self::with_seed), which resets the nonce.
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;

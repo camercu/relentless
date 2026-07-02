@@ -102,6 +102,47 @@ fn jitter_seed_and_nonce_make_sequence_reproducible() {
     }
 }
 
+/// 3.3.7
+#[test]
+fn jitter_with_seed_alone_is_reproducible() {
+    // Same seed, no explicit nonce: the nonce is derived from the seed, so the
+    // sequences must match.
+    let first = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED);
+    let second = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED);
+
+    for attempt in 1..=SEEDED_ATTEMPT_COUNT {
+        assert_eq!(
+            first.next_wait(&state(attempt)),
+            second.next_wait(&state(attempt)),
+            "same seed alone should produce identical sequences"
+        );
+    }
+}
+
+/// 3.3.7
+#[test]
+fn jitter_with_seed_resets_prior_nonce() {
+    let explicit_nonce_then_seed = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_nonce(SEEDED_NONCE_A)
+        .with_seed(SEEDED_JITTER_SEED);
+    let seed_only = wait::fixed(BASE_WAIT)
+        .jitter(MAX_JITTER)
+        .with_seed(SEEDED_JITTER_SEED);
+
+    for attempt in 1..=SEEDED_ATTEMPT_COUNT {
+        assert_eq!(
+            explicit_nonce_then_seed.next_wait(&state(attempt)),
+            seed_only.next_wait(&state(attempt)),
+            "with_seed should reset any prior nonce; call with_nonce last to pin a custom stream"
+        );
+    }
+}
+
 #[test]
 fn jitter_nonce_changes_sequence_for_same_seed() {
     let first = wait::fixed(BASE_WAIT)
