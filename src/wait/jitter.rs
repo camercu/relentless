@@ -19,7 +19,7 @@ use core::cell::Cell;
 
 const DEFAULT_JITTER_SEED: u64 = 0x5A5A_5A5A_5A5A_5A5A;
 
-/// SplitMix64 state increment (the "golden gamma").
+/// `SplitMix64` state increment (the "golden gamma").
 const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
 
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
