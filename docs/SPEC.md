@@ -1151,7 +1151,7 @@ Standalone constructor:
 Exported types: `Jittered`.
 
 All jitter types support `.with_seed(u64)` and `.with_nonce(u64)` for
-reproducible sequences.
+reproducible sequences; `.with_seed` alone fully pins the sequence (see 3.3.7).
 
 ### 12.3 Boxed policies
 
