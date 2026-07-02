@@ -1,4 +1,3 @@
-use core::cell::RefCell;
 use core::fmt;
 
 use crate::compat::Duration;
@@ -6,10 +5,22 @@ use crate::state::RetryState;
 
 use super::Wait;
 
+#[cfg(any(target_has_atomic = "ptr", target_has_atomic = "64"))]
+use core::sync::atomic::Ordering;
+
 #[cfg(target_has_atomic = "ptr")]
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::AtomicUsize;
+
+#[cfg(target_has_atomic = "64")]
+use core::sync::atomic::AtomicU64;
+
+#[cfg(not(target_has_atomic = "64"))]
+use core::cell::Cell;
 
 const DEFAULT_JITTER_SEED: u64 = 0x5A5A_5A5A_5A5A_5A5A;
+
+/// SplitMix64 state increment (the "golden gamma").
+const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
 
 /// Monotonic jitter nonce counter used to decorrelate independent policies.
 #[cfg(target_has_atomic = "ptr")]
@@ -21,25 +32,50 @@ static JITTER_NONCE_COUNTER: AtomicUsize = AtomicUsize::new(1);
 /// seeding other PRNGs (e.g., in Java's `SplittableRandom`). It is more
 /// than sufficient for retry jitter where the goal is decorrelation, not
 /// cryptographic security.
+///
+/// The state advances by a fixed increment (`GAMMA`) per draw, so on targets
+/// with 64-bit atomics it is stored in an `AtomicU64` and advanced with a
+/// single `fetch_add` — lock-free, `Sync`, and sequentially identical to the
+/// single-threaded algorithm. Concurrent callers interleave one stream, each
+/// drawing a distinct state. Targets without 64-bit atomics fall back to
+/// `Cell`, making jittered strategies `!Sync` there.
 struct SplitMix64 {
-    state: u64,
+    #[cfg(target_has_atomic = "64")]
+    state: AtomicU64,
+    #[cfg(not(target_has_atomic = "64"))]
+    state: Cell<u64>,
 }
 
 impl SplitMix64 {
     fn new(seed: u64) -> Self {
-        Self { state: seed }
+        Self { state: seed.into() }
     }
 
-    fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.state;
+    /// Advances the state by `GAMMA` and returns the new value.
+    #[cfg(target_has_atomic = "64")]
+    fn advance(&self) -> u64 {
+        self.state
+            .fetch_add(GAMMA, Ordering::Relaxed)
+            .wrapping_add(GAMMA)
+    }
+
+    /// Advances the state by `GAMMA` and returns the new value.
+    #[cfg(not(target_has_atomic = "64"))]
+    fn advance(&self) -> u64 {
+        let next = self.state.get().wrapping_add(GAMMA);
+        self.state.set(next);
+        next
+    }
+
+    fn next_u64(&self) -> u64 {
+        let mut z = self.advance();
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         z ^ (z >> 31)
     }
 
     /// Returns a value in `[0, max]`.
-    fn next_bounded(&mut self, max: u64) -> u64 {
+    fn next_bounded(&self, max: u64) -> u64 {
         if max == u64::MAX {
             return self.next_u64();
         }
@@ -47,11 +83,21 @@ impl SplitMix64 {
         let range = max + 1;
         self.next_u64() % range
     }
+
+    #[cfg(target_has_atomic = "64")]
+    fn current_state(&self) -> u64 {
+        self.state.load(Ordering::Relaxed)
+    }
+
+    #[cfg(not(target_has_atomic = "64"))]
+    fn current_state(&self) -> u64 {
+        self.state.get()
+    }
 }
 
 impl Clone for SplitMix64 {
     fn clone(&self) -> Self {
-        Self { state: self.state }
+        Self::new(self.current_state())
     }
 }
 
@@ -102,6 +148,12 @@ enum JitterKind {
 /// per-instance nonce). Call `with_seed` with a runtime-sourced value if you
 /// need run-to-run variation.
 ///
+/// The PRNG state is a single atomic on targets with 64-bit atomics, so a
+/// jittered strategy — and any policy containing one — is `Send + Sync` and
+/// shareable across threads by reference; concurrent retry loops interleave
+/// draws from one stream. Targets without 64-bit atomics fall back to a
+/// `Cell`-based PRNG, which is `!Sync`.
+///
 /// # Examples
 ///
 /// ```
@@ -150,7 +202,7 @@ pub struct Jittered<W> {
     kind: JitterKind,
     seed: u64,
     nonce: u64,
-    rng: RefCell<SplitMix64>,
+    rng: SplitMix64,
 }
 
 impl<W> Jittered<W> {
@@ -161,7 +213,7 @@ impl<W> Jittered<W> {
             kind,
             seed: DEFAULT_JITTER_SEED,
             nonce,
-            rng: RefCell::new(seeded_rng(DEFAULT_JITTER_SEED, nonce)),
+            rng: seeded_rng(DEFAULT_JITTER_SEED, nonce),
         }
     }
 
@@ -195,7 +247,7 @@ impl<W> Jittered<W> {
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self.nonce = derive_nonce(seed);
-        self.rng = RefCell::new(seeded_rng(seed, self.nonce));
+        self.rng = seeded_rng(seed, self.nonce);
         self
     }
 
@@ -209,7 +261,7 @@ impl<W> Jittered<W> {
     #[must_use]
     pub fn with_nonce(mut self, nonce: u64) -> Self {
         self.nonce = nonce;
-        self.rng = RefCell::new(seeded_rng(self.seed, nonce));
+        self.rng = seeded_rng(self.seed, nonce);
         self
     }
 }
@@ -222,7 +274,7 @@ impl<W: Clone> Clone for Jittered<W> {
             kind: self.kind,
             seed: self.seed,
             nonce,
-            rng: RefCell::new(seeded_rng(self.seed, nonce)),
+            rng: seeded_rng(self.seed, nonce),
         }
     }
 }
@@ -290,20 +342,20 @@ pub fn decorrelated_jitter(base: Duration) -> Jittered<super::WaitFixed> {
 }
 
 /// Generates a random jitter duration in `[0, max_jitter]`.
-fn random_jitter_duration(max_jitter: Duration, rng: &RefCell<SplitMix64>) -> Duration {
+fn random_jitter_duration(max_jitter: Duration, rng: &SplitMix64) -> Duration {
     random_duration_in(Duration::ZERO, max_jitter, rng)
 }
 
 /// Returns a uniformly random `Duration` in `[lower, upper]`, or `lower` when
 /// `upper <= lower`. The nanosecond range is clamped to `u64::MAX`.
-fn random_duration_in(lower: Duration, upper: Duration, rng: &RefCell<SplitMix64>) -> Duration {
+fn random_duration_in(lower: Duration, upper: Duration, rng: &SplitMix64) -> Duration {
     const MAX_RANGE_NANOS: u128 = u64::MAX as u128;
     let range_nanos = upper.as_nanos().saturating_sub(lower.as_nanos());
     if range_nanos == 0 {
         return lower;
     }
     let max_nanos = range_nanos.min(MAX_RANGE_NANOS) as u64;
-    let random = rng.borrow_mut().next_bounded(max_nanos);
+    let random = rng.next_bounded(max_nanos);
     lower.saturating_add(Duration::from_nanos(random))
 }
 

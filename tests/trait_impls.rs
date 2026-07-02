@@ -11,6 +11,16 @@ fn default_retry_policy_is_send_and_sync() {
     assert_send_sync::<relentless::RetryPolicy>();
 }
 
+/// §10 — jittered strategies must not break policy shareability: production
+/// configs (exponential + jitter) live in shared statics/config structs.
+#[test]
+fn jittered_wait_is_send_and_sync() {
+    use relentless::wait::{Jittered, WaitExponential, WaitFixed};
+
+    assert_send_sync::<Jittered<WaitFixed>>();
+    assert_send_sync::<Jittered<WaitExponential>>();
+}
+
 #[test]
 fn value_types_implement_copy() {
     fn assert_copy<T: Copy>() {}

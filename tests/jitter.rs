@@ -308,6 +308,25 @@ fn decorrelated_jitter_with_seed_is_reproducible() {
     }
 }
 
+/// §10 — a jittered policy shared by reference across threads: each loop
+/// draws from the same atomic PRNG stream.
+#[test]
+fn jittered_policy_is_shareable_across_threads() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(3))
+        .wait(wait::fixed(BASE_WAIT).jitter(MAX_JITTER));
+
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            let policy = &policy;
+            scope.spawn(move || {
+                let result = policy.retry(|_| Ok::<u32, &str>(1)).sleep(|_| {}).call();
+                assert_eq!(result.unwrap(), 1);
+            });
+        }
+    });
+}
+
 /// 3.3.5
 #[test]
 fn decorrelated_jitter_with_cap_respects_max() {
