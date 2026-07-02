@@ -567,10 +567,10 @@ pub fn relentless::wait::Jittered<W>::jitter(self, max_jitter: core::time::Durat
 pub fn relentless::wait::Jittered<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> !core::marker::Freeze for relentless::wait::Jittered<W>
 impl<W> core::marker::Send for relentless::wait::Jittered<W> where W: core::marker::Send
-impl<W> !core::marker::Sync for relentless::wait::Jittered<W>
+impl<W> core::marker::Sync for relentless::wait::Jittered<W> where W: core::marker::Sync
 impl<W> core::marker::Unpin for relentless::wait::Jittered<W> where W: core::marker::Unpin
 impl<W> core::marker::UnsafeUnpin for relentless::wait::Jittered<W> where W: core::marker::UnsafeUnpin
-impl<W> !core::panic::unwind_safe::RefUnwindSafe for relentless::wait::Jittered<W>
+impl<W> core::panic::unwind_safe::RefUnwindSafe for relentless::wait::Jittered<W> where W: core::panic::unwind_safe::RefUnwindSafe
 impl<W> core::panic::unwind_safe::UnwindSafe for relentless::wait::Jittered<W> where W: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::wait::WaitCapped<W>
 impl<W> relentless::wait::WaitCapped<W>
