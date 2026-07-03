@@ -331,7 +331,8 @@ fn decorrelated_jitter_with_seed_is_reproducible() {
 }
 
 /// §10 — a jittered policy shared by reference across threads: each loop
-/// draws from the same atomic PRNG stream.
+/// draws from the same atomic PRNG stream. The first attempt fails so every
+/// thread actually reaches `next_wait` and draws concurrently.
 #[test]
 fn jittered_policy_is_shareable_across_threads() {
     let policy = RetryPolicy::new()
@@ -342,7 +343,16 @@ fn jittered_policy_is_shareable_across_threads() {
         for _ in 0..4 {
             let policy = &policy;
             scope.spawn(move || {
-                let result = policy.retry(|_| Ok::<u32, &str>(1)).sleep(|_| {}).call();
+                let result = policy
+                    .retry(|state| {
+                        if state.attempt >= 2 {
+                            Ok::<u32, &str>(1)
+                        } else {
+                            Err("first attempt fails to force a jitter draw")
+                        }
+                    })
+                    .sleep(|_| {})
+                    .call();
                 assert_eq!(result.unwrap(), 1);
             });
         }
