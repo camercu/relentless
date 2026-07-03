@@ -13,7 +13,7 @@ use core::{
 };
 #[cfg(feature = "alloc")]
 use relentless::sleep::Sleeper;
-use relentless::{RetryPolicy, stop, wait};
+use relentless::{RetryPolicy, Wait, stop, wait};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 #[cfg(feature = "alloc")]
@@ -100,6 +100,33 @@ fn concrete_sync_retry_execution_is_allocation_free() {
 
     assert_eq!(min_allocations, 0, "concrete execution should not allocate");
     assert_eq!(min_bytes, 0, "concrete execution should not allocate bytes");
+}
+
+#[test]
+fn jittered_sync_retry_execution_is_allocation_free() {
+    let _guard = allocation_test_guard();
+    // The recommended production config: exponential backoff with full jitter.
+    // Its PRNG draw happens inside `next_wait`, so a jittered wait must not
+    // reintroduce allocation on the retry hot path.
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::exponential(Duration::ZERO).full_jitter());
+
+    // Warm up one run to avoid one-time initialization noise.
+    let _ = policy
+        .retry(|_| Err::<i32, &str>(ERROR_VALUE))
+        .sleep(instant_sleep)
+        .call();
+
+    let (min_allocations, min_bytes) = min_allocated_during(|| {
+        let _ = policy
+            .retry(|_| Err::<i32, &str>(ERROR_VALUE))
+            .sleep(instant_sleep)
+            .call();
+    });
+
+    assert_eq!(min_allocations, 0, "jittered execution should not allocate");
+    assert_eq!(min_bytes, 0, "jittered execution should not allocate bytes");
 }
 
 #[cfg(feature = "alloc")]
