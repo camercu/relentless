@@ -8,6 +8,13 @@ benchmark_target := "retry_hot_paths"
 warnings := "-D warnings"
 stable_toolchain := "+stable"
 
+# cargo driver. Defaults to plain `cargo`; set RTK_CARGO="rtk cargo" (see the
+# `ci-rtk` target) to route the compile-heavy recipes through rtk for
+# token-compressed output. Only used where rtk compresses the subcommand and the
+# output is for reading — recipes whose output is consumed (public-api snapshot,
+# tool-version parsing) stay on plain cargo.
+cargo := env("RTK_CARGO", "cargo")
+
 default:
     @just --list
 
@@ -34,7 +41,7 @@ fmt-check-taplo:
 lint: fmt-check lint-clippy lint-typos lint-deny
 
 lint-clippy:
-    cargo clippy --all-targets --all-features -- -D warnings
+    {{cargo}} clippy --all-targets --all-features -- -D warnings
 
 lint-clippy-stable:
     cargo {{stable_toolchain}} clippy --all-targets --all-features
@@ -48,25 +55,25 @@ lint-deny:
 # ── Testing ─────────────────────────────────────────────────
 
 test:
-    cargo nextest run
+    {{cargo}} nextest run
 
 test-all-features:
-    cargo nextest run --all-features
+    {{cargo}} nextest run --all-features
 
 test-no-default:
-    cargo nextest run --no-default-features
+    {{cargo}} nextest run --no-default-features
 
 test-alloc:
-    cargo nextest run --no-default-features --features alloc
+    {{cargo}} nextest run --no-default-features --features alloc
 
 test-doc:
-    RUSTDOCFLAGS="{{warnings}}" cargo test --doc
+    RUSTDOCFLAGS="{{warnings}}" {{cargo}} test --doc
 
 test-doc-no-default:
-    RUSTDOCFLAGS="{{warnings}}" cargo test --no-default-features --doc
+    RUSTDOCFLAGS="{{warnings}}" {{cargo}} test --no-default-features --doc
 
 test-readme:
-    cargo test --features tokio-sleep --doc -- readme_doctests
+    {{cargo}} test --features tokio-sleep --doc -- readme_doctests
 
 test-examples:
     cargo run --example basic-retry
@@ -76,13 +83,13 @@ test-examples:
     cargo run --example async-cancel --features tokio-sleep
 
 test-tokio-sleep:
-    cargo nextest run --test policy_async --features tokio-sleep
+    {{cargo}} nextest run --test policy_async --features tokio-sleep
 
 test-futures-timer-sleep:
-    cargo nextest run --test policy_async --features futures-timer-sleep
+    {{cargo}} nextest run --test policy_async --features futures-timer-sleep
 
 test-allocation:
-    cargo nextest run --test allocation -j 1
+    {{cargo}} nextest run --test allocation -j 1
 
 test-stable:
     cargo {{stable_toolchain}} nextest run
@@ -90,13 +97,13 @@ test-stable:
 # ── Building / checking ─────────────────────────────────────
 
 build:
-    cargo build --all-targets
+    {{cargo}} build --all-targets
 
 build-stable:
     cargo {{stable_toolchain}} build --all-targets
 
 check-no-std:
-    cargo build --target {{no_std_target}} --no-default-features
+    {{cargo}} build --target {{no_std_target}} --no-default-features
 
 check-wasm:
     cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
@@ -139,7 +146,7 @@ public-api-check:
 # ── Documentation ───────────────────────────────────────────
 
 doc:
-    RUSTDOCFLAGS="{{warnings}}" cargo test --doc --all-features
+    RUSTDOCFLAGS="{{warnings}}" {{cargo}} test --doc --all-features
     RUSTDOCFLAGS="{{warnings}}" cargo doc --all-features --no-deps
 
 # ── Benchmarks ──────────────────────────────────────────────
@@ -220,6 +227,12 @@ pre-push:
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test doc
 
 # ── CI ──────────────────────────────────────────────────────
+
+# Agent-facing CI: same steps as `ci`, but routes the compile-heavy recipes
+# (clippy/nextest/test/build) through rtk for token-compressed output. Prefer
+# this over `ci` when an agent runs the suite. Same pass/fail semantics.
+ci-rtk:
+    RTK_CARGO="rtk cargo" just ci
 
 ci:
     just lint
