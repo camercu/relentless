@@ -23,6 +23,10 @@ use std::{cell::Cell, pin::pin};
 static GLOBAL: &StatsAlloc<std::alloc::System> = &INSTRUMENTED_SYSTEM;
 
 const MAX_ATTEMPTS: u32 = 3;
+// Nonzero so the full-jitter draw actually runs: `random_duration_in` returns
+// early without touching the PRNG when the range is zero, so a zero base would
+// skip the very path this test guards.
+const JITTER_BASE: Duration = Duration::from_millis(1);
 const ERROR_VALUE: &str = "fail";
 const SUCCESS_VALUE: i32 = 7;
 const ALLOCATION_SAMPLE_RUNS: u32 = 16;
@@ -110,7 +114,7 @@ fn jittered_sync_retry_execution_is_allocation_free() {
     // reintroduce allocation on the retry hot path.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::exponential(Duration::ZERO).full_jitter());
+        .wait(wait::exponential(JITTER_BASE).full_jitter());
 
     // Warm up one run to avoid one-time initialization noise.
     let _ = policy
