@@ -131,9 +131,10 @@ enum JitterKind {
 /// across process restarts** (instances within a run are still decorrelated by a
 /// per-instance nonce). Call `with_seed` with a runtime-sourced value if you
 /// need run-to-run variation. On targets without pointer-width atomic
-/// read-modify-write ops the nonce counter is unavailable, so default-seeded
-/// instances share one stream; call [`with_nonce`](Self::with_nonce) to
-/// decorrelate them manually.
+/// read-modify-write ops the nonce counter is unavailable, so every
+/// default-seeded instance produces the same (correlated) sequence rather than
+/// being decorrelated; call [`with_nonce`](Self::with_nonce) to decorrelate
+/// them manually.
 ///
 /// The PRNG state is a single atomic on targets with 64-bit atomics, so a
 /// jittered strategy — and any policy containing one — is `Send + Sync` and
