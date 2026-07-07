@@ -194,6 +194,18 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, OX, F, 
     }
 
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
+    ///
+    /// The clock must return a monotonic "now" timestamp — a [`Duration`]
+    /// since an arbitrary fixed epoch (e.g. system boot or program start).
+    /// The library captures a baseline reading when execution starts and
+    /// computes elapsed time as `clock() - baseline`; the clock's absolute
+    /// value is never used directly.
+    ///
+    /// A clock that does not advance pins elapsed time at zero. Combined
+    /// with a stop strategy that only checks elapsed time (such as
+    /// [`stop::elapsed`](crate::stop::elapsed)) it produces an unbounded
+    /// retry loop; pair elapsed-based stops with
+    /// [`stop::attempts`](crate::stop::attempts) to stay bounded.
     #[must_use]
     pub fn elapsed_clock(mut self, clock: fn() -> Duration) -> Self {
         self.elapsed_tracker = ElapsedTracker::new(Some(clock));
@@ -203,7 +215,8 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, OX, F, 
     /// Configures a custom elapsed clock from a boxed closure.
     ///
     /// This variant supports closures with captures for test clocks and
-    /// runtime state. Requires the `alloc` feature.
+    /// runtime state. Requires the `alloc` feature. See
+    /// [`elapsed_clock`](Self::elapsed_clock) for the clock contract.
     #[cfg(feature = "alloc")]
     #[must_use]
     pub fn elapsed_clock_fn(mut self, clock: impl Fn() -> Duration + 'static) -> Self {

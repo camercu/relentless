@@ -1038,7 +1038,11 @@ configured on the execution builder and is set once per execution.
 **11.1.1** The clock function must return a monotonic timestamp — a `Duration` since an
 arbitrary fixed epoch (e.g., system boot, program start, or hardware timer
 origin). The library captures a baseline reading when execution starts and
-computes elapsed time as `clock() - baseline` on each subsequent read.
+computes elapsed time as `clock() - baseline` on each subsequent read. For
+sync executions, execution starts when `.call()` is invoked; for async
+executions, at the first poll of the future `.call()` returns. Idle time
+between configuring a builder and starting execution never consumes the
+elapsed budget.
 
 **11.1.2** With `std`, the default clock uses `std::time::Instant` internally: the
 library calls `Instant::now()` at execution start and `.elapsed()` thereafter.
