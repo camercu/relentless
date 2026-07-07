@@ -249,6 +249,11 @@ match retry(|_| Err::<(), &str>("boom")).call() {
 Builder methods follow the order: **when/until** -> **wait** -> **stop** ->
 sleep -> hooks -> stats -> call.
 
+Strategy overrides (`when`/`until`/`wait`/`stop`) are available on the
+free-function and extension-trait builders, which own their policy. Executions
+started from a shared `RetryPolicy` (`policy.retry(...)`) keep the policy's
+strategies fixed and accept only sleep, hooks, timing, and stats methods.
+
 ## MSRV
 
 Minimum supported Rust version: **1.85**.
