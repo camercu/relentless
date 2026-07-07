@@ -25,13 +25,16 @@ impl ClockSource {
     }
 }
 
-struct ClockStart {
-    source: ClockSource,
-    origin: Duration,
-}
-
+/// Tracks elapsed time for the retry loop.
+///
+/// Construction only records *which* clock to use. The baseline is captured by
+/// [`start`](Self::start) when execution begins (SPEC 11.1.1), so idle time
+/// between configuring a builder and running it never consumes the elapsed
+/// budget.
 pub(crate) struct ElapsedTracker {
-    start_clock: Option<ClockStart>,
+    source: Option<ClockSource>,
+    /// Baseline reading of `source`, captured by `start()`.
+    origin: Option<Duration>,
     // Only the `std` Instant fallback is captured here, and only when no
     // custom clock is configured — a custom clock always wins in `elapsed()`,
     // so taking `Instant::now()` then would be a wasted syscall.
@@ -41,36 +44,60 @@ pub(crate) struct ElapsedTracker {
 
 impl ElapsedTracker {
     pub(crate) fn new(clock: Option<ElapsedClockFn>) -> Self {
-        let start_clock = clock.map(|clock| ClockStart {
-            origin: clock(),
-            source: ClockSource::FnPtr(clock),
-        });
         Self {
-            #[cfg(feature = "std")]
-            start: std_instant_fallback(start_clock.is_some()),
-            start_clock,
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    pub(crate) fn new_boxed(clock: Box<dyn Fn() -> Duration>) -> Self {
-        let origin = clock();
-        Self {
-            start_clock: Some(ClockStart {
-                source: ClockSource::Boxed(clock),
-                origin,
-            }),
-            // A custom clock is always present here, so no Instant fallback.
+            source: clock.map(ClockSource::FnPtr),
+            origin: None,
             #[cfg(feature = "std")]
             start: None,
         }
     }
 
+    #[cfg(feature = "alloc")]
+    pub(crate) fn new_boxed(clock: Box<dyn Fn() -> Duration>) -> Self {
+        Self {
+            source: Some(ClockSource::Boxed(clock)),
+            origin: None,
+            #[cfg(feature = "std")]
+            start: None,
+        }
+    }
+
+    /// Captures the baseline reading. Idempotent: only the first call takes
+    /// effect, so the async loop may invoke it on every poll while only the
+    /// first poll sets the baseline.
+    pub(crate) fn start(&mut self) {
+        if self.is_started() {
+            return;
+        }
+        match &self.source {
+            Some(source) => self.origin = Some(source.call()),
+            None => {
+                #[cfg(feature = "std")]
+                {
+                    self.start = Some(Instant::now());
+                }
+            }
+        }
+    }
+
+    fn is_started(&self) -> bool {
+        #[cfg(feature = "std")]
+        {
+            self.origin.is_some() || self.start.is_some()
+        }
+
+        #[cfg(not(feature = "std"))]
+        {
+            self.origin.is_some()
+        }
+    }
+
+    /// Returns time elapsed since [`start`](Self::start), or `None` when no
+    /// clock is available or the tracker has not been started.
     pub(crate) fn elapsed(&self) -> Option<Duration> {
-        self.start_clock
-            .as_ref()
-            .map(|start_clock| start_clock.source.call().saturating_sub(start_clock.origin))
-            .or({
+        match (&self.source, self.origin) {
+            (Some(source), Some(origin)) => Some(source.call().saturating_sub(origin)),
+            _ => {
                 #[cfg(feature = "std")]
                 {
                     self.start.map(|start| start.elapsed())
@@ -80,16 +107,7 @@ impl ElapsedTracker {
                 {
                     None
                 }
-            })
-    }
-}
-
-/// Captures `Instant::now()` only when no custom clock is configured.
-#[cfg(feature = "std")]
-fn std_instant_fallback(has_custom_clock: bool) -> Option<Instant> {
-    if has_custom_clock {
-        None
-    } else {
-        Some(Instant::now())
+            }
+        }
     }
 }

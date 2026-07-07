@@ -463,6 +463,9 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Result<T, RetryError<T, E>>> {
         let mut this = self.project();
+        // Execution starts at the first poll: capture the elapsed baseline
+        // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
+        this.elapsed_tracker.start();
         let policy = this.policy.policy_ref();
         poll_async_loop(
             cx,

@@ -242,6 +242,8 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, OX, F, 
         F: RetryOp<T, E>,
         SleepFn: SyncSleep,
     {
+        // Execution starts here: capture the elapsed baseline (SPEC 11.1.1).
+        self.elapsed_tracker.start();
         let policy = self.policy.policy_ref();
         execute_sync_loop::<
             Policy::Stop,

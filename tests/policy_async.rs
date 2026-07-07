@@ -438,6 +438,44 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// 11.1.1 — the async elapsed baseline is captured at the first poll of the
+/// returned future, not when the builder is configured or `.call()` is
+/// invoked. Idle time before the future is awaited must not consume the
+/// elapsed budget.
+#[test]
+fn async_elapsed_baseline_starts_at_first_poll() {
+    reset_async_elapsed_clock();
+
+    const IDLE_BEFORE_AWAIT_MILLIS: u64 = 1_000;
+    const PER_ATTEMPT_MILLIS: u64 = 20;
+    /// Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
+    const DEADLINE: Duration = Duration::from_millis(50);
+
+    let policy = RetryPolicy::new()
+        .stop(stop::elapsed(DEADLINE))
+        .wait(wait::fixed(Duration::ZERO));
+    let sleeper = RecordingSleeper::new();
+    let call_count = Cell::new(0_u32);
+
+    let future = policy
+        .retry_async(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            async {
+                advance_async_elapsed_clock(PER_ATTEMPT_MILLIS);
+                Err::<i32, &str>("fail")
+            }
+        })
+        .elapsed_clock(async_elapsed_clock_millis)
+        .sleep(sleeper.clone())
+        .call();
+
+    advance_async_elapsed_clock(IDLE_BEFORE_AWAIT_MILLIS);
+    let result = block_on(future);
+
+    assert_eq!(call_count.get(), 3);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
 #[test]
 fn async_elapsed_stop_triggers_after_deadline() {
     reset_async_elapsed_clock();

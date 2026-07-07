@@ -1192,6 +1192,69 @@ fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// 11.1.1 — the elapsed baseline is captured when execution starts (`.call()`),
+/// not when the builder is configured. Idle time between configuring the
+/// builder and calling it must not consume the elapsed budget.
+#[test]
+fn elapsed_baseline_starts_at_call_not_builder_construction() {
+    reset_elapsed_clock();
+
+    const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
+    const PER_ATTEMPT_MILLIS: u64 = 20;
+    /// Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
+    const DEADLINE: Duration = Duration::from_millis(50);
+
+    let policy = RetryPolicy::new()
+        .stop(stop::elapsed(DEADLINE))
+        .wait(wait::fixed(Duration::ZERO));
+    let execution = policy
+        .retry(|_| {
+            advance_elapsed_clock(PER_ATTEMPT_MILLIS);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock(elapsed_clock_millis)
+        .sleep(instant_sleep)
+        .with_stats();
+
+    advance_elapsed_clock(IDLE_BEFORE_CALL_MILLIS);
+    let (result, stats) = execution.call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(stats.attempts, 3);
+}
+
+/// 11.1.1 — same call-time baseline contract for the boxed-closure clock
+/// (`.elapsed_clock_fn`), which snapshots through separate construction code.
+#[cfg(feature = "alloc")]
+#[test]
+fn elapsed_baseline_starts_at_call_with_boxed_clock() {
+    const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
+    const PER_ATTEMPT_MILLIS: u64 = 20;
+    /// Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
+    const DEADLINE: Duration = Duration::from_millis(50);
+
+    let clock = std::rc::Rc::new(Cell::new(0_u64));
+    let policy = RetryPolicy::new()
+        .stop(stop::elapsed(DEADLINE))
+        .wait(wait::fixed(Duration::ZERO));
+    let op_clock = clock.clone();
+    let reader_clock = clock.clone();
+    let execution = policy
+        .retry(move |_| {
+            op_clock.set(op_clock.get() + PER_ATTEMPT_MILLIS);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock_fn(move || Duration::from_millis(reader_clock.get()))
+        .sleep(instant_sleep)
+        .with_stats();
+
+    clock.set(clock.get() + IDLE_BEFORE_CALL_MILLIS);
+    let (result, stats) = execution.call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(stats.attempts, 3);
+}
+
 /// 5.4
 #[test]
 fn when_and_until_last_call_wins() {
