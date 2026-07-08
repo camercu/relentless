@@ -254,7 +254,7 @@ impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     /// Configures a custom elapsed clock for elapsed-based stop conditions.
     ///
     /// The clock must return a monotonic "now" timestamp; the baseline is
-    /// captured at the first poll of the returned future. See
+    /// captured at the first poll of the future returned by `.call()`. See
     /// [`SyncRetryExec::elapsed_clock`](crate::SyncRetryExec::elapsed_clock)
     /// for the full clock contract, including the unbounded-loop hazard of a
     /// non-advancing clock.
