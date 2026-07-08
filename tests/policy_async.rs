@@ -448,7 +448,7 @@ fn async_elapsed_baseline_starts_at_first_poll() {
 
     const IDLE_BEFORE_AWAIT_MILLIS: u64 = 1_000;
     const PER_ATTEMPT_MILLIS: u64 = 20;
-    /// Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
+    // Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
     const DEADLINE: Duration = Duration::from_millis(50);
 
     let policy = RetryPolicy::new()
