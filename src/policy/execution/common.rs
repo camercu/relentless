@@ -384,7 +384,7 @@ pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, SleepFn, T, E, const COL
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &mut SleepFn,
-    elapsed_tracker: &ElapsedTracker,
+    elapsed_tracker: &mut ElapsedTracker,
     timeout: Option<Duration>,
 ) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
 where
@@ -397,6 +397,9 @@ where
     F: RetryOp<T, E>,
     SleepFn: SyncSleep,
 {
+    // Execution starts here: capture the elapsed baseline (SPEC 11.1.1).
+    elapsed_tracker.start();
+
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
     // The clamped delay applied before the current attempt, fed forward so
@@ -473,7 +476,7 @@ pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, Slee
     previous_delay: &mut Option<Duration>,
     collect_stats: bool,
     final_stats: &mut Option<RetryStats>,
-    elapsed_tracker: &ElapsedTracker,
+    elapsed_tracker: &mut ElapsedTracker,
     timeout: Option<Duration>,
     completed_type_name: &'static str,
 ) -> Poll<Result<T, RetryError<T, E>>>
@@ -489,6 +492,10 @@ where
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
 {
+    // Execution starts at the first poll: capture the elapsed baseline
+    // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
+    elapsed_tracker.start();
+
     debug_assert!(
         timeout.is_none() || elapsed_tracker.elapsed().is_some(),
         "timeout configured without an elapsed clock — timeout will have no effect"
