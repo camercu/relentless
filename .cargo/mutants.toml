@@ -1,0 +1,5 @@
+# Run the test suite under nextest so its slow-timeout (.config/nextest.toml)
+# kills hung tests before cargo-mutants' own timeout fires. Infinite-loop
+# mutants (e.g. `should_stop -> false`) then fail the suite and are counted
+# as caught instead of as timeouts.
+test_tool = "nextest"

@@ -95,8 +95,10 @@ out feature-gated code, so mutants there survive trivially; run
 `just mutants-sleep-adapters` to also cover the host-testable sleep adapters.
 When reading results, note that mutants in `cfg`-gated fallbacks for other
 targets (e.g. the non-atomic `SplitMix64::advance`) cannot be killed on the
-host, and that infinite-loop mutants (e.g. `should_stop -> false`) show up as
-timeouts rather than as caught.
+host. Infinite-loop mutants (e.g. `should_stop -> false`) count as caught, not
+as timeouts: cargo-mutants runs the suite under nextest (`.cargo/mutants.toml`),
+whose slow-timeout (`.config/nextest.toml`) kills a hung test and fails the run
+before cargo-mutants' own timeout can fire.
 
 ## Code coverage
 
