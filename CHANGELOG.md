@@ -1,3 +1,12 @@
+## [0.11.1](https://github.com/camercu/relentless/compare/v0.11.0...v0.11.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **policy:** capture elapsed baseline at execution start ([ed28f35](https://github.com/camercu/relentless/commit/ed28f352ab0af1976868f1639409d97ebc0cf900))
+* **sleep:** saturate embassy conversion without overflow panic ([9528013](https://github.com/camercu/relentless/commit/952801384e92eaaf36b6bf719076431fcf8594dc))
+* **wait:** keep zero-initial exponential at zero past f64 overflow ([9f9f1a3](https://github.com/camercu/relentless/commit/9f9f1a3bc96b274c9a88eac47af702008fef17b4))
+
 ## [0.11.0](https://github.com/camercu/relentless/compare/v0.10.0...v0.11.0) (2026-07-02)
 
 
