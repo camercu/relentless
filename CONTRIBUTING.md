@@ -90,7 +90,13 @@ pre-release gate and deadlock the release. `just check-msrv` compiles the crate
 with the declared minimum supported Rust version and runs as part of `just ci`.
 
 `just mutants` runs `cargo-mutants` for mutation testing. This is not part of
-CI — run it periodically to find test coverage gaps.
+CI — run it periodically to find test coverage gaps. The default run compiles
+out feature-gated code, so mutants there survive trivially; run
+`just mutants-sleep-adapters` to also cover the host-testable sleep adapters.
+When reading results, note that mutants in `cfg`-gated fallbacks for other
+targets (e.g. the non-atomic `SplitMix64::advance`) cannot be killed on the
+host, and that infinite-loop mutants (e.g. `should_stop -> false`) show up as
+timeouts rather than as caught.
 
 ## Code coverage
 

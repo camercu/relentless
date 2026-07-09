@@ -175,6 +175,12 @@ coverage-lcov:
 mutants *args:
     cargo mutants {{args}}
 
+# The default run compiles out feature-gated sleep adapters, so their mutants
+# trivially survive. This covers the host-testable set; `gloo` is wasm-only
+# and cannot be mutation-tested on the host.
+mutants-sleep-adapters:
+    cargo mutants --file src/sleep.rs --features tokio-sleep,embassy-sleep,futures-timer-sleep
+
 # ── Tool versions ───────────────────────────────────────────
 
 check-tool-versions:
