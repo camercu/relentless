@@ -123,10 +123,13 @@ check-msrv:
 semver-check:
     cargo +stable semver-checks check-release
 
-# Remove build artifacts and cargo-mutants output.
+# Remove run artifacts: build tree, cargo-mutants output, bacon locations.
+# Deliberately keeps node_modules (environment, restored by npm ci) and
+# proptest-regressions (committed corpus of past test failures).
 clean:
     cargo clean
     rm -rf mutants.out mutants.out.old
+    rm -f .bacon-locations
 
 # ── Public API surface ──────────────────────────────────────
 # cargo-public-api builds rustdoc JSON, which is nightly-only, so these
