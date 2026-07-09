@@ -175,11 +175,16 @@ coverage-lcov:
 mutants *args:
     cargo mutants {{args}}
 
-# The default run compiles out feature-gated sleep adapters, so their mutants
-# trivially survive. This covers the host-testable set; `gloo` is wasm-only
-# and cannot be mutation-tested on the host.
-mutants-sleep-adapters:
-    cargo mutants --file src/sleep.rs --features tokio-sleep,embassy-sleep,futures-timer-sleep
+# Mutation-test only code changed since `base` (including uncommitted
+# changes): fast gate that new/changed code arrives with killing tests,
+# without paying for a full sweep. CI runs this per push/PR.
+mutants-diff base="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    diff_file=$(mktemp)
+    trap 'rm -f "$diff_file"' EXIT
+    git diff "$(git merge-base "{{base}}" HEAD)" > "$diff_file"
+    cargo mutants --in-diff "$diff_file"
 
 # ── Tool versions ───────────────────────────────────────────
 

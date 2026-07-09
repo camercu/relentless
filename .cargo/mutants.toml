@@ -3,3 +3,8 @@
 # mutants (e.g. `should_stop -> false`) then fail the suite and are counted
 # as caught instead of as timeouts.
 test_tool = "nextest"
+
+# Compile the host-testable feature-gated sleep adapters into every run;
+# without them their mutants sit in cfg'd-out code and trivially survive.
+# (`gloo-timers-sleep` is wasm-only and stays uncoverable on the host.)
+additional_cargo_args = ["--features", "tokio-sleep,embassy-sleep,futures-timer-sleep"]

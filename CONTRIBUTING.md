@@ -89,16 +89,18 @@ bump to release time, so an intentional breaking change would otherwise fail the
 pre-release gate and deadlock the release. `just check-msrv` compiles the crate
 with the declared minimum supported Rust version and runs as part of `just ci`.
 
-`just mutants` runs `cargo-mutants` for mutation testing. This is not part of
-CI — run it periodically to find test coverage gaps. The default run compiles
-out feature-gated code, so mutants there survive trivially; run
-`just mutants-sleep-adapters` to also cover the host-testable sleep adapters.
-When reading results, note that mutants in `cfg`-gated fallbacks for other
-targets (e.g. the non-atomic `SplitMix64::advance`) cannot be killed on the
-host. Infinite-loop mutants (e.g. `should_stop -> false`) count as caught, not
-as timeouts: cargo-mutants runs the suite under nextest (`.cargo/mutants.toml`),
-whose slow-timeout (`.config/nextest.toml`) kills a hung test and fails the run
-before cargo-mutants' own timeout can fire.
+`just mutants` runs a full `cargo-mutants` sweep — run it periodically to find
+test coverage gaps. `just mutants-diff [base]` mutation-tests only code changed
+since `base` (default `origin/main`), and CI runs it on every push and pull
+request as a fast gate that changed code arrives with killing tests.
+`.cargo/mutants.toml` enables the host-testable sleep-adapter features so
+feature-gated code is covered too. When reading results, note that mutants in
+`cfg`-gated code for other targets (the wasm-only `gloo` adapter, the
+non-atomic `SplitMix64::advance` fallback) cannot be killed on the host.
+Infinite-loop mutants (e.g. `should_stop -> false`) count as caught, not as
+timeouts: cargo-mutants runs the suite under nextest (`.cargo/mutants.toml`),
+whose slow-timeout (`.config/nextest.toml`) kills a hung test and fails the
+run before cargo-mutants' own timeout can fire.
 
 ## Code coverage
 
