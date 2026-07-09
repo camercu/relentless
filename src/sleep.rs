@@ -88,15 +88,46 @@ fn embassy_sleep_fn(dur: Duration) -> embassy_time::Timer {
     embassy_time::Timer::after(to_embassy_duration(dur))
 }
 
-/// Embassy uses microseconds as a `u64`; saturate rather than panic on very large durations.
+/// Embassy counts ticks in a `u64`; saturate rather than panic on very large durations.
+///
+/// Computes ticks in `u128` (mirroring `embassy_time::Duration::from_micros`,
+/// including its round-up-to-a-tick behavior) because Embassy's own `u64`
+/// conversion arithmetic overflows near `u64::MAX` microseconds.
 #[cfg(feature = "embassy-sleep")]
 fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
-    const MAX_U64_AS_U128: u128 = u64::MAX as u128;
-    let micros_u128 = dur.as_micros();
-    let micros = if micros_u128 > MAX_U64_AS_U128 {
-        u64::MAX
-    } else {
-        micros_u128 as u64
-    };
-    embassy_time::Duration::from_micros(micros)
+    const MICROS_PER_SEC: u128 = 1_000_000;
+    let ticks_ceil = dur
+        .as_micros()
+        .saturating_mul(u128::from(embassy_time::TICK_HZ))
+        .div_ceil(MICROS_PER_SEC);
+    let ticks = u64::try_from(ticks_ceil).unwrap_or(u64::MAX);
+    embassy_time::Duration::from_ticks(ticks)
+}
+
+#[cfg(all(test, feature = "embassy-sleep"))]
+mod tests {
+    use super::to_embassy_duration;
+    use crate::compat::Duration;
+
+    const ARBITRARY_MICROS: u64 = 1_500;
+
+    #[test]
+    fn to_embassy_duration_preserves_micros() {
+        assert_eq!(
+            to_embassy_duration(Duration::from_micros(ARBITRARY_MICROS)),
+            embassy_time::Duration::from_micros(ARBITRARY_MICROS)
+        );
+    }
+
+    /// Embassy counts ticks in a `u64`; larger core durations must clamp to
+    /// Embassy's maximum rather than truncate or panic. (Regression: clamping
+    /// *microseconds* to `u64::MAX` still panicked, because Embassy's
+    /// `from_micros` ceiling-division overflows at that input.)
+    #[test]
+    fn to_embassy_duration_saturates_at_embassy_max() {
+        assert_eq!(
+            to_embassy_duration(Duration::MAX),
+            embassy_time::Duration::MAX
+        );
+    }
 }
