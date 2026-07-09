@@ -376,9 +376,9 @@ fn decorrelated_jitter_with_cap_respects_max() {
 }
 
 /// Pins the seeded jitter sequence to reference values computed with an
-/// independent SplitMix64 implementation (state += golden gamma, then the
+/// independent `SplitMix64` implementation (state += golden gamma, then the
 /// standard 30/27/31 xor-shift finalizer; instance nonce = one draw from a
-/// generator seeded with the seed itself, XORed back into the seed).
+/// generator seeded with the seed itself, xor'd back into the seed).
 ///
 /// Range/determinism checks alone cannot catch a degraded generator — a PRNG
 /// mutated to emit constants or weakened mixing still stays in range and
