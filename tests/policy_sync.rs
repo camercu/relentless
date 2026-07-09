@@ -1356,6 +1356,47 @@ fn timeout_clamps_delay_to_remaining_budget() {
     assert_eq!(sleep_calls.get(), 0);
 }
 
+/// 11.4.2
+///
+/// Unlike the zero-budget case above, here each attempt leaves budget on the
+/// table, so the sleeper must observe the *clamped* delays — not the wait
+/// strategy's raw output.
+#[test]
+fn timeout_clamps_delay_to_partial_remaining_budget() {
+    reset_elapsed_clock();
+
+    const TIMEOUT: Duration = Duration::from_millis(100);
+    const RAW_DELAY: Duration = Duration::from_millis(80);
+    const OP_RUNTIME_MILLIS: u64 = 30;
+
+    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(10))
+        .wait(wait::fixed(RAW_DELAY));
+
+    let result = policy
+        .retry(|_| {
+            advance_elapsed_clock(OP_RUNTIME_MILLIS);
+            Err::<i32, &str>("fail")
+        })
+        .elapsed_clock(elapsed_clock_millis)
+        .timeout(TIMEOUT)
+        .sleep(recording_sleep(&sleeps))
+        .call();
+
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    // Elapsed after attempts 1-3: 30, 60, 90 ms → remaining budget 70, 40,
+    // 10 ms, each below the raw 80 ms delay. Attempt 4 exceeds the deadline.
+    assert_eq!(
+        *sleeps.borrow(),
+        vec![
+            Duration::from_millis(70),
+            Duration::from_millis(40),
+            Duration::from_millis(10),
+        ]
+    );
+}
+
 /// 11.1.2
 #[test]
 #[cfg(feature = "std")]
