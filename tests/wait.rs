@@ -617,3 +617,11 @@ fn wait_all_basic_types_implement_partial_eq() {
     let exp2 = wait::exponential(BASE);
     assert_eq!(exp1, exp2);
 }
+
+/// A boxed strategy delegates `next_wait` to the boxed impl.
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_wait_delegates_next_wait() {
+    let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE));
+    assert_eq!(boxed.next_wait(&make_state(1)), BASE);
+}

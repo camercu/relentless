@@ -472,3 +472,21 @@ fn predicate_named_combinators_match_operator_forms() {
         op_and.should_retry(&Ok(1_u32))
     );
 }
+
+/// Boxed predicates delegate `should_retry` to the boxed impl — all three
+/// `dyn` variants (plain, `+ Send`, `+ Send + Sync`).
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_dyn_predicate_delegates_should_retry() {
+    let plain: Box<dyn Predicate<u32, TestError>> = Box::new(predicate::any_error());
+    let send: Box<dyn Predicate<u32, TestError> + Send> = Box::new(predicate::any_error());
+    let send_sync: Box<dyn Predicate<u32, TestError> + Send + Sync> =
+        Box::new(predicate::any_error());
+
+    assert!(plain.should_retry(&err(TestError::Retryable)));
+    assert!(!plain.should_retry(&ok(ARBITRARY_OK_VALUE)));
+    assert!(send.should_retry(&err(TestError::Retryable)));
+    assert!(!send.should_retry(&ok(ARBITRARY_OK_VALUE)));
+    assert!(send_sync.should_retry(&err(TestError::Retryable)));
+    assert!(!send_sync.should_retry(&ok(ARBITRARY_OK_VALUE)));
+}

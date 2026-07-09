@@ -399,3 +399,12 @@ fn stop_any_bitand_produces_stop_all() {
     let state = make_state_with_elapsed(1, DEADLINE);
     assert!(!s.should_stop(&state));
 }
+
+/// A boxed strategy delegates `should_stop` to the boxed impl.
+#[cfg(feature = "alloc")]
+#[test]
+fn boxed_stop_delegates_should_stop() {
+    let boxed: Box<dyn Stop> = Box::new(stop::attempts(MAX_ATTEMPTS));
+    assert!(!boxed.should_stop(&make_state(MAX_ATTEMPTS - 1)));
+    assert!(boxed.should_stop(&make_state(MAX_ATTEMPTS)));
+}
