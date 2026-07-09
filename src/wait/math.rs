@@ -25,12 +25,10 @@ pub(super) fn saturating_duration_mul_f64(dur: Duration, mul: f64) -> Duration {
     if dur == Duration::ZERO {
         return Duration::ZERO;
     }
-    if !mul.is_finite() || mul <= 0.0 {
-        if mul == f64::INFINITY {
-            return Duration::MAX;
-        }
-        return Duration::ZERO;
-    }
+    // NaN and non-positive multipliers need no guard: the `as u128` cast
+    // below saturates NaN and negative products to 0, yielding ZERO. An
+    // infinite multiplier produces an infinite product, caught by the
+    // overflow check.
     let nanos = dur.as_nanos() as f64 * mul;
     // `Duration::MAX.as_nanos()` rounds *up* to the next f64, so any `nanos`
     // below this threshold truncates to at most u64::MAX whole seconds —
@@ -61,7 +59,7 @@ pub(super) fn pow_nonnegative_f64(base: f64, exponent: u32) -> f64 {
     let mut factor = base;
     let mut remaining = exponent;
 
-    while remaining > 0 {
+    loop {
         if remaining & 1 == 1 {
             result *= factor;
             if !result.is_finite() {
@@ -69,13 +67,12 @@ pub(super) fn pow_nonnegative_f64(base: f64, exponent: u32) -> f64 {
             }
         }
         remaining >>= 1;
-        if remaining > 0 {
-            factor *= factor;
-            if !factor.is_finite() {
-                factor = f64::INFINITY;
-            }
+        if remaining == 0 {
+            return result;
+        }
+        factor *= factor;
+        if !factor.is_finite() {
+            factor = f64::INFINITY;
         }
     }
-
-    result
 }
