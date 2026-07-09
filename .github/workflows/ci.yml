@@ -63,3 +63,40 @@ jobs:
           tool: just,cargo-nextest
       - name: just ci-stable
         run: just ci-stable
+
+  # Mutation-tests only the code changed by this push/PR: fast gate that
+  # changed code arrives with tests that kill its mutants.
+  mutants-diff:
+    name: Mutants (diff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.tools.outputs.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just@${{ steps.tools.outputs.just }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},cargo-mutants@${{ steps.tools.outputs.cargo_mutants }}
+      - name: Determine diff base
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] \
+              && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          else
+            # New branch or unknown before-commit: fall back to the parent.
+            echo "base=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: just mutants-diff
+        run: just mutants-diff "${{ steps.base.outputs.base }}"
