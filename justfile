@@ -123,6 +123,11 @@ check-msrv:
 semver-check:
     cargo +stable semver-checks check-release
 
+# Remove build artifacts and cargo-mutants output.
+clean:
+    cargo clean
+    rm -rf mutants.out mutants.out.old
+
 # ── Public API surface ──────────────────────────────────────
 # cargo-public-api builds rustdoc JSON, which is nightly-only, so these
 # recipes require a nightly toolchain (rustup installs one on demand).
