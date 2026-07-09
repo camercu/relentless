@@ -16,11 +16,15 @@ pub(super) fn saturating_duration_mul(dur: Duration, mul: u32) -> Duration {
 
 /// Multiplies a `Duration` by an `f64`, saturating on overflow.
 ///
-/// Returns `Duration::ZERO` for non-positive or NaN multipliers.
+/// Returns `Duration::ZERO` for a zero duration (regardless of multiplier)
+/// and for non-positive or NaN multipliers.
 /// Returns `Duration::MAX` when the result overflows.
 pub(super) fn saturating_duration_mul_f64(dur: Duration, mul: f64) -> Duration {
     const NANOS_PER_SEC: u128 = 1_000_000_000;
 
+    if dur == Duration::ZERO {
+        return Duration::ZERO;
+    }
     if !mul.is_finite() || mul <= 0.0 {
         if mul == f64::INFINITY {
             return Duration::MAX;
@@ -28,13 +32,13 @@ pub(super) fn saturating_duration_mul_f64(dur: Duration, mul: f64) -> Duration {
         return Duration::ZERO;
     }
     let nanos = dur.as_nanos() as f64 * mul;
+    // `Duration::MAX.as_nanos()` rounds *up* to the next f64, so any `nanos`
+    // below this threshold truncates to at most u64::MAX whole seconds —
+    // `Duration::new` below cannot overflow.
     if nanos >= Duration::MAX.as_nanos() as f64 {
         return Duration::MAX;
     }
     let total_nanos = nanos as u128;
-    if total_nanos / NANOS_PER_SEC > u128::from(u64::MAX) {
-        return Duration::MAX;
-    }
     Duration::new(
         (total_nanos / NANOS_PER_SEC) as u64,
         (total_nanos % NANOS_PER_SEC) as u32,

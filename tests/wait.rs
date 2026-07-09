@@ -625,3 +625,20 @@ fn boxed_wait_delegates_next_wait() {
     let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE));
     assert_eq!(boxed.next_wait(&make_state(1)), BASE);
 }
+
+/// 3.2.4 — `initial * 2^(attempt - 1)` with saturating arithmetic: a zero
+/// initial delay stays zero at every attempt, including attempts where the
+/// f64 multiplier `2^(attempt - 1)` overflows to infinity. (Regression: the
+/// overflow shortcut returned `Duration::MAX` even for a zero base.)
+#[test]
+fn exponential_with_zero_initial_stays_zero_past_multiplier_overflow() {
+    const MULTIPLIER_OVERFLOW_ATTEMPT: u32 = 2000;
+
+    let strategy = wait::exponential(Duration::ZERO);
+
+    assert_eq!(strategy.next_wait(&make_state(1)), Duration::ZERO);
+    assert_eq!(
+        strategy.next_wait(&make_state(MULTIPLIER_OVERFLOW_ATTEMPT)),
+        Duration::ZERO
+    );
+}
