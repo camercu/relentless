@@ -130,4 +130,13 @@ mod tests {
             embassy_time::Duration::MAX
         );
     }
+
+    proptest::proptest! {
+        /// The conversion is total: no core `Duration` may panic it, at any
+        /// tick rate. (The regression above lived exactly at this edge.)
+        #[test]
+        fn to_embassy_duration_never_panics(secs in proptest::prelude::any::<u64>(), nanos in 0..1_000_000_000_u32) {
+            let _ = to_embassy_duration(Duration::new(secs, nanos));
+        }
+    }
 }
