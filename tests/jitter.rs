@@ -374,3 +374,32 @@ fn decorrelated_jitter_with_cap_respects_max() {
         );
     }
 }
+
+/// Pins the seeded jitter sequence to reference values computed with an
+/// independent SplitMix64 implementation (state += golden gamma, then the
+/// standard 30/27/31 xor-shift finalizer; instance nonce = one draw from a
+/// generator seeded with the seed itself, XORed back into the seed).
+///
+/// Range/determinism checks alone cannot catch a degraded generator — a PRNG
+/// mutated to emit constants or weakened mixing still stays in range and
+/// still reproduces per seed. Known answers pin the full pipeline: nonce
+/// derivation, state advance, finalizer, and the inclusive `[0, base]` draw.
+#[test]
+fn jitter_with_seed_matches_reference_splitmix64_vector() {
+    const VECTOR_SEED: u64 = 0x0123_4567_89AB_CDEF;
+    const VECTOR_BASE: Duration = Duration::from_nanos(1_000_000);
+    const EXPECTED_NANOS: [u64; 4] = [531_209, 674_557, 751_447, 96_937];
+
+    let strategy = wait::fixed(VECTOR_BASE)
+        .full_jitter()
+        .with_seed(VECTOR_SEED);
+
+    let drawn: Vec<Duration> = (1..=EXPECTED_NANOS.len() as u32)
+        .map(|attempt| strategy.next_wait(&state(attempt)))
+        .collect();
+    let expected: Vec<Duration> = EXPECTED_NANOS
+        .into_iter()
+        .map(Duration::from_nanos)
+        .collect();
+    assert_eq!(drawn, expected);
+}
