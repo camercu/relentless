@@ -41,7 +41,9 @@ Use this loop for every feature-development iteration.
   `just check-wasm`, `just doc`, or `just bench-no-run`.
 - After each substantive code change, run the smallest `just` command that can
   catch regressions in that area before moving on.
-- Before every commit, run `just pre-commit`.
+- Before every commit, run `just fmt` then `just pre-commit`. The pre-commit
+  hook only checks formatting; `just fmt` fixes it, avoiding a failed-commit
+  retry loop.
 - Before handing work back for review or declaring the feature complete, run
   `just pre-push`.
 - Run `just ci` before merge or when you need the full pinned-toolchain gate.
