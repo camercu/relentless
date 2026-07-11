@@ -3,6 +3,9 @@
 //! [`VirtualClock`] lets you test retry behavior — backoff schedules, timeout
 //! budgets, attempt counts — without real sleeping: its sleep adapters record
 //! each requested sleep and advance virtual time instead of blocking.
+//!
+//! The `testing-with-virtual-clock` example shows the recommended
+//! dependency-injection pattern for making production retry code testable.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::vec::Vec;
