@@ -8,7 +8,9 @@ test_tool = "nextest"
 # always fires first; without this the default minimum is exactly 20s — a race.
 minimum_test_timeout = 30
 
-# Compile the host-testable feature-gated sleep adapters into every run;
-# without them their mutants sit in cfg'd-out code and trivially survive.
-# (`gloo-timers-sleep` is wasm-only and stays uncoverable on the host.)
-additional_cargo_args = ["--features", "tokio-sleep,embassy-sleep,futures-timer-sleep"]
+# Compile every host-testable feature-gated module into each run; without its
+# feature a module sits in cfg'd-out code where mutants compile identically to
+# baseline and trivially survive as false "missed". Covers the sleep adapters
+# and `test-util` (VirtualClock). (`gloo-timers-sleep` is wasm-only and stays
+# uncoverable on the host.)
+additional_cargo_args = ["--features", "tokio-sleep,embassy-sleep,futures-timer-sleep,test-util"]
