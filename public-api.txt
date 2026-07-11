@@ -545,6 +545,29 @@ pub fn alloc::boxed::Box<S>::should_stop(&self, state: &relentless::RetryState) 
 pub fn relentless::stop::attempts(max: u32) -> relentless::stop::StopAfterAttempts
 pub fn relentless::stop::elapsed(deadline: core::time::Duration) -> relentless::stop::StopAfterElapsed
 pub fn relentless::stop::never() -> relentless::stop::StopNever
+pub mod relentless::test_util
+pub struct relentless::test_util::VirtualClock
+impl relentless::test_util::VirtualClock
+pub fn relentless::test_util::VirtualClock::advance(&self, dur: core::time::Duration)
+pub fn relentless::test_util::VirtualClock::async_sleep(&self) -> impl core::ops::function::Fn(core::time::Duration) -> core::future::ready::Ready<()> + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
+pub fn relentless::test_util::VirtualClock::clock(&self) -> impl core::ops::function::Fn() -> core::time::Duration + core::clone::Clone + core::marker::Send + core::marker::Sync + 'static
+pub fn relentless::test_util::VirtualClock::new() -> Self
+pub fn relentless::test_util::VirtualClock::now(&self) -> core::time::Duration
+pub fn relentless::test_util::VirtualClock::sleeps(&self) -> alloc::vec::Vec<core::time::Duration>
+pub fn relentless::test_util::VirtualClock::sync_sleep(&self) -> impl core::ops::function::FnMut(core::time::Duration) + core::marker::Send + 'static
+impl core::clone::Clone for relentless::test_util::VirtualClock
+pub fn relentless::test_util::VirtualClock::clone(&self) -> relentless::test_util::VirtualClock
+impl core::default::Default for relentless::test_util::VirtualClock
+pub fn relentless::test_util::VirtualClock::default() -> relentless::test_util::VirtualClock
+impl core::fmt::Debug for relentless::test_util::VirtualClock
+pub fn relentless::test_util::VirtualClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for relentless::test_util::VirtualClock
+impl core::marker::Send for relentless::test_util::VirtualClock
+impl core::marker::Sync for relentless::test_util::VirtualClock
+impl core::marker::Unpin for relentless::test_util::VirtualClock
+impl core::marker::UnsafeUnpin for relentless::test_util::VirtualClock
+impl core::panic::unwind_safe::RefUnwindSafe for relentless::test_util::VirtualClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::test_util::VirtualClock
 pub mod relentless::wait
 pub struct relentless::wait::Jittered<W>
 impl<W> relentless::wait::Jittered<W>

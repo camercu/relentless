@@ -47,6 +47,9 @@ Runtime adapter helpers are feature-gated separately:
 - `gloo-timers`: `sleep::gloo()` on `wasm32`
 - `futures-timer`: `sleep::futures_timer()`
 
+The `test-util` feature (implies `std`) adds the `test_util` module with the
+`VirtualClock` deterministic test clock (see 12.4).
+
 `alloc` is not required for async retry itself. It is required only for
 closure-based elapsed clocks and registering more than one hook of the same
 kind on a single execution builder.
@@ -1180,6 +1183,36 @@ Use this when the policy does not need to cross thread boundaries.
 No public type aliases are provided for boxed policy types. Users who need to
 name the type can write it explicitly or use `impl` return types.
 
+### 12.4 Virtual-clock test infrastructure
+
+With `test-util` (implies `std`; intended for host-side testing only, not
+production dependencies):
+
+The `test_util` module exports `VirtualClock`, a deterministic clock for
+testing retry behavior without real sleeping.
+
+- **12.4.1** `VirtualClock::new()` starts at virtual time zero with no recorded
+  sleeps. `Clone` yields a handle to the same underlying clock (shared state).
+  `Default` is equivalent to `new()`.
+- **12.4.2** `.sync_sleep()` returns an `impl FnMut(Duration) + Send + 'static`
+  for the sync builder's `.sleep(...)`. `.async_sleep()` returns an
+  `impl Fn(Duration) -> Ready<()> + Clone + Send + Sync + 'static` satisfying
+  the blanket `Sleeper` impl for the async builder's `.sleep(...)`. Both record
+  the requested duration and advance virtual time by it instead of waiting;
+  the async future completes immediately.
+- **12.4.3** `.clock()` returns an
+  `impl Fn() -> Duration + Clone + Send + Sync + 'static` reading current
+  virtual time, for `.elapsed_clock_fn(...)`. Pairing it with a sleep adapter
+  from the same clock makes timeout and elapsed-stop behavior fully
+  deterministic (see 11).
+- **12.4.4** `.now()` returns current virtual time. `.advance(dur)` adds `dur`
+  to virtual time without recording a sleep (simulates time passing inside an
+  attempt). All time arithmetic saturates at `Duration::MAX`.
+- **12.4.5** `.sleeps()` returns every sleep requested so far, in request
+  order.
+- **12.4.6** All methods take `&self`; the shared state is `Send + Sync`
+  (mutex-guarded), so adapters may be used from multi-threaded executors.
+
 ## 13. Public API surface
 
 The following items are part of the supported surface for new code.
@@ -1242,6 +1275,10 @@ Free functions:
 `sleep` module:
 
 - constructors: `tokio`, `embassy`, `gloo`, `futures_timer` (feature-gated)
+
+`test_util` module (with `test-util`):
+
+- types: `VirtualClock`
 
 ### 13.3 Combinator type opacity
 

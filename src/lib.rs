@@ -222,6 +222,7 @@
 //! |------|---------|
 //! | `std` (default) | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
 //! | `alloc` | Boxed policies, closure elapsed clocks, multiple hooks per point |
+//! | `test-util` | [`test_util::VirtualClock`] — deterministic testing of retry behavior without real sleeps |
 //! | `tokio-sleep` | `sleep::tokio()` async sleep adapter |
 //! | `embassy-sleep` | `sleep::embassy()` async sleep adapter |
 //! | `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
@@ -256,6 +257,8 @@ pub mod sleep;
 mod state;
 mod stats;
 pub mod stop;
+#[cfg(feature = "test-util")]
+pub mod test_util;
 pub mod wait;
 
 pub use error::{RetryError, RetryResult};

@@ -46,6 +46,10 @@ std = ["alloc", "embassy-time?/std"]
 #        and multiple hooks per hook point. Async retry itself does not require it.
 alloc = []
 
+# test-util: deterministic virtual-clock test infrastructure (VirtualClock) for
+#            testing retry behavior without real sleeps. Host-side testing only.
+test-util = ["std"]
+
 # Runtime-specific async sleep helper constructors. Multiple adapters can be
 # enabled together; callers choose explicitly at `.sleep(...)`.
 tokio-sleep = ["dep:tokio", "std"]
