@@ -34,6 +34,11 @@ exclude = [
 ]
 categories = ["asynchronous", "no-std", "rust-patterns"]
 
+# Build docs.rs documentation with every feature enabled so feature-gated APIs
+# (sleep adapters, test_util) are visible there.
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["std"]
 
