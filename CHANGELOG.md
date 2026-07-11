@@ -1,3 +1,15 @@
+## [0.12.0](https://github.com/camercu/relentless/compare/v0.11.1...v0.12.0) (2026-07-11)
+
+
+### Features
+
+* **test-util:** add VirtualClock deterministic test clock ([07890bf](https://github.com/camercu/relentless/commit/07890bf21faec177232a9e6cddd5e963de47fd2b))
+
+
+### Bug Fixes
+
+* **hooks:** pass previous_delay to before_attempt state ([f50972d](https://github.com/camercu/relentless/commit/f50972d223e14a9293782ce19120792d15b2a528))
+
 ## [0.11.1](https://github.com/camercu/relentless/compare/v0.11.0...v0.11.1) (2026-07-09)
 
 
