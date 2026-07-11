@@ -52,6 +52,29 @@ fn before_attempt_and_after_attempt_fire_at_defined_points() {
     );
 }
 
+/// SPEC 3.6: `RetryState.previous_delay` is "the delay applied before this
+/// attempt", shared with the `before_attempt` hook — `None` only on the first
+/// attempt.
+#[test]
+fn before_attempt_sees_previous_delay() {
+    let delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let _ = policy
+        .retry(|_| Err::<i32, _>("fail"))
+        .before_attempt(|state| delays.borrow_mut().push(state.previous_delay))
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(
+        *delays.borrow(),
+        vec![None, Some(WAIT_DURATION), Some(WAIT_DURATION)]
+    );
+}
+
 #[test]
 fn after_attempt_runs_after_predicate_evaluation() {
     let predicate_calls = Cell::new(0_u32);

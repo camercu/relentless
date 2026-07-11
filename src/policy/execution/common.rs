@@ -234,10 +234,11 @@ pub(crate) fn fire_before_attempt<BA, AA, OX>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
+    previous_delay: Option<Duration>,
 ) where
     BA: BeforeAttemptHook,
 {
-    let before_state = RetryState::new(attempt, elapsed);
+    let before_state = RetryState::new(attempt, elapsed).with_previous_delay(previous_delay);
     hooks.before_attempt.call(&before_state);
 }
 
@@ -412,7 +413,7 @@ where
     );
 
     loop {
-        fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed());
+        fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
 
         let state =
             RetryState::new(attempt, elapsed_tracker.elapsed()).with_previous_delay(previous_delay);
@@ -504,7 +505,7 @@ where
     loop {
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
-                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed());
+                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed(), *previous_delay);
 
                 let state = RetryState::new(*attempt, elapsed_tracker.elapsed())
                     .with_previous_delay(*previous_delay);
