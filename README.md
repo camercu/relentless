@@ -191,98 +191,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 6) Hooks & stats
+### More
 
-```rust
-use relentless::retry;
+Full inline code for these lives in the [API docs](https://docs.rs/relentless),
+with runnable versions in [`examples/`](./examples):
 
-let (result, stats) = retry(|_| Ok::<_, &str>("done"))
-    .before_attempt(|state| {
-        if state.attempt > 1 {
-            println!("retrying (attempt {})", state.attempt);
-        }
-    })
-    .after_attempt(|state| {
-        if let Err(e) = state.outcome {
-            eprintln!("attempt {} failed: {e}", state.attempt);
-        }
-    })
-    .with_stats()
-    .call();
-
-println!("attempts: {}, total wait: {:?}", stats.attempts, stats.total_wait);
-```
-
-### 7) Error handling
-
-```rust,no_run
-use relentless::{retry, RetryError};
-
-match retry(|_| Err::<(), &str>("boom")).call() {
-    Ok(val) => println!("success: {val:?}"),
-    Err(RetryError::Exhausted { last }) => {
-        // Stop strategy fired; last is the final attempt's Result.
-        println!("gave up: {last:?}");
-    }
-    Err(RetryError::Rejected { last }) => {
-        // Predicate decided this error is non-retryable.
-        println!("non-retryable: {last}");
-    }
-    // `RetryError` is `#[non_exhaustive]`; match future variants here.
-    Err(_) => {}
-}
-```
-
-### 8) Test your retry behavior — no real sleeps
-
-With the `test-util` feature (dev-dependency), `VirtualClock` makes backoff
-and timeout behavior deterministic and instant to assert:
-
-```rust
-use core::time::Duration;
-use relentless::test_util::VirtualClock;
-use relentless::{retry, stop, wait};
-
-let clock = VirtualClock::new();
-
-let result = retry(|_| Err::<(), &str>("boom"))
-    .wait(wait::exponential(Duration::from_millis(100)))
-    .stop(stop::attempts(3))
-    .sleep(clock.sync_sleep())
-    .call();
-
-assert!(result.is_err());
-// The exact backoff schedule, with zero wall-clock time spent:
-assert_eq!(
-    clock.sleeps(),
-    vec![Duration::from_millis(100), Duration::from_millis(200)]
-);
-```
-
-Pair `clock.clock()` with `.elapsed_clock_fn(...)` to test `.timeout(...)`
-and `stop::elapsed(...)` deterministically too.
+- **Hooks & stats** — observe the retry lifecycle for logging or metrics with
+  `.before_attempt` / `.after_attempt`, and collect a `RetryStats` summary via
+  `.with_stats()`. ([`hooks-and-stats.rs`](./examples/hooks-and-stats.rs))
+- **Error handling** — on failure you get a `RetryError`: `Exhausted { last }`
+  when the stop strategy fired, or `Rejected { last }` when a predicate deemed
+  the error non-retryable. Both carry the final attempt's result.
+- **Deterministic testing** — the `test-util` feature's `VirtualClock` asserts
+  the exact backoff schedule with zero wall-clock time spent, so timeout and
+  backoff tests stay fast and non-flaky.
+  ([`testing-with-virtual-clock.rs`](./examples/testing-with-virtual-clock.rs))
+- **Cancellation** — there is no built-in cancel primitive; the loop observes
+  the cancellation your environment already provides (a dropped future, an
+  `AtomicBool`, `.timeout(...)`) at attempt boundaries.
+  ([`sync-cancel.rs`](./examples/sync-cancel.rs),
+  [`async-cancel.rs`](./examples/async-cancel.rs))
 
 ---
 
-## API surface at a glance
+## How the builders fit together
 
-| Area               | Items                                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| Entry points       | `retry`, `retry_async` (free functions); `RetryExt`, `AsyncRetryExt` (extension traits)       |
-| Policy             | `RetryPolicy<S, W, P>` with `.retry()`, `.retry_async()`                                      |
-| Stop strategies    | `stop::attempts`, `stop::elapsed`, `stop::never`                                              |
-| Wait strategies    | `wait::fixed`, `wait::linear`, `wait::exponential`, `wait::decorrelated_jitter`               |
-| Predicates         | `predicate::any_error`, `predicate::error`, `predicate::ok`, `predicate::result`              |
-| Execution builders | `SyncRetryBuilder` / `AsyncRetryBuilder` with hooks, stats, timeout                           |
-| Terminal types     | `RetryError<T, E>` (`Exhausted`, `Rejected`), `RetryResult<T, E>`, `RetryStats`, `StopReason` |
+The full API surface — every strategy, predicate, and type — lives on
+[docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
-Builder methods follow the order: **when/until** -> **wait** -> **stop** ->
+Builder methods follow a fixed order: **when/until** -> **wait** -> **stop** ->
 sleep -> hooks -> stats -> call.
 
-Strategy overrides (`when`/`until`/`wait`/`stop`) are available on the
-free-function and extension-trait builders, which own their policy. Executions
-started from a shared `RetryPolicy` (`policy.retry(...)`) keep the policy's
-strategies fixed and accept only sleep, hooks, timing, and stats methods.
+Where you start decides what you can override. The free-function and
+extension-trait builders own their policy, so they accept the strategy overrides
+`when`/`until`/`wait`/`stop`. An execution started from a shared `RetryPolicy`
+(`policy.retry(...)`) keeps that policy's strategies fixed and accepts only
+sleep, hooks, timing, and stats methods.
 
 ## MSRV
 
