@@ -1,6 +1,7 @@
 [profile.default]
-# Terminate hung tests at 2x5s. The suite runs in milliseconds, so any test
-# this slow is hanging. Must stay under cargo-mutants' 20s minimum timeout so
-# infinite-loop mutants fail the suite (caught) rather than time out; see
-# .cargo/mutants.toml.
-slow-timeout = { period = "5s", terminate-after = 2 }
+# Terminate hung tests at 2x10s. The suite runs in milliseconds, so any test
+# this slow is hanging; the wide margin keeps contended machines (parallel
+# builds alongside the run) from killing healthy tests. Must stay under
+# cargo-mutants' minimum_test_timeout (30s, .cargo/mutants.toml) so
+# infinite-loop mutants fail the suite (caught) rather than time out.
+slow-timeout = { period = "10s", terminate-after = 2 }

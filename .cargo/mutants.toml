@@ -4,6 +4,10 @@
 # as caught instead of as timeouts.
 test_tool = "nextest"
 
+# Keep cargo-mutants' own timeout above nextest's 2x10s kill (20s) so nextest
+# always fires first; without this the default minimum is exactly 20s — a race.
+minimum_test_timeout = 30
+
 # Compile the host-testable feature-gated sleep adapters into every run;
 # without them their mutants sit in cfg'd-out code and trivially survive.
 # (`gloo-timers-sleep` is wasm-only and stays uncoverable on the host.)
