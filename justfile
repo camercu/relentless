@@ -73,7 +73,7 @@ test-doc-no-default:
     RUSTDOCFLAGS="{{warnings}}" {{cargo}} test --no-default-features --doc
 
 test-readme:
-    {{cargo}} test --features tokio-sleep --doc -- readme_doctests
+    {{cargo}} test --features tokio-sleep,test-util --doc -- readme_doctests
 
 test-examples:
     cargo run --example basic-retry

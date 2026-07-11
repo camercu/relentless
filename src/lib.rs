@@ -236,8 +236,9 @@
 #![warn(missing_docs)]
 
 // Compile-test README code examples as doctests.
-// Gated on `tokio-sleep` because the async example uses `sleep::tokio()`.
-#[cfg(all(doctest, feature = "tokio-sleep"))]
+// Gated on `tokio-sleep` because the async example uses `sleep::tokio()`, and
+// on `test-util` because the testing example uses `test_util::VirtualClock`.
+#[cfg(all(doctest, feature = "tokio-sleep", feature = "test-util"))]
 #[doc = include_str!("../README.md")]
 mod readme_doctests {}
 

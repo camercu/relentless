@@ -48,6 +48,7 @@ cargo add relentless
 | `embassy-sleep`       | `sleep::embassy()` async sleep adapter                                                      |
 | `gloo-timers-sleep`   | `sleep::gloo()` async sleep adapter (wasm32)                                                |
 | `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter                                                |
+| `test-util`           | `test_util::VirtualClock` — deterministic testing of retry behavior without real sleeps    |
 
 Async retry does not require `alloc`.
 
@@ -231,6 +232,35 @@ match retry(|_| Err::<(), &str>("boom")).call() {
     Err(_) => {}
 }
 ```
+
+### 8) Test your retry behavior — no real sleeps
+
+With the `test-util` feature (dev-dependency), `VirtualClock` makes backoff
+and timeout behavior deterministic and instant to assert:
+
+```rust
+use core::time::Duration;
+use relentless::test_util::VirtualClock;
+use relentless::{retry, stop, wait};
+
+let clock = VirtualClock::new();
+
+let result = retry(|_| Err::<(), &str>("boom"))
+    .wait(wait::exponential(Duration::from_millis(100)))
+    .stop(stop::attempts(3))
+    .sleep(clock.sync_sleep())
+    .call();
+
+assert!(result.is_err());
+// The exact backoff schedule, with zero wall-clock time spent:
+assert_eq!(
+    clock.sleeps(),
+    vec![Duration::from_millis(100), Duration::from_millis(200)]
+);
+```
+
+Pair `clock.clock()` with `.elapsed_clock_fn(...)` to test `.timeout(...)`
+and `stop::elapsed(...)` deterministically too.
 
 ---
 
