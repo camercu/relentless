@@ -16,6 +16,9 @@ use relentless::{retry, retry_async, stop, wait};
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 
+/// A nonzero duration whose exact value is irrelevant to the test.
+const ARBITRARY_DURATION: Duration = Duration::from_secs(1);
+
 fn noop_waker() -> Waker {
     struct NoopWake;
     impl std::task::Wake for NoopWake {
@@ -134,6 +137,55 @@ fn manual_advance_consumes_elapsed_budget() {
 
     assert!(result.is_err());
     assert_eq!(clock.now(), Duration::from_millis(300));
+}
+
+/// GIVEN a clock advanced to `Duration::MAX` by `advance` and by a recorded sleep
+/// WHEN more time is added past the maximum
+/// THEN virtual time saturates at `Duration::MAX` rather than overflowing,
+///      while sleeps are still recorded verbatim (SPEC 12.4.4)
+#[test]
+fn time_arithmetic_saturates_at_max() {
+    let advanced = VirtualClock::new();
+    advanced.advance(Duration::MAX);
+    advanced.advance(ARBITRARY_DURATION);
+    assert_eq!(advanced.now(), Duration::MAX);
+
+    let slept = VirtualClock::new();
+    let mut sleep = slept.sync_sleep();
+    sleep(Duration::MAX);
+    sleep(ARBITRARY_DURATION);
+    assert_eq!(slept.now(), Duration::MAX);
+    assert_eq!(slept.sleeps(), vec![Duration::MAX, ARBITRARY_DURATION]);
+}
+
+/// GIVEN a `VirtualClock` shared across threads via `Clone`
+/// WHEN many threads record sleeps through their own adapters concurrently
+/// THEN every sleep is recorded and virtual time equals their sum, with no
+///      lost updates (SPEC 12.4.6: adapters are `Send + Sync`)
+#[test]
+fn adapters_are_usable_across_threads() {
+    const THREADS: u64 = 8;
+    const SLEEPS_PER_THREAD: u64 = 1000;
+    const SLEEP: Duration = Duration::from_nanos(1);
+
+    let clock = VirtualClock::new();
+    let handles: Vec<_> = (0..THREADS)
+        .map(|_| {
+            let mut sleep = clock.sync_sleep();
+            std::thread::spawn(move || {
+                for _ in 0..SLEEPS_PER_THREAD {
+                    sleep(SLEEP);
+                }
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let total = THREADS * SLEEPS_PER_THREAD;
+    assert_eq!(clock.sleeps().len() as u64, total);
+    assert_eq!(clock.now(), SLEEP * u32::try_from(total).unwrap());
 }
 
 /// GIVEN the async engine sleeping through the virtual clock
