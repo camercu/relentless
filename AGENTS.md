@@ -25,9 +25,13 @@ changing code.
   [src/policy/execution/sync_exec.rs](/src/policy/execution/sync_exec.rs),
   [src/policy/execution/async_exec.rs](/src/policy/execution/async_exec.rs),
   [src/policy/ext/sync_builder.rs](/src/policy/ext/sync_builder.rs), and
-  [src/policy/ext/async_builder.rs](/src/policy/ext/async_builder.rs). When you
-  change hooks, cancellation, stats, or type-state ergonomics, audit all four
-  paths for drift.
+  [src/policy/ext/async_builder.rs](/src/policy/ext/async_builder.rs).
+  Behavioral drift between the sync and async engines is caught by the
+  differential suite in [tests/parity.rs](/tests/parity.rs) (runs under
+  `--features test-util`, so via `just test-all-features` / `just ci`, not bare
+  `just test`). When you change hooks, cancellation, stats, or type-state
+  ergonomics, extend a parity scenario for the new behavior and still audit the
+  two builder files for surface/docs drift the suite cannot see.
 - Verify feature claims explicitly. Prefer the repo's `just` targets over ad hoc
   `cargo` commands. The fastest useful checks are `just test`,
   `just test-no-default`, `just check-no-std`, and `just check-wasm`.
