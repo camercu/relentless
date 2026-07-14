@@ -335,6 +335,11 @@ pub use wait::Wait;
 ///     .cap(Duration::from_secs(5));
 /// ```
 ///
+/// Operator composition (`+` on waits, `|`/`&` on stops and predicates) works
+/// without any trait imports — the prelude is only needed for the method-form
+/// combinators, the closure extension traits, and implementing custom
+/// strategies.
+///
 /// Strategy constructors (`wait::exponential`, `stop::attempts`, …) are *not*
 /// re-exported here; import them explicitly by name.
 pub mod prelude {
