@@ -72,8 +72,10 @@
 //! To bound the **total** wall-clock time across all attempts and sleeps, add
 //! [`.timeout(dur)`](SyncRetryBuilder::timeout). It OR-folds an elapsed deadline
 //! into the stop strategy and clamps each inter-attempt sleep to the remaining
-//! budget; it does not interrupt an attempt already running. See [Cancellation]
-//! for the runtime-agnostic deadline pattern.
+//! budget; it does not interrupt an attempt already running. A sleep clamped to
+//! the last of the budget still ends with one final attempt at the deadline, so
+//! total wall-clock time can exceed `dur` by that attempt's duration (never
+//! more). See [Cancellation] for the runtime-agnostic deadline pattern.
 //!
 //! [Cancellation]: #cancellation
 //!
