@@ -18,7 +18,7 @@ const ARBITRARY_JITTER_MAX: Duration = Duration::from_millis(20);
 const ARBITRARY_FALLBACK: Duration = Duration::from_secs(1);
 
 fn make_state(attempt: u32) -> relentless::RetryState {
-    relentless::RetryState::new(attempt, None)
+    relentless::RetryState::for_attempt(attempt)
 }
 
 /// Minimal Wait implementation used to verify the trait contract.

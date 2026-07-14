@@ -244,7 +244,7 @@
 //!     .cap(Duration::from_millis(15))
 //!     .chain(wait::fixed(Duration::from_millis(50)), 2);
 //!
-//! let state = RetryState::new(3, None);
+//! let state = RetryState::for_attempt(3);
 //! assert_eq!(strategy.next_wait(&state), Duration::from_millis(50));
 //! ```
 //!

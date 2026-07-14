@@ -339,7 +339,10 @@ explicit sync sleeper is provided.
 ### 3.6 State types
 
 The crate exposes three read-only state types. **3.6.1** All are `#[non_exhaustive]` and
-provide `new(...)` constructors for tests and custom strategy implementations.
+provide `for_attempt(...)` constructors (required arguments only, 1-indexed
+attempt first) plus `with_*` setters for the optional fields, for tests and
+custom strategy implementations. Constructors `debug_assert!` that
+`attempt >= 1`.
 
 > Public fields on `#[non_exhaustive]` structs are a deliberate choice for
 > ergonomic read access. `#[non_exhaustive]` prevents construction outside the
@@ -396,27 +399,28 @@ Constructor signatures:
 
 ```rust
 impl RetryState {
-    pub fn new(attempt: u32, elapsed: Option<Duration>) -> Self;
-    // `previous_delay` defaults to `None`; set it via:
+    // `elapsed` and `previous_delay` default to `None`; set them via the
+    // `with_*` setters.
+    pub fn for_attempt(attempt: u32) -> Self;
+    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
     pub fn with_previous_delay(self, previous_delay: Option<Duration>) -> Self;
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
-    pub fn new(
-        attempt: u32,
-        elapsed: Option<Duration>,
-        outcome: &'a Result<T, E>,
-        next_delay: Option<Duration>,
-    ) -> Self;
+    // `elapsed` and `next_delay` default to `None`.
+    pub fn for_attempt(attempt: u32, outcome: &'a Result<T, E>) -> Self;
+    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
+    pub fn with_next_delay(self, next_delay: Option<Duration>) -> Self;
 }
 
 impl<'a, T, E> ExitState<'a, T, E> {
-    pub fn new(
+    // `elapsed` defaults to `None`.
+    pub fn for_attempt(
         attempt: u32,
-        elapsed: Option<Duration>,
         outcome: &'a Result<T, E>,
         stop_reason: StopReason,
     ) -> Self;
+    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
 }
 ```
 

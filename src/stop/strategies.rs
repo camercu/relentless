@@ -13,7 +13,7 @@ use crate::state::RetryState;
 /// use relentless::stop;
 ///
 /// let s = stop::attempts(3);
-/// # let state = relentless::RetryState::new(3, None);
+/// # let state = relentless::RetryState::for_attempt(3);
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +51,7 @@ impl Stop for StopAfterAttempts {
 /// use relentless::stop;
 ///
 /// let s = stop::elapsed(Duration::from_secs(30));
-/// # let state = relentless::RetryState::new(1, Some(Duration::from_secs(31)));
+/// # let state = relentless::RetryState::for_attempt(1).with_elapsed(Some(Duration::from_secs(31)));
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,7 @@ impl Stop for StopAfterElapsed {
 /// use relentless::stop;
 ///
 /// let s = stop::never();
-/// # let state = relentless::RetryState::new(u32::MAX, None);
+/// # let state = relentless::RetryState::for_attempt(u32::MAX);
 /// assert!(!s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

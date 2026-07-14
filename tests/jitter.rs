@@ -19,7 +19,7 @@ const SEEDED_ATTEMPT_COUNT: u32 = 8;
 const SEEDED_JITTER_SEED: u64 = 0x11;
 
 fn state(attempt: u32) -> relentless::RetryState {
-    relentless::RetryState::new(attempt, None)
+    relentless::RetryState::for_attempt(attempt)
 }
 
 #[test]
@@ -252,7 +252,7 @@ fn decorrelated_jitter_subsequent_attempts_bounded_by_prev_times_3() {
     // upper bound is previous_delay * 3 (not the strategy's own prior output).
     let prev = Duration::from_millis(200);
     let upper = prev.saturating_mul(3);
-    let st = relentless::RetryState::new(2, None).with_previous_delay(Some(prev));
+    let st = relentless::RetryState::for_attempt(2).with_previous_delay(Some(prev));
     for _ in 0..32 {
         let delay = strategy.next_wait(&st);
         assert!(delay >= base, "should be >= base");

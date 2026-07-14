@@ -134,12 +134,12 @@ fn retry_state_is_clone_copy_partial_eq() {
     use core::time::Duration;
     use relentless::RetryState;
 
-    let s = RetryState::new(3, Some(Duration::from_secs(1)));
+    let s = RetryState::for_attempt(3).with_elapsed(Some(Duration::from_secs(1)));
     let cloned = s; // Copy
     let copied = s; // Copy again — would fail if s were moved
     assert_eq!(s, cloned);
     assert_eq!(s, copied);
-    assert_ne!(s, RetryState::new(4, None));
+    assert_ne!(s, RetryState::for_attempt(4));
 }
 
 /// 5.7

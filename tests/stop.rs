@@ -13,11 +13,11 @@ const MAX_ATTEMPTS: u32 = 5;
 const DEADLINE: Duration = Duration::from_secs(30);
 
 fn make_state(attempt: u32) -> relentless::RetryState {
-    relentless::RetryState::new(attempt, None)
+    relentless::RetryState::for_attempt(attempt)
 }
 
 fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> relentless::RetryState {
-    relentless::RetryState::new(attempt, Some(elapsed))
+    relentless::RetryState::for_attempt(attempt).with_elapsed(Some(elapsed))
 }
 
 /// Minimal Stop implementation used to verify the trait contract.

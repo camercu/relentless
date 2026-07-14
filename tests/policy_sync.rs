@@ -1001,8 +1001,8 @@ fn retry_ext_closure_takes_no_retry_state() {
 /// 16.2, 16.3
 #[test]
 fn compat_duration_is_core_time_duration() {
-    let _: relentless::RetryState =
-        relentless::RetryState::new(1, Some(core::time::Duration::from_millis(5)));
+    let _: relentless::RetryState = relentless::RetryState::for_attempt(1)
+        .with_elapsed(Some(core::time::Duration::from_millis(5)));
 }
 
 /// §6

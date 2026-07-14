@@ -127,7 +127,7 @@ fn make_state(state: &mut u64) -> relentless::RetryState {
     // fields are added later.
     let _next_delay = Duration::from_millis(bounded_u64(state, MAX_DELAY_MILLIS));
 
-    relentless::RetryState::new(attempt, elapsed)
+    relentless::RetryState::for_attempt(attempt).with_elapsed(elapsed)
 }
 
 /// Folds `REPRO_SEQUENCE_LENGTH` random draws from a stream into a single

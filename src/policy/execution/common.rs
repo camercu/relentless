@@ -47,24 +47,17 @@ fn attempt_state_from<'a, T, E>(
     outcome: &'a Result<T, E>,
     next_delay: Option<Duration>,
 ) -> AttemptState<'a, T, E> {
-    AttemptState::new(
-        retry_state.attempt,
-        retry_state.elapsed,
-        outcome,
-        next_delay,
-    )
+    AttemptState::for_attempt(retry_state.attempt, outcome)
+        .with_elapsed(retry_state.elapsed)
+        .with_next_delay(next_delay)
 }
 
 fn exit_state_from<'a, T, E>(
     attempt_state: &AttemptState<'a, T, E>,
     stop_reason: StopReason,
 ) -> ExitState<'a, T, E> {
-    ExitState::new(
-        attempt_state.attempt,
-        attempt_state.elapsed,
-        attempt_state.outcome,
-        stop_reason,
-    )
+    ExitState::for_attempt(attempt_state.attempt, attempt_state.outcome, stop_reason)
+        .with_elapsed(attempt_state.elapsed)
 }
 
 /// Clamps the next sleep delay to the remaining timeout budget, then fires the
@@ -91,7 +84,7 @@ where
         _ => next_delay,
     };
 
-    let retry_state = RetryState::new(attempt, elapsed);
+    let retry_state = RetryState::for_attempt(attempt).with_elapsed(elapsed);
     let attempt_state = attempt_state_from(&retry_state, last_result, Some(clamped));
     hooks.after_attempt.call(&attempt_state);
 
@@ -238,7 +231,9 @@ pub(crate) fn fire_before_attempt<BA, AA, OX>(
 ) where
     BA: BeforeAttemptHook,
 {
-    let before_state = RetryState::new(attempt, elapsed).with_previous_delay(previous_delay);
+    let before_state = RetryState::for_attempt(attempt)
+        .with_elapsed(elapsed)
+        .with_previous_delay(previous_delay);
     hooks.before_attempt.call(&before_state);
 }
 
@@ -367,7 +362,9 @@ where
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
-    let retry_state = RetryState::new(attempt, elapsed).with_previous_delay(previous_delay);
+    let retry_state = RetryState::for_attempt(attempt)
+        .with_elapsed(elapsed)
+        .with_previous_delay(previous_delay);
 
     process_attempt_transition(
         policy,
@@ -415,8 +412,9 @@ where
     loop {
         fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
 
-        let state =
-            RetryState::new(attempt, elapsed_tracker.elapsed()).with_previous_delay(previous_delay);
+        let state = RetryState::for_attempt(attempt)
+            .with_elapsed(elapsed_tracker.elapsed())
+            .with_previous_delay(previous_delay);
         let outcome = op.call_op(state);
         match transition_from_outcome(
             policy,
@@ -507,7 +505,8 @@ where
             AsyncPhaseProj::ReadyToStartAttempt => {
                 fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed(), *previous_delay);
 
-                let state = RetryState::new(*attempt, elapsed_tracker.elapsed())
+                let state = RetryState::for_attempt(*attempt)
+                    .with_elapsed(elapsed_tracker.elapsed())
                     .with_previous_delay(*previous_delay);
                 phase.set(AsyncPhase::PollingOperation {
                     op_future: op.call_op(state),

@@ -19,7 +19,7 @@ use super::math::{
 /// use core::time::Duration;
 ///
 /// let w = wait::fixed(Duration::from_millis(100));
-/// # let state = relentless::RetryState::new(1, None);
+/// # let state = relentless::RetryState::for_attempt(1);
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(100));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl Wait for WaitFixed {
 /// use core::time::Duration;
 ///
 /// let w = wait::linear(Duration::from_millis(100), Duration::from_millis(50));
-/// # let state = relentless::RetryState::new(3, None);
+/// # let state = relentless::RetryState::for_attempt(3);
 /// // 100ms + (3-1)*50ms = 200ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(200));
 /// ```
@@ -93,7 +93,7 @@ impl Wait for WaitLinear {
 /// use core::time::Duration;
 ///
 /// let w = wait::exponential(Duration::from_millis(100));
-/// # let state = relentless::RetryState::new(3, None);
+/// # let state = relentless::RetryState::for_attempt(3);
 /// // 100ms * 2^2 = 400ms
 /// assert_eq!(w.next_wait(&state), Duration::from_millis(400));
 /// ```

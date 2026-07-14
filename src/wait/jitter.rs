@@ -151,7 +151,7 @@ enum JitterKind {
 /// // Additive jitter: base + random(0, max_jitter)
 /// let strategy = wait::fixed(Duration::from_millis(50))
 ///     .jitter(Duration::from_millis(10));
-/// let state = RetryState::new(1, None);
+/// let state = RetryState::for_attempt(1);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));
@@ -165,7 +165,7 @@ enum JitterKind {
 /// // Full jitter: random(0, base)
 /// let strategy = wait::fixed(Duration::from_millis(100))
 ///     .full_jitter();
-/// let state = RetryState::new(1, None);
+/// let state = RetryState::for_attempt(1);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next <= Duration::from_millis(100));
@@ -178,7 +178,7 @@ enum JitterKind {
 /// // Equal jitter: base/2 + random(0, base/2)
 /// let strategy = wait::fixed(Duration::from_millis(100))
 ///     .equal_jitter();
-/// let state = RetryState::new(1, None);
+/// let state = RetryState::for_attempt(1);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(50));
@@ -311,7 +311,7 @@ impl<W: Wait> Wait for Jittered<W> {
 ///
 /// let strategy = wait::decorrelated_jitter(Duration::from_millis(100))
 ///     .cap(Duration::from_secs(5));
-/// let state = RetryState::new(1, None);
+/// let state = RetryState::for_attempt(1);
 ///
 /// let next = strategy.next_wait(&state);
 /// assert!(next >= Duration::from_millis(100));

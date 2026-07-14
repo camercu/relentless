@@ -22,7 +22,7 @@ const EXACT_NANOS_LIMIT: u64 = 1 << 20;
 const EXACT_ATTEMPT_LIMIT: u32 = 33;
 
 fn state(attempt: u32) -> RetryState {
-    RetryState::new(attempt, None)
+    RetryState::for_attempt(attempt)
 }
 
 /// The full `Duration` range, including the extremes where saturation and

@@ -43,17 +43,31 @@ pub struct RetryState {
 }
 
 impl RetryState {
-    /// Creates a new `RetryState` with the given attempt number and elapsed time.
+    /// Creates a `RetryState` for the given 1-indexed attempt.
     ///
-    /// [`previous_delay`](Self::previous_delay) defaults to `None`; set it with
-    /// [`with_previous_delay`](Self::with_previous_delay).
+    /// [`elapsed`](Self::elapsed) and [`previous_delay`](Self::previous_delay)
+    /// default to `None`; set them with [`with_elapsed`](Self::with_elapsed)
+    /// and [`with_previous_delay`](Self::with_previous_delay).
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `attempt` is `0` (attempts are 1-indexed).
     #[must_use]
-    pub const fn new(attempt: u32, elapsed: Option<Duration>) -> Self {
+    pub const fn for_attempt(attempt: u32) -> Self {
+        debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed,
+            elapsed: None,
             previous_delay: None,
         }
+    }
+
+    /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
+    /// chaining.
+    #[must_use]
+    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+        self.elapsed = elapsed;
+        self
     }
 
     /// Sets [`previous_delay`](Self::previous_delay), consuming and returning
@@ -100,20 +114,41 @@ pub struct AttemptState<'a, T, E> {
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
-    /// Creates a new `AttemptState` with the given fields.
+    /// Creates an `AttemptState` for the given 1-indexed attempt and its
+    /// outcome.
+    ///
+    /// [`elapsed`](Self::elapsed) and [`next_delay`](Self::next_delay) default
+    /// to `None`; set them with [`with_elapsed`](Self::with_elapsed) and
+    /// [`with_next_delay`](Self::with_next_delay).
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `attempt` is `0` (attempts are 1-indexed).
     #[must_use]
-    pub const fn new(
-        attempt: u32,
-        elapsed: Option<Duration>,
-        outcome: &'a Result<T, E>,
-        next_delay: Option<Duration>,
-    ) -> Self {
+    pub const fn for_attempt(attempt: u32, outcome: &'a Result<T, E>) -> Self {
+        debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed,
+            elapsed: None,
             outcome,
-            next_delay,
+            next_delay: None,
         }
+    }
+
+    /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
+    /// chaining.
+    #[must_use]
+    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+        self.elapsed = elapsed;
+        self
+    }
+
+    /// Sets [`next_delay`](Self::next_delay), consuming and returning `self`
+    /// for chaining.
+    #[must_use]
+    pub const fn with_next_delay(mut self, next_delay: Option<Duration>) -> Self {
+        self.next_delay = next_delay;
+        self
     }
 }
 
@@ -152,19 +187,35 @@ pub struct ExitState<'a, T, E> {
 }
 
 impl<'a, T, E> ExitState<'a, T, E> {
-    /// Creates a new `ExitState` with the given fields.
+    /// Creates an `ExitState` for the given 1-indexed final attempt, its
+    /// outcome, and the loop's termination reason.
+    ///
+    /// [`elapsed`](Self::elapsed) defaults to `None`; set it with
+    /// [`with_elapsed`](Self::with_elapsed).
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `attempt` is `0` (attempts are 1-indexed).
     #[must_use]
-    pub const fn new(
+    pub const fn for_attempt(
         attempt: u32,
-        elapsed: Option<Duration>,
         outcome: &'a Result<T, E>,
         stop_reason: crate::stats::StopReason,
     ) -> Self {
+        debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed,
+            elapsed: None,
             outcome,
             stop_reason,
         }
+    }
+
+    /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
+    /// chaining.
+    #[must_use]
+    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+        self.elapsed = elapsed;
+        self
     }
 }
