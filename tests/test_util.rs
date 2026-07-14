@@ -188,6 +188,40 @@ fn adapters_are_usable_across_threads() {
     assert_eq!(clock.now(), SLEEP * u32::try_from(total).unwrap());
 }
 
+/// GIVEN an elapsed clock and a sleeper sourced from two *different*
+///       `VirtualClock` instances (the documented misuse: see `clock()`)
+/// WHEN a retried operation sleeps through the second clock's sleeper
+/// THEN the elapsed clock stays at zero — only the sleeper's own clock
+///      advances — so an elapsed-based stop or timeout would never fire and
+///      the loop could not terminate without the independent attempt bound
+///      (SPEC 12.4.3)
+#[test]
+fn mismatched_clock_and_sleeper_leaves_elapsed_stuck() {
+    let elapsed = VirtualClock::new();
+    let sleeper = VirtualClock::new();
+
+    // A stop that depends on `elapsed` would spin forever here; the attempt
+    // bound is what actually terminates the loop, proving the hazard.
+    let result = retry(|_| Err::<(), &str>("boom"))
+        .wait(wait::fixed(INITIAL_BACKOFF))
+        .stop(stop::attempts(3))
+        .elapsed_clock_fn(elapsed.clock())
+        .sleep(sleeper.sync_sleep())
+        .call();
+
+    assert!(result.is_err());
+    assert_eq!(
+        elapsed.now(),
+        Duration::ZERO,
+        "elapsed clock must not advance"
+    );
+    assert_eq!(
+        sleeper.sleeps(),
+        vec![INITIAL_BACKOFF, INITIAL_BACKOFF],
+        "only the sleeper's own clock records and advances",
+    );
+}
+
 /// GIVEN the async engine sleeping through the virtual clock
 /// WHEN an always-failing operation runs
 /// THEN the recorded sleeps match the sync engine's schedule
