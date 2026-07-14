@@ -141,7 +141,9 @@ impl VirtualClock {
 
 /// Poisoning is recoverable here: the state is plain data (a `Duration` and a
 /// `Vec` of them), left consistent by every critical section even if a caller
-/// panicked while holding the lock.
+/// panicked while holding the lock. In practice no critical section runs
+/// caller code or can unwind (arithmetic saturates; allocation failure aborts),
+/// so this is defensive — poisoning is unreachable through the public API.
 fn lock(inner: &Arc<Mutex<Inner>>) -> MutexGuard<'_, Inner> {
     inner.lock().unwrap_or_else(PoisonError::into_inner)
 }
