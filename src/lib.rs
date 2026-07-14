@@ -74,8 +74,8 @@
 //! into the stop strategy and clamps each inter-attempt sleep to the remaining
 //! budget; it does not interrupt an attempt already running. A sleep clamped to
 //! the last of the budget still ends with one final attempt at the deadline, so
-//! total wall-clock time can exceed `dur` by that attempt's duration (never
-//! more). See [Cancellation] for the runtime-agnostic deadline pattern.
+//! total wall-clock time can exceed `dur` by roughly that attempt's duration.
+//! See [Cancellation] for the runtime-agnostic deadline pattern.
 //!
 //! [Cancellation]: #cancellation
 //!
