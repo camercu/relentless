@@ -397,6 +397,8 @@ Constructor signatures:
 ```rust
 impl RetryState {
     pub fn new(attempt: u32, elapsed: Option<Duration>) -> Self;
+    // `previous_delay` defaults to `None`; set it via:
+    pub fn with_previous_delay(self, previous_delay: Option<Duration>) -> Self;
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
@@ -420,12 +422,12 @@ impl<'a, T, E> ExitState<'a, T, E> {
 
 `RetryState` usage across contexts:
 
-|Context              |`attempt`             |`elapsed`|
-|---------------------|----------------------|---------|
-|User operation       |about-to-start attempt|available|
-|`before_attempt` hook|about-to-start attempt|available|
-|`Wait::next_wait`    |just-completed attempt|available|
-|`Stop::should_stop`  |just-completed attempt|available|
+|Context              |`attempt`             |`elapsed`|`previous_delay`                     |
+|---------------------|----------------------|---------|-------------------------------------|
+|User operation       |about-to-start attempt|available|delay before this attempt (`None` on first)|
+|`before_attempt` hook|about-to-start attempt|available|delay before this attempt (`None` on first)|
+|`Wait::next_wait`    |just-completed attempt|available|delay before the just-completed attempt|
+|`Stop::should_stop`  |just-completed attempt|available|delay before the just-completed attempt|
 
 **3.6.2** The operation receives `RetryState` by value (it is `Copy`). **3.6.3** The numeric value
 of `attempt` is the same across all four contexts within a single loop
@@ -1202,9 +1204,13 @@ testing retry behavior without real sleeping.
   the async future completes immediately.
 - **12.4.3** `.clock()` returns an
   `impl Fn() -> Duration + Clone + Send + Sync + 'static` reading current
-  virtual time, for `.elapsed_clock_fn(...)`. Pairing it with a sleep adapter
-  from the same clock makes timeout and elapsed-stop behavior fully
-  deterministic (see 11).
+  virtual time, for `.elapsed_clock_fn(...)`. The elapsed clock and its sleep
+  adapter must come from the *same* `VirtualClock` instance (or a clone, which
+  shares state); only then does timeout and elapsed-stop behavior track the
+  simulated waits (see 11). A sleep adapter from a *different* instance advances
+  only its own clock, leaving this elapsed clock stuck at zero so `timeout` and
+  `stop::elapsed` never fire — if either is the sole stop condition, the retry
+  loop cannot terminate. The mismatch is not type-enforceable.
 - **12.4.4** `.now()` returns current virtual time. `.advance(dur)` adds `dur`
   to virtual time without recording a sleep (simulates time passing inside an
   attempt). All time arithmetic saturates at `Duration::MAX`.

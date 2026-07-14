@@ -74,8 +74,19 @@ impl VirtualClock {
     /// Returns an elapsed-clock function reading this clock's virtual time
     /// ([`.elapsed_clock_fn(...)`](crate::SyncRetryExec::elapsed_clock_fn)).
     ///
-    /// Pair it with a sleep adapter from the same clock so waits consume the
-    /// elapsed budget deterministically.
+    /// Pair it with a sleep adapter ([`sync_sleep`](Self::sync_sleep) /
+    /// [`async_sleep`](Self::async_sleep)) from *this same* `VirtualClock` so
+    /// waits advance the elapsed budget.
+    ///
+    /// # Warning
+    ///
+    /// A sleep adapter from a *different* `VirtualClock` only advances its own
+    /// clock, leaving this elapsed clock stuck at zero. Then
+    /// [`stop::elapsed`](crate::stop::elapsed) and
+    /// [`timeout`](crate::SyncRetryExec::timeout) never fire — if either is the
+    /// only stop condition, **the retry loop spins forever**. The type system
+    /// cannot catch the mismatch; always source the clock and its sleeper from
+    /// one instance (clone it — clones share state).
     pub fn clock(&self) -> impl Fn() -> Duration + Clone + Send + Sync + 'static {
         let inner = Arc::clone(&self.inner);
         move || lock(&inner).now
@@ -86,6 +97,10 @@ impl VirtualClock {
     ///
     /// The function records each requested sleep and advances virtual time by
     /// that amount instead of blocking.
+    ///
+    /// When testing timeout or elapsed-stop behavior, source
+    /// [`clock`](Self::clock) from this same instance — see its warning about
+    /// mismatched clocks.
     pub fn sync_sleep(&self) -> impl FnMut(Duration) + Send + 'static {
         let inner = Arc::clone(&self.inner);
         move |dur| record_sleep(&inner, dur)
@@ -96,6 +111,10 @@ impl VirtualClock {
     ///
     /// The returned future completes immediately; the requested sleep is
     /// recorded and virtual time advances by that amount instead of waiting.
+    ///
+    /// When testing timeout or elapsed-stop behavior, source
+    /// [`clock`](Self::clock) from this same instance — see its warning about
+    /// mismatched clocks.
     pub fn async_sleep(
         &self,
     ) -> impl Fn(Duration) -> core::future::Ready<()> + Clone + Send + Sync + 'static {
@@ -107,6 +126,9 @@ impl VirtualClock {
     }
 
     /// Returns every sleep requested so far, in request order.
+    ///
+    /// This is a point-in-time snapshot: it clones the recorded sleeps, so the
+    /// returned `Vec` is unaffected by sleeps recorded after the call.
     #[must_use]
     pub fn sleeps(&self) -> Vec<Duration> {
         self.lock().sleeps.clone()
