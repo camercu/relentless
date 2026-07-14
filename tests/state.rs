@@ -6,37 +6,9 @@
 use core::time::Duration;
 
 #[test]
-fn retry_state_has_required_fields() {
-    let elapsed = Duration::from_secs(5);
-    let state = relentless::RetryState::for_attempt(1).with_elapsed(Some(elapsed));
-
-    assert_eq!(state.attempt, 1);
-    assert_eq!(state.elapsed, Some(elapsed));
-}
-
-#[test]
 fn retry_state_attempt_is_one_indexed() {
     let state = relentless::RetryState::for_attempt(1);
     assert_eq!(state.attempt, 1, "first attempt should be 1, not 0");
-}
-
-#[test]
-fn retry_state_elapsed_can_be_none() {
-    let state = relentless::RetryState::for_attempt(1);
-    assert_eq!(state.elapsed, None);
-}
-
-#[test]
-fn attempt_state_has_flat_fields_and_outcome() {
-    let outcome: Result<i32, String> = Ok(42);
-
-    let state = relentless::AttemptState::for_attempt(1, &outcome)
-        .with_elapsed(Some(Duration::ZERO))
-        .with_next_delay(Some(Duration::from_millis(100)));
-
-    assert_eq!(state.attempt, 1);
-    assert_eq!(*state.outcome, Ok(42));
-    assert_eq!(state.next_delay, Some(Duration::from_millis(100)));
 }
 
 #[test]
@@ -47,19 +19,7 @@ fn attempt_state_with_err_outcome() {
         .with_elapsed(Some(Duration::ZERO))
         .with_next_delay(Some(Duration::ZERO));
 
-    assert!(state.outcome.is_err());
     assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
-}
-
-#[test]
-fn exit_state_has_required_fields() {
-    let outcome = Err::<i32, &str>("fatal");
-    let state = relentless::ExitState::for_attempt(2, &outcome, relentless::StopReason::Exhausted);
-
-    assert_eq!(state.attempt, 2);
-    assert!(state.outcome.is_err());
-    assert_eq!(state.elapsed, None);
-    assert_eq!(state.stop_reason, relentless::StopReason::Exhausted);
 }
 
 #[test]
@@ -75,8 +35,7 @@ fn retry_state_is_copy() {
     let state = relentless::RetryState::for_attempt(3).with_elapsed(Some(Duration::from_secs(1)));
     let a = state; // copy
     let b = state; // copy again — would fail if state were moved
-    assert_eq!(a.attempt, b.attempt);
-    assert_eq!(a.elapsed, b.elapsed);
+    assert_eq!(a, b); // whole-struct compare catches any future field, too
 }
 
 /// 3.6.3
@@ -158,7 +117,7 @@ fn attempt_state_next_delay_none_on_final() {
 
 /// 3.6.6
 #[test]
-fn exit_state_attempt_is_at_least_one() {
+fn exit_state_attempt_is_exactly_one_for_single_attempt_stop() {
     use relentless::{RetryPolicy, stop};
     use std::cell::Cell;
 
@@ -173,7 +132,29 @@ fn exit_state_attempt_is_at_least_one() {
         .sleep(|_| {})
         .call();
 
-    assert!(exit_attempt.get() >= 1);
+    assert_eq!(exit_attempt.get(), 1);
+}
+
+/// 3.6.6
+#[test]
+fn exit_state_attempt_matches_completed_attempts() {
+    use relentless::{RetryPolicy, stop, wait};
+    use std::cell::Cell;
+
+    let exit_attempt = Cell::new(0_u32);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(3))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .on_exit(|state: &relentless::ExitState<i32, &str>| {
+            exit_attempt.set(state.attempt);
+        })
+        .sleep(|_| {})
+        .call();
+
+    assert_eq!(exit_attempt.get(), 3);
 }
 
 /// 3.6.7
@@ -198,15 +179,6 @@ fn exit_state_outcome_is_final_attempt_result() {
 
 /// 3.6.1
 #[test]
-fn state_types_are_constructed_via_for_attempt() {
-    // If these compile, the public constructors exist and work.
-    let _ = relentless::RetryState::for_attempt(1);
-    let outcome: Result<i32, &str> = Ok(1);
-    let _ = relentless::AttemptState::for_attempt(1, &outcome);
-    let _ = relentless::ExitState::for_attempt(1, &outcome, relentless::StopReason::Succeeded);
-}
-
-#[test]
 fn retry_state_for_attempt_defaults_optional_fields_to_none() {
     let state = relentless::RetryState::for_attempt(3);
 
@@ -223,6 +195,26 @@ fn retry_state_with_elapsed_sets_elapsed() {
     assert_eq!(state.elapsed, Some(elapsed));
 }
 
+#[test]
+fn retry_state_with_previous_delay_sets_previous_delay() {
+    let prev = Duration::from_millis(40);
+    let state = relentless::RetryState::for_attempt(2).with_previous_delay(Some(prev));
+
+    assert_eq!(state.previous_delay, Some(prev));
+}
+
+#[test]
+fn retry_state_setters_chain_without_clobbering() {
+    let elapsed = Duration::from_secs(5);
+    let prev = Duration::from_millis(40);
+    let state = relentless::RetryState::for_attempt(2)
+        .with_elapsed(Some(elapsed))
+        .with_previous_delay(Some(prev));
+
+    assert_eq!(state.elapsed, Some(elapsed));
+    assert_eq!(state.previous_delay, Some(prev));
+}
+
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "attempt is 1-indexed")]
@@ -230,6 +222,7 @@ fn retry_state_for_attempt_zero_panics_in_debug() {
     let _ = relentless::RetryState::for_attempt(0);
 }
 
+/// 3.6.1
 #[test]
 fn attempt_state_for_attempt_defaults_optional_fields_to_none() {
     let outcome: Result<i32, &str> = Ok(42);
@@ -260,13 +253,14 @@ fn attempt_state_for_attempt_zero_panics_in_debug() {
     let _ = relentless::AttemptState::for_attempt(0, &outcome);
 }
 
+/// 3.6.1
 #[test]
 fn exit_state_for_attempt_defaults_elapsed_to_none() {
     let outcome = Err::<i32, &str>("fatal");
     let state = relentless::ExitState::for_attempt(2, &outcome, relentless::StopReason::Exhausted);
 
     assert_eq!(state.attempt, 2);
-    assert!(state.outcome.is_err());
+    assert_eq!(*state.outcome.as_ref().unwrap_err(), "fatal");
     assert_eq!(state.elapsed, None);
     assert_eq!(state.stop_reason, relentless::StopReason::Exhausted);
 }
