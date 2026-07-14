@@ -200,8 +200,10 @@ with runnable versions in [`examples/`](./examples):
   `.before_attempt` / `.after_attempt`, and collect a `RetryStats` summary via
   `.with_stats()`. ([`hooks-and-stats.rs`](./examples/hooks-and-stats.rs))
 - **Error handling** — on failure you get a `RetryError`: `Exhausted { last }`
-  when the stop strategy fired, or `Rejected { last }` when a predicate deemed
-  the error non-retryable. Both carry the final attempt's result.
+  when the stop strategy fired (`last` is the final attempt's full
+  `Result<T, E>` — polling can exhaust while the last outcome was still `Ok`),
+  or `Rejected { last }` when a predicate deemed the error non-retryable
+  (`last` is that error itself).
 - **Deterministic testing** — the `test-util` feature's `VirtualClock` asserts
   the exact backoff schedule with zero wall-clock time spent, so timeout and
   backoff tests stay fast and non-flaky.

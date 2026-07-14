@@ -154,7 +154,13 @@
 //!
 //! The retry loop returns `Ok(T)` on success. On failure it returns
 //! [`RetryError`], which distinguishes between exhaustion (stop strategy fired)
-//! and rejection (predicate deemed the error non-retryable):
+//! and rejection (predicate deemed the error non-retryable). The payloads
+//! differ: `Exhausted { last }` carries the final attempt's full
+//! `Result<T, E>`, because polling with [`.until()`](SyncRetryBuilder::until)
+//! can exhaust while the last outcome was still `Ok` (e.g. a job stuck at
+//! `Pending`). `Rejected { last }` carries the non-retryable error itself —
+//! terminating on an accepted `Ok` is always a plain `Ok` return, never an
+//! error:
 //!
 //! ```
 //! use relentless::{retry, RetryError};
@@ -169,6 +175,30 @@
 //!     }
 //!     // `RetryError` is `#[non_exhaustive]`; match future variants here.
 //!     Err(_) => {}
+//! }
+//! ```
+//!
+//! Termination is classified by the final outcome's `Result` variant, not by
+//! intent. Inverted polling — retrying *until an error appears*, e.g. probing
+//! for a failure — therefore reports the found error as `Rejected`:
+//!
+//! ```
+//! use relentless::{retry, predicate, stop, RetryError};
+//!
+//! let mut attempts = 0;
+//! let probe = retry(|_| {
+//!     attempts += 1;
+//!     if attempts >= 3 { Err("crash") } else { Ok(()) }
+//! })
+//! .until(predicate::result(|o: &Result<(), &str>| o.is_err()))
+//! .stop(stop::attempts(10))
+//! .sleep(|_| {})
+//! .call();
+//!
+//! match probe {
+//!     // The failure we were looking for arrives via `Rejected`.
+//!     Err(RetryError::Rejected { last }) => assert_eq!(last, "crash"),
+//!     other => panic!("expected Rejected, got {other:?}"),
 //! }
 //! ```
 //!
