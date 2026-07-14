@@ -221,8 +221,12 @@ with runnable versions in [`examples/`](./examples):
 The full API surface — every strategy, predicate, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
-Builder methods follow a fixed order: **when/until** -> **wait** -> **stop** ->
-sleep -> hooks -> stats -> call.
+Builder chains read best in this order: **when/until** -> **wait** -> **stop**
+-> sleep -> hooks -> stats -> call. That order is a reading convention, not a
+compiler contract — the types enforce only three rules: strategy overrides
+(`when`/`until`/`wait`/`stop`) exist only on builders that own their policy
+(below), everything is configured before `.with_stats()`, and an async chain
+needs `.sleep(...)` before `.call()`.
 
 Where you start decides what you can override. The free-function and
 extension-trait builders own their policy, so they accept the strategy overrides
