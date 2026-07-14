@@ -8,6 +8,14 @@
 //!
 //! Predicates compose with `|` and `&` operators, or via `.or()` and `.and()`
 //! methods on the [`Predicate`] trait.
+//!
+//! Prefer the operators when composing built-in predicates standalone. The
+//! method forms resolve only once both outcome types are pinned at the call
+//! site: `error(…).or(ok(…))` infers (the closures pin `E` and `T`), but
+//! `error(…).or(error(…))` alone leaves `T` undetermined and fails with
+//! E0282 — turbofish cannot supply it, since `T` lives on the trait, not the
+//! method. The operators sidestep this entirely by deferring type resolution
+//! to the point of use (e.g. `.when(...)`).
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
