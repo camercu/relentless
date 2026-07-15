@@ -95,8 +95,8 @@ fn advance_async_elapsed_clock(millis: u64) {
 
 /// End-to-end: the async loop feeds each attempt's post-clamp delay forward as
 /// the next attempt's `RetryState::previous_delay`. The async wiring (a pinned
-/// struct field threaded through `poll_async_loop`) is separate code from the
-/// sync path, so it needs its own coverage.
+/// struct field threaded through `AsyncEngine::poll_step`) is separate code
+/// from the sync path, so it needs its own coverage.
 #[test]
 fn engine_feeds_previous_delay_forward_async() {
     struct RecordingWait {
