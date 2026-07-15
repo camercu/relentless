@@ -335,6 +335,9 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E>
     SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
 {
     /// Executes the retry loop and returns both the result and collected stats.
+    // No `# Panics` section: the `expect` is unreachable by construction —
+    // `execute::<true>` always produces stats (SPEC 15.3).
+    #[allow(clippy::missing_panics_doc)]
     #[allow(private_bounds)]
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats)
     where
