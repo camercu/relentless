@@ -16,7 +16,6 @@ use crate::{predicate, stop, wait};
 /// `retry`): `_async` is the conventional async-variant naming, and async
 /// closures (`FnMut() -> Future`) are a different type than the sync ext
 /// trait's `FnMut() -> Result`.
-#[allow(clippy::type_complexity)]
 pub trait AsyncRetryExt<T, E, Fut>: FnMut() -> Fut + Sized
 where
     Fut: Future<Output = Result<T, E>>,
@@ -178,10 +177,7 @@ pub type DefaultAsyncRetryBuilderWithStats<F, SleepImpl, T, E> = AsyncRetryBuild
 #[allow(dead_code)]
 fn _async_retry_builder_requires_sleep_before_call() {}
 
-impl<S, W, P, F, Fut, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoAsyncSleep, T, E>
-where
-    F: FnMut(RetryState) -> Fut,
-{
+impl<S, W, P, F, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoAsyncSleep, T, E> {
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
         AsyncRetryExec::new(
             policy,
