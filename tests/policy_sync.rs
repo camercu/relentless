@@ -689,13 +689,29 @@ fn std_feature_provides_default_sleep() {
     // Without the `std` feature there is no default sleep provider, so `.call()` requires
     // an explicit `.sleep(fn)`. With `std` active the implicit provider uses
     // `std::thread::sleep`, so the builder chain must compile without `.sleep()`.
+    const DEFAULT_SLEEP_WAIT: Duration = Duration::from_millis(1);
+
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
-        .wait(wait::fixed(Duration::from_millis(1)));
+        .wait(wait::fixed(DEFAULT_SLEEP_WAIT));
 
-    let result = policy.retry(|_| Ok::<_, &str>(SUCCESS_VALUE)).call();
+    let attempts = Cell::new(0_u32);
+    let started = std::time::Instant::now();
+    let result = policy
+        .retry(|_| {
+            attempts.set(attempts.get() + 1);
+            if attempts.get() == 1 {
+                Err("fail")
+            } else {
+                Ok(SUCCESS_VALUE)
+            }
+        })
+        .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
+    // The default provider must actually block: thread::sleep guarantees at
+    // least the requested duration, so this lower bound is deterministic.
+    assert!(started.elapsed() >= DEFAULT_SLEEP_WAIT);
 }
 
 #[test]

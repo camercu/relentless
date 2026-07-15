@@ -1,6 +1,6 @@
 //! Async API coverage that must remain available without the crate's `alloc` feature.
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use core::future::{Future, ready};
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
@@ -36,6 +36,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
 #[test]
 fn policy_async_retry_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
+    let events: RefCell<Vec<char>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let result: Result<i32, RetryError<i32, &str>> = block_on(
@@ -48,20 +49,23 @@ fn policy_async_retry_remains_available_without_alloc() {
                     ready(Ok(SUCCESS_VALUE))
                 }
             })
-            .before_attempt(|_state| {})
-            .after_attempt(|_state| {})
-            .on_exit(|_state| {})
+            .before_attempt(|_state| events.borrow_mut().push('b'))
+            .after_attempt(|_state| events.borrow_mut().push('a'))
+            .on_exit(|_state| events.borrow_mut().push('x'))
             .sleep(|_dur| ready(()))
             .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    // The no-alloc single-hook slots must actually fire, not just typecheck.
+    assert_eq!(*events.borrow(), vec!['b', 'a', 'b', 'a', 'b', 'a', 'x']);
 }
 
 #[test]
 fn async_retry_ext_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
+    let events: RefCell<Vec<char>> = RefCell::new(Vec::new());
 
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         (|| {
@@ -74,13 +78,15 @@ fn async_retry_ext_remains_available_without_alloc() {
         })
         .retry_async()
         .stop(stop::attempts(MAX_ATTEMPTS))
-        .before_attempt(|_state| {})
-        .after_attempt(|_state| {})
-        .on_exit(|_state| {})
+        .before_attempt(|_state| events.borrow_mut().push('b'))
+        .after_attempt(|_state| events.borrow_mut().push('a'))
+        .on_exit(|_state| events.borrow_mut().push('x'))
         .sleep(|_dur| ready(()))
         .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    // The no-alloc single-hook slots must actually fire, not just typecheck.
+    assert_eq!(*events.borrow(), vec!['b', 'a', 'b', 'a', 'b', 'a', 'x']);
 }

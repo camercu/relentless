@@ -124,6 +124,46 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
     );
 }
 
+/// SPEC 11.4.2: the delay passed to `after_attempt` is the *clamped* value —
+/// the hook observes the truthful sleep, never the raw wait-strategy output.
+#[cfg(feature = "alloc")]
+#[test]
+fn after_attempt_sees_next_delay_clamped_to_timeout_budget() {
+    const TIMEOUT: Duration = Duration::from_millis(100);
+    const FULL_WAIT: Duration = Duration::from_millis(50);
+    const OP_RUNTIME: Duration = Duration::from_millis(40);
+    // Remaining budget when attempt 2 finishes: 100ms - 2 * 40ms.
+    const CLAMPED_WAIT: Duration = Duration::from_millis(20);
+
+    let clock_millis = std::rc::Rc::new(Cell::new(0_u64));
+    let op_clock = std::rc::Rc::clone(&clock_millis);
+    let seen: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(10))
+        .wait(wait::fixed(FULL_WAIT));
+
+    let _ = policy
+        .retry(|_| {
+            op_clock.set(op_clock.get() + OP_RUNTIME.as_millis() as u64);
+            Err::<i32, _>("fail")
+        })
+        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
+            seen.borrow_mut().push((state.attempt, state.next_delay));
+        })
+        .sleep(instant_sleep)
+        .timeout(TIMEOUT)
+        .elapsed_clock_fn(move || Duration::from_millis(clock_millis.get()))
+        .call();
+
+    // Attempt 1: 60ms budget left, full wait fits. Attempt 2: only 20ms left —
+    // the hook must see the clamp. Attempt 3: budget exhausted, terminal.
+    assert_eq!(
+        *seen.borrow(),
+        vec![(1, Some(FULL_WAIT)), (2, Some(CLAMPED_WAIT)), (3, None),]
+    );
+}
+
 #[test]
 fn on_exit_fires_once_with_final_state() {
     let exits: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
