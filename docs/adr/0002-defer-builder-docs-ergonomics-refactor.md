@@ -11,6 +11,11 @@ async builder/state-machine conflation this ADR's surface sat on has been
 split, dropping the `Fut`/`SleepFut` parameters from the async aliases. The
 struct/alias docs-ergonomics collapse below remains deferred.
 
+Deferral re-confirmed 2026-07-15 after a full read of both engines (see
+"Why the collapse is a lateral move" below). The collapse is a naming/churn
+trade, not a net improvement; it cannot fully eliminate the stub-alias
+problem it targets.
+
 ## Context
 
 The crate root exports ~16 builder/exec type names: the four method-bearing
@@ -39,6 +44,35 @@ giving one well-named, fully-documented page per builder state. That is a
 breaking, wide-blast-radius change across the four execution/ext files and is
 not pre-release polish.
 
+## Why the collapse is a lateral move
+
+Each `*Exec` struct is a *single* engine generic over `Policy`, and it backs
+*two* aliases: the borrowed path (`SyncRetry`/`AsyncRetry`, from
+`RetryPolicy::retry`/`retry_async`) and the owned path
+(`SyncRetryBuilder`/`AsyncRetryBuilder`, from the ext traits and free
+functions). This is deliberate — one state machine, two thin entry aliases —
+and it holds on both sync and async (ADR-0004 split the async *state machine*
+from config, not this borrowed/owned duality).
+
+rustdoc documents inherent methods only on a real struct's page; every
+`type X = Y` alias is a stub. So the friendly name can only carry the method
+docs by *being* the struct, which forces renaming `*Exec`. But because the
+same struct also backs the borrowed `*Retry` alias:
+
+- renaming it `*Builder` misnames the borrowed-policy execution object, and the
+  borrowed `*Retry` alias *still* stubs — the stub problem cannot be fully
+  eliminated;
+- the struct is `<Policy, ...>` while the friendly aliases expand `Policy` into
+  `<S, W, P, ...>` (owned) or add a `'policy` lifetime (borrowed), so making the
+  struct *be* `*Builder` changes its generic arity and loses the expanded
+  convenience form (or needs the aliases kept anyway).
+
+The three implementable shapes — (1) rename `*Exec → *Builder`, (2) split into
+two real structs with duplicated forwarding methods, (3) newtype wrappers —
+each land another imperfect name or duplicate ~10 methods across four structs
+(dismantling the single-engine deep module). None is a net win over the
+current shape.
+
 ## Consequences
 
 - The docs front page lists more builder type names than a reader needs, and the
@@ -46,4 +80,7 @@ not pre-release polish.
 - No functional or correctness impact; the API works and is fully nameable
   (`NoSyncSleep`/`NoAsyncSleep` are now re-exported at the root so the
   `retry`/`retry_async` return types are spellable).
-- Revisit post-0.10.0 as a dedicated breaking change with its own ADR.
+- The docs-discoverability gap is a rustdoc presentation limitation, best
+  mitigated by keeping worked examples on the alias doc-comments (done) rather
+  than a breaking restructure. Revisit only if rustdoc gains alias-method
+  inlining, or alongside a broader breaking release with its own ADR.
