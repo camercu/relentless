@@ -6,6 +6,11 @@ Date: 2026-06-21
 
 Proposed
 
+Amended by [ADR-0004](0004-split-async-builder-from-state-machine.md): the
+async builder/state-machine conflation this ADR's surface sat on has been
+split, dropping the `Fut`/`SleepFut` parameters from the async aliases. The
+struct/alias docs-ergonomics collapse below remains deferred.
+
 ## Context
 
 The crate root exports ~16 builder/exec type names: the four method-bearing

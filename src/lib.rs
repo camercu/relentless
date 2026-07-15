@@ -408,7 +408,6 @@ pub fn retry_async<F, T, E, Fut>(
     (),
     (),
     F,
-    Fut,
     policy::NoAsyncSleep,
     T,
     E,

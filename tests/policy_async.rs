@@ -162,8 +162,8 @@ fn retry_async_executes_when_sleeper_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>(
-        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E, SleepFut>,
+    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E>(
+        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, SleepImpl, T, E>,
     ) where
         F: FnMut(relentless::RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,

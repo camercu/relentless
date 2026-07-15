@@ -408,9 +408,7 @@ mod async_tests {
     #[test]
     fn default_async_retry_builder_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-        type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
-        type Builder =
-            relentless::DefaultAsyncRetryBuilder<AsyncWorkFn, AsyncWork, i32, &'static str>;
+        type Builder = relentless::DefaultAsyncRetryBuilder<AsyncWorkFn, i32, &'static str>;
 
         let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
         let result: Result<i32, RetryError<i32, &str>> =
@@ -421,17 +419,9 @@ mod async_tests {
     #[test]
     fn default_async_retry_builder_with_stats_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-        type AsyncWork = core::future::Ready<Result<i32, &'static str>>;
         type SleepFn = fn(Duration) -> core::future::Ready<()>;
-        type SleepFuture = core::future::Ready<()>;
-        type Builder = relentless::DefaultAsyncRetryBuilderWithStats<
-            AsyncWorkFn,
-            AsyncWork,
-            SleepFn,
-            i32,
-            &'static str,
-            SleepFuture,
-        >;
+        type Builder =
+            relentless::DefaultAsyncRetryBuilderWithStats<AsyncWorkFn, SleepFn, i32, &'static str>;
 
         let typed: Builder = (do_async_work as AsyncWorkFn)
             .retry_async()

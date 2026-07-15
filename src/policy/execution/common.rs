@@ -2,7 +2,9 @@ use super::sync_exec::SyncSleep;
 use crate::compat::Duration;
 use crate::error::RetryError;
 use crate::policy::time::ElapsedTracker;
-use crate::policy::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, RetryPolicy};
+use crate::policy::{
+    AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, PolicyHandle, RetryPolicy,
+};
 use crate::predicate::Predicate;
 use crate::sleep::Sleeper;
 use crate::state::{AttemptState, ExitState, RetryState};
@@ -10,6 +12,7 @@ use crate::stats::{RetryStats, StopReason};
 use crate::stop::Stop;
 use crate::wait::Wait;
 use core::future::Future;
+use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
@@ -161,17 +164,6 @@ where
     AttemptTransition::Finished { result, stats }
 }
 
-fn finish_async_poll<T, E, Fut, SleepFut>(
-    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
-    final_stats: &mut Option<RetryStats>,
-    result: Result<T, RetryError<T, E>>,
-    stats: Option<RetryStats>,
-) -> Poll<Result<T, RetryError<T, E>>> {
-    *final_stats = stats;
-    phase.set(AsyncPhase::Finished);
-    Poll::Ready(result)
-}
-
 enum AttemptTransition<T, E> {
     Finished {
         result: Result<T, RetryError<T, E>>,
@@ -185,7 +177,7 @@ enum AttemptTransition<T, E> {
 
 pin_project! {
     #[project = AsyncPhaseProj]
-pub(crate) enum AsyncPhase<Fut, SleepFut> {
+    enum AsyncPhase<Fut, SleepFut> {
         ReadyToStartAttempt,
         PollingOperation {
             #[pin]
@@ -196,18 +188,6 @@ pub(crate) enum AsyncPhase<Fut, SleepFut> {
             sleep_future: SleepFut,
         },
         Finished,
-    }
-}
-
-pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, NewSleepFut>(
-    phase: AsyncPhase<Fut, OldSleepFut>,
-    unreachable_message: &'static str,
-) -> AsyncPhase<Fut, NewSleepFut> {
-    match phase {
-        AsyncPhase::ReadyToStartAttempt => AsyncPhase::ReadyToStartAttempt,
-        AsyncPhase::PollingOperation { op_future } => AsyncPhase::PollingOperation { op_future },
-        AsyncPhase::Sleeping { .. } => unreachable!("{unreachable_message}"),
-        AsyncPhase::Finished => AsyncPhase::Finished,
     }
 }
 
@@ -431,33 +411,62 @@ where
     }
 }
 
-pub(crate) fn poll_after_completion<T>(type_name: &str) -> Poll<T> {
-    panic!("{type_name} polled after completion");
+pin_project! {
+    /// The async retry state machine, constructed by `.call()` on the async
+    /// builders once configuration is complete.
+    ///
+    /// Owns the same transition order as [`execute_sync_loop`]; the phases
+    /// exist only because an async attempt or sleep can span multiple polls.
+    pub(crate) struct AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
+        policy: Policy,
+        hooks: ExecutionHooks<BA, AA, OX>,
+        op: F,
+        sleeper: SleepImpl,
+        #[pin]
+        phase: AsyncPhase<Fut, SleepFut>,
+        attempt: u32,
+        total_wait: Duration,
+        previous_delay: Option<Duration>,
+        elapsed_tracker: ElapsedTracker,
+        timeout: Option<Duration>,
+        _marker: PhantomData<fn() -> (T, E)>,
+    }
 }
 
-// Intentional: this is the shared async state-machine engine used by both
-// policy-based and extension-trait async retry futures.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>(
-    cx: &mut Context<'_>,
-    policy: &RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
-    op: &mut F,
-    sleeper: &SleepImpl,
-    mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
-    attempt: &mut u32,
-    total_wait: &mut Duration,
-    previous_delay: &mut Option<Duration>,
-    collect_stats: bool,
-    final_stats: &mut Option<RetryStats>,
-    elapsed_tracker: &mut ElapsedTracker,
-    timeout: Option<Duration>,
-    completed_type_name: &'static str,
-) -> Poll<Result<T, RetryError<T, E>>>
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+{
+    pub(crate) fn new(
+        policy: Policy,
+        hooks: ExecutionHooks<BA, AA, OX>,
+        op: F,
+        sleeper: SleepImpl,
+        elapsed_tracker: ElapsedTracker,
+        timeout: Option<Duration>,
+    ) -> Self {
+        Self {
+            policy,
+            hooks,
+            op,
+            sleeper,
+            phase: AsyncPhase::ReadyToStartAttempt,
+            attempt: 1,
+            total_wait: Duration::ZERO,
+            previous_delay: None,
+            elapsed_tracker,
+            timeout,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+    AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
 where
-    S: Stop,
-    W: Wait,
-    P: Predicate<T, E>,
+    Policy: PolicyHandle,
+    Policy::Stop: Stop,
+    Policy::Wait: Wait,
+    Policy::Predicate: Predicate<T, E>,
     BA: BeforeAttemptHook,
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
@@ -466,81 +475,99 @@ where
     SleepImpl: Sleeper<Sleep = SleepFut>,
     SleepFut: Future<Output = ()>,
 {
-    // Execution starts at the first poll: capture the elapsed baseline
-    // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
-    elapsed_tracker.start();
+    /// Advances the retry loop by one poll.
+    ///
+    /// Stats are always `Some` on completion when `COLLECT_STATS` is true,
+    /// mirroring the sync engine's `execute::<COLLECT_STATS>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called again after returning `Poll::Ready` (SPEC 15.2).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn poll_step<const COLLECT_STATS: bool>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<(Result<T, RetryError<T, E>>, Option<RetryStats>)> {
+        let mut this = self.project();
+        let policy = this.policy.policy_ref();
 
-    debug_assert!(
-        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
-        "timeout configured without an elapsed clock — timeout will have no effect"
-    );
+        // Execution starts at the first poll: capture the elapsed baseline
+        // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
+        this.elapsed_tracker.start();
 
-    loop {
-        match phase.as_mut().project() {
-            AsyncPhaseProj::ReadyToStartAttempt => {
-                let state = fire_before_attempt(
-                    hooks,
-                    *attempt,
-                    elapsed_tracker.elapsed(),
-                    *previous_delay,
-                );
-                phase.set(AsyncPhase::PollingOperation {
-                    op_future: op.call_op(state),
-                });
-            }
-            AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
-                op_future,
-                cx,
-                policy,
-                hooks,
-                *attempt,
-                elapsed_tracker,
-                *previous_delay,
-                *total_wait,
-                collect_stats,
-                timeout,
-            ) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(AttemptTransition::Finished { result, stats }) => {
-                    return finish_async_poll(phase, final_stats, result, stats);
-                }
-                Poll::Ready(AttemptTransition::Sleep {
-                    next_delay,
-                    last_result: attempt_last_result,
-                }) => {
-                    let next_delay = clamp_and_fire_after_attempt(
-                        hooks,
-                        *attempt,
-                        elapsed_tracker.elapsed(),
-                        &attempt_last_result,
-                        next_delay,
-                        timeout,
+        debug_assert!(
+            this.timeout.is_none() || this.elapsed_tracker.elapsed().is_some(),
+            "timeout configured without an elapsed clock — timeout will have no effect"
+        );
+
+        loop {
+            match this.phase.as_mut().project() {
+                AsyncPhaseProj::ReadyToStartAttempt => {
+                    let state = fire_before_attempt(
+                        this.hooks,
+                        *this.attempt,
+                        this.elapsed_tracker.elapsed(),
+                        *this.previous_delay,
                     );
-
-                    *total_wait = total_wait.saturating_add(next_delay);
-                    *previous_delay = Some(next_delay);
-
-                    // Avoid spawning a zero-duration sleep future (e.g. when
-                    // the timeout budget is already exhausted).
-                    if next_delay.is_zero() {
-                        *attempt = attempt.saturating_add(1);
-                        phase.set(AsyncPhase::ReadyToStartAttempt);
-                    } else {
-                        phase.set(AsyncPhase::Sleeping {
-                            sleep_future: sleeper.sleep(next_delay),
-                        });
+                    this.phase.set(AsyncPhase::PollingOperation {
+                        op_future: this.op.call_op(state),
+                    });
+                }
+                AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
+                    op_future,
+                    cx,
+                    policy,
+                    this.hooks,
+                    *this.attempt,
+                    this.elapsed_tracker,
+                    *this.previous_delay,
+                    *this.total_wait,
+                    COLLECT_STATS,
+                    *this.timeout,
+                ) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(AttemptTransition::Finished { result, stats }) => {
+                        this.phase.set(AsyncPhase::Finished);
+                        return Poll::Ready((result, stats));
                     }
+                    Poll::Ready(AttemptTransition::Sleep {
+                        next_delay,
+                        last_result: attempt_last_result,
+                    }) => {
+                        let next_delay = clamp_and_fire_after_attempt(
+                            this.hooks,
+                            *this.attempt,
+                            this.elapsed_tracker.elapsed(),
+                            &attempt_last_result,
+                            next_delay,
+                            *this.timeout,
+                        );
+
+                        *this.total_wait = this.total_wait.saturating_add(next_delay);
+                        *this.previous_delay = Some(next_delay);
+
+                        // Avoid spawning a zero-duration sleep future (e.g. when
+                        // the timeout budget is already exhausted).
+                        if next_delay.is_zero() {
+                            *this.attempt = this.attempt.saturating_add(1);
+                            this.phase.set(AsyncPhase::ReadyToStartAttempt);
+                        } else {
+                            this.phase.set(AsyncPhase::Sleeping {
+                                sleep_future: this.sleeper.sleep(next_delay),
+                            });
+                        }
+                    }
+                },
+                AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(()) => {
+                        *this.attempt = this.attempt.saturating_add(1);
+                        this.phase.set(AsyncPhase::ReadyToStartAttempt);
+                    }
+                },
+                AsyncPhaseProj::Finished => {
+                    panic!("async retry future polled after completion");
                 }
-            },
-            AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(()) => {
-                    *attempt = attempt.saturating_add(1);
-                    phase.set(AsyncPhase::ReadyToStartAttempt);
-                }
-            },
-            AsyncPhaseProj::Finished => {
-                return poll_after_completion(completed_type_name);
             }
         }
     }
