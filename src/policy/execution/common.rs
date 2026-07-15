@@ -172,7 +172,7 @@ fn finish_async_poll<T, E, Fut, SleepFut>(
     Poll::Ready(result)
 }
 
-pub(super) enum AttemptTransition<T, E> {
+enum AttemptTransition<T, E> {
     Finished {
         result: Result<T, RetryError<T, E>>,
         stats: Option<RetryStats>,
@@ -199,18 +199,6 @@ pub(crate) enum AsyncPhase<Fut, SleepFut> {
     }
 }
 
-pub(crate) enum AsyncOperationPoll<T, E> {
-    Pending,
-    Finished {
-        result: Result<T, RetryError<T, E>>,
-        stats: Option<RetryStats>,
-    },
-    Sleep {
-        next_delay: Duration,
-        last_result: Result<T, E>,
-    },
-}
-
 pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, NewSleepFut>(
     phase: AsyncPhase<Fut, OldSleepFut>,
     unreachable_message: &'static str,
@@ -223,7 +211,7 @@ pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, NewSleepFut>(
     }
 }
 
-pub(crate) fn fire_before_attempt<BA, AA, OX>(
+fn fire_before_attempt<BA, AA, OX>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
@@ -240,7 +228,7 @@ pub(crate) fn fire_before_attempt<BA, AA, OX>(
 // Intentional: this helper wires all state-machine inputs in one place to keep
 // async retry transition logic shared between policy and extension builders.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
+fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
     op_future: Pin<&mut Fut>,
     cx: &mut Context<'_>,
     policy: &RetryPolicy<S, W, P>,
@@ -251,7 +239,7 @@ pub(crate) fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
     total_wait: Duration,
     collect_stats: bool,
     timeout: Option<Duration>,
-) -> AsyncOperationPoll<T, E>
+) -> Poll<AttemptTransition<T, E>>
 where
     S: Stop,
     W: Wait,
@@ -260,9 +248,8 @@ where
     OX: ExitHook<T, E>,
     Fut: Future<Output = Result<T, E>>,
 {
-    match op_future.poll(cx) {
-        Poll::Pending => AsyncOperationPoll::Pending,
-        Poll::Ready(outcome) => match transition_from_outcome(
+    op_future.poll(cx).map(|outcome| {
+        transition_from_outcome(
             policy,
             hooks,
             outcome,
@@ -272,22 +259,11 @@ where
             total_wait,
             collect_stats,
             timeout,
-        ) {
-            AttemptTransition::Finished { result, stats } => {
-                AsyncOperationPoll::Finished { result, stats }
-            }
-            AttemptTransition::Sleep {
-                next_delay,
-                last_result,
-            } => AsyncOperationPoll::Sleep {
-                next_delay,
-                last_result,
-            },
-        },
-    }
+        )
+    })
 }
 
-pub(super) fn process_attempt_transition<S, W, P, BA, AA, OX, T, E>(
+fn process_attempt_transition<S, W, P, BA, AA, OX, T, E>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
@@ -344,7 +320,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
+fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
@@ -523,14 +499,14 @@ where
                 collect_stats,
                 timeout,
             ) {
-                AsyncOperationPoll::Pending => return Poll::Pending,
-                AsyncOperationPoll::Finished { result, stats } => {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(AttemptTransition::Finished { result, stats }) => {
                     return finish_async_poll(phase, final_stats, result, stats);
                 }
-                AsyncOperationPoll::Sleep {
+                Poll::Ready(AttemptTransition::Sleep {
                     next_delay,
                     last_result: attempt_last_result,
-                } => {
+                }) => {
                     let next_delay = clamp_and_fire_after_attempt(
                         hooks,
                         *attempt,
