@@ -294,9 +294,9 @@ where
         );
     }
 
-    // after_attempt is fired by the caller (execute_sync_loop / poll_async_loop)
-    // after the timeout clamp, so the hook always receives the actual sleep
-    // duration rather than an unclamped value.
+    // after_attempt is fired by the caller (execute_sync_loop /
+    // AsyncEngine::poll_step) after the timeout clamp, so the hook always
+    // receives the actual sleep duration rather than an unclamped value.
     AttemptTransition::Sleep {
         next_delay,
         last_result: outcome,
