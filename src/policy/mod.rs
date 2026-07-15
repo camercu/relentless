@@ -8,7 +8,10 @@
 //! - [`crate::RetryExt`] and [`crate::AsyncRetryExt`] start from
 //!   [`RetryPolicy::default()`] and own the policy immediately. Use those for
 //!   one-off operations where you want to configure retries inline from the
-//!   operation itself.
+//!   operation itself. The operation takes no parameters.
+//! - The [`crate::retry`] and [`crate::retry_async`] free functions are the
+//!   stateful counterpart to the ext traits: they also own a default policy,
+//!   but the operation receives the current [`RetryState`](crate::RetryState).
 //!
 //! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
 //! keeps the reusable policy focused on stop, wait, predicate, and clock
