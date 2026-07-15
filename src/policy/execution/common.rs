@@ -211,18 +211,22 @@ pub(crate) fn remap_no_sleep_phase<Fut, OldSleepFut, NewSleepFut>(
     }
 }
 
+/// Fires the `before_attempt` hook and returns the state it observed, so the
+/// caller passes the exact same snapshot (one clock read) to the operation.
 fn fire_before_attempt<BA, AA, OX>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
     elapsed: Option<Duration>,
     previous_delay: Option<Duration>,
-) where
+) -> RetryState
+where
     BA: BeforeAttemptHook,
 {
     let before_state = RetryState::for_attempt(attempt)
         .with_elapsed(elapsed)
         .with_previous_delay(previous_delay);
     hooks.before_attempt.call(&before_state);
+    before_state
 }
 
 // Intentional: this helper wires all state-machine inputs in one place to keep
@@ -386,11 +390,7 @@ where
     );
 
     loop {
-        fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
-
-        let state = RetryState::for_attempt(attempt)
-            .with_elapsed(elapsed_tracker.elapsed())
-            .with_previous_delay(previous_delay);
+        let state = fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
         let outcome = op.call_op(state);
         match transition_from_outcome(
             policy,
@@ -478,11 +478,12 @@ where
     loop {
         match phase.as_mut().project() {
             AsyncPhaseProj::ReadyToStartAttempt => {
-                fire_before_attempt(hooks, *attempt, elapsed_tracker.elapsed(), *previous_delay);
-
-                let state = RetryState::for_attempt(*attempt)
-                    .with_elapsed(elapsed_tracker.elapsed())
-                    .with_previous_delay(*previous_delay);
+                let state = fire_before_attempt(
+                    hooks,
+                    *attempt,
+                    elapsed_tracker.elapsed(),
+                    *previous_delay,
+                );
                 phase.set(AsyncPhase::PollingOperation {
                     op_future: op.call_op(state),
                 });
