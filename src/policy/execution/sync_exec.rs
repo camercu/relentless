@@ -315,7 +315,10 @@ impl<Policy, BA, AA, OX, F, T, E> SyncRetryExec<Policy, BA, AA, OX, F, NoSyncSle
     pub fn sleep<SleepFn>(
         self,
         sleeper: SleepFn,
-    ) -> SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
+    where
+        SleepFn: SyncSleep,
+    {
         SyncRetryExec {
             policy: self.policy,
             hooks: self.hooks,
