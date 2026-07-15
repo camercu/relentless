@@ -270,6 +270,19 @@ where
     }
 }
 
+/// Debug-asserts that a configured timeout is paired with an elapsed clock.
+///
+/// A timeout is enforced against elapsed time; without a clock the elapsed
+/// reading is always `None` and the timeout silently has no effect. Shared by
+/// both loops so the sync and async diagnostics can never drift. Compiles out
+/// in release builds.
+fn debug_assert_timeout_has_clock(timeout: Option<Duration>, elapsed_tracker: &ElapsedTracker) {
+    debug_assert!(
+        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
+        "timeout configured without an elapsed clock — timeout will have no effect"
+    );
+}
+
 pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, SleepFn, T, E, const COLLECT_STATS: bool>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
@@ -297,10 +310,7 @@ where
     // feedback wait strategies (e.g. decorrelated jitter) can read it.
     let mut previous_delay: Option<Duration> = None;
 
-    debug_assert!(
-        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
-        "timeout configured without an elapsed clock — timeout will have no effect"
-    );
+    debug_assert_timeout_has_clock(timeout, elapsed_tracker);
 
     loop {
         let state = fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
@@ -428,10 +438,7 @@ where
         // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
         this.elapsed_tracker.start();
 
-        debug_assert!(
-            this.timeout.is_none() || this.elapsed_tracker.elapsed().is_some(),
-            "timeout configured without an elapsed clock — timeout will have no effect"
-        );
+        debug_assert_timeout_has_clock(*this.timeout, this.elapsed_tracker);
 
         loop {
             match this.phase.as_mut().project() {
