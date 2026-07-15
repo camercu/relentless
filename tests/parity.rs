@@ -250,7 +250,23 @@ fn run_async(scenario: &Scenario) -> Trace {
 fn assert_parity(scenario: &Scenario) {
     let sync_trace = run_sync(scenario);
     let async_trace = run_async(scenario);
-    assert_eq!(sync_trace, async_trace);
+    // Field-by-field so a failure names the diverged dimension directly.
+    assert_eq!(
+        sync_trace.result, async_trace.result,
+        "sync/async result diverged"
+    );
+    assert_eq!(
+        sync_trace.hooks, async_trace.hooks,
+        "sync/async hook traces diverged"
+    );
+    assert_eq!(
+        sync_trace.sleeps, async_trace.sleeps,
+        "sync/async sleep sequences diverged"
+    );
+    assert_eq!(
+        sync_trace.stats, async_trace.stats,
+        "sync/async stats diverged"
+    );
 }
 
 /// GIVEN an operation succeeding on attempt 3 with exponential backoff

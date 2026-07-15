@@ -308,40 +308,6 @@ fn retry_with_never_stop_still_returns_on_ok() {
 }
 
 #[test]
-fn default_policy_retries_three_times() {
-    let policy = RetryPolicy::default();
-
-    let call_count = Cell::new(0_u32);
-    let result = policy
-        .retry(|_| {
-            call_count.set(call_count.get().saturating_add(1));
-            Err::<i32, _>("fail")
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(call_count.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
-}
-
-#[test]
-fn unparameterized_retry_policy_default_is_safe_policy() {
-    let policy: RetryPolicy = RetryPolicy::default();
-
-    let call_count = Cell::new(0_u32);
-    let result = policy
-        .retry(|_| {
-            call_count.set(call_count.get().saturating_add(1));
-            Err::<i32, _>("fail")
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(call_count.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
-}
-
-#[test]
 fn default_policy_uses_exponential_backoff() {
     let policy = RetryPolicy::default();
     let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
@@ -576,23 +542,6 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
 }
 
 #[test]
-fn before_attempt_hook_fires_before_each_attempt() {
-    let hook_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .before_attempt(|state| {
-            hook_calls.borrow_mut().push(state.attempt);
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    let calls = hook_calls.borrow();
-    assert_eq!(*calls, vec![1, 2, 3]);
-}
-
-#[test]
 fn after_attempt_hook_fires_after_each_attempt() {
     let hook_results: RefCell<Vec<(u32, bool)>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
@@ -620,35 +569,6 @@ fn after_attempt_hook_fires_after_each_attempt() {
     assert_eq!(results[0], (1, false));
     assert_eq!(results[1], (2, false));
     assert_eq!(results[2], (3, true));
-}
-
-#[test]
-fn after_attempt_receives_next_delay_some_for_retryable_none_for_terminal() {
-    let hook_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
-
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
-            hook_calls
-                .borrow_mut()
-                .push((state.attempt, state.next_delay));
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    let calls = hook_calls.borrow();
-    // `next_delay` is Some while the loop will continue, None on the terminal attempt.
-    assert_eq!(
-        *calls,
-        vec![
-            (1, Some(WAIT_DURATION)),
-            (2, Some(WAIT_DURATION)),
-            (3, None),
-        ]
-    );
 }
 
 #[test]
@@ -1105,45 +1025,6 @@ fn after_attempt_fires_including_final_attempt() {
     assert_eq!(*attempt_nums.borrow(), vec![1, 2, 3]);
 }
 
-/// 7.2.2, 7.2.3
-#[test]
-fn after_attempt_next_delay_some_then_none() {
-    let next_delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
-
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
-            next_delays.borrow_mut().push(state.next_delay);
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    let delays = next_delays.borrow();
-    assert_eq!(delays[0], Some(WAIT_DURATION));
-    assert_eq!(delays[1], Some(WAIT_DURATION));
-    assert_eq!(delays[2], None);
-}
-
-/// 8.3
-#[test]
-fn on_exit_fires_exactly_once_per_execution() {
-    let exit_count = Cell::new(0_u32);
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|_: &relentless::ExitState<i32, &str>| {
-            exit_count.set(exit_count.get().saturating_add(1));
-        })
-        .sleep(instant_sleep)
-        .call();
-
-    assert_eq!(exit_count.get(), 1);
-}
-
 /// §6.4
 #[test]
 fn sleep_occurs_after_after_attempt_hook_fires() {
@@ -1295,7 +1176,8 @@ fn when_and_until_last_call_wins() {
 /// 5.1, 5.2
 #[test]
 fn new_and_default_produce_same_policy() {
-    // Both should retry 3 times on persistent errors.
+    // Both should retry 3 times on persistent errors. The unparameterized
+    // `RetryPolicy` annotation also pins the default type parameters.
     let call_count_new = Cell::new(0_u32);
     let r_new = RetryPolicy::new()
         .retry(|_| {
@@ -1306,7 +1188,8 @@ fn new_and_default_produce_same_policy() {
         .call();
 
     let call_count_def = Cell::new(0_u32);
-    let r_def = RetryPolicy::default()
+    let default_policy: RetryPolicy = RetryPolicy::default();
+    let r_def = default_policy
         .retry(|_| {
             call_count_def.set(call_count_def.get().saturating_add(1));
             Err::<i32, &str>("fail")
@@ -1316,20 +1199,28 @@ fn new_and_default_produce_same_policy() {
 
     assert!(matches!(r_new, Err(RetryError::Exhausted { .. })));
     assert!(matches!(r_def, Err(RetryError::Exhausted { .. })));
-    assert_eq!(call_count_new.get(), 3);
-    assert_eq!(call_count_def.get(), 3);
+    assert_eq!(call_count_new.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
+    assert_eq!(call_count_def.get(), DEFAULT_POLICY_MAX_ATTEMPTS);
 }
 
 /// 5.3
 #[test]
 fn builder_methods_return_typed_policy() {
-    let _p = RetryPolicy::new()
+    // If builder methods consumed/mutated rather than returning new types, the
+    // chained call would fail to compile; executing it pins that the fully
+    // chained policy actually runs.
+    let policy = RetryPolicy::new()
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::ZERO))
         .when(predicate::any_error())
         .until(predicate::ok(|_: &i32| true));
-    // If builder methods consumed/mutated rather than returning new types, the
-    // chained call would fail to compile. The fact that it compiles is the test.
+
+    let result = policy
+        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .sleep(instant_sleep)
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
 /// 3.5.2

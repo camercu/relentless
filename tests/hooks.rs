@@ -98,6 +98,7 @@ fn after_attempt_runs_after_predicate_evaluation() {
     assert_eq!(*after_observed.borrow(), vec![1, 2]);
 }
 
+/// SPEC 7.2.2, 7.2.3
 #[test]
 fn after_attempt_receives_next_delay_for_retryable_attempts() {
     let seen: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
@@ -164,6 +165,7 @@ fn after_attempt_sees_next_delay_clamped_to_timeout_budget() {
     );
 }
 
+/// SPEC 8.3
 #[test]
 fn on_exit_fires_once_with_final_state() {
     let exits: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
