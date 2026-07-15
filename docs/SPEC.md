@@ -917,8 +917,8 @@ Ordering guarantees:
 - **8.5** without `alloc`, each hook point stores at most one callback; registering a
   second callback for the same hook point is a compile error (the builder's
   type parameter for that hook slot is no longer `()`)
-- **8.6** with `alloc`, hooks are stored in a `Vec`; multiple hooks of the same kind
-  may be registered and all fire in registration order
+- **8.6** with `alloc`, multiple hooks of the same kind may be registered and
+  all fire in registration order; storage is an implementation detail
 
 **8.7** Hook panics propagate normally. The crate does not catch them.
 
