@@ -35,8 +35,7 @@ top of that base.
 |Sync retry with implicit default sleeper|no         |no     |yes  |
 |Async retry with explicit `.sleep(...)` |yes        |yes    |yes  |
 |Free functions and extension traits     |yes        |yes    |yes  |
-|Single hook per hook point              |yes        |yes    |yes  |
-|Multiple appended hooks per hook point  |no         |yes    |yes  |
+|Hooks (multiple per hook point)         |yes        |yes    |yes  |
 |Closure-based elapsed clock             |no         |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
 
@@ -51,8 +50,7 @@ The `test-util` feature (implies `std`) adds the `test_util` module with the
 `VirtualClock` deterministic test clock (see 12.4).
 
 `alloc` is not required for async retry itself. It is required only for
-closure-based elapsed clocks and registering more than one hook of the same
-kind on a single execution builder.
+closure-based elapsed clocks.
 
 ## 3. Core abstractions
 
@@ -914,11 +912,11 @@ Timing guarantees:
 Ordering guarantees:
 
 - **8.4** hooks of the same kind fire in registration order
-- **8.5** without `alloc`, each hook point stores at most one callback; registering a
-  second callback for the same hook point is a compile error (the builder's
-  type parameter for that hook slot is no longer `()`)
-- **8.6** with `alloc`, multiple hooks of the same kind may be registered and
-  all fire in registration order; storage is an implementation detail
+- **8.5** multiple hooks of the same kind may be registered on one execution
+  builder and all fire in registration order; this holds in every feature
+  configuration (no `alloc` required) and storage is an implementation detail
+- **8.6** (folded into 8.5; retained as a tombstone so later numbering is
+  stable)
 
 **8.7** Hook panics propagate normally. The crate does not catch them.
 
@@ -1390,9 +1388,9 @@ runtime; if absent, a random seed is generated and printed on failure for
 reproduction.
 
 **Compile-fail guarantees.** Typestate constraints (no strategy overrides on
-policy-borrowing builders, single hook per hook point without `alloc`,
-`.call()` unavailable without a sleep function in `no_std`) are verified via
-`compile_fail` doctests in the source files rather than integration tests.
+policy-borrowing builders, `.call()` unavailable without a sleep function in
+`no_std`) are verified via `compile_fail` doctests in the source files rather
+than integration tests.
 
 **no_std coverage.** `tests/async_no_alloc.rs` verifies that async retry
 compiles and runs without `std` or `alloc`. The §2 support matrix is the

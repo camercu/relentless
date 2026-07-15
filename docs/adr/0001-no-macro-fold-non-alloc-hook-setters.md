@@ -4,7 +4,9 @@ Date: 2026-06-21
 
 ## Status
 
-Accepted
+Superseded by [ADR-0003](0003-ungate-multi-hook-from-alloc.md) — the non-alloc
+single-slot hook setters this ADR kept longhand were deleted entirely when
+multi-hook registration was un-gated from `alloc`.
 
 ## Context
 

@@ -72,20 +72,17 @@ where
 /// of callbacks in the type system rather than at runtime.
 #[doc(hidden)]
 #[derive(Clone)]
-#[cfg(feature = "alloc")]
 pub struct HookChain<First, Second> {
     first: First,
     second: Second,
 }
 
-#[cfg(feature = "alloc")]
 impl<First, Second> HookChain<First, Second> {
     pub(crate) fn new(first: First, second: Second) -> Self {
         Self { first, second }
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<First, Second> BeforeAttemptHook for HookChain<First, Second>
 where
     First: BeforeAttemptHook,
@@ -97,7 +94,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, E, First, Second> AttemptHook<T, E> for HookChain<First, Second>
 where
     First: AttemptHook<T, E>,
@@ -109,7 +105,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, E, First, Second> ExitHook<T, E> for HookChain<First, Second>
 where
     First: ExitHook<T, E>,
@@ -138,7 +133,6 @@ impl ExecutionHooks<(), (), ()> {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
     pub(crate) fn chain_before_attempt<Hook>(
         self,
@@ -185,54 +179,6 @@ impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
             before_attempt,
             after_attempt,
             on_exit: HookChain::new(on_exit, hook),
-        }
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<AA, OX> ExecutionHooks<(), AA, OX> {
-    pub(crate) fn set_before_attempt<Hook>(self, hook: Hook) -> ExecutionHooks<Hook, AA, OX> {
-        let Self {
-            after_attempt,
-            on_exit,
-            ..
-        } = self;
-        ExecutionHooks {
-            before_attempt: hook,
-            after_attempt,
-            on_exit,
-        }
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<BA, OX> ExecutionHooks<BA, (), OX> {
-    pub(crate) fn set_after_attempt<Hook>(self, hook: Hook) -> ExecutionHooks<BA, Hook, OX> {
-        let Self {
-            before_attempt,
-            on_exit,
-            ..
-        } = self;
-        ExecutionHooks {
-            before_attempt,
-            after_attempt: hook,
-            on_exit,
-        }
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<BA, AA> ExecutionHooks<BA, AA, ()> {
-    pub(crate) fn set_on_exit<Hook>(self, hook: Hook) -> ExecutionHooks<BA, AA, Hook> {
-        let Self {
-            before_attempt,
-            after_attempt,
-            ..
-        } = self;
-        ExecutionHooks {
-            before_attempt,
-            after_attempt,
-            on_exit: hook,
         }
     }
 }

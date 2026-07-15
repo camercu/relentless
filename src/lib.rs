@@ -253,7 +253,7 @@
 //! | Flag | Purpose |
 //! |------|---------|
 //! | `std` (default) | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-//! | `alloc` | Boxed policies, closure elapsed clocks, multiple hooks per point |
+//! | `alloc` | Boxed policies, closure elapsed clocks |
 //! | `test-util` | [`test_util::VirtualClock`] — deterministic testing of retry behavior without real sleeps |
 //! | `tokio-sleep` | `sleep::tokio()` async sleep adapter |
 //! | `embassy-sleep` | `sleep::embassy()` async sleep adapter |

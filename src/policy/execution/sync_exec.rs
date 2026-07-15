@@ -4,7 +4,6 @@ use core::marker::PhantomData;
 use super::common::{RetryOp, execute_sync_loop};
 use crate::compat::Duration;
 use crate::error::RetryError;
-#[cfg(feature = "alloc")]
 use crate::policy::HookChain;
 use crate::policy::time::ElapsedTracker;
 use crate::policy::{
@@ -354,94 +353,12 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E>
     }
 }
 
-impl_alloc_hook_chain! {
+impl_hook_chain! {
     impl[Policy, BA, AA, OX, F, SleepFn, T, E]
     SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> =>
     before_attempt -> { SyncRetryExec<Policy, HookChain<BA, Hook>, AA, OX, F, SleepFn, T, E> },
     after_attempt -> { SyncRetryExec<Policy, BA, HookChain<AA, Hook>, OX, F, SleepFn, T, E> },
     on_exit -> { SyncRetryExec<Policy, BA, AA, HookChain<OX, Hook>, F, SleepFn, T, E> },
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, (), AA, OX, F, SleepFn, T, E> {
-    /// Sets the before-attempt hook.
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error (the `BA` type parameter would already be
-    /// non-`()`).
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry(|_| Err::<(), _>("fail"))
-    ///     .before_attempt(|_state| {})
-    ///     .before_attempt(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryExec<Policy, Hook, AA, OX, F, SleepFn, T, E>
-    where
-        Hook: FnMut(&RetryState),
-    {
-        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, BA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, (), OX, F, SleepFn, T, E> {
-    /// Sets the after-attempt hook.
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error.
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry(|_| Err::<(), _>("fail"))
-    ///     .after_attempt(|_state| {})
-    ///     .after_attempt(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> SyncRetryExec<Policy, BA, Hook, OX, F, SleepFn, T, E>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, BA, AA, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, (), F, SleepFn, T, E> {
-    /// Sets the on-exit hook.
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error.
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry(|_| Err::<(), _>("fail"))
-    ///     .on_exit(|_state| {})
-    ///     .on_exit(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn on_exit<Hook>(self, hook: Hook) -> SyncRetryExec<Policy, BA, AA, Hook, F, SleepFn, T, E>
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_on_exit(hook))
-    }
 }
 
 impl<S, W, P> RetryPolicy<S, W, P>

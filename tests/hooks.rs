@@ -205,7 +205,6 @@ fn on_exit_reports_non_retryable_error_reason() {
     assert_eq!(*reasons.borrow(), vec![StopReason::Rejected]);
 }
 
-#[cfg(feature = "alloc")]
 #[test]
 fn multiple_hooks_of_same_kind_fire_in_registration_order() {
     let calls: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());

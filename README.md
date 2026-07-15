@@ -43,7 +43,7 @@ cargo add relentless
 | Flag                  | Purpose                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------- |
 | `std` (default)       | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-| `alloc`               | Boxed policies, closure elapsed clocks, multiple hooks per point                            |
+| `alloc`               | Boxed policies, closure elapsed clocks                                                       |
 | `tokio-sleep`         | `sleep::tokio()` async sleep adapter                                                        |
 | `embassy-sleep`       | `sleep::embassy()` async sleep adapter                                                      |
 | `gloo-timers-sleep`   | `sleep::gloo()` async sleep adapter (wasm32)                                                |

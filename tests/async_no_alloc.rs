@@ -50,6 +50,7 @@ fn policy_async_retry_remains_available_without_alloc() {
                 }
             })
             .before_attempt(|_state| events.borrow_mut().push('b'))
+            .before_attempt(|_state| events.borrow_mut().push('B'))
             .after_attempt(|_state| events.borrow_mut().push('a'))
             .on_exit(|_state| events.borrow_mut().push('x'))
             .sleep(|_dur| ready(()))
@@ -58,8 +59,12 @@ fn policy_async_retry_remains_available_without_alloc() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
-    // The no-alloc single-hook slots must actually fire, not just typecheck.
-    assert_eq!(*events.borrow(), vec!['b', 'a', 'b', 'a', 'b', 'a', 'x']);
+    // Hooks must actually fire — including multiple hooks of the same kind,
+    // which no longer require `alloc`.
+    assert_eq!(
+        *events.borrow(),
+        vec!['b', 'B', 'a', 'b', 'B', 'a', 'b', 'B', 'a', 'x']
+    );
 }
 
 #[test]

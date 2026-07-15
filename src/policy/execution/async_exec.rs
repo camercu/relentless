@@ -8,7 +8,6 @@ use pin_project_lite::pin_project;
 
 use crate::compat::Duration;
 use crate::error::RetryError;
-#[cfg(feature = "alloc")]
 use crate::policy::HookChain;
 use crate::policy::{
     AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, PolicyHandle, RetryPolicy,
@@ -347,103 +346,13 @@ impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E>
     }
 }
 
-impl_alloc_hook_chain! {
+impl_hook_chain! {
     impl[Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut]
     AsyncRetryExec<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     =>
     before_attempt -> { AsyncRetryExec<Policy, HookChain<BA, Hook>, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> },
     after_attempt -> { AsyncRetryExec<Policy, BA, HookChain<AA, Hook>, OX, F, Fut, SleepImpl, T, E, SleepFut> },
     on_exit -> { AsyncRetryExec<Policy, BA, AA, HookChain<OX, Hook>, F, Fut, SleepImpl, T, E, SleepFut> },
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryExec<Policy, (), AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole before-attempt hook (no-alloc mode).
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error.
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry_async(|_| async { Err::<(), _>("fail") })
-    ///     .before_attempt(|_state| {})
-    ///     .before_attempt(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryExec<Policy, Hook, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: FnMut(&RetryState),
-    {
-        self.map_hooks(|hooks| hooks.set_before_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, BA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryExec<Policy, BA, (), OX, F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole after-attempt hook (no-alloc mode).
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error.
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry_async(|_| async { Err::<(), _>("fail") })
-    ///     .after_attempt(|_state| {})
-    ///     .after_attempt(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn after_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryExec<Policy, BA, Hook, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_after_attempt(hook))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-impl<Policy, BA, AA, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncRetryExec<Policy, BA, AA, (), F, Fut, SleepImpl, T, E, SleepFut>
-{
-    /// Sets the sole on-exit hook (no-alloc mode).
-    ///
-    /// Without `alloc`, only one hook per slot is supported; calling this
-    /// twice is a compile error.
-    ///
-    /// ```compile_fail
-    /// use relentless::{RetryPolicy, stop};
-    ///
-    /// let policy = RetryPolicy::new().stop(stop::attempts(1));
-    /// let _ = policy
-    ///     .retry_async(|_| async { Err::<(), _>("fail") })
-    ///     .on_exit(|_state| {})
-    ///     .on_exit(|_state| {});
-    /// ```
-    #[must_use]
-    pub fn on_exit<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetryExec<Policy, BA, AA, Hook, F, Fut, SleepImpl, T, E, SleepFut>
-    where
-        Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-    {
-        self.map_hooks(|hooks| hooks.set_on_exit(hook))
-    }
 }
 
 #[allow(private_bounds)]

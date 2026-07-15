@@ -269,11 +269,11 @@ impl<S, W, P> PolicyHandle for &RetryPolicy<S, W, P> {
     }
 }
 
-/// Generates `#[cfg(feature = "alloc")]` hook-chaining methods for a builder.
+/// Generates hook-chaining methods for a builder.
 ///
 /// Produces `before_attempt`, `after_attempt`, and `on_exit` methods that
 /// delegate to `self.map_hooks(|h| h.chain_*(hook))`.
-macro_rules! impl_alloc_hook_chain {
+macro_rules! impl_hook_chain {
     (
         impl[$($gen:tt)*] $Builder:ty
         $(where { $($wc:tt)* })? =>
@@ -281,7 +281,6 @@ macro_rules! impl_alloc_hook_chain {
         after_attempt -> { $($aa:tt)* },
         on_exit -> { $($ox:tt)* } $(,)?
     ) => {
-        #[cfg(feature = "alloc")]
         // Intentional: hook chaining preserves type-state and avoids runtime
         // indirection; signatures are long but mechanically structured.
         #[allow(clippy::type_complexity)]
@@ -333,7 +332,6 @@ mod time;
 pub use execution::async_exec::{
     AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryWithStats, NoAsyncSleep,
 };
-#[cfg(feature = "alloc")]
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
 pub use execution::sync_exec::NoSyncSleep;
