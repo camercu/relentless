@@ -209,49 +209,14 @@ where
     before_state
 }
 
-// Intentional: this helper wires all state-machine inputs in one place to keep
-// async retry transition logic shared between policy and extension builders.
 #[allow(clippy::too_many_arguments)]
-fn poll_operation_future<S, W, P, BA, AA, OX, Fut, T, E>(
-    op_future: Pin<&mut Fut>,
-    cx: &mut Context<'_>,
-    policy: &RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
-    attempt: u32,
-    elapsed_tracker: &ElapsedTracker,
-    previous_delay: Option<Duration>,
-    total_wait: Duration,
-    collect_stats: bool,
-    timeout: Option<Duration>,
-) -> Poll<AttemptTransition<T, E>>
-where
-    S: Stop,
-    W: Wait,
-    P: Predicate<T, E>,
-    AA: AttemptHook<T, E>,
-    OX: ExitHook<T, E>,
-    Fut: Future<Output = Result<T, E>>,
-{
-    op_future.poll(cx).map(|outcome| {
-        transition_from_outcome(
-            policy,
-            hooks,
-            outcome,
-            attempt,
-            elapsed_tracker.elapsed(),
-            previous_delay,
-            total_wait,
-            collect_stats,
-            timeout,
-        )
-    })
-}
-
-fn process_attempt_transition<S, W, P, BA, AA, OX, T, E>(
+fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
-    retry_state: RetryState,
+    attempt: u32,
+    elapsed: Option<Duration>,
+    previous_delay: Option<Duration>,
     total_wait: Duration,
     collect_stats: bool,
     timeout: Option<Duration>,
@@ -263,9 +228,11 @@ where
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
 {
-    let should_retry = policy.predicate.should_retry(&outcome);
+    let retry_state = RetryState::for_attempt(attempt)
+        .with_elapsed(elapsed)
+        .with_previous_delay(previous_delay);
 
-    if !should_retry {
+    if !policy.predicate.should_retry(&outcome) {
         return finish_terminal_transition(
             hooks,
             &retry_state,
@@ -301,40 +268,6 @@ where
         next_delay,
         last_result: outcome,
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
-    policy: &RetryPolicy<S, W, P>,
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
-    outcome: Result<T, E>,
-    attempt: u32,
-    elapsed: Option<Duration>,
-    previous_delay: Option<Duration>,
-    total_wait: Duration,
-    collect_stats: bool,
-    timeout: Option<Duration>,
-) -> AttemptTransition<T, E>
-where
-    S: Stop,
-    W: Wait,
-    P: Predicate<T, E>,
-    AA: AttemptHook<T, E>,
-    OX: ExitHook<T, E>,
-{
-    let retry_state = RetryState::for_attempt(attempt)
-        .with_elapsed(elapsed)
-        .with_previous_delay(previous_delay);
-
-    process_attempt_transition(
-        policy,
-        hooks,
-        outcome,
-        retry_state,
-        total_wait,
-        collect_stats,
-        timeout,
-    )
 }
 
 pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, SleepFn, T, E, const COLLECT_STATS: bool>(
@@ -513,51 +446,55 @@ where
                         op_future: this.op.call_op(state),
                     });
                 }
-                AsyncPhaseProj::PollingOperation { op_future } => match poll_operation_future(
-                    op_future,
-                    cx,
-                    policy,
-                    this.hooks,
-                    *this.attempt,
-                    this.elapsed_tracker,
-                    *this.previous_delay,
-                    *this.total_wait,
-                    COLLECT_STATS,
-                    *this.timeout,
-                ) {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(AttemptTransition::Finished { result, stats }) => {
-                        this.phase.set(AsyncPhase::Finished);
-                        return Poll::Ready((result, stats));
-                    }
-                    Poll::Ready(AttemptTransition::Sleep {
-                        next_delay,
-                        last_result: attempt_last_result,
-                    }) => {
-                        let next_delay = clamp_and_fire_after_attempt(
-                            this.hooks,
-                            *this.attempt,
-                            this.elapsed_tracker.elapsed(),
-                            &attempt_last_result,
+                AsyncPhaseProj::PollingOperation { op_future } => {
+                    let outcome = match op_future.poll(cx) {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(outcome) => outcome,
+                    };
+                    match transition_from_outcome(
+                        policy,
+                        this.hooks,
+                        outcome,
+                        *this.attempt,
+                        this.elapsed_tracker.elapsed(),
+                        *this.previous_delay,
+                        *this.total_wait,
+                        COLLECT_STATS,
+                        *this.timeout,
+                    ) {
+                        AttemptTransition::Finished { result, stats } => {
+                            this.phase.set(AsyncPhase::Finished);
+                            return Poll::Ready((result, stats));
+                        }
+                        AttemptTransition::Sleep {
                             next_delay,
-                            *this.timeout,
-                        );
+                            last_result: attempt_last_result,
+                        } => {
+                            let next_delay = clamp_and_fire_after_attempt(
+                                this.hooks,
+                                *this.attempt,
+                                this.elapsed_tracker.elapsed(),
+                                &attempt_last_result,
+                                next_delay,
+                                *this.timeout,
+                            );
 
-                        *this.total_wait = this.total_wait.saturating_add(next_delay);
-                        *this.previous_delay = Some(next_delay);
+                            *this.total_wait = this.total_wait.saturating_add(next_delay);
+                            *this.previous_delay = Some(next_delay);
 
-                        // Avoid spawning a zero-duration sleep future (e.g. when
-                        // the timeout budget is already exhausted).
-                        if next_delay.is_zero() {
-                            *this.attempt = this.attempt.saturating_add(1);
-                            this.phase.set(AsyncPhase::ReadyToStartAttempt);
-                        } else {
-                            this.phase.set(AsyncPhase::Sleeping {
-                                sleep_future: this.sleeper.sleep(next_delay),
-                            });
+                            // Avoid spawning a zero-duration sleep future (e.g. when
+                            // the timeout budget is already exhausted).
+                            if next_delay.is_zero() {
+                                *this.attempt = this.attempt.saturating_add(1);
+                                this.phase.set(AsyncPhase::ReadyToStartAttempt);
+                            } else {
+                                this.phase.set(AsyncPhase::Sleeping {
+                                    sleep_future: this.sleeper.sleep(next_delay),
+                                });
+                            }
                         }
                     }
-                },
+                }
                 AsyncPhaseProj::Sleeping { sleep_future } => match sleep_future.poll(cx) {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(()) => {
