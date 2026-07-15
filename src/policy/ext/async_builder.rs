@@ -10,7 +10,7 @@ use crate::{predicate, stop, wait};
 /// Extension trait to start async retries directly from a closure/function.
 ///
 /// The operation takes no parameters. Use the free function
-/// [`crate::retry_async`] when you need access to [`crate::RetryState`]. This
+/// [`crate::retry_async`] when you need access to [`RetryState`]. This
 /// is the deliberate two-tier split: the ext method is the stateless shortcut,
 /// the free function is the stateful form. The method is `retry_async` (not
 /// `retry`): `_async` is the conventional async-variant naming, and async
@@ -23,7 +23,29 @@ where
 {
     /// Starts an owned async retry builder from [`RetryPolicy::default()`].
     ///
-    /// `.sleep(...)` must be configured before the builder can be awaited.
+    /// This means extension-based retries default to:
+    /// - `stop::attempts(3)`
+    /// - exponential backoff starting at 100ms
+    /// - retry on any error
+    ///
+    /// Unlike the sync [`RetryExt::retry`](crate::RetryExt::retry), `.sleep(...)`
+    /// must always be configured before the builder can be awaited; there is no
+    /// `std` default async sleeper.
+    ///
+    /// ```
+    /// use core::future::ready;
+    /// use relentless::AsyncRetryExt;
+    ///
+    /// # async fn doc() {
+    /// let _ = (|| ready(Ok::<(), &str>(())))
+    ///     .retry_async()
+    ///     .sleep(|_dur| ready(()))
+    ///     .call()
+    ///     .await;
+    /// # }
+    /// ```
+    ///
+    /// Awaiting without `.sleep(...)` does not compile:
     ///
     /// ```compile_fail
     /// use core::future::ready;
