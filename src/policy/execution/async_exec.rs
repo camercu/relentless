@@ -275,7 +275,11 @@ impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
     ///
     /// A **boundary check, not a preemptive timeout** — see
     /// [`SyncRetryBuilder::timeout`](crate::SyncRetryBuilder::timeout) for full
-    /// semantics and how to get hard preemption.
+    /// semantics.
+    ///
+    /// For a hard wall-clock cancellation that can preempt in-flight work,
+    /// wrap the future returned by `.call()` in your runtime's timeout (e.g.
+    /// `tokio::time::timeout`); see the `async-cancel` example.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);

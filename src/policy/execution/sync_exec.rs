@@ -232,9 +232,10 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> SyncRetryExec<Policy, BA, AA, OX, F, 
     /// time exceeds `dur`. It **cannot** interrupt an operation or a sleep that
     /// is already in progress.
     ///
-    /// For a hard wall-clock cancellation that can preempt in-flight work, wrap
-    /// the retry future in your async runtime's timeout (e.g.
-    /// `tokio::time::timeout`); see the `async-cancel` example.
+    /// The blocking sync path has no external preemption point. To abandon
+    /// in-flight work early, check a cancellation flag inside the operation
+    /// closure and return a non-retryable error; see the `sync-cancel`
+    /// example.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);
@@ -335,11 +336,6 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E>
     SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
 {
     /// Executes the retry loop and returns both the result and collected stats.
-    ///
-    /// # Panics
-    ///
-    /// Panics if stats collection fails internally (should not happen in
-    /// practice).
     #[allow(private_bounds)]
     pub fn call(self) -> (Result<T, RetryError<T, E>>, RetryStats)
     where
