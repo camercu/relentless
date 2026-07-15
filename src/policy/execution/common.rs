@@ -468,7 +468,6 @@ pub(crate) fn poll_async_loop<S, W, P, BA, AA, OX, F, Fut, SleepImpl, T, E, Slee
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
     sleeper: &SleepImpl,
-    last_result: &mut Option<Result<T, E>>,
     mut phase: Pin<&mut AsyncPhase<Fut, SleepFut>>,
     attempt: &mut u32,
     total_wait: &mut Duration,
@@ -541,7 +540,6 @@ where
                         timeout,
                     );
 
-                    *last_result = Some(attempt_last_result);
                     *total_wait = total_wait.saturating_add(next_delay);
                     *previous_delay = Some(next_delay);
 
