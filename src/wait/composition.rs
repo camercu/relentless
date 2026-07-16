@@ -135,9 +135,15 @@ impl<A: Wait, B: Wait> Wait for WaitChain<A, B> {
 }
 
 impl<W> WaitCapped<W> {
-    /// Adds jitter while preserving cap-after-jitter semantics.
+    /// Adds jitter while keeping the cap as the final operation.
     ///
-    /// Even when called after `.cap(max)`, the cap remains the final operation.
+    /// Additive jitter (`base + random(0, max_jitter)`) can exceed the base, so
+    /// applying it *after* a cap would push the delay past `max`. This method
+    /// normalizes `.cap(max).jitter(j)` to behave as `.jitter(j).cap(max)`,
+    /// preserving the cap. [`full_jitter`](crate::Wait::full_jitter) and
+    /// [`equal_jitter`](crate::Wait::equal_jitter) need no such normalization —
+    /// their outputs never exceed the base, so they cannot breach a preceding
+    /// cap and apply in the written order (see SPEC 3.3.8).
     #[must_use]
     pub fn jitter(self, max_jitter: Duration) -> WaitCapped<Jittered<W>> {
         let WaitCapped { inner, max } = self;

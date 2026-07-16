@@ -100,6 +100,10 @@ pub trait Wait {
     /// Replaces the computed delay with a random value in `[0, base]`.
     ///
     /// This is the "Full Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
+    ///
+    /// The random range spans at most `u64::MAX` nanoseconds (~584 years); a
+    /// base larger than that is jittered only within that range. This ceiling
+    /// is irrelevant for realistic retry delays.
     #[must_use]
     fn full_jitter(self) -> Jittered<Self>
     where
@@ -111,6 +115,9 @@ pub trait Wait {
     /// Keeps half the computed delay and jitters the other half.
     ///
     /// This is the "Equal Jitter" strategy from the [AWS Architecture Blog](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
+    ///
+    /// As with [`full_jitter`](Self::full_jitter), the random half spans at most
+    /// `u64::MAX` nanoseconds (~584 years) — irrelevant for realistic delays.
     #[must_use]
     fn equal_jitter(self) -> Jittered<Self>
     where
