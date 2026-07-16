@@ -34,24 +34,42 @@ fn jitter_additive_stays_within_base_plus_max() {
     }
 }
 
+// BASE_WAIT (20) < WAIT_CAP (25) < BASE_WAIT + MAX_JITTER (30): jitter applied
+// to the base can push the value above the cap, so a jitter-then-cap pipeline
+// both stays within [BASE_WAIT, WAIT_CAP] and reaches WAIT_CAP whenever the
+// draw exceeds the 5ms headroom. Asserting the value *hits* the cap proves
+// jitter is genuinely applied to the pre-cap base and clamped — a jitter stuck
+// at zero, or a cap-then-jitter ordering, would fail these.
+const ATTEMPTS: u32 = 64;
+
+fn assert_jitter_then_cap_distribution(strategy: &impl Wait) {
+    let delays: Vec<Duration> = (1..=ATTEMPTS)
+        .map(|attempt| strategy.next_wait(&state(attempt)))
+        .collect();
+
+    assert!(
+        delays.iter().all(|&d| (BASE_WAIT..=WAIT_CAP).contains(&d)),
+        "every delay must land in [BASE_WAIT, WAIT_CAP]: {delays:?}"
+    );
+    assert!(
+        delays.contains(&WAIT_CAP),
+        "jitter must reach past the cap and be clamped to it: {delays:?}"
+    );
+    assert!(
+        delays.iter().any(|&d| d < WAIT_CAP),
+        "not every delay should be pinned at the cap — jitter must vary: {delays:?}"
+    );
+}
+
 #[test]
 fn jitter_respects_cap_when_cap_called_before_jitter() {
-    let capped_then_jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
-
-    for attempt in 1..=64 {
-        let delay = capped_then_jittered.next_wait(&state(attempt));
-        assert!(delay <= WAIT_CAP);
-    }
+    // The inherent WaitCapped::jitter normalizes this to jitter-then-cap.
+    assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER));
 }
 
 #[test]
 fn jitter_respects_cap_when_cap_called_after_jitter() {
-    let jittered_then_capped = wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP);
-
-    for attempt in 1..=64 {
-        let delay = jittered_then_capped.next_wait(&state(attempt));
-        assert!(delay <= WAIT_CAP);
-    }
+    assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP));
 }
 
 #[test]
