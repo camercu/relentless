@@ -1,3 +1,35 @@
+## [0.13.0](https://github.com/camercu/relentless/compare/v0.12.0...v0.13.0) (2026-07-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **async:** AsyncRetryExec, AsyncRetryExecWithStats, and the
+async type aliases lose the Fut and SleepFut type parameters; Fut
+moved to a generic on .call(). Chained-builder usage is unaffected;
+only explicit type annotations need updating.
+* **hooks:** without alloc, hook setters now produce HookChain<(),
+Hook> slot types instead of bare Hook; previously-rejected multi-hook
+no-alloc code now compiles.
+* **state:** RetryState::new, AttemptState::new, and
+ExitState::new are removed. Use RetryState::for_attempt(n),
+AttemptState::for_attempt(n, &outcome), ExitState::for_attempt(n,
+&outcome, reason), with optional fields set via with_elapsed /
+with_next_delay / with_previous_delay.
+
+* **async:** split builder from retry state machine ([cfa65a2](https://github.com/camercu/relentless/commit/cfa65a2b6d2dbd58f67e5f68d085e1feaea0d574))
+
+
+### Features
+
+* **hooks:** multiple hooks per point no longer require alloc ([b1341d2](https://github.com/camercu/relentless/commit/b1341d2b2e3be8158fc1d519a00636ee240fca33))
+* **state:** construct state types via for_attempt + with_* setters ([111052d](https://github.com/camercu/relentless/commit/111052d923da6589a78d0972fca00118631a4b1e))
+
+
+### Bug Fixes
+
+* **sync:** bound .sleep() by SyncSleep so misuse fails at the call site ([91e5c59](https://github.com/camercu/relentless/commit/91e5c59959bbcec7cb70b2276c07214aab16bf80))
+* **sync:** restore clippy compliance on stats-returning call ([a45500c](https://github.com/camercu/relentless/commit/a45500c8d13fbde2ab2a78eab2529550cf9d767f))
+
 ## [0.12.0](https://github.com/camercu/relentless/compare/v0.11.1...v0.12.0) (2026-07-11)
 
 
