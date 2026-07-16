@@ -295,6 +295,37 @@ fn predicate_and_short_circuits_when_left_rejects() {
     assert_eq!(right_calls.get(), 0);
 }
 
+// The `.or()`/`.and()` methods route through the same composites as `|`/`&`, so
+// they must short-circuit identically. Pin the contract on the method entry
+// point too, not just the operators.
+#[test]
+fn predicate_or_method_short_circuits_when_left_retries() {
+    let right_calls = Cell::new(0_u32);
+    let predicate = predicate::result(|_outcome: &TestResult| true).or(predicate::result(
+        |_outcome: &TestResult| {
+            right_calls.set(right_calls.get().saturating_add(1));
+            false
+        },
+    ));
+
+    assert!(predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
+    assert_eq!(right_calls.get(), 0);
+}
+
+#[test]
+fn predicate_and_method_short_circuits_when_left_rejects() {
+    let right_calls = Cell::new(0_u32);
+    let predicate = predicate::result(|_outcome: &TestResult| false).and(predicate::result(
+        |_outcome: &TestResult| {
+            right_calls.set(right_calls.get().saturating_add(1));
+            true
+        },
+    ));
+
+    assert!(!predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
+    assert_eq!(right_calls.get(), 0);
+}
+
 #[test]
 fn predicate_until_negates_inner() {
     // `until` inverts the inner predicate: it retries while inner returns false,

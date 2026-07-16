@@ -296,61 +296,79 @@ fn cloned_strategy_is_independent() {
     assert!(!cloned.should_stop(&state));
 }
 
-/// A stateful stop strategy that fires after being consulted a fixed number of times.
-/// Used with interior mutability to count evaluations and verify `StopAny`'s
-/// no-short-circuit guarantee.
-struct StopAfterConsultations {
-    threshold: u32,
-    count: Cell<u32>,
+/// A stop strategy that records each consultation in an external cell and always
+/// returns `fires`. Lets a composition test prove the strategy was evaluated even
+/// when the other side already determines the composite's result — which a
+/// short-circuiting composite would skip.
+struct CountingStop<'a> {
+    calls: &'a Cell<u32>,
+    fires: bool,
 }
 
-impl StopAfterConsultations {
-    const fn new(threshold: u32) -> Self {
-        Self {
-            threshold,
-            count: Cell::new(0),
-        }
-    }
-}
-
-impl Stop for StopAfterConsultations {
+impl Stop for CountingStop<'_> {
     fn should_stop(&self, _state: &relentless::RetryState) -> bool {
-        let n = self.count.get() + 1;
-        self.count.set(n);
-        n >= self.threshold
+        self.calls.set(self.calls.get().saturating_add(1));
+        self.fires
     }
 }
 
-const CONSULTATION_THRESHOLD: u32 = 3;
-
+// StopAny/StopAll must consult both sides on every call (no short-circuit) so a
+// stateful strategy on either side is never skipped. Each test puts the counted
+// strategy on the side the other operand already dominates — `attempts(1)` fires
+// so `|` could skip the right, `never()` declines so `&` could skip it — then
+// asserts the right side was consulted regardless. Assert the consultation count
+// (not just the boolean, which the dominating side fixes either way): a
+// short-circuiting composite would leave it at 0. Cover both the operator and the
+// `.or()`/`.and()` method entry points, since they route through the same
+// composites.
 #[test]
-fn no_short_circuit_in_stop_any() {
-    // StopAny must evaluate both sides on every call — it does not short-circuit when
-    // the left side fires, because stateful strategies on the right rely on being called.
-    let composite = stop::attempts(1) | StopAfterConsultations::new(CONSULTATION_THRESHOLD);
-    let state = make_state(1);
+fn stop_any_consults_right_even_when_left_fires() {
+    let right_calls = Cell::new(0_u32);
+    let composite = stop::attempts(1)
+        | CountingStop {
+            calls: &right_calls,
+            fires: false,
+        };
 
-    assert!(composite.should_stop(&state)); // left fires; right count -> 1
-    assert!(composite.should_stop(&state)); // left fires; right count -> 2
-    assert!(composite.should_stop(&state)); // left fires; right count -> 3 (threshold reached)
+    assert!(composite.should_stop(&make_state(1)));
+    assert_eq!(right_calls.get(), 1);
 }
 
 #[test]
-fn no_short_circuit_in_stop_all() {
-    // StopAll must evaluate both sides on every call — it does not short-circuit when
-    // the left side returns false, because stateful strategies on the right rely on being called.
-    let composite = stop::never() & StopAfterConsultations::new(CONSULTATION_THRESHOLD);
-    let state = make_state(1);
+fn stop_any_method_consults_right_even_when_left_fires() {
+    let right_calls = Cell::new(0_u32);
+    let composite = stop::attempts(1).or(CountingStop {
+        calls: &right_calls,
+        fires: false,
+    });
 
-    assert!(!composite.should_stop(&state)); // left=false; right count -> 1
-    assert!(!composite.should_stop(&state)); // left=false; right count -> 2
-    assert!(!composite.should_stop(&state)); // left=false; right count -> 3 (threshold reached, but left never fires)
-    // Right has hit threshold but left (never()) never fires, so StopAll never fires either.
-    // Crucially, right was evaluated all 3 times despite left always returning false.
-    assert!(
-        !composite.should_stop(&state),
-        "StopAll fires only when both fire; left=never keeps it from firing"
-    );
+    assert!(composite.should_stop(&make_state(1)));
+    assert_eq!(right_calls.get(), 1);
+}
+
+#[test]
+fn stop_all_consults_right_even_when_left_declines() {
+    let right_calls = Cell::new(0_u32);
+    let composite = stop::never()
+        & CountingStop {
+            calls: &right_calls,
+            fires: true,
+        };
+
+    assert!(!composite.should_stop(&make_state(1)));
+    assert_eq!(right_calls.get(), 1);
+}
+
+#[test]
+fn stop_all_method_consults_right_even_when_left_declines() {
+    let right_calls = Cell::new(0_u32);
+    let composite = stop::never().and(CountingStop {
+        calls: &right_calls,
+        fires: true,
+    });
+
+    assert!(!composite.should_stop(&make_state(1)));
+    assert_eq!(right_calls.get(), 1);
 }
 
 #[test]
