@@ -236,8 +236,8 @@ nonce. `.with_nonce(n)` decorrelates same-seed instances; call it after
 `.with_seed`, which resets the nonce. Cloning still assigns a fresh nonce
 (3.3.4), so a clone diverges from its seeded original.
 
-**3.3.8** Jitter decorators (`.jitter()`, `.full_jitter()`, `.equal_jitter()`) apply
-before `.cap(...)`:
+**3.3.8** In the natural authoring order — a jitter decorator followed by
+`.cap(...)` — jitter is applied to the base and the result is then capped:
 
 ```rust
 // Jitter applied to base, then capped:
@@ -245,6 +245,18 @@ wait::exponential(Duration::from_millis(100))
     .full_jitter()
     .cap(Duration::from_secs(30))
 ```
+
+The reversed order — `.cap(...)` followed by a jitter decorator — is treated
+per decorator, because only additive jitter can breach the cap:
+
+- **Additive** `.jitter(max_jitter)` is normalized so the cap stays the final
+  operation: `.cap(max).jitter(j)` behaves as `.jitter(j).cap(max)`. Applying
+  additive jitter *after* the cap would add `random(0, max_jitter)` on top of a
+  value already at `max` and exceed the cap; normalization prevents that.
+- **Full** `.full_jitter()` and **equal** `.equal_jitter()` never exceed the
+  base (their outputs are `random(0, base)` and `base/2 + random(0, base/2)`),
+  so applying them after a cap can never breach it. They apply in the written
+  order: `.cap(max).full_jitter()` jitters the already-capped value.
 
 ### 3.4 Predicate
 
