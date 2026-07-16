@@ -11,7 +11,6 @@ use relentless::predicate;
 // READY_VALUE is the threshold at which a polling result is "ready".
 // ARBITRARY_NOT_READY_VALUE is any value below that threshold.
 const READY_VALUE: u32 = 10;
-const READY_THRESHOLD: u32 = READY_VALUE;
 const ARBITRARY_OK_VALUE: u32 = 7;
 const ARBITRARY_NOT_READY_VALUE: u32 = 3;
 
@@ -127,7 +126,7 @@ fn factory_functions_return_predicates() {
     assert!(result.should_retry(&err(TestError::Retryable)));
     assert!(!result.should_retry(&ok(ARBITRARY_OK_VALUE)));
 
-    let ok_predicate = predicate::ok(|value: &u32| *value < READY_THRESHOLD);
+    let ok_predicate = predicate::ok(|value: &u32| *value < READY_VALUE);
     assert_predicate_impl::<u32, TestError, _>(&ok_predicate);
     assert!(ok_predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!ok_predicate.should_retry(&ok(READY_VALUE)));
@@ -166,7 +165,7 @@ fn any_error_retries_on_any_error() {
 #[test]
 fn result_can_decide_using_full_outcome() {
     let predicate = predicate::result(|outcome: &TestResult| match outcome {
-        Ok(value) => *value < READY_THRESHOLD,
+        Ok(value) => *value < READY_VALUE,
         Err(TestError::Retryable) => true,
         Err(TestError::Fatal) => false,
     });
@@ -179,7 +178,7 @@ fn result_can_decide_using_full_outcome() {
 
 #[test]
 fn ok_retries_only_matching_ok_values() {
-    let predicate = predicate::ok(|value: &u32| *value < READY_THRESHOLD);
+    let predicate = predicate::ok(|value: &u32| *value < READY_VALUE);
 
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!predicate.should_retry(&ok(READY_VALUE)));
@@ -201,7 +200,7 @@ fn ok_does_not_call_matcher_for_error_values() {
 #[test]
 fn polling_can_retry_selected_errors_and_not_ready_values() {
     let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_THRESHOLD);
+        | predicate::ok(|value: &u32| *value < READY_VALUE);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
@@ -212,7 +211,7 @@ fn polling_can_retry_selected_errors_and_not_ready_values() {
 #[test]
 fn result_can_express_polling_rules_in_one_predicate() {
     let predicate = predicate::result(|outcome: &TestResult| match outcome {
-        Ok(value) => *value < READY_THRESHOLD,
+        Ok(value) => *value < READY_VALUE,
         Err(TestError::Retryable) => true,
         Err(TestError::Fatal) => false,
     });
@@ -226,7 +225,7 @@ fn result_can_express_polling_rules_in_one_predicate() {
 #[test]
 fn predicate_or_retries_when_either_side_retries() {
     let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_THRESHOLD);
+        | predicate::ok(|value: &u32| *value < READY_VALUE);
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
@@ -237,7 +236,7 @@ fn predicate_or_retries_when_either_side_retries() {
 #[test]
 fn predicate_or_supports_chained_composition() {
     let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_THRESHOLD)
+        | predicate::ok(|value: &u32| *value < READY_VALUE)
         | predicate::result(
             |outcome: &TestResult| matches!(outcome, Ok(value) if *value == READY_VALUE),
         );
@@ -274,7 +273,7 @@ fn predicate_and_retries_only_when_both_sides_retry() {
 #[test]
 fn predicate_and_supports_chained_composition() {
     let predicate = predicate::result(|outcome: &TestResult| outcome.is_ok())
-        & predicate::ok(|value: &u32| *value < READY_THRESHOLD)
+        & predicate::ok(|value: &u32| *value < READY_VALUE)
         & predicate::result(|outcome: &TestResult| matches!(outcome, Ok(value) if *value > 0));
 
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
@@ -330,7 +329,7 @@ fn predicate_and_method_short_circuits_when_left_rejects() {
 fn predicate_until_negates_inner() {
     // `until` inverts the inner predicate: it retries while inner returns false,
     // and stops when inner returns true. This lets callers express "retry until <condition>".
-    let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD);
+    let inner = predicate::ok(|value: &u32| *value >= READY_VALUE);
     let until = predicate::until(inner);
 
     // Not ready (inner returns false) → until says retry (true)
@@ -355,7 +354,7 @@ fn predicate_until_with_any_error_retries_ok_stops_on_error() {
 fn predicate_until_composes_with_operators() {
     // until(ok(ready) | error(fatal)): retries until the value is ready OR a fatal error occurs.
     // Inner returns true for ready/fatal (stop condition met), until negates to false (stop retrying).
-    let inner = predicate::ok(|value: &u32| *value >= READY_THRESHOLD)
+    let inner = predicate::ok(|value: &u32| *value >= READY_VALUE)
         | predicate::error(|error: &TestError| matches!(error, TestError::Fatal));
     let until = predicate::until(inner);
 
@@ -373,7 +372,7 @@ fn policy_until_sets_predicate() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(15))
         .wait(wait::fixed(Duration::from_millis(1)))
-        .until(predicate::ok(|value: &u32| *value >= READY_THRESHOLD));
+        .until(predicate::ok(|value: &u32| *value >= READY_VALUE));
 
     let counter = Cell::new(0u32);
     let result = policy
@@ -403,7 +402,7 @@ fn builder_until_sets_predicate() {
     .retry()
     .stop(stop::attempts(15))
     .wait(wait::fixed(Duration::from_millis(1)))
-    .until(predicate::ok(|value: &u32| *value >= READY_THRESHOLD))
+    .until(predicate::ok(|value: &u32| *value >= READY_VALUE))
     .sleep(|_| {})
     .call();
 
