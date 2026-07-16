@@ -45,7 +45,9 @@ pub trait Predicate<T, E> {
 
     /// Returns a predicate that retries when either side retries.
     ///
-    /// This is the named equivalent of the `|` operator.
+    /// This is the named equivalent of the `|` operator. Evaluation
+    /// short-circuits: the right predicate is skipped once the left one
+    /// retries. (`Stop` composition, by contrast, always evaluates both sides.)
     ///
     /// ```
     /// use relentless::{Predicate, predicate};
@@ -64,7 +66,9 @@ pub trait Predicate<T, E> {
 
     /// Returns a predicate that retries only when both sides retry.
     ///
-    /// This is the named equivalent of the `&` operator.
+    /// This is the named equivalent of the `&` operator. Evaluation
+    /// short-circuits: the right predicate is skipped once the left one
+    /// declines. (`Stop` composition, by contrast, always evaluates both sides.)
     ///
     /// ```
     /// use relentless::{Predicate, predicate};
@@ -325,6 +329,9 @@ where
 /// Created by combining predicates with the `|` operator or the
 /// [`Predicate::or`] named method.
 ///
+/// Evaluation short-circuits: the right predicate is skipped once the left one
+/// retries, so a stateful predicate on the right may not be consulted.
+///
 /// # Examples
 ///
 /// ```
@@ -367,6 +374,9 @@ where
 /// Created by combining predicates with the `&` operator or the
 /// [`Predicate::and`] named method.
 ///
+/// Evaluation short-circuits: the right predicate is skipped once the left one
+/// declines, so a stateful predicate on the right may not be consulted.
+///
 /// # Examples
 ///
 /// ```
@@ -406,7 +416,10 @@ where
     }
 }
 
-/// Generates `BitOr` / `BitAnd` operator impls for a predicate type.
+/// Generates `BitOr` / `BitAnd` operator impls for a [`Predicate`] type,
+/// producing [`PredicateAny`] / [`PredicateAll`] composites respectively.
+/// Trailing `$param`s name the type's own generic parameters so composites and
+/// leaves share one macro.
 macro_rules! impl_predicate_ops {
     ($ty:ty $(, $param:ident)*) => {
         impl<$($param,)* Rhs> BitOr<Rhs> for $ty {
