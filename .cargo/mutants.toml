@@ -14,3 +14,13 @@ minimum_test_timeout = 30
 # and `test-util` (VirtualClock). (`gloo-timers-sleep` is wasm-only and stays
 # uncoverable on the host.)
 additional_cargo_args = ["--features", "tokio-sleep,embassy-sleep,futures-timer-sleep,test-util"]
+
+# `debug_assert_timeout_has_clock` guards a no_std-only hazard (SPEC 11.2:
+# timeout without a clock silently no-ops). This harness runs with `std`, where
+# `ElapsedTracker::start` always installs a fallback `Instant` clock, so the
+# asserted condition is unconditionally true and the mutant that empties the
+# assertion cannot be killed here. The assertion IS covered by
+# `timeout_without_clock_panics_in_debug`, which runs under
+# `--no-default-features`. Exclude the unkillable-under-std mutant rather than
+# leave a permanent false "missed".
+exclude_re = ["replace debug_assert_timeout_has_clock"]

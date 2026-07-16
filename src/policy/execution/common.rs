@@ -273,9 +273,16 @@ where
 /// Debug-asserts that a configured timeout is paired with an elapsed clock.
 ///
 /// A timeout is enforced against elapsed time; without a clock the elapsed
-/// reading is always `None` and the timeout silently has no effect. Shared by
-/// both loops so the sync and async diagnostics can never drift. Compiles out
-/// in release builds.
+/// reading is always `None` and the timeout silently has no effect (SPEC 11.2).
+/// Under `std`, `ElapsedTracker::start` always falls back to an `Instant` clock,
+/// so this can only bite in `no_std` builds. Shared by both loops so the sync
+/// and async diagnostics can never drift. Compiles out in release builds.
+///
+/// Covered by `timeout_without_clock_panics_in_debug` (runs under
+/// `--no-default-features`, the only config where the assertion can fire).
+/// Mutation testing cannot reach it: the mutation harness runs with `std`, where
+/// the fallback clock makes the asserted condition unconditionally true — see
+/// the `exclude_re` note in `.cargo/mutants.toml`.
 fn debug_assert_timeout_has_clock(timeout: Option<Duration>, elapsed_tracker: &ElapsedTracker) {
     debug_assert!(
         timeout.is_none() || elapsed_tracker.elapsed().is_some(),
