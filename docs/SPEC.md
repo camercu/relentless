@@ -264,10 +264,11 @@ pub trait Predicate<T, E> {
 }
 ```
 
-**3.4.1** The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Both sides are always evaluated (no short-circuit).
+**3.4.1** The `|` operator is equivalent to `.or()` and `&` is equivalent to `.and()`. Composition short-circuits: `|` skips the right predicate once the left one retries, and `&` skips the right predicate once the left one declines. This differs from `Stop` composition (§3.1.2), which always evaluates both sides.
 
 `Predicate` uses `&self`. Most predicates are stateless closures; the rare
-stateful predicate can use interior mutability (`Cell`, `AtomicUsize`).
+stateful predicate can use interior mutability (`Cell`, `AtomicUsize`) but must
+not rely on being consulted for every outcome under composition.
 
 > The `&self` receiver makes `Predicate<T, E>` trivially object-safe for
 > fixed `T, E` and allows sharing across concurrent retry loops.
