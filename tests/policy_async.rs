@@ -364,7 +364,7 @@ fn async_sleep_receives_wait_strategy_delays() {
     let calls = clock.calls();
     let expected_sleep_calls = (MAX_ATTEMPTS - 1) as usize;
     assert_eq!(calls.len(), expected_sleep_calls);
-    for duration in calls.iter() {
+    for duration in &calls {
         assert_eq!(*duration, WAIT_DURATION);
     }
 }
