@@ -1,5 +1,49 @@
 pub mod relentless
 pub mod relentless::clock
+pub struct relentless::clock::EmbassyClock
+impl relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::new() -> Self
+impl core::clone::Clone for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::clone(&self) -> relentless::clock::EmbassyClock
+impl core::default::Default for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::default() -> Self
+impl core::fmt::Debug for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for relentless::clock::EmbassyClock
+impl relentless::clock::AsyncClock for relentless::clock::EmbassyClock
+pub type relentless::clock::EmbassyClock::Wait = embassy_time::timer::Timer
+pub fn relentless::clock::EmbassyClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::Clock for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::now(&self) -> core::time::Duration
+impl core::marker::Freeze for relentless::clock::EmbassyClock
+impl core::marker::Send for relentless::clock::EmbassyClock
+impl core::marker::Sync for relentless::clock::EmbassyClock
+impl core::marker::Unpin for relentless::clock::EmbassyClock
+impl core::marker::UnsafeUnpin for relentless::clock::EmbassyClock
+impl core::panic::unwind_safe::RefUnwindSafe for relentless::clock::EmbassyClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::clock::EmbassyClock
+pub struct relentless::clock::FuturesTimerClock
+impl relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::new() -> Self
+impl core::clone::Clone for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::clone(&self) -> relentless::clock::FuturesTimerClock
+impl core::default::Default for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::default() -> Self
+impl core::fmt::Debug for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for relentless::clock::FuturesTimerClock
+impl relentless::clock::AsyncClock for relentless::clock::FuturesTimerClock
+pub type relentless::clock::FuturesTimerClock::Wait = futures_timer::native::delay::Delay
+pub fn relentless::clock::FuturesTimerClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::Clock for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::now(&self) -> core::time::Duration
+impl core::marker::Freeze for relentless::clock::FuturesTimerClock
+impl core::marker::Send for relentless::clock::FuturesTimerClock
+impl core::marker::Sync for relentless::clock::FuturesTimerClock
+impl core::marker::Unpin for relentless::clock::FuturesTimerClock
+impl core::marker::UnsafeUnpin for relentless::clock::FuturesTimerClock
+impl core::panic::unwind_safe::RefUnwindSafe for relentless::clock::FuturesTimerClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::clock::FuturesTimerClock
 pub struct relentless::clock::SystemClock
 impl core::clone::Clone for relentless::clock::SystemClock
 pub fn relentless::clock::SystemClock::clone(&self) -> relentless::clock::SystemClock
@@ -23,6 +67,28 @@ impl core::marker::Unpin for relentless::clock::SystemClock
 impl core::marker::UnsafeUnpin for relentless::clock::SystemClock
 impl core::panic::unwind_safe::RefUnwindSafe for relentless::clock::SystemClock
 impl core::panic::unwind_safe::UnwindSafe for relentless::clock::SystemClock
+pub struct relentless::clock::TokioClock
+impl relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::new() -> Self
+impl core::clone::Clone for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::clone(&self) -> relentless::clock::TokioClock
+impl core::default::Default for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::default() -> Self
+impl core::fmt::Debug for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for relentless::clock::TokioClock
+impl relentless::clock::AsyncClock for relentless::clock::TokioClock
+pub type relentless::clock::TokioClock::Wait = tokio::time::sleep::Sleep
+pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::Clock for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::now(&self) -> core::time::Duration
+impl core::marker::Freeze for relentless::clock::TokioClock
+impl core::marker::Send for relentless::clock::TokioClock
+impl core::marker::Sync for relentless::clock::TokioClock
+impl core::marker::Unpin for relentless::clock::TokioClock
+impl core::marker::UnsafeUnpin for relentless::clock::TokioClock
+impl core::panic::unwind_safe::RefUnwindSafe for relentless::clock::TokioClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::clock::TokioClock
 pub struct relentless::clock::VirtualClock
 impl relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::advance(&self, dur: core::time::Duration)
@@ -62,13 +128,28 @@ impl<'clock> !core::panic::unwind_safe::UnwindSafe for relentless::clock::Virtua
 pub trait relentless::clock::AsyncClock: relentless::clock::Clock
 pub type relentless::clock::AsyncClock::Wait: core::future::future::Future<Output = ()>
 pub fn relentless::clock::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::EmbassyClock
+pub type relentless::clock::EmbassyClock::Wait = embassy_time::timer::Timer
+pub fn relentless::clock::EmbassyClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::FuturesTimerClock
+pub type relentless::clock::FuturesTimerClock::Wait = futures_timer::native::delay::Delay
+pub fn relentless::clock::FuturesTimerClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::TokioClock
+pub type relentless::clock::TokioClock::Wait = tokio::time::sleep::Sleep
+pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
 pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
 pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 pub trait relentless::clock::Clock
 pub fn relentless::clock::Clock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::SystemClock
 pub fn relentless::clock::SystemClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
 impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Clock for &C
@@ -1162,6 +1243,15 @@ impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::UnwindSafe for re
 pub trait relentless::AsyncClock: relentless::clock::Clock
 pub type relentless::AsyncClock::Wait: core::future::future::Future<Output = ()>
 pub fn relentless::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::EmbassyClock
+pub type relentless::clock::EmbassyClock::Wait = embassy_time::timer::Timer
+pub fn relentless::clock::EmbassyClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::FuturesTimerClock
+pub type relentless::clock::FuturesTimerClock::Wait = futures_timer::native::delay::Delay
+pub fn relentless::clock::FuturesTimerClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl relentless::clock::AsyncClock for relentless::clock::TokioClock
+pub type relentless::clock::TokioClock::Wait = tokio::time::sleep::Sleep
+pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
 pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
 pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
@@ -1171,8 +1261,14 @@ impl<T, E, Fut, F> relentless::AsyncRetryExt<T, E, Fut> for F where F: core::ops
 pub fn F::retry_async(self) -> relentless::DefaultAsyncRetryBuilder<Self, T, E>
 pub trait relentless::Clock
 pub fn relentless::Clock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::EmbassyClock
+pub fn relentless::clock::EmbassyClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::FuturesTimerClock
+pub fn relentless::clock::FuturesTimerClock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::SystemClock
 pub fn relentless::clock::SystemClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::TokioClock
+pub fn relentless::clock::TokioClock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
 impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Clock for &C

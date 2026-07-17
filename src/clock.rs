@@ -242,3 +242,197 @@ impl Future for VirtualWait<'_> {
         Poll::Ready(())
     }
 }
+
+/// An [`AsyncClock`] backed by the Tokio runtime's timer.
+///
+/// `now()` reads [`tokio::time::Instant`] and `wait_async` is
+/// [`tokio::time::sleep`], so both seams follow Tokio's virtual time: under
+/// `tokio::time::pause` (a `test-util` API of Tokio) the waits and the
+/// elapsed reads stay coherent by construction, with no separate wiring.
+#[cfg(feature = "tokio-sleep")]
+#[derive(Debug, Clone, Copy)]
+pub struct TokioClock {
+    origin: tokio::time::Instant,
+}
+
+#[cfg(feature = "tokio-sleep")]
+impl TokioClock {
+    /// Creates a clock anchored at the current Tokio instant.
+    ///
+    /// Must be called within a Tokio runtime context (as must the waits).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            origin: tokio::time::Instant::now(),
+        }
+    }
+}
+
+#[cfg(feature = "tokio-sleep")]
+impl Default for TokioClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "tokio-sleep")]
+impl Clock for TokioClock {
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+}
+
+#[cfg(feature = "tokio-sleep")]
+impl AsyncClock for TokioClock {
+    type Wait = tokio::time::Sleep;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        tokio::time::sleep(dur)
+    }
+}
+
+/// An [`AsyncClock`] backed by [`embassy_time`]'s tick clock and timer.
+///
+/// `now()` reads [`embassy_time::Instant`] and `wait_async` is
+/// [`embassy_time::Timer::after`], both driven by the linked embassy time
+/// driver.
+#[cfg(feature = "embassy-sleep")]
+#[derive(Debug, Clone, Copy)]
+pub struct EmbassyClock {
+    origin: embassy_time::Instant,
+}
+
+#[cfg(feature = "embassy-sleep")]
+impl EmbassyClock {
+    /// Creates a clock anchored at the current embassy instant.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            origin: embassy_time::Instant::now(),
+        }
+    }
+}
+
+#[cfg(feature = "embassy-sleep")]
+impl Default for EmbassyClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "embassy-sleep")]
+impl Clock for EmbassyClock {
+    fn now(&self) -> Duration {
+        Duration::from_micros(self.origin.elapsed().as_micros())
+    }
+}
+
+#[cfg(feature = "embassy-sleep")]
+impl AsyncClock for EmbassyClock {
+    type Wait = embassy_time::Timer;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        embassy_time::Timer::after(to_embassy_duration(dur))
+    }
+}
+
+/// Embassy counts ticks in a `u64`; saturate rather than panic on very large
+/// durations.
+///
+/// Computes ticks in `u128` (mirroring `embassy_time::Duration::from_micros`,
+/// including its round-up-to-a-tick behavior) because Embassy's own `u64`
+/// conversion arithmetic overflows near `u64::MAX` microseconds.
+#[cfg(feature = "embassy-sleep")]
+pub(crate) fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
+    const MICROS_PER_SEC: u128 = 1_000_000;
+    let ticks_ceil = dur
+        .as_micros()
+        .saturating_mul(u128::from(embassy_time::TICK_HZ))
+        .div_ceil(MICROS_PER_SEC);
+    let ticks = u64::try_from(ticks_ceil).unwrap_or(u64::MAX);
+    embassy_time::Duration::from_ticks(ticks)
+}
+
+/// An [`AsyncClock`] backed by [`futures_timer::Delay`] and `std`'s
+/// monotonic [`std::time::Instant`].
+///
+/// `futures-timer` waits on real wall time, which `Instant` also measures, so
+/// the pairing is coherent.
+#[cfg(feature = "futures-timer-sleep")]
+#[derive(Debug, Clone, Copy)]
+pub struct FuturesTimerClock {
+    origin: std::time::Instant,
+}
+
+#[cfg(feature = "futures-timer-sleep")]
+impl FuturesTimerClock {
+    /// Creates a clock anchored at the current instant.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            origin: std::time::Instant::now(),
+        }
+    }
+}
+
+#[cfg(feature = "futures-timer-sleep")]
+impl Default for FuturesTimerClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "futures-timer-sleep")]
+impl Clock for FuturesTimerClock {
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+}
+
+#[cfg(feature = "futures-timer-sleep")]
+impl AsyncClock for FuturesTimerClock {
+    type Wait = futures_timer::Delay;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        futures_timer::Delay::new(dur)
+    }
+}
+
+/// An [`AsyncClock`] pairing `gloo-timers` waits with a caller-supplied `now`
+/// source (wasm32 only).
+///
+/// Wasm has no `std::time::Instant`, so the monotonic reader must be supplied
+/// explicitly — e.g. a `js_sys`/`web_sys` `performance.now()` shim converted
+/// to a [`Duration`]. The supplied function must be monotonically
+/// non-decreasing and must observe real time passing during the `gloo` waits,
+/// or `timeout`/`stop::elapsed` will misbehave.
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy)]
+pub struct GlooClock {
+    now: fn() -> Duration,
+}
+
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+impl GlooClock {
+    /// Creates a clock waiting through `gloo-timers` and reading `now`.
+    #[must_use]
+    pub fn with_now(now: fn() -> Duration) -> Self {
+        Self { now }
+    }
+}
+
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+impl Clock for GlooClock {
+    fn now(&self) -> Duration {
+        (self.now)()
+    }
+}
+
+#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+impl AsyncClock for GlooClock {
+    type Wait = gloo_timers::future::TimeoutFuture;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        gloo_timers::future::sleep(dur)
+    }
+}
