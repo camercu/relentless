@@ -6,6 +6,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use std::sync::Arc;
 
+use relentless::clock::VirtualClock;
 use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
 
 const SUCCESS_VALUE: i32 = 42;
@@ -39,6 +40,7 @@ fn policy_async_retry_remains_available_without_alloc() {
     let events: RefCell<Vec<char>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
+    let clock = VirtualClock::new();
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| {
@@ -53,7 +55,7 @@ fn policy_async_retry_remains_available_without_alloc() {
             .before_attempt(|_state| events.borrow_mut().push('B'))
             .after_attempt(|_state| events.borrow_mut().push('a'))
             .on_exit(|_state| events.borrow_mut().push('x'))
-            .sleep(|_dur| ready(()))
+            .clock(&clock)
             .call(),
     );
 
@@ -72,6 +74,7 @@ fn async_retry_ext_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
     let events: RefCell<Vec<char>> = RefCell::new(Vec::new());
 
+    let clock = VirtualClock::new();
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         (|| {
             attempts.set(attempts.get().saturating_add(1));
@@ -86,7 +89,7 @@ fn async_retry_ext_remains_available_without_alloc() {
         .before_attempt(|_state| events.borrow_mut().push('b'))
         .after_attempt(|_state| events.borrow_mut().push('a'))
         .on_exit(|_state| events.borrow_mut().push('x'))
-        .sleep(|_dur| ready(()))
+        .clock(&clock)
         .call(),
     );
 

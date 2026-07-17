@@ -35,7 +35,7 @@ exclude = [
 categories = ["asynchronous", "no-std", "rust-patterns"]
 
 # Build docs.rs documentation with every feature enabled so feature-gated APIs
-# (sleep adapters, test_util) are visible there.
+# (clock adapters) are visible there.
 [package.metadata.docs.rs]
 all-features = true
 
@@ -51,16 +51,12 @@ std = ["alloc", "embassy-time?/std"]
 #        and multiple hooks per hook point. Async retry itself does not require it.
 alloc = []
 
-# test-util: deterministic virtual-clock test infrastructure (VirtualClock) for
-#            testing retry behavior without real sleeps. Host-side testing only.
-test-util = ["std"]
-
-# Runtime-specific async sleep helper constructors. Multiple adapters can be
-# enabled together; callers choose explicitly at `.sleep(...)`.
-tokio-sleep = ["dep:tokio", "std"]
-embassy-sleep = ["dep:embassy-time"]
-gloo-timers-sleep = ["dep:gloo-timers"]
-futures-timer-sleep = ["dep:futures-timer", "std"]
+# Runtime-specific AsyncClock adapters. Multiple adapters can be enabled
+# together; callers choose explicitly at `.clock(...)`.
+tokio-clock = ["dep:tokio", "std"]
+embassy-clock = ["dep:embassy-time"]
+gloo-timers-clock = ["dep:gloo-timers"]
+futures-timer-clock = ["dep:futures-timer", "std"]
 
 [dependencies]
 pin-project-lite = "0.2"
@@ -83,11 +79,11 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 [[example]]
 name = "async-polling"
-required-features = ["tokio-sleep"]
+required-features = ["tokio-clock"]
 
 [[example]]
 name = "async-cancel"
-required-features = ["tokio-sleep"]
+required-features = ["tokio-clock"]
 
 [[example]]
 name = "sync-cancel"
@@ -95,7 +91,7 @@ required-features = ["std"]
 
 [[example]]
 name = "testing-with-virtual-clock"
-required-features = ["test-util"]
+required-features = ["std"]
 
 [[bench]]
 name = "retry_hot_paths"

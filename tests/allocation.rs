@@ -11,8 +11,6 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-#[cfg(feature = "alloc")]
-use relentless::sleep::Sleeper;
 use relentless::{RetryPolicy, Wait, stop, wait};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -74,15 +72,33 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
+/// Wait-free async clock; advances a plain `Cell` so execution allocates
+/// nothing.
 #[cfg(feature = "alloc")]
-#[derive(Clone, Copy)]
-struct InstantSleeper;
+struct InstantAsyncClock(core::cell::Cell<Duration>);
 
 #[cfg(feature = "alloc")]
-impl Sleeper for InstantSleeper {
-    type Sleep = core::future::Ready<()>;
+impl InstantAsyncClock {
+    fn new() -> Self {
+        Self(core::cell::Cell::new(Duration::ZERO))
+    }
+}
 
-    fn sleep(&self, _dur: Duration) -> Self::Sleep {
+#[cfg(feature = "alloc")]
+impl relentless::Clock for &InstantAsyncClock {
+    fn now(&self) -> Duration {
+        self.0.get()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl relentless::AsyncClock for &InstantAsyncClock {
+    type Wait = core::future::Ready<()>;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        // Eager advance is fine here: the engine polls the wait immediately
+        // and these tests never cancel it.
+        self.0.set(self.0.get().saturating_add(dur));
         core::future::ready(())
     }
 }
@@ -207,6 +223,7 @@ fn async_retry_execution_is_allocation_free_after_warmup() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
+    let async_clock = InstantAsyncClock::new();
     let run_once = || {
         let call_count = Cell::new(0_u32);
         block_on(
@@ -222,7 +239,7 @@ fn async_retry_execution_is_allocation_free_after_warmup() {
                         }
                     }
                 })
-                .sleep(InstantSleeper)
+                .clock(&async_clock)
                 .call(),
         )
     };

@@ -172,9 +172,10 @@ let result = RetryPolicy::new()
 
 ### 5) Async retry
 
-Pass an async sleep adapter — here via the `tokio-sleep` feature.
+Pass an async clock adapter — here via the `tokio-clock` feature.
 
 ```rust,no_run
+use relentless::clock::TokioClock;
 use relentless::retry_async;
 
 async fn fetch(url: &str) -> Result<String, reqwest::Error> {
@@ -184,7 +185,7 @@ async fn fetch(url: &str) -> Result<String, reqwest::Error> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let body = retry_async(|_| fetch("https://api.example.com/data"))
-        .sleep(relentless::sleep::tokio())
+        .clock(TokioClock::new())
         .call()
         .await?;
     Ok(())

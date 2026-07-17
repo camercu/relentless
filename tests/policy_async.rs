@@ -2,9 +2,10 @@
 //!
 //! All tests run under a minimal in-process `block_on` executor so they are
 //! deterministic and executor-agnostic: no Tokio runtime, no real timers. The
-//! `RecordingSleeper` captures requested sleep durations without blocking, letting
-//! tests verify wait-strategy output without wall-clock delays. Feature-gated tests
-//! check that runtime-specific sleep constructors compile and return the correct type.
+//! `RecordingClock` captures requested waits (advancing its own `now`, so the
+//! elapsed seam stays coherent) without blocking, letting tests verify
+//! wait-strategy output without wall-clock delays. Feature-gated tests check
+//! that the runtime clock adapters satisfy the async engine's bound.
 
 use core::cell::Cell;
 use core::future::Future;
@@ -12,7 +13,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy};
-use relentless::{predicate, sleep::Sleeper, stop, wait};
+use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -51,46 +52,76 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[derive(Clone)]
-struct RecordingSleeper {
-    calls: Rc<RefCell<Vec<Duration>>>,
+/// Test-side [`relentless::AsyncClock`]: waits resolve immediately, advancing
+/// the same `now` cell the elapsed seam reads (coherent by construction) and
+/// recording each requested wait. Cloning shares the underlying cells.
+#[derive(Clone, Default)]
+struct RecordingClock {
+    inner: Rc<RecordingClockCells>,
 }
 
-impl RecordingSleeper {
+#[derive(Default)]
+struct RecordingClockCells {
+    now: Cell<Duration>,
+    calls: RefCell<Vec<Duration>>,
+}
+
+impl RecordingClock {
     fn new() -> Self {
-        Self {
-            calls: Rc::new(RefCell::new(Vec::new())),
+        Self::default()
+    }
+
+    /// Waits requested so far, in request order.
+    fn calls(&self) -> Vec<Duration> {
+        self.inner.calls.borrow().clone()
+    }
+
+    /// Advances virtual time without recording a wait (simulates op runtime).
+    fn advance(&self, dur: Duration) {
+        self.inner.now.set(self.inner.now.get().saturating_add(dur));
+    }
+}
+
+impl relentless::Clock for RecordingClock {
+    fn now(&self) -> Duration {
+        self.inner.now.get()
+    }
+}
+
+impl relentless::AsyncClock for RecordingClock {
+    type Wait = RecordingWait;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        RecordingWait {
+            inner: Rc::clone(&self.inner),
+            dur,
+            done: false,
         }
     }
 }
 
-impl Sleeper for RecordingSleeper {
-    type Sleep = core::future::Ready<()>;
+/// Wait future of [`RecordingClock`]: advances and records on first poll, so
+/// an unpolled (cancelled) wait leaves time untouched.
+struct RecordingWait {
+    inner: Rc<RecordingClockCells>,
+    dur: Duration,
+    done: bool,
+}
 
-    fn sleep(&self, dur: Duration) -> Self::Sleep {
-        self.calls.borrow_mut().push(dur);
-        core::future::ready(())
+impl Future for RecordingWait {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        let this = self.get_mut();
+        if !this.done {
+            this.done = true;
+            this.inner
+                .now
+                .set(this.inner.now.get().saturating_add(this.dur));
+            this.inner.calls.borrow_mut().push(this.dur);
+        }
+        Poll::Ready(())
     }
-}
-
-thread_local! {
-    /// Per-test elapsed clock. Thread-local rather than a shared `static` so the
-    /// parallel test harness gives each test its own isolated clock — no
-    /// cross-test race. `block_on` polls on the test thread, so the op's writes
-    /// and the clock fn's reads share this thread-local.
-    static ASYNC_ELAPSED_CLOCK_MILLIS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn async_elapsed_clock_millis() -> Duration {
-    Duration::from_millis(ASYNC_ELAPSED_CLOCK_MILLIS.with(Cell::get))
-}
-
-fn reset_async_elapsed_clock() {
-    ASYNC_ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(0));
-}
-
-fn advance_async_elapsed_clock(millis: u64) {
-    ASYNC_ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(clock.get().saturating_add(millis)));
 }
 
 /// End-to-end: the async loop feeds each attempt's post-clamp delay forward as
@@ -121,7 +152,7 @@ fn engine_feeds_previous_delay_forward_async() {
                 delay: FEEDBACK_DELAY,
             })
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(RecordingSleeper::new())
+            .clock(RecordingClock::new())
             .call(),
     );
 
@@ -139,7 +170,7 @@ fn engine_feeds_previous_delay_forward_async() {
 #[test]
 fn retry_async_executes_when_sleeper_is_set() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
 
     let call_count = Rc::new(Cell::new(0_u32));
     let future = policy.retry_async(|_| {
@@ -154,7 +185,7 @@ fn retry_async_executes_when_sleeper_is_set() {
         }
     });
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(future.sleep(sleeper.clone()).call());
+    let result: Result<i32, RetryError<i32, &str>> = block_on(future.clock(clock.clone()).call());
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
 }
@@ -162,8 +193,8 @@ fn retry_async_executes_when_sleeper_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, SleepImpl, T, E>(
-        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, SleepImpl, T, E>,
+    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, C, T, E>(
+        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, C, T, E>,
     ) where
         F: FnMut(relentless::RetryState) -> Fut,
         Fut: Future<Output = Result<T, E>>,
@@ -174,12 +205,12 @@ fn async_retry_type_is_nameable_from_crate_root() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
         .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-        .sleep(|_dur: Duration| async {});
+        .clock(RecordingClock::new());
     assert_nameable(retry);
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(|_dur: Duration| async {})
+            .clock(RecordingClock::new())
             .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -188,10 +219,10 @@ fn async_retry_type_is_nameable_from_crate_root() {
 #[test]
 fn async_retry_call_returns_an_awaitable_future() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let async_retry = policy
         .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-        .sleep(sleeper)
+        .clock(clock)
         .call();
 
     let result: Result<i32, RetryError<i32, &str>> = block_on(async_retry);
@@ -204,7 +235,7 @@ fn async_retry_repoll_after_completion_panics() {
     let mut retry = Box::pin(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(|_dur: Duration| async {})
+            .clock(RecordingClock::new())
             .call(),
     );
     let waker = noop_waker();
@@ -233,7 +264,7 @@ fn retry_async_borrows_policy_immutably() {
                 call_count.set(call_count.get().saturating_add(1));
                 async move { Err::<i32, &str>(ERROR_VALUE) }
             })
-            .sleep(|_dur: Duration| async {})
+            .clock(RecordingClock::new())
             .call(),
     );
 
@@ -244,12 +275,12 @@ fn retry_async_borrows_policy_immutably() {
 #[test]
 fn async_retry_returns_exhausted_on_persistent_errors() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
 
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -266,12 +297,12 @@ fn async_retry_returns_exhausted_for_ok_exhaustion() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::ok(|value: &i32| *value < 0));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
 
     let result = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(-1) })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -292,7 +323,7 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
             predicate::error(|error: &&str| *error == ERROR_VALUE)
                 | predicate::ok(|value: &i32| *value < SUCCESS_VALUE),
         );
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
@@ -308,7 +339,7 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
                     }
                 }
             })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -318,7 +349,7 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
 
 #[test]
 fn async_sleep_receives_wait_strategy_delays() {
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
@@ -326,11 +357,11 @@ fn async_sleep_receives_wait_strategy_delays() {
     let _result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(sleeper.clone())
+            .clock(clock.clone())
             .call(),
     );
 
-    let calls = sleeper.calls.borrow();
+    let calls = clock.calls();
     let expected_sleep_calls = (MAX_ATTEMPTS - 1) as usize;
     assert_eq!(calls.len(), expected_sleep_calls);
     for duration in calls.iter() {
@@ -346,12 +377,12 @@ fn async_predicate_is_evaluated_before_stop() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
         .when(predicate::ok(|value: &i32| *value < 0));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
 
     let result = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -361,7 +392,7 @@ fn async_predicate_is_evaluated_before_stop() {
 #[test]
 fn async_default_predicate_behaves_like_any_error() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
@@ -370,7 +401,7 @@ fn async_default_predicate_behaves_like_any_error() {
                 call_count.set(call_count.get().saturating_add(1));
                 async { Err::<i32, &str>(ERROR_VALUE) }
             })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -382,14 +413,12 @@ fn async_default_predicate_behaves_like_any_error() {
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn async_timeout_stops_loop_when_budget_exceeded() {
-    reset_async_elapsed_clock();
-
     // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
@@ -397,13 +426,12 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    advance_async_elapsed_clock(ASYNC_CUSTOM_CLOCK_STEP_MILLIS);
+                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
                     Err::<i32, &str>("fail")
                 }
             })
-            .elapsed_clock(async_elapsed_clock_millis)
             .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE)
-            .sleep(sleeper.clone())
+            .clock(clock.clone())
             .call(),
     );
 
@@ -414,9 +442,8 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
 
 #[test]
 fn async_custom_elapsed_clock_counts_operation_runtime() {
-    reset_async_elapsed_clock();
     let policy = RetryPolicy::new().stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
@@ -424,17 +451,16 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    advance_async_elapsed_clock(ASYNC_CUSTOM_CLOCK_STEP_MILLIS);
+                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
                     Err::<i32, &str>("slow failure")
                 }
             })
-            .elapsed_clock(async_elapsed_clock_millis)
-            .sleep(sleeper.clone())
+            .clock(clock.clone())
             .call(),
     );
 
     assert_eq!(call_count.get(), 1);
-    assert!(sleeper.calls.borrow().is_empty());
+    assert!(clock.calls().is_empty());
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -444,8 +470,6 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
 /// elapsed budget.
 #[test]
 fn async_elapsed_baseline_starts_at_first_poll() {
-    reset_async_elapsed_clock();
-
     const IDLE_BEFORE_AWAIT_MILLIS: u64 = 1_000;
     const PER_ATTEMPT_MILLIS: u64 = 20;
     // Three whole attempt steps: 20, 40, 60 — the loop stops on the third.
@@ -454,22 +478,20 @@ fn async_elapsed_baseline_starts_at_first_poll() {
     let policy = RetryPolicy::new()
         .stop(stop::elapsed(DEADLINE))
         .wait(wait::fixed(Duration::ZERO));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let future = policy
         .retry_async(|_| {
             call_count.set(call_count.get().saturating_add(1));
             async {
-                advance_async_elapsed_clock(PER_ATTEMPT_MILLIS);
+                clock.advance(Duration::from_millis(PER_ATTEMPT_MILLIS));
                 Err::<i32, &str>("fail")
             }
         })
-        .elapsed_clock(async_elapsed_clock_millis)
-        .sleep(sleeper.clone())
+        .clock(clock.clone())
         .call();
-
-    advance_async_elapsed_clock(IDLE_BEFORE_AWAIT_MILLIS);
+    clock.advance(Duration::from_millis(IDLE_BEFORE_AWAIT_MILLIS));
     let result = block_on(future);
 
     assert_eq!(call_count.get(), 3);
@@ -478,11 +500,10 @@ fn async_elapsed_baseline_starts_at_first_poll() {
 
 #[test]
 fn async_elapsed_stop_triggers_after_deadline() {
-    reset_async_elapsed_clock();
     let policy = RetryPolicy::new()
         .stop(stop::elapsed(Duration::from_millis(5)))
         .wait(wait::fixed(Duration::from_millis(1)));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
     let result = block_on(
@@ -490,17 +511,16 @@ fn async_elapsed_stop_triggers_after_deadline() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    advance_async_elapsed_clock(10);
+                    clock.advance(Duration::from_millis(10));
                     Err::<i32, &str>("would exceed budget")
                 }
             })
-            .elapsed_clock(async_elapsed_clock_millis)
-            .sleep(sleeper.clone())
+            .clock(clock.clone())
             .call(),
     );
 
     assert_eq!(call_count.get(), 1);
-    assert!(sleeper.calls.borrow().is_empty());
+    assert!(clock.calls().is_empty());
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -509,7 +529,7 @@ fn async_hooks_fire_in_expected_places() {
     let before_attempt_calls = Rc::new(RefCell::new(Vec::new()));
     let after_attempt_calls = Rc::new(RefCell::new(Vec::new()));
     let exit_reason = Rc::new(Cell::new(None));
-    let sleeper = RecordingSleeper::new();
+    let clock = RecordingClock::new();
 
     let before_attempt_ref = Rc::clone(&before_attempt_calls);
     let after_attempt_ref = Rc::clone(&after_attempt_calls);
@@ -529,7 +549,7 @@ fn async_hooks_fire_in_expected_places() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(sleeper)
+            .clock(clock)
             .call(),
     );
 
@@ -553,7 +573,7 @@ fn async_on_exit_reports_success_reason() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(RecordingSleeper::new())
+            .clock(RecordingClock::new())
             .call(),
     );
 
@@ -575,7 +595,7 @@ fn async_on_exit_reports_non_retryable_error_reason() {
             .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
                 exit_reason_ref.set(Some(state.stop_reason));
             })
-            .sleep(RecordingSleeper::new())
+            .clock(RecordingClock::new())
             .call(),
     );
 
@@ -595,7 +615,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
             .on_exit(move |_state: &relentless::ExitState<'_, i32, &str>| {
                 exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
             })
-            .sleep(RecordingSleeper::new())
+            .clock(RecordingClock::new())
             .call(),
     );
     assert_eq!(exit_calls.get(), 1);
@@ -603,63 +623,62 @@ fn async_hooks_are_per_call_and_do_not_persist() {
     let _ = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(RecordingSleeper::new())
+            .clock(RecordingClock::new())
             .call(),
     );
     assert_eq!(exit_calls.get(), 1);
 }
 
-#[cfg(feature = "tokio-sleep")]
+#[cfg(feature = "tokio-clock")]
 #[test]
-fn tokio_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> tokio::time::Sleep = relentless::sleep::tokio();
+fn tokio_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn)
+            .clock(relentless::clock::TokioClock::new())
             .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
-#[cfg(all(feature = "embassy-sleep", target_os = "none"))]
+#[cfg(all(feature = "embassy-clock", target_os = "none"))]
 #[test]
-fn embassy_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> embassy_time::Timer = relentless::sleep::embassy();
+fn embassy_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn)
+            .clock(relentless::clock::EmbassyClock::new())
             .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
-#[cfg(all(feature = "gloo-timers-sleep", target_arch = "wasm32"))]
+#[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
 #[test]
-fn gloo_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> gloo_timers::future::TimeoutFuture = relentless::sleep::gloo();
+fn gloo_clock_adapter_is_available() {
+    fn zero_now() -> Duration {
+        Duration::ZERO
+    }
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn)
+            .clock(relentless::clock::GlooClock::with_now(zero_now))
             .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
-#[cfg(feature = "futures-timer-sleep")]
+#[cfg(feature = "futures-timer-clock")]
 #[test]
-fn futures_timer_sleep_helper_is_available() {
-    let sleep_fn: fn(Duration) -> futures_timer::Delay = relentless::sleep::futures_timer();
+fn futures_timer_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result: Result<i32, RetryError<i32, &str>> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(sleep_fn)
+            .clock(relentless::clock::FuturesTimerClock::new())
             .call(),
     );
     assert_eq!(result, Ok(SUCCESS_VALUE));

@@ -141,3 +141,145 @@ mod system_clock {
         assert!(clock.now().saturating_sub(before) >= ARBITRARY_DURATION);
     }
 }
+
+/// Engine-level acceptance: the retry engines driven end-to-end by a
+/// `VirtualClock`, exactly as a consumer testing their own retry policies
+/// would — deterministic backoff assertions with no real sleeping.
+#[cfg(feature = "alloc")]
+mod engine_integration {
+    use super::*;
+    use relentless::{retry, retry_async, stop, wait};
+    use std::vec;
+
+    const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
+
+    /// Polls a future to completion (every wait here is immediately ready).
+    fn block_on<F: Future>(future: F) -> F::Output {
+        let mut future = core::pin::pin!(future);
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+        loop {
+            if let Poll::Ready(output) = future.as_mut().poll(&mut cx) {
+                return output;
+            }
+        }
+    }
+
+    /// GIVEN exponential backoff from 100ms and a 3-attempt budget
+    /// WHEN an always-failing operation runs against a `VirtualClock`
+    /// THEN the recorded waits are exactly the backoff schedule (1→2, 2→3)
+    #[test]
+    fn records_exponential_backoff_schedule() {
+        let clock = VirtualClock::new();
+
+        let result = retry(|_| Err::<(), &str>("boom"))
+            .wait(wait::exponential(INITIAL_BACKOFF))
+            .stop(stop::attempts(3))
+            .clock(&clock)
+            .call();
+
+        assert!(result.is_err());
+        assert_eq!(
+            clock.waits(),
+            vec![Duration::from_millis(100), Duration::from_millis(200)]
+        );
+    }
+
+    /// GIVEN a fresh `VirtualClock`
+    /// WHEN a retried operation waits through it
+    /// THEN virtual time advances by the sum of the waits
+    #[test]
+    fn waiting_advances_virtual_time() {
+        let clock = VirtualClock::new();
+
+        let _ = retry(|_| Err::<(), &str>("boom"))
+            .wait(wait::exponential(INITIAL_BACKOFF))
+            .stop(stop::attempts(3))
+            .clock(&clock)
+            .call();
+
+        assert_eq!(clock.now(), Duration::from_millis(300));
+    }
+
+    /// GIVEN a 250ms timeout budget and a fixed 100ms wait, both on one clock
+    /// WHEN the operation never succeeds
+    /// THEN the run terminates deterministically with the final wait clamped
+    ///      to the remaining budget
+    #[test]
+    fn timeout_runs_deterministically_on_virtual_time() {
+        let clock = VirtualClock::new();
+
+        let result = retry(|_| Err::<(), &str>("boom"))
+            .wait(wait::fixed(Duration::from_millis(100)))
+            .stop(stop::never())
+            .clock(&clock)
+            .timeout(Duration::from_millis(250))
+            .call();
+
+        assert!(result.is_err());
+        assert_eq!(
+            clock.waits(),
+            vec![
+                Duration::from_millis(100),
+                Duration::from_millis(100),
+                Duration::from_millis(50)
+            ]
+        );
+    }
+
+    /// GIVEN an operation that succeeds on the first attempt
+    /// WHEN it runs against a `VirtualClock`
+    /// THEN no waits are recorded and virtual time stays at zero
+    #[test]
+    fn first_attempt_success_records_nothing() {
+        let clock = VirtualClock::new();
+
+        let result = retry(|_| Ok::<_, &str>(42)).clock(&clock).call();
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!((clock.waits(), clock.now()), (vec![], Duration::ZERO));
+    }
+
+    /// GIVEN an operation that advances the clock manually (simulating slow
+    ///       attempts)
+    /// WHEN the elapsed budget is exceeded inside the operation with no waits
+    /// THEN the stop strategy fires on virtual elapsed time
+    #[test]
+    fn manual_advance_consumes_elapsed_budget() {
+        let clock = VirtualClock::new();
+
+        let result = retry(|_| {
+            clock.advance(Duration::from_millis(100));
+            Err::<(), &str>("boom")
+        })
+        .wait(wait::fixed(Duration::ZERO))
+        .stop(stop::elapsed(Duration::from_millis(250)))
+        .clock(&clock)
+        .call();
+
+        assert!(result.is_err());
+        assert_eq!(clock.now(), Duration::from_millis(300));
+    }
+
+    /// GIVEN the async engine waiting through the same virtual clock type
+    /// WHEN an always-failing operation runs
+    /// THEN the recorded waits match the sync engine's schedule
+    #[test]
+    fn async_engine_records_backoff_schedule() {
+        let clock = VirtualClock::new();
+
+        let result = block_on(
+            retry_async(|_| core::future::ready(Err::<(), &str>("boom")))
+                .wait(wait::exponential(INITIAL_BACKOFF))
+                .stop(stop::attempts(3))
+                .clock(&clock)
+                .call(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            clock.waits(),
+            vec![Duration::from_millis(100), Duration::from_millis(200)]
+        );
+    }
+}

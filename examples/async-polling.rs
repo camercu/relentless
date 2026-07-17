@@ -1,6 +1,7 @@
 use core::cell::Cell;
 use core::time::Duration;
-use relentless::{RetryPolicy, predicate, sleep, stop, wait};
+use relentless::clock::TokioClock;
+use relentless::{RetryPolicy, predicate, stop, wait};
 
 #[tokio::main]
 async fn main() {
@@ -26,7 +27,7 @@ async fn main() {
 
     let result = policy
         .retry_async(check_deploy_status)
-        .sleep(sleep::tokio())
+        .clock(TokioClock::new())
         .call()
         .await;
 

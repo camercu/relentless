@@ -3,7 +3,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 toml_files := "Cargo.toml deny.toml"
 no_std_target := "thumbv7m-none-eabi"
 wasm_target := "wasm32-unknown-unknown"
-wasm_features := "alloc,gloo-timers-sleep"
+wasm_features := "alloc,gloo-timers-clock"
 benchmark_target := "retry_hot_paths"
 warnings := "-D warnings"
 stable_toolchain := "+stable"
@@ -73,21 +73,21 @@ test-doc-no-default:
     RUSTDOCFLAGS="{{warnings}}" {{cargo}} test --no-default-features --doc
 
 test-readme:
-    {{cargo}} test --features tokio-sleep,test-util --doc -- readme_doctests
+    {{cargo}} test --features tokio-clock --doc -- readme_doctests
 
 test-examples:
     cargo run --example basic-retry
     cargo run --example hooks-and-stats
     cargo run --example sync-cancel
-    cargo run --example testing-with-virtual-clock --features test-util
-    cargo run --example async-polling --features tokio-sleep
-    cargo run --example async-cancel --features tokio-sleep
+    cargo run --example testing-with-virtual-clock
+    cargo run --example async-polling --features tokio-clock
+    cargo run --example async-cancel --features tokio-clock
 
-test-tokio-sleep:
-    {{cargo}} nextest run --test policy_async --features tokio-sleep
+test-tokio-clock:
+    {{cargo}} nextest run --test policy_async --test clock_adapters --features tokio-clock
 
-test-futures-timer-sleep:
-    {{cargo}} nextest run --test policy_async --features futures-timer-sleep
+test-futures-timer-clock:
+    {{cargo}} nextest run --test policy_async --test clock_adapters --features futures-timer-clock
 
 test-allocation:
     {{cargo}} nextest run --test allocation -j 1
@@ -110,7 +110,7 @@ check-wasm:
     cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
 
 check-embassy:
-    cargo check --features embassy-sleep
+    cargo check --features embassy-clock
 
 check-alloc:
     cargo check --no-default-features --features alloc
@@ -260,7 +260,7 @@ ci:
         test test-all-features test-no-default test-alloc test-doc-no-default doc \
         check-no-std check-wasm check-embassy check-msrv \
         test-readme test-examples \
-        test-tokio-sleep test-futures-timer-sleep test-allocation \
+        test-tokio-clock test-futures-timer-clock test-allocation \
         bench-no-run
     -just coverage-text
 

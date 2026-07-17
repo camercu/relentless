@@ -3,11 +3,11 @@
 //! The sync and async execution paths are deliberately duplicated source files
 //! wrapping one shared state machine. This suite replaces the manual
 //! "audit all four paths for drift" rule with an executable check: every
-//! scenario runs through both engines on a shared `VirtualClock` and the full
+//! scenario runs through both engines on a `VirtualClock` and the full
 //! observable traces — result, hook firings (with timing fields), sleeps,
 //! stats — must be identical.
 
-#![cfg(feature = "test-util")]
+#![cfg(feature = "alloc")]
 
 use core::future::Future;
 use core::pin::Pin;
@@ -20,7 +20,6 @@ use std::vec::Vec;
 
 use proptest::prelude::{Strategy, any, prop_assert_eq, proptest};
 use relentless::clock::VirtualClock;
-use relentless::test_util::VirtualClock as AsyncVirtualClock;
 use relentless::{RetryError, RetryStats, predicate, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
@@ -178,7 +177,7 @@ fn run_sync(scenario: &Scenario) -> Trace {
 }
 
 fn run_async(scenario: &Scenario) -> Trace {
-    let clock = AsyncVirtualClock::new();
+    let clock = VirtualClock::new();
     let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
     let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
 
@@ -216,8 +215,7 @@ fn run_async(scenario: &Scenario) -> Trace {
             ),
         );
     })
-    .elapsed_clock_fn(clock.clock())
-    .sleep(clock.async_sleep());
+    .clock(&clock);
 
     let (result, stats): (Result<u32, RetryError<u32, &str>>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
@@ -241,7 +239,7 @@ fn run_async(scenario: &Scenario) -> Trace {
     Trace {
         result: format!("{result:?}"),
         hooks: hooks.lock().expect("hook log poisoned").clone(),
-        sleeps: clock.sleeps(),
+        sleeps: clock.waits(),
         stats,
     }
 }

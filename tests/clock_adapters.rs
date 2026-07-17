@@ -3,7 +3,7 @@
 //! Each adapter pairs a coherent `now` source with its runtime's wait, so the
 //! read seam and the wait seam come from one value.
 
-#[cfg(feature = "tokio-sleep")]
+#[cfg(feature = "tokio-clock")]
 mod tokio_clock {
     use core::time::Duration;
     use relentless::clock::{AsyncClock, Clock, TokioClock};
@@ -37,7 +37,7 @@ mod tokio_clock {
     }
 }
 
-#[cfg(feature = "futures-timer-sleep")]
+#[cfg(feature = "futures-timer-clock")]
 mod futures_timer_clock {
     use core::future::Future;
     use core::pin::pin;
@@ -71,7 +71,7 @@ mod futures_timer_clock {
     }
 }
 
-#[cfg(feature = "embassy-sleep")]
+#[cfg(feature = "embassy-clock")]
 mod embassy_clock {
     use relentless::clock::{AsyncClock, EmbassyClock};
 

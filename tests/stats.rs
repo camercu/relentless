@@ -50,16 +50,58 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[derive(Clone, Copy)]
+/// Wait-free async clock for stats tests that don't assert on elapsed time.
+#[derive(Clone)]
 #[cfg(all(feature = "alloc", feature = "std"))]
-struct InstantSleeper;
+struct InstantAsyncClock(Rc<Cell<Duration>>);
 
 #[cfg(all(feature = "alloc", feature = "std"))]
-impl relentless::Sleeper for InstantSleeper {
-    type Sleep = core::future::Ready<()>;
+impl InstantAsyncClock {
+    fn new() -> Self {
+        Self(Rc::new(Cell::new(Duration::ZERO)))
+    }
+}
 
-    fn sleep(&self, _dur: Duration) -> Self::Sleep {
-        core::future::ready(())
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl relentless::Clock for InstantAsyncClock {
+    fn now(&self) -> Duration {
+        self.0.get()
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl relentless::AsyncClock for InstantAsyncClock {
+    type Wait = InstantWait;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        InstantWait {
+            now: Rc::clone(&self.0),
+            dur,
+            done: false,
+        }
+    }
+}
+
+/// Resolves immediately, advancing the clock on first poll so waits stay
+/// visible to the elapsed seam.
+#[cfg(all(feature = "alloc", feature = "std"))]
+struct InstantWait {
+    now: Rc<Cell<Duration>>,
+    dur: Duration,
+    done: bool,
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl Future for InstantWait {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        let this = self.get_mut();
+        if !this.done {
+            this.done = true;
+            this.now.set(this.now.get().saturating_add(this.dur));
+        }
+        Poll::Ready(())
     }
 }
 
@@ -116,7 +158,7 @@ fn async_with_stats_returns_result_and_stats() {
                     }
                 }
             })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -308,7 +350,7 @@ fn async_stop_reason_exhausted_on_exhaustion() {
     let (_result, stats) = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -329,7 +371,7 @@ fn async_first_attempt_success_has_minimal_stats() {
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -350,7 +392,7 @@ fn async_stop_reason_condition_not_met() {
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(-1) })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -373,7 +415,7 @@ fn async_stop_reason_succeeded_for_custom_predicate_on_ok() {
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -421,7 +463,7 @@ fn async_total_elapsed_is_some_with_std() {
     let (_result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .sleep(InstantSleeper)
+            .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );

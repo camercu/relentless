@@ -343,8 +343,23 @@ mod async_tests {
         ready(Ok(SUCCESS_VALUE))
     }
 
-    fn ready_sleep(_dur: Duration) -> core::future::Ready<()> {
-        ready(())
+    /// Owned, nameable async clock for tests with no elapsed-based
+    /// assertions: `now` pins at zero and waits resolve immediately.
+    #[derive(Clone, Copy)]
+    struct ReadyClock;
+
+    impl relentless::Clock for ReadyClock {
+        fn now(&self) -> Duration {
+            Duration::ZERO
+        }
+    }
+
+    impl relentless::AsyncClock for ReadyClock {
+        type Wait = core::future::Ready<()>;
+
+        fn wait_async(&self, _dur: Duration) -> Self::Wait {
+            ready(())
+        }
     }
 
     #[test]
@@ -363,7 +378,7 @@ mod async_tests {
         .retry_async()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
-        .sleep(|_dur| ready(()))
+        .clock(ReadyClock)
         .call();
 
         let result: Result<i32, RetryError<i32, &str>> = block_on(future);
@@ -375,8 +390,7 @@ mod async_tests {
     fn async_retry_ext_uses_default_policy_when_not_overridden() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
-        let sleeps = Rc::new(RefCell::new(Vec::new()));
-        let sleeps_ref = Rc::clone(&sleeps);
+        let clock = VirtualClock::new();
 
         let result = block_on(
             (move || {
@@ -384,16 +398,13 @@ mod async_tests {
                 ready::<Result<i32, &str>>(Err(ERROR_VALUE))
             })
             .retry_async()
-            .sleep(move |dur| {
-                sleeps_ref.borrow_mut().push(dur);
-                ready(())
-            })
+            .clock(&clock)
             .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), MAX_ATTEMPTS);
-        assert_eq!(*sleeps.borrow(), DEFAULT_WAIT_SEQUENCE);
+        assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
     }
 
     #[test]
@@ -402,21 +413,23 @@ mod async_tests {
         type Builder = relentless::DefaultAsyncRetryBuilder<AsyncWorkFn, i32, &'static str>;
 
         let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
-        let result: Result<i32, RetryError<i32, &str>> =
-            block_on(typed.sleep(|_dur: Duration| async {}).call());
+        let result: Result<i32, RetryError<i32, &str>> = block_on(typed.clock(ReadyClock).call());
         assert_eq!(result, Ok(SUCCESS_VALUE));
     }
 
     #[test]
     fn default_async_retry_builder_with_stats_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-        type SleepFn = fn(Duration) -> core::future::Ready<()>;
-        type Builder =
-            relentless::DefaultAsyncRetryBuilderWithStats<AsyncWorkFn, SleepFn, i32, &'static str>;
+        type Builder = relentless::DefaultAsyncRetryBuilderWithStats<
+            AsyncWorkFn,
+            ReadyClock,
+            i32,
+            &'static str,
+        >;
 
         let typed: Builder = (do_async_work as AsyncWorkFn)
             .retry_async()
-            .sleep(ready_sleep as SleepFn)
+            .clock(ReadyClock)
             .with_stats();
         let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
             block_on(typed.call());
@@ -447,7 +460,7 @@ mod async_tests {
                     state.stop_reason,
                 ));
             })
-            .sleep(|_dur| ready(()))
+            .clock(ReadyClock)
             .call();
 
         let _ = block_on(future);
@@ -473,7 +486,7 @@ mod async_tests {
             .retry_async()
             .stop(stop::attempts(2))
             .when(predicate::any_error())
-            .sleep(|_dur| ready(()))
+            .clock(ReadyClock)
             .with_stats()
             .call();
 
@@ -486,8 +499,7 @@ mod async_tests {
     fn async_retry_ext_stateful_stop_and_wait_work() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
-        let sleeps = Rc::new(RefCell::new(Vec::new()));
-        let sleeps_ref = Rc::clone(&sleeps);
+        let clock = VirtualClock::new();
 
         let result = block_on(
             (move || {
@@ -502,16 +514,13 @@ mod async_tests {
             .wait(StatefulWait {
                 calls: Cell::new(0),
             })
-            .sleep(move |dur| {
-                sleeps_ref.borrow_mut().push(dur);
-                ready(())
-            })
+            .clock(&clock)
             .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
-        assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
+        assert_eq!(clock.waits(), vec![WAIT_DURATION]);
     }
 
     #[test]
@@ -520,7 +529,7 @@ mod async_tests {
             (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
                 .retry_async()
                 .stop(stop::attempts(1))
-                .sleep(|_dur| ready(()))
+                .clock(ReadyClock)
                 .call(),
         );
         let waker = noop_waker();
@@ -545,7 +554,7 @@ mod async_tests {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ERROR_VALUE))
             })
-            .sleep(|_dur| ready(()))
+            .clock(ReadyClock)
             .call(),
         );
 
@@ -566,7 +575,7 @@ mod async_tests {
             .retry_async()
             .stop(stop::attempts(5))
             .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
-            .sleep(|_dur| ready(()))
+            .clock(ReadyClock)
             .call(),
         );
 
@@ -576,22 +585,18 @@ mod async_tests {
 
     #[test]
     fn async_retry_ext_timeout_stops_on_deadline() {
-        use std::sync::atomic::{AtomicU64, Ordering};
-
-        let clock_millis = Arc::new(AtomicU64::new(0));
-        let clock_ref = Arc::clone(&clock_millis);
+        let clock = VirtualClock::new();
 
         let result = block_on(
-            (move || {
-                clock_ref.fetch_add(CLOCK_STEP_MILLIS, Ordering::Relaxed);
+            (|| {
+                clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
                 ready(Err::<i32, &str>(ERROR_VALUE))
             })
             .retry_async()
             .stop(stop::attempts(100))
             .wait(wait::fixed(WAIT_DURATION))
-            .elapsed_clock_fn(move || Duration::from_millis(clock_millis.load(Ordering::Relaxed)))
+            .clock(&clock)
             .timeout(TIMEOUT_DEADLINE)
-            .sleep(|_dur| ready(()))
             .call(),
         );
 
@@ -602,7 +607,7 @@ mod async_tests {
     fn async_retry_builder_debug_format() {
         let builder = (|| ready(Ok::<i32, &str>(1)))
             .retry_async()
-            .sleep(|_dur: Duration| ready(()));
+            .clock(ReadyClock);
         let debug = format!("{builder:?}");
         // `AsyncRetryBuilder` is a type alias over the shared `AsyncRetryExec` engine.
         assert!(debug.contains("AsyncRetryExec"));
@@ -612,7 +617,7 @@ mod async_tests {
     fn async_retry_builder_with_stats_debug_format() {
         let builder = (|| ready(Ok::<i32, &str>(1)))
             .retry_async()
-            .sleep(|_dur: Duration| ready(()))
+            .clock(ReadyClock)
             .with_stats();
         let debug = format!("{builder:?}");
         assert!(debug.contains("AsyncRetryExecWithStats"));

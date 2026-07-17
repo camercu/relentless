@@ -1,12 +1,10 @@
-use crate::clock::SyncClock;
+use crate::clock::{AsyncClock, SyncClock};
 use crate::compat::Duration;
 use crate::error::RetryError;
-use crate::policy::time::ElapsedTracker;
 use crate::policy::{
     AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, PolicyHandle, RetryPolicy,
 };
 use crate::predicate::Predicate;
-use crate::sleep::Sleeper;
 use crate::state::{AttemptState, ExitState, RetryState};
 use crate::stats::{RetryStats, StopReason};
 use crate::stop::Stop;
@@ -270,26 +268,6 @@ where
     }
 }
 
-/// Debug-asserts that a configured timeout is paired with an elapsed clock.
-///
-/// A timeout is enforced against elapsed time; without a clock the elapsed
-/// reading is always `None` and the timeout silently has no effect (SPEC 11.2).
-/// Under `std`, `ElapsedTracker::start` always falls back to an `Instant` clock,
-/// so this can only bite in `no_std` builds. Shared by both loops so the sync
-/// and async diagnostics can never drift. Compiles out in release builds.
-///
-/// Covered by `timeout_without_clock_panics_in_debug` (runs under
-/// `--no-default-features`, the only config where the assertion can fire).
-/// Mutation testing cannot reach it: the mutation harness runs with `std`, where
-/// the fallback clock makes the asserted condition unconditionally true — see
-/// the `exclude_re` note in `.cargo/mutants.toml`.
-fn debug_assert_timeout_has_clock(timeout: Option<Duration>, elapsed_tracker: &ElapsedTracker) {
-    debug_assert!(
-        timeout.is_none() || elapsed_tracker.elapsed().is_some(),
-        "timeout configured without an elapsed clock — timeout will have no effect"
-    );
-}
-
 pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, C, T, E, const COLLECT_STATS: bool>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
@@ -367,51 +345,52 @@ pin_project! {
     ///
     /// Owns the same transition order as [`execute_sync_loop`]; the phases
     /// exist only because an async attempt or sleep can span multiple polls.
-    pub(crate) struct AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut> {
+    pub(crate) struct AsyncEngine<Policy, BA, AA, OX, F, Fut, C, T, E, WaitFut> {
         policy: Policy,
         hooks: ExecutionHooks<BA, AA, OX>,
         op: F,
-        sleeper: SleepImpl,
+        clock: C,
         #[pin]
-        phase: AsyncPhase<Fut, SleepFut>,
+        phase: AsyncPhase<Fut, WaitFut>,
         attempt: u32,
         total_wait: Duration,
         previous_delay: Option<Duration>,
-        elapsed_tracker: ElapsedTracker,
+        // Clock reading captured at the first poll (SPEC 11.1.1); `None`
+        // until execution starts.
+        origin: Option<Duration>,
         timeout: Option<Duration>,
         _marker: PhantomData<fn() -> (T, E)>,
     }
 }
 
-impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+impl<Policy, BA, AA, OX, F, Fut, C, T, E, WaitFut>
+    AsyncEngine<Policy, BA, AA, OX, F, Fut, C, T, E, WaitFut>
 {
     pub(crate) fn new(
         policy: Policy,
         hooks: ExecutionHooks<BA, AA, OX>,
         op: F,
-        sleeper: SleepImpl,
-        elapsed_tracker: ElapsedTracker,
+        clock: C,
         timeout: Option<Duration>,
     ) -> Self {
         Self {
             policy,
             hooks,
             op,
-            sleeper,
+            clock,
             phase: AsyncPhase::ReadyToStartAttempt,
             attempt: 1,
             total_wait: Duration::ZERO,
             previous_delay: None,
-            elapsed_tracker,
+            origin: None,
             timeout,
             _marker: PhantomData,
         }
     }
 }
 
-impl<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
-    AsyncEngine<Policy, BA, AA, OX, F, Fut, SleepImpl, T, E, SleepFut>
+impl<Policy, BA, AA, OX, F, Fut, C, T, E, WaitFut>
+    AsyncEngine<Policy, BA, AA, OX, F, Fut, C, T, E, WaitFut>
 where
     Policy: PolicyHandle,
     Policy::Stop: Stop,
@@ -422,8 +401,8 @@ where
     OX: ExitHook<T, E>,
     F: AsyncRetryOp<T, E, Fut>,
     Fut: Future<Output = Result<T, E>>,
-    SleepImpl: Sleeper<Sleep = SleepFut>,
-    SleepFut: Future<Output = ()>,
+    C: AsyncClock<Wait = WaitFut>,
+    WaitFut: Future<Output = ()>,
 {
     /// Advances the retry loop by one poll.
     ///
@@ -442,10 +421,11 @@ where
         let policy = this.policy.policy_ref();
 
         // Execution starts at the first poll: capture the elapsed baseline
-        // (SPEC 11.1.1). Idempotent, so later polls leave it unchanged.
-        this.elapsed_tracker.start();
-
-        debug_assert_timeout_has_clock(*this.timeout, this.elapsed_tracker);
+        // (SPEC 11.1.1). Later polls leave it unchanged.
+        let origin = *this.origin.get_or_insert_with(|| this.clock.now());
+        // The clock is mandatory, so elapsed time is always available; the
+        // `Option` shape survives only because the state types expose one.
+        let elapsed = |clock: &C| Some(clock.now().saturating_sub(origin));
 
         loop {
             match this.phase.as_mut().project() {
@@ -453,7 +433,7 @@ where
                     let state = fire_before_attempt(
                         this.hooks,
                         *this.attempt,
-                        this.elapsed_tracker.elapsed(),
+                        elapsed(this.clock),
                         *this.previous_delay,
                     );
                     this.phase.set(AsyncPhase::PollingOperation {
@@ -470,7 +450,7 @@ where
                         this.hooks,
                         outcome,
                         *this.attempt,
-                        this.elapsed_tracker.elapsed(),
+                        elapsed(this.clock),
                         *this.previous_delay,
                         *this.total_wait,
                         COLLECT_STATS,
@@ -487,7 +467,7 @@ where
                             let next_delay = clamp_and_fire_after_attempt(
                                 this.hooks,
                                 *this.attempt,
-                                this.elapsed_tracker.elapsed(),
+                                elapsed(this.clock),
                                 &attempt_last_result,
                                 next_delay,
                                 *this.timeout,
@@ -503,7 +483,7 @@ where
                                 this.phase.set(AsyncPhase::ReadyToStartAttempt);
                             } else {
                                 this.phase.set(AsyncPhase::Sleeping {
-                                    sleep_future: this.sleeper.sleep(next_delay),
+                                    sleep_future: this.clock.wait_async(next_delay),
                                 });
                             }
                         }

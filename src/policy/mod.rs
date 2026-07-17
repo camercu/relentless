@@ -335,9 +335,8 @@ macro_rules! impl_hook_chain {
 
 mod execution;
 mod ext;
-mod time;
 pub use execution::async_exec::{
-    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryWithStats, NoAsyncSleep,
+    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryWithStats,
 };
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};

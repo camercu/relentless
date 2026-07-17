@@ -1,9 +1,9 @@
 use core::future::Future;
 
-use super::super::execution::async_exec::{AsyncRetryExec, AsyncRetryExecWithStats, NoAsyncSleep};
+use super::super::execution::async_exec::{AsyncRetryExec, AsyncRetryExecWithStats};
 use super::super::execution::common::AsyncRetryOp;
-use super::super::time::ElapsedTracker;
 use super::super::{ExecutionHooks, RetryPolicy};
+use crate::clock::SystemClock;
 use crate::state::RetryState;
 use crate::{predicate, stop, wait};
 
@@ -27,24 +27,26 @@ where
     /// - exponential backoff starting at 100ms
     /// - retry on any error
     ///
-    /// Unlike the sync [`RetryExt::retry`](crate::RetryExt::retry), `.sleep(...)`
+    /// Unlike the sync [`RetryExt::retry`](crate::RetryExt::retry), `.clock(...)`
     /// must always be configured before the builder can be awaited; there is no
-    /// `std` default async sleeper.
+    /// default async clock.
     ///
     /// ```
     /// use core::future::ready;
     /// use relentless::AsyncRetryExt;
+    /// use relentless::clock::VirtualClock;
     ///
     /// # async fn doc() {
+    /// let clock = VirtualClock::new();
     /// let _ = (|| ready(Ok::<(), &str>(())))
     ///     .retry_async()
-    ///     .sleep(|_dur| ready(()))
+    ///     .clock(&clock)
     ///     .call()
     ///     .await;
     /// # }
     /// ```
     ///
-    /// Awaiting without `.sleep(...)` does not compile:
+    /// Awaiting without `.clock(...)` does not compile:
     ///
     /// ```compile_fail
     /// use core::future::ready;
@@ -80,8 +82,7 @@ where
             RetryPolicy::default(),
             ExecutionHooks::new(),
             StatelessAsyncOp(self),
-            NoAsyncSleep,
-            ElapsedTracker::new(None),
+            SystemClock,
         )
     }
 }
@@ -98,17 +99,18 @@ where
 ///
 /// ```
 /// use core::future::ready;
-/// use core::time::Duration;
 /// use relentless::AsyncRetryExt;
+/// use relentless::clock::VirtualClock;
 ///
+/// let clock = VirtualClock::new();
 /// let retry = (|| ready(Ok::<u32, &str>(1)))
 ///     .retry_async()
-///     .sleep(|_dur: Duration| async {});
+///     .clock(&clock);
 ///
 /// let _ = retry;
 /// ```
-pub type AsyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepImpl, T, E> =
-    AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>;
+pub type AsyncRetryBuilder<S, W, P, BA, AA, OX, F, C, T, E> =
+    AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>;
 
 /// Owned async retry builder wrapper that returns statistics.
 ///
@@ -116,23 +118,24 @@ pub type AsyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepImpl, T, E> =
 ///
 /// ```
 /// use core::future::ready;
-/// use core::time::Duration;
 /// use relentless::AsyncRetryExt;
+/// use relentless::clock::VirtualClock;
 ///
+/// let clock = VirtualClock::new();
 /// let retry = (|| ready(Ok::<u32, &str>(1)))
 ///     .retry_async()
-///     .sleep(|_dur: Duration| async {})
+///     .clock(&clock)
 ///     .with_stats();
 ///
 /// let _ = retry;
 /// ```
-pub type AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepImpl, T, E> =
-    AsyncRetryExecWithStats<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>;
+pub type AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, C, T, E> =
+    AsyncRetryExecWithStats<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>;
 
 /// Alias for the default owned async retry builder returned by
 /// [`AsyncRetryExt::retry_async`].
 ///
-/// This hides the default stop, wait, predicate, hook, and sleeper state from
+/// This hides the default stop, wait, predicate, hook, and clock state from
 /// user-facing type signatures.
 pub type DefaultAsyncRetryBuilder<F, T, E> = AsyncRetryBuilder<
     stop::StopAfterAttempts,
@@ -142,14 +145,14 @@ pub type DefaultAsyncRetryBuilder<F, T, E> = AsyncRetryBuilder<
     (),
     (),
     StatelessAsyncOp<F>,
-    NoAsyncSleep,
+    SystemClock,
     T,
     E,
 >;
 
 /// Alias for the default owned async retry builder-with-stats returned by
 /// calling `.with_stats()` on [`AsyncRetryExt::retry_async`].
-pub type DefaultAsyncRetryBuilderWithStats<F, SleepImpl, T, E> = AsyncRetryBuilderWithStats<
+pub type DefaultAsyncRetryBuilderWithStats<F, C, T, E> = AsyncRetryBuilderWithStats<
     stop::StopAfterAttempts,
     wait::WaitExponential,
     predicate::PredicateAnyError,
@@ -157,7 +160,7 @@ pub type DefaultAsyncRetryBuilderWithStats<F, SleepImpl, T, E> = AsyncRetryBuild
     (),
     (),
     StatelessAsyncOp<F>,
-    SleepImpl,
+    C,
     T,
     E,
 >;
@@ -175,17 +178,11 @@ pub type DefaultAsyncRetryBuilderWithStats<F, SleepImpl, T, E> = AsyncRetryBuild
 /// };
 /// ```
 #[allow(dead_code)]
-fn _async_retry_builder_requires_sleep_before_call() {}
+fn _async_retry_builder_requires_clock_before_call() {}
 
-impl<S, W, P, F, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoAsyncSleep, T, E> {
+impl<S, W, P, F, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, SystemClock, T, E> {
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
-        AsyncRetryExec::new(
-            policy,
-            ExecutionHooks::new(),
-            op,
-            NoAsyncSleep,
-            ElapsedTracker::new(None),
-        )
+        AsyncRetryExec::new(policy, ExecutionHooks::new(), op, SystemClock)
     }
 }
 
@@ -194,15 +191,13 @@ impl<S, W, P, F, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoAsy
 // Intentional: threading the full type-state keeps the zero-cost generics,
 // which naturally yields long concrete return types.
 #[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, OX, F, SleepImpl, T, E>
-    AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>
-{
+impl<S, W, P, BA, AA, OX, F, C, T, E> AsyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E> {
     /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> AsyncRetryExec<RetryPolicy<NewStop, W, P>, BA, AA, OX, F, SleepImpl, T, E> {
+    ) -> AsyncRetryExec<RetryPolicy<NewStop, W, P>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.stop(stop))
     }
 
@@ -211,7 +206,7 @@ impl<S, W, P, BA, AA, OX, F, SleepImpl, T, E>
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> AsyncRetryExec<RetryPolicy<S, NewWait, P>, BA, AA, OX, F, SleepImpl, T, E> {
+    ) -> AsyncRetryExec<RetryPolicy<S, NewWait, P>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.wait(wait))
     }
 
@@ -220,7 +215,7 @@ impl<S, W, P, BA, AA, OX, F, SleepImpl, T, E>
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> AsyncRetryExec<RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, SleepImpl, T, E> {
+    ) -> AsyncRetryExec<RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.when(predicate))
     }
 
@@ -238,7 +233,7 @@ impl<S, W, P, BA, AA, OX, F, SleepImpl, T, E>
         AA,
         OX,
         F,
-        SleepImpl,
+        C,
         T,
         E,
     > {

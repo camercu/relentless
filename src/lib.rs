@@ -260,25 +260,23 @@
 //!
 //! | Flag | Purpose |
 //! |------|---------|
-//! | `std` (default) | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-//! | `alloc` | Boxed policies, closure elapsed clocks |
-//! | `test-util` | [`test_util::VirtualClock`] — deterministic testing of retry behavior without real sleeps |
-//! | `tokio-sleep` | `sleep::tokio()` async sleep adapter |
-//! | `embassy-sleep` | `sleep::embassy()` async sleep adapter |
-//! | `gloo-timers-sleep` | `sleep::gloo()` async sleep adapter (wasm32) |
-//! | `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter |
+//! | `std` (default) | [`clock::SystemClock`] default for sync retries, `std::error::Error` on `RetryError` |
+//! | `alloc` | Boxed policies, [`clock::VirtualClock`] wait recording |
+//! | `tokio-clock` | [`clock::TokioClock`] async clock adapter |
+//! | `embassy-clock` | [`clock::EmbassyClock`] async clock adapter |
+//! | `gloo-timers-clock` | [`clock::GlooClock`] async clock adapter (wasm32) |
+//! | `futures-timer-clock` | [`clock::FuturesTimerClock`] async clock adapter |
 //!
-//! Async retry does not require `alloc`. Sync `std` builds automatically fall
-//! back to `std::thread::sleep`, so `.sleep(...)` is optional.
+//! Async retry does not require `alloc`. Sync `std` builds default to
+//! [`clock::SystemClock`], so `.clock(...)` is optional there.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 // Compile-test README code examples as doctests.
-// Gated on `tokio-sleep` because the async example uses `sleep::tokio()`, and
-// on `test-util` because the testing example uses `test_util::VirtualClock`.
-#[cfg(all(doctest, feature = "tokio-sleep", feature = "test-util"))]
+// Gated on `tokio-clock` because the async example uses `clock::TokioClock`.
+#[cfg(all(doctest, feature = "tokio-clock"))]
 #[doc = include_str!("../README.md")]
 mod readme_doctests {}
 
@@ -294,13 +292,9 @@ pub mod clock;
 mod error;
 mod policy;
 pub mod predicate;
-/// Async sleep abstractions used by the retry engine between attempts.
-pub mod sleep;
 mod state;
 mod stats;
 pub mod stop;
-#[cfg(feature = "test-util")]
-pub mod test_util;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
@@ -316,11 +310,7 @@ pub use policy::{
 };
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use policy::{SyncRetryExec, SyncRetryExecWithStats};
-// Sleeper sentinel for the "no sleep configured" async type-state. Exported so
-// the return type of `retry_async` (which mentions it) is nameable.
-pub use policy::NoAsyncSleep;
 pub use predicate::Predicate;
-pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
 pub use stats::{RetryStats, StopReason};
 pub use stop::Stop;
@@ -353,7 +343,7 @@ pub use wait::Wait;
 /// Strategy constructors (`wait::exponential`, `stop::attempts`, …) are *not*
 /// re-exported here; import them explicitly by name.
 pub mod prelude {
-    pub use crate::{AsyncRetryExt, Predicate, RetryExt, Sleeper, Stop, Wait};
+    pub use crate::{AsyncClock, AsyncRetryExt, Clock, Predicate, RetryExt, Stop, SyncClock, Wait};
 }
 
 /// Returns a [`SyncRetryBuilder`] with default policy: `attempts(3)`,
@@ -397,13 +387,14 @@ where
 /// # Examples
 ///
 /// ```
-/// use core::time::Duration;
+/// use relentless::clock::VirtualClock;
 /// use relentless::retry_async;
 ///
 /// # async fn doc() {
 /// // Async terminates with `.call().await` (mirroring the sync `.call()`).
+/// let clock = VirtualClock::new();
 /// let result = retry_async(|_| async { Ok::<u32, &str>(42) })
-///     .sleep(|_dur: Duration| async {})
+///     .clock(&clock)
 ///     .call()
 ///     .await;
 /// assert_eq!(result.unwrap(), 42);
@@ -419,7 +410,7 @@ pub fn retry_async<F, T, E, Fut>(
     (),
     (),
     F,
-    policy::NoAsyncSleep,
+    clock::SystemClock,
     T,
     E,
 >

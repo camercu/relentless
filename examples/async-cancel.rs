@@ -28,10 +28,11 @@
 //!    spawned task; generalises to `ctrl_c`, broadcast receivers, etc.
 //!
 //! Run with:
-//!   cargo run --example async-cancel --features tokio-sleep
+//!   cargo run --example async-cancel --features tokio-clock
 
 use core::time::Duration;
-use relentless::{RetryError, retry_async, sleep, stop, wait};
+use relentless::clock::TokioClock;
+use relentless::{RetryError, retry_async, stop, wait};
 use tokio_util::sync::CancellationToken;
 
 /// Simulates a flaky network call: takes 40 ms per attempt and never succeeds.
@@ -58,7 +59,7 @@ async fn main() {
         retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio())
+            .clock(TokioClock::new())
             .call(),
     )
     .await;
@@ -101,7 +102,7 @@ async fn main() {
         result = retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio()).call() =>
+            .clock(TokioClock::new()).call() =>
         {
             match result {
                 Ok(val) => println!("pattern 2 — success: {val}"),
@@ -139,7 +140,7 @@ async fn main() {
         result = retry_async(|state| flaky_network_call(state.attempt))
             .stop(stop::attempts(10))
             .wait(wait::fixed(Duration::from_millis(50)))
-            .sleep(sleep::tokio()).call() =>
+            .clock(TokioClock::new()).call() =>
         {
             match result {
                 Ok(val) => println!("pattern 3 — success: {val}"),
