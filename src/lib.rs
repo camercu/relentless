@@ -282,6 +282,7 @@ extern crate std;
 
 mod compat;
 
+pub mod clock;
 mod error;
 mod policy;
 pub mod predicate;
@@ -294,6 +295,7 @@ pub mod stop;
 pub mod test_util;
 pub mod wait;
 
+pub use clock::{AsyncClock, Clock, SyncClock};
 pub use error::{RetryError, RetryResult};
 pub use policy::RetryPolicy;
 pub use policy::{

@@ -1,4 +1,86 @@
 pub mod relentless
+pub mod relentless::clock
+pub struct relentless::clock::SystemClock
+impl core::clone::Clone for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::clone(&self) -> relentless::clock::SystemClock
+impl core::cmp::Eq for relentless::clock::SystemClock
+impl core::cmp::PartialEq for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::eq(&self, other: &relentless::clock::SystemClock) -> bool
+impl core::default::Default for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::default() -> relentless::clock::SystemClock
+impl core::fmt::Debug for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for relentless::clock::SystemClock
+impl core::marker::StructuralPartialEq for relentless::clock::SystemClock
+impl relentless::clock::Clock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::now(&self) -> core::time::Duration
+impl relentless::clock::SyncClock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::wait(&self, dur: core::time::Duration)
+impl core::marker::Freeze for relentless::clock::SystemClock
+impl core::marker::Send for relentless::clock::SystemClock
+impl core::marker::Sync for relentless::clock::SystemClock
+impl core::marker::Unpin for relentless::clock::SystemClock
+impl core::marker::UnsafeUnpin for relentless::clock::SystemClock
+impl core::panic::unwind_safe::RefUnwindSafe for relentless::clock::SystemClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::clock::SystemClock
+pub struct relentless::clock::VirtualClock
+impl relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::advance(&self, dur: core::time::Duration)
+pub fn relentless::clock::VirtualClock::new() -> Self
+pub fn relentless::clock::VirtualClock::waits(&self) -> alloc::vec::Vec<core::time::Duration>
+impl core::default::Default for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::default() -> relentless::clock::VirtualClock
+impl core::fmt::Debug for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl relentless::clock::Clock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
+impl relentless::clock::SyncClock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::wait(&self, dur: core::time::Duration)
+impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
+pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
+pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl !core::marker::Freeze for relentless::clock::VirtualClock
+impl core::marker::Send for relentless::clock::VirtualClock
+impl !core::marker::Sync for relentless::clock::VirtualClock
+impl core::marker::Unpin for relentless::clock::VirtualClock
+impl core::marker::UnsafeUnpin for relentless::clock::VirtualClock
+impl !core::panic::unwind_safe::RefUnwindSafe for relentless::clock::VirtualClock
+impl core::panic::unwind_safe::UnwindSafe for relentless::clock::VirtualClock
+pub struct relentless::clock::VirtualWait<'clock>
+impl core::future::future::Future for relentless::clock::VirtualWait<'_>
+pub type relentless::clock::VirtualWait<'_>::Output = ()
+pub fn relentless::clock::VirtualWait<'_>::poll(self: core::pin::Pin<&mut Self>, _cx: &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<()>
+impl<'clock> core::fmt::Debug for relentless::clock::VirtualWait<'clock>
+pub fn relentless::clock::VirtualWait<'clock>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'clock> core::marker::Freeze for relentless::clock::VirtualWait<'clock>
+impl<'clock> !core::marker::Send for relentless::clock::VirtualWait<'clock>
+impl<'clock> !core::marker::Sync for relentless::clock::VirtualWait<'clock>
+impl<'clock> core::marker::Unpin for relentless::clock::VirtualWait<'clock>
+impl<'clock> core::marker::UnsafeUnpin for relentless::clock::VirtualWait<'clock>
+impl<'clock> !core::panic::unwind_safe::RefUnwindSafe for relentless::clock::VirtualWait<'clock>
+impl<'clock> !core::panic::unwind_safe::UnwindSafe for relentless::clock::VirtualWait<'clock>
+pub trait relentless::clock::AsyncClock: relentless::clock::Clock
+pub type relentless::clock::AsyncClock::Wait: core::future::future::Future<Output = ()>
+pub fn relentless::clock::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
+pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
+pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+pub trait relentless::clock::Clock
+pub fn relentless::clock::Clock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
+impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Clock for &C
+pub fn &C::now(&self) -> core::time::Duration
+pub trait relentless::clock::SyncClock: relentless::clock::Clock
+pub fn relentless::clock::SyncClock::wait(&self, dur: core::time::Duration)
+impl relentless::clock::SyncClock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::wait(&self, dur: core::time::Duration)
+impl relentless::clock::SyncClock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::wait(&self, dur: core::time::Duration)
+impl<C: relentless::clock::SyncClock + ?core::marker::Sized> relentless::clock::SyncClock for &C
+pub fn &C::wait(&self, dur: core::time::Duration)
 pub mod relentless::predicate
 pub struct relentless::predicate::PredicateAll<A, B>
 impl<A, B> relentless::predicate::PredicateAll<A, B>
@@ -1080,10 +1162,24 @@ impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::Unpin for relentless::S
 impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::UnsafeUnpin for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::UnsafeUnpin, F: core::marker::UnsafeUnpin, SleepFn: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
 impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::RefUnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
 impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::UnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
+pub trait relentless::AsyncClock: relentless::clock::Clock
+pub type relentless::AsyncClock::Wait: core::future::future::Future<Output = ()>
+pub fn relentless::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
+pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
+pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 pub trait relentless::AsyncRetryExt<T, E, Fut> where Fut: core::future::future::Future<Output = core::result::Result<T, E>>: core::ops::function::FnMut() -> Fut + core::marker::Sized
 pub fn relentless::AsyncRetryExt::retry_async(self) -> relentless::DefaultAsyncRetryBuilder<Self, T, E>
 impl<T, E, Fut, F> relentless::AsyncRetryExt<T, E, Fut> for F where F: core::ops::function::FnMut() -> Fut + core::marker::Sized, Fut: core::future::future::Future<Output = core::result::Result<T, E>>
 pub fn F::retry_async(self) -> relentless::DefaultAsyncRetryBuilder<Self, T, E>
+pub trait relentless::Clock
+pub fn relentless::Clock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::now(&self) -> core::time::Duration
+impl relentless::clock::Clock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
+impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Clock for &C
+pub fn &C::now(&self) -> core::time::Duration
 pub trait relentless::Predicate<T, E>
 pub fn relentless::Predicate::and<P: relentless::predicate::Predicate<T, E>>(self, other: P) -> relentless::predicate::PredicateAll<Self, P> where Self: core::marker::Sized
 pub fn relentless::Predicate::or<P: relentless::predicate::Predicate<T, E>>(self, other: P) -> relentless::predicate::PredicateAny<Self, P> where Self: core::marker::Sized
@@ -1170,6 +1266,14 @@ impl<S> relentless::stop::Stop for alloc::boxed::Box<S> where S: relentless::sto
 pub fn alloc::boxed::Box<S>::and<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAll<Self, S> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<S>::or<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAny<Self, S> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<S>::should_stop(&self, state: &relentless::RetryState) -> bool
+pub trait relentless::SyncClock: relentless::clock::Clock
+pub fn relentless::SyncClock::wait(&self, dur: core::time::Duration)
+impl relentless::clock::SyncClock for relentless::clock::SystemClock
+pub fn relentless::clock::SystemClock::wait(&self, dur: core::time::Duration)
+impl relentless::clock::SyncClock for relentless::clock::VirtualClock
+pub fn relentless::clock::VirtualClock::wait(&self, dur: core::time::Duration)
+impl<C: relentless::clock::SyncClock + ?core::marker::Sized> relentless::clock::SyncClock for &C
+pub fn &C::wait(&self, dur: core::time::Duration)
 pub trait relentless::Wait
 pub fn relentless::Wait::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
 pub fn relentless::Wait::cap(self, max: core::time::Duration) -> relentless::wait::WaitCapped<Self> where Self: core::marker::Sized
