@@ -31,31 +31,29 @@ top of that base.
 |Capability                              |`core` only|`alloc`|`std`|
 |----------------------------------------|-----------|-------|-----|
 |`Stop`, `Wait`, `Predicate`, state types|yes        |yes    |yes  |
-|Sync retry with explicit `.sleep(...)`  |yes        |yes    |yes  |
-|Sync retry with implicit default sleeper|no         |no     |yes  |
-|Async retry with explicit `.sleep(...)` |yes        |yes    |yes  |
+|Sync retry with explicit `.clock(...)`  |yes        |yes    |yes  |
+|Sync retry with the default `SystemClock`|no        |no     |yes  |
+|Async retry with explicit `.clock(...)` |yes        |yes    |yes  |
 |Free functions and extension traits     |yes        |yes    |yes  |
 |Hooks (multiple per hook point)         |yes        |yes    |yes  |
-|Closure-based elapsed clock             |no         |yes    |yes  |
+|`VirtualClock` (waits recorder gated)   |yes        |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
 
-Runtime adapter helpers are feature-gated separately:
+Runtime clock adapters are feature-gated separately (see 12.1):
 
-- `tokio`: `sleep::tokio()`
-- `embassy`: `sleep::embassy()`
-- `gloo-timers`: `sleep::gloo()` on `wasm32`
-- `futures-timer`: `sleep::futures_timer()`
+- `tokio-clock`: `clock::TokioClock`
+- `embassy-clock`: `clock::EmbassyClock`
+- `gloo-timers-clock`: `clock::GlooClock` on `wasm32`
+- `futures-timer-clock`: `clock::FuturesTimerClock`
 
-The `test-util` feature (implies `std`) adds the `test_util` module with the
-`VirtualClock` deterministic test clock (see 12.4).
-
-`alloc` is not required for async retry itself. It is required only for
-closure-based elapsed clocks.
+`alloc` is not required for async retry itself. Within the clock module it
+gates only `VirtualClock::waits()`, the recorded-waits accessor (see 12.4).
 
 ## 3. Core abstractions
 
 The public model centers on four traits plus a reusable policy type. All four
-core traits (`Stop`, `Wait`, `Predicate`, `Sleeper`) use `&self` receivers.
+core traits (`Stop`, `Wait`, `Predicate`, and the clock family) use `&self`
+receivers.
 Strategies that need internal mutation use interior mutability (`Cell`,
 `AtomicUsize`).
 
@@ -326,26 +324,52 @@ predicate types (`PredicateAnyError`, `PredicateError<F>`, `PredicateOk<F>`,
 > Named types do not rely on the blanket `Fn` impl. This ensures they work
 > consistently regardless of closure trait inference.
 
-### 3.5 Sleeper
+### 3.5 Clock
 
-`Sleeper` abstracts async delay behavior.
+One injected clock value owns both time seams: the read seam (`now()`) and the
+inter-attempt wait. Capability is split into sibling traits over a read-only
+base (ADR-0005):
 
 ```rust
-pub trait Sleeper {
-    type Sleep: Future<Output = ()>;
-    fn sleep(&self, dur: Duration) -> Self::Sleep;
+pub trait Clock {
+    fn now(&self) -> Duration;
+}
+
+pub trait SyncClock: Clock {
+    fn wait(&self, dur: Duration);
+}
+
+pub trait AsyncClock: Clock {
+    type Wait: Future<Output = ()>;
+    fn wait_async(&self, dur: Duration) -> Self::Wait;
 }
 ```
 
-**3.5.1** It is blanket-implemented for `Fn(Duration) -> Fut` where
-`Fut: Future<Output = ()>`.
+**3.5.1** The sync engine bounds its clock by `SyncClock`; the async engine by
+`AsyncClock`. A clock that implements only the other capability is rejected at
+compile time — a sync-only clock can never silently no-op an async wait.
 
-Sleep adapter helpers (`sleep::tokio()`, etc.) return closures that satisfy the
-blanket `Sleeper` impl. They do not define named sleeper types.
+**3.5.2** `SyncClock` and `AsyncClock` are siblings, not a supertrait chain: an
+async-only runtime clock is not forced to carry a blocking wait, and vice
+versa. A dual-capability clock (e.g. `VirtualClock`) implements both.
 
-**3.5.2** Sync execution does not use `Sleeper`. It uses a blocking sleep function via
-`.sleep(...)`, or `std::thread::sleep` when the `std` feature is active and no
-explicit sync sleeper is provided.
+**3.5.3** The traits are not sealed; third parties implement them for their
+own runtimes. Implementors must uphold the coherence contract: `now()` is
+monotonically non-decreasing, and a completed wait is reflected in subsequent
+`now()` readings. The type system cannot force the advance for arbitrary
+implementations; it is a per-impl contract (structural for the shipped
+`VirtualClock`, whose reads and waits share one cell; guaranteed by the OS for
+real clocks).
+
+**3.5.4** `Clock` and `SyncClock` are blanket-implemented for `&C` where `C`
+implements them, so a test can inject `&VirtualClock` and keep the handle for
+assertions. `AsyncClock` has no blanket reference impl; instead
+`&VirtualClock` implements it directly (its wait future borrows the clock).
+
+**3.5.5** `AsyncClock::Wait` is an owned, named future. The wait must take
+effect when the future is polled, not when it is created: the engine may build
+a wait future and drop it unpolled (cancellation), and an unpolled wait must
+not advance time.
 
 ### 3.6 State types
 
@@ -454,7 +478,9 @@ iteration — the semantic distinction is whether the attempt has run yet.
 Field meanings:
 
 - `attempt` is 1-indexed for completed or about-to-start attempts
-- **3.6.4** `elapsed` is `None` when no elapsed clock is available
+- **3.6.4** `elapsed` is always `Some` in states produced by the engines (the
+  clock is mandatory); it is `Option` because hand-constructed states (custom
+  strategy tests) may omit it, and `None` then means "not provided"
 - **3.6.5** `AttemptState.next_delay` is `None` on the final attempt; `Some(delay)` means
   another attempt will follow after the delay
 - **3.6.6** `ExitState.attempt` is always the number of completed attempts
@@ -647,13 +673,13 @@ supports hook configuration and terminal execution. The operation receives
 `RetryState` by value on each invocation.
 
 `RetryPolicy::retry_async(op)` borrows `&self` and returns
-`AsyncRetry`, which supports hook configuration, sleeper configuration,
+`AsyncRetry`, which supports hook configuration, clock configuration,
 and terminal execution. The operation receives `RetryState` by value on each
 invocation.
 
 `SyncRetry` and `AsyncRetry` are the policy-borrowing builder types. They
 share the same method surface as `SyncRetryBuilder` / `AsyncRetryBuilder`
-(hooks, sleep, timing, execution) but do not expose strategy overrides
+(hooks, clock, timing, execution) but do not expose strategy overrides
 (`.stop()`, `.wait()`, `.when()`, `.until()`) because those are configured on
 the policy itself.
 
@@ -712,7 +738,8 @@ Usage:
 
 ```rust
 use relentless::{retry, retry_async, RetryExt, AsyncRetryExt};
-use relentless::{stop, wait, sleep};
+use relentless::clock::TokioClock;
+use relentless::{stop, wait};
 use relentless::predicate::{any_error, error, ok};
 
 // Ext: one-shot retry with zero config
@@ -727,7 +754,7 @@ use relentless::predicate::{any_error, error, ok};
 
 // Ext: one-shot async
 (|| fetch_data()).retry_async()
-    .sleep(sleep::tokio())
+    .clock(TokioClock::new())
     .call()
     .await?;
 
@@ -751,7 +778,7 @@ retry_async(|state| async move {
     let timeout = Duration::from_secs(state.attempt as u64 * 2);
     fetch_data_with_timeout(timeout).await
 })
-.sleep(sleep::tokio())
+.clock(TokioClock::new())
 .call()
 .await?;
 ```
@@ -760,7 +787,8 @@ retry_async(|state| async move {
 
 All execution builders (`SyncRetry`, `SyncRetryBuilder`, `AsyncRetry`,
 `AsyncRetryBuilder`) are generic over `S: Stop`, `W: Wait`,
-`P: Predicate<T, E>`, and (for async) `Sl: Sleeper`.
+`P: Predicate<T, E>`, and a clock `C` (`SyncClock` for sync execution,
+`AsyncClock` for async execution).
 
 #### Strategy overrides
 
@@ -776,26 +804,17 @@ these methods.
 
 #### Timing
 
-- **6.3.2** `.elapsed_clock(fn() -> Duration)` — sets the elapsed clock to a bare
-  function pointer; always available, including `no_std` without `alloc`
-- **6.3.3** `.elapsed_clock_fn(impl Fn() -> Duration)` with `alloc` — boxes the closure
-  internally, supporting captures for test clocks and runtime state
+- **6.3.2** `.clock(c)` — injects the clock that supplies both elapsed time
+  and the inter-attempt wait; bound `impl SyncClock` on sync builders and
+  `impl AsyncClock` on async builders. Available only while the builder still
+  carries the default clock type, so the clock cannot be set twice. Always
+  available, including `no_std` without `alloc`.
+- **6.3.3** (retired — the boxed-closure elapsed clock was superseded by
+  `.clock(...)`; number retained as a tombstone so later numbering is stable)
 - `.timeout(dur: Duration)` — sets a wall-clock deadline for the entire retry
-  execution, including all attempts and all sleeps (see Timeout)
+  execution, including all attempts and all waits (see Timeout)
 
-See Elapsed clock contract and Timeout for detailed semantics.
-
-#### Execution
-
-Sync-only:
-
-- `.sleep(f: impl FnMut(Duration)) -> ...Builder<...>` — sets the blocking
-  sleep function; the closure is stored in the builder and called once per
-  sleep; must be `Send` when the builder is `Send`
-
-Async-only:
-
-- `.sleep(sl: impl Sleeper) -> ...Builder<S, W, P, Sl2>`
+See Elapsed time and Timeout for detailed semantics.
 
 #### Hooks
 
@@ -808,11 +827,12 @@ ordering, and panic behavior.
 
 ### 6.4 Sync execution
 
-**6.4.1** Calling `.sleep(...)` on `SyncRetryBuilder` is:
+**6.4.1** Calling `.clock(...)` on sync builders is:
 
-- optional with `std` (defaults to `std::thread::sleep`)
-- required without `std`; omitting it is a compile error (`.call()` is not
-  available on the unsleeper type)
+- optional with `std` (defaults to `clock::SystemClock`: a process-global
+  monotonic `Instant` anchor for `now()`, `std::thread::sleep` for the wait)
+- required without `std`; omitting it is a compile error (`SystemClock`
+  implements no clock capability there, so `.call()` is not available)
 
 Terminal execution:
 
@@ -823,8 +843,8 @@ Terminal execution:
 
 **6.4.4** `SyncRetryWithStats` and `AsyncRetryWithStats` expose only terminal
 execution (`.call()` for both; the async `.call()` returns a future). They do
-not expose hook, sleep, or clock configuration methods. Configure everything
-before calling `.with_stats()`.
+not expose hook or clock configuration methods. Configure everything before
+calling `.with_stats()`.
 
 The sync loop performs these steps:
 
@@ -845,14 +865,16 @@ loop:
         a. Fire `after_attempt` with next_delay = None.
         b. Terminate.
     9.  Fire `after_attempt` with next_delay = Some(delay).
-    10. If delay > zero, sleep for the computed delay.
+    10. If delay > zero, wait for the computed delay via the clock.
     11. attempt += 1, continue to step 1.
 ```
 
 ### 6.5 Async execution
 
-**6.5.1** Async execution always requires `.sleep(...)` before the future can run. The
-crate never auto-selects an async runtime.
+**6.5.1** Async execution always requires `.clock(...)` before `.call()` is
+available. The crate never auto-selects an async runtime; there is no default
+async clock (`SystemClock`, the initial type-state, implements `AsyncClock`
+nowhere, so the bound rejects it at compile time).
 
 Terminal execution:
 
@@ -959,12 +981,12 @@ loop. Standard patterns work as expected:
 ```rust
 // Timeout
 tokio::time::timeout(Duration::from_secs(30),
-    (|| fetch_data()).retry_async().sleep(sleep::tokio()).call()
+    (|| fetch_data()).retry_async().clock(TokioClock::new()).call()
 ).await??;
 
 // Select
 tokio::select! {
-    result = (|| fetch_data()).retry_async().sleep(sleep::tokio()) => {
+    result = (|| fetch_data()).retry_async().clock(TokioClock::new()).call() => {
         handle(result?);
     }
     _ = shutdown_signal() => {
@@ -1025,15 +1047,15 @@ following are `Send`:
 - the operation closure
 - the operation's returned `Future`
 - `T` and `E`
-- `Sleeper::Sleep`
+- the clock and its `AsyncClock::Wait` future
 - all registered hooks
 
-**10.1** Async execution types are `Send` when the operation, its future, `T`, `E`, `Sleeper::Sleep`, and all hooks are `Send`.
+**10.1** Async execution types are `Send` when the operation, its future, `T`, `E`, the clock, its `AsyncClock::Wait`, and all hooks are `Send`.
 
 **10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
-`Predicate`, `Sleeper`). Concrete execution types derive `Send`/`Sync` from
-their components via standard auto-trait rules.
+`Predicate`, `Clock`, `SyncClock`, `AsyncClock`). Concrete execution types
+derive `Send`/`Sync` from their components via standard auto-trait rules.
 
 Sync execution types are `Send` when their components are `Send`. No `Sync`
 bound is required on any execution type because execution is driven by a single
@@ -1050,46 +1072,49 @@ atomic (`AtomicU64`) on targets with 64-bit atomics. On targets without
 
 ## 11. Elapsed time, clocks, and timeout
 
-### 11.1 Elapsed clock contract
+### 11.1 Elapsed time
 
-The elapsed clock provides wall-clock timing to the retry loop. It is
-configured on the execution builder and is set once per execution.
+Elapsed time is read from the injected clock (see 3.5) — the same value that
+performs the inter-attempt waits, so the elapsed readings and the recorded
+waits cannot disagree.
 
-**11.1.1** The clock function must return a monotonic timestamp — a `Duration` since an
-arbitrary fixed epoch (e.g., system boot, program start, or hardware timer
+**11.1.1** `Clock::now()` returns a monotonic timestamp — a `Duration` since an
+arbitrary fixed origin (e.g., system boot, program start, or hardware timer
 origin). The library captures a baseline reading when execution starts and
-computes elapsed time as `clock() - baseline` on each subsequent read. For
-sync executions, execution starts when `.call()` is invoked; for async
-executions, at the first poll of the future `.call()` returns. Idle time
-between configuring a builder and starting execution never consumes the
-elapsed budget.
+computes elapsed time as `now() - baseline` on each subsequent read. For sync
+executions, execution starts when `.call()` is invoked; for async executions,
+at the first poll of the future `.call()` returns. Idle time between
+configuring a builder and starting execution never consumes the elapsed
+budget.
 
-**11.1.2** With `std`, the default clock uses `std::time::Instant` internally: the
-library calls `Instant::now()` at execution start and `.elapsed()` thereafter.
-`Instant` does not directly satisfy `fn() -> Duration`; the `std` default is
-handled as a special case. Without `std`, the clock defaults to `None` (no
-elapsed tracking) unless explicitly configured via `.elapsed_clock()` or
-`.elapsed_clock_fn()`.
+**11.1.2** With `std`, the sync default is `clock::SystemClock`, which anchors
+a process-global `std::time::Instant` and reports `now()` relative to it.
+Because the anchor is only ever subtracted from a baseline read from the same
+clock, its absolute origin is irrelevant. There is no async default clock.
 
-Statistics do not force additional timing work beyond what the chosen clock
-already provides.
+Because a clock is mandatory on every execution, elapsed time is always
+available: the engines never produce `elapsed = None`. Statistics do not force
+additional timing work beyond what the chosen clock already provides.
 
-### 11.2 Hazard: elapsed-based stop without a clock
+### 11.2 Hazard: non-advancing clock
 
-`stop::elapsed(dur)` never fires when `elapsed` is `None`. In `no_std`
-environments without a configured elapsed clock, using only elapsed-based stop
-strategies produces an unbounded retry loop.
+The former hazard class "elapsed-based stop without a clock" is dissolved:
+`now()` is mandatory on every clock, so a `timeout` or `stop::elapsed` can no
+longer be configured without a time source (ADR-0005).
 
-To prevent this, combine elapsed-based stops with `stop::attempts(n)`:
+The residual hazard is a clock whose `now()` does not advance (a constant
+reader, or a buggy custom implementation whose wait does not move `now()`).
+Against such a clock, elapsed time pins at zero and `stop::elapsed(dur)` /
+`.timeout(dur)` never fire; if either is the sole stop condition the retry
+loop is unbounded. To stay bounded regardless, combine elapsed-based stops
+with `stop::attempts(n)`:
 
 ```rust
 stop::elapsed(Duration::from_secs(30)).or(stop::attempts(100))
 ```
 
-The crate does not add a compile-time or runtime guard against this
-configuration because whether a clock is present depends on the builder's
-configuration. Users are responsible for ensuring at least one stop condition
-will eventually fire.
+The advance contract is per-implementation (see 3.5.3); the shipped clocks
+uphold it structurally (`VirtualClock`) or via the OS/runtime scheduler.
 
 ### 11.3 Hazard: elapsed-based stop does not account for upcoming sleep
 
@@ -1114,10 +1139,11 @@ entire retry execution. It combines two behaviors:
    `.stop()`, or the default. For example,
    `.stop(stop::attempts(5)).timeout(Duration::from_secs(30))` produces an
    effective stop of `stop::attempts(5).or(stop::elapsed(30s))`.
-1. **11.4.2** After computing the wait duration (step 5), if `elapsed` is `Some`, clamps
-   the delay to the remaining budget:
-   `delay = min(delay, max(0, timeout - elapsed))` (step 6). When `elapsed` is
-   `None`, the clamp is skipped (no budget can be computed).
+1. **11.4.2** After computing the wait duration (step 5), clamps the delay to
+   the remaining budget: `delay = min(delay, max(0, timeout - elapsed))`
+   (step 6). The wait itself consumes elapsed budget — the clock that waits is
+   the clock that reports elapsed — so a clamped wait ends at the deadline and
+   the loop performs one final attempt there (11.4.5).
 
 **11.4.3** When the clamped delay is zero, sleep is skipped entirely per the zero-duration
 sleep rule defined in the Wait section.
@@ -1126,38 +1152,41 @@ sleep rule defined in the Wait section.
 elapsed stop fired. Users can distinguish timeout from attempt exhaustion by
 comparing `RetryStats.total_elapsed` against their timeout duration.
 
-Timeout relies on an elapsed clock. With `std`, `.timeout(dur)` automatically
-configures the `std::time::Instant` clock if no clock has been set. Without
-`std`, timeout requires `.elapsed_clock()` or `.elapsed_clock_fn()` to be
-configured; if no clock is available, the elapsed stop never fires and the
-delay clamp is skipped, so timeout has no effect. This is the same hazard as
-`stop::elapsed` without a clock.
+Timeout reads elapsed time from the mandatory clock, so it always has a time
+source; the only way it can silently misbehave is a non-advancing clock
+(see 11.2).
 
 **11.4.5** Timeout does not interrupt a running operation. The total wall-clock time may
 exceed the deadline by the execution time of the final attempt. This is
 consistent with the crate's guarantee that it never interrupts a user operation
 that is already running.
 
-**11.4.6** In debug builds, configuring `.timeout()` without an elapsed clock triggers a
-`debug_assert` at execution start as a misconfiguration warning.
+**11.4.6** (retired — the debug assertion for a timeout without a clock was
+deleted along with the state it guarded; a clockless timeout is no longer
+representable. Number retained as a tombstone so later numbering is stable.)
 
 ## 12. Feature-gated APIs
 
 The crate exposes feature-gated helpers in these areas.
 
-### 12.1 Sleep adapters
+### 12.1 Runtime clock adapters
 
-The `sleep` module exports these helpers when their features are enabled:
+The `clock` module exports one `AsyncClock` implementor per runtime feature,
+each pairing a coherent `now()` source with that runtime's timer:
 
-- `sleep::tokio()` with `tokio`
-- `sleep::embassy()` with `embassy`
-- `sleep::gloo()` with `gloo-timers` on `wasm32`
-- `sleep::futures_timer()` with `futures-timer`
+- `clock::TokioClock` with `tokio-clock` — `tokio::time::Instant` +
+  `tokio::time::sleep`; coherent under `tokio::time::pause`
+- `clock::EmbassyClock` with `embassy-clock` — `embassy_time::Instant` +
+  `embassy_time::Timer` (requires a linked embassy time driver)
+- `clock::GlooClock` with `gloo-timers-clock` on `wasm32` — `gloo-timers`
+  waits paired with a caller-supplied `fn() -> Duration` now-source
+  (`GlooClock::with_now`), because wasm has no `std::time::Instant`
+- `clock::FuturesTimerClock` with `futures-timer-clock` —
+  `std::time::Instant` + `futures_timer::Delay`
 
-These return closures satisfying the blanket `Sleeper` impl:
-`impl Fn(Duration) -> impl Future<Output = ()>`. They do not define named
-sleeper types. Callers may always pass their own compatible sleeper function or
-type.
+All are constructed with `new()` (and `Default`) except `GlooClock`, whose
+now-source is explicit. Callers may always implement the clock traits for
+their own runtime instead.
 
 ### 12.2 Jitter
 
@@ -1202,37 +1231,31 @@ name the type can write it explicitly or use `impl` return types.
 
 ### 12.4 Virtual-clock test infrastructure
 
-With `test-util` (implies `std`; intended for host-side testing only, not
-production dependencies):
+`clock::VirtualClock` is the deterministic clock for testing retry behavior
+without real sleeping. It is always available (no feature gate, `no_std`-clean)
+and implements the clock traits directly, so it is injected via `.clock(...)`
+like any production clock.
 
-The `test_util` module exports `VirtualClock`, a deterministic clock for
-testing retry behavior without real sleeping.
-
-- **12.4.1** `VirtualClock::new()` starts at virtual time zero with no recorded
-  sleeps. `Clone` yields a handle to the same underlying clock (shared state).
-  `Default` is equivalent to `new()`.
-- **12.4.2** `.sync_sleep()` returns an `impl FnMut(Duration) + Send + 'static`
-  for the sync builder's `.sleep(...)`. `.async_sleep()` returns an
-  `impl Fn(Duration) -> Ready<()> + Clone + Send + Sync + 'static` satisfying
-  the blanket `Sleeper` impl for the async builder's `.sleep(...)`. Both record
-  the requested duration and advance virtual time by it instead of waiting;
-  the async future completes immediately.
-- **12.4.3** `.clock()` returns an
-  `impl Fn() -> Duration + Clone + Send + Sync + 'static` reading current
-  virtual time, for `.elapsed_clock_fn(...)`. The elapsed clock and its sleep
-  adapter must come from the *same* `VirtualClock` instance (or a clone, which
-  shares state); only then does timeout and elapsed-stop behavior track the
-  simulated waits (see 11). A sleep adapter from a *different* instance advances
-  only its own clock, leaving this elapsed clock stuck at zero so `timeout` and
-  `stop::elapsed` never fire — if either is the sole stop condition, the retry
-  loop cannot terminate. The mismatch is not type-enforceable.
-- **12.4.4** `.now()` returns current virtual time. `.advance(dur)` adds `dur`
-  to virtual time without recording a sleep (simulates time passing inside an
-  attempt). All time arithmetic saturates at `Duration::MAX`.
-- **12.4.5** `.sleeps()` returns every sleep requested so far, in request
-  order.
-- **12.4.6** All methods take `&self`; the shared state is `Send + Sync`
-  (mutex-guarded), so adapters may be used from multi-threaded executors.
+- **12.4.1** `VirtualClock::new()` starts at virtual time zero with no
+  recorded waits. `Default` is equivalent to `new()`.
+- **12.4.2** Waits advance virtual time by exactly the requested duration
+  instead of sleeping. `Clock::now()` reads the very cell the waits advance —
+  one cell, one writer — so the read seam and the wait seam cannot desync even
+  by an implementation bug. (This dissolves the former documented misuse of
+  wiring an elapsed clock and a sleeper from different instances; there is no
+  longer a second seam to mismatch.)
+- **12.4.3** An owned `VirtualClock` is a `SyncClock`; a shared borrow
+  (`&VirtualClock`) is additionally an `AsyncClock` whose wait future advances
+  time on its first poll (an unpolled, dropped wait leaves time untouched).
+  Tests inject `&clock` and keep the handle for assertions.
+- **12.4.4** `.advance(dur)` adds `dur` to virtual time without recording a
+  wait (simulates time passing inside an attempt). All time arithmetic
+  saturates at `Duration::MAX`.
+- **12.4.5** With `alloc`, `.waits()` returns every wait requested so far, in
+  request order (a point-in-time snapshot).
+- **12.4.6** All methods take `&self` via interior mutability (`Cell`); the
+  clock is neither `Sync` nor intended to cross threads. Multi-threaded
+  executors need a user-provided lock-based clock.
 
 ## 13. Public API surface
 
@@ -1261,7 +1284,7 @@ Traits:
 - `Wait` (includes `.cap()`, `.chain()`, `.add()`, `.jitter()`,
   `.full_jitter()`, `.equal_jitter()` as provided methods)
 - `Predicate` (includes `.or()`, `.and()` as provided methods)
-- `Sleeper`
+- `Clock`, `SyncClock`, `AsyncClock` (re-exported from `clock`)
 - `RetryExt` (blanket-implemented for `FnMut() -> Result<T, E>`)
 - `AsyncRetryExt` (blanket-implemented for
   `FnMut() -> Fut where Fut: Future<Output = Result<T, E>>`)
@@ -1293,13 +1316,12 @@ Free functions:
 - types: `PredicateAnyError`, `PredicateError`, `PredicateOk`,
   `PredicateResult`, `PredicateAny`, `PredicateAll`, `PredicateUntil`
 
-`sleep` module:
+`clock` module:
 
-- constructors: `tokio`, `embassy`, `gloo`, `futures_timer` (feature-gated)
-
-`test_util` module (with `test-util`):
-
-- types: `VirtualClock`
+- traits: `Clock`, `SyncClock`, `AsyncClock`
+- types: `SystemClock`, `VirtualClock`, `VirtualWait`
+- feature-gated adapter types: `TokioClock`, `EmbassyClock`, `GlooClock`,
+  `FuturesTimerClock` (see 12.1)
 
 ### 13.3 Combinator type opacity
 
@@ -1381,7 +1403,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/wait.rs` | §3.2 |
 | `tests/jitter.rs` | §3.3 |
 | `tests/predicate.rs` | §3.4 |
-| `tests/sleeper.rs` | §3.5 |
+| `tests/clock.rs`, `tests/clock_adapters.rs` | §3.5, §12.1, §12.4 |
 | `tests/state.rs` | §3.6 |
 | `tests/error.rs` | §4.1, §4.2 |
 | `tests/stats.rs` | §4.3, §7 |
@@ -1401,9 +1423,9 @@ runtime; if absent, a random seed is generated and printed on failure for
 reproduction.
 
 **Compile-fail guarantees.** Typestate constraints (no strategy overrides on
-policy-borrowing builders, `.call()` unavailable without a sleep function in
-`no_std`) are verified via `compile_fail` doctests in the source files rather
-than integration tests.
+policy-borrowing builders, sync `.call()` unavailable without a clock in
+`no_std`, async `.call()` unavailable without a clock anywhere) are verified
+via `compile_fail` doctests in the source files rather than integration tests.
 
 **no_std coverage.** `tests/async_no_alloc.rs` verifies that async retry
 compiles and runs without `std` or `alloc`. The §2 support matrix is the

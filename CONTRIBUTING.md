@@ -93,7 +93,7 @@ with the declared minimum supported Rust version and runs as part of `just ci`.
 test coverage gaps. `just mutants-diff [base]` mutation-tests only code changed
 since `base` (default `origin/main`), and CI runs it on every push and pull
 request as a fast gate that changed code arrives with killing tests.
-`.cargo/mutants.toml` enables the host-testable sleep-adapter features so
+`.cargo/mutants.toml` enables the host-testable clock-adapter features so
 feature-gated code is covered too. When reading results, note that mutants in
 `cfg`-gated code for other targets (the wasm-only `gloo` adapter, the
 non-atomic `SplitMix64::advance` fallback) cannot be killed on the host.

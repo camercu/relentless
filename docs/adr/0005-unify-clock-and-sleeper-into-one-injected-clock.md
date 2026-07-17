@@ -4,9 +4,13 @@ Date: 2026-07-16
 
 ## Status
 
-Accepted (design + interface). Implementation deferred to a deliberate breaking
-release; the interim non-breaking footgun fix is tracked separately (the
-test-seam unification, "Option 1").
+Accepted and implemented (2026-07-17). The port shipped as a deliberate
+breaking release: `.clock()` replaced `elapsed_clock`/`elapsed_clock_fn`/
+`.sleep`, `SystemClock` is the sync default, the runtime adapters became
+`AsyncClock` implementors under renamed `*-clock` features, and the core
+`clock::VirtualClock` (poll-advancing async wait) replaced the `test-util`
+module. The interim "Option 1" test-seam unification was subsumed by the full
+port before it shipped separately.
 
 Informed by the 14-spike exploration recorded in
 [the unified-clock spike findings](../spikes/unified-clock-findings.md).

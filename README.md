@@ -40,15 +40,14 @@ cargo add relentless
 
 ### Feature flags
 
-| Flag                  | Purpose                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| `std` (default)       | `std::thread::sleep` fallback, `Instant` elapsed clock, `std::error::Error` on `RetryError` |
-| `alloc`               | Boxed policies, closure elapsed clocks                                                       |
-| `tokio-sleep`         | `sleep::tokio()` async sleep adapter                                                        |
-| `embassy-sleep`       | `sleep::embassy()` async sleep adapter                                                      |
-| `gloo-timers-sleep`   | `sleep::gloo()` async sleep adapter (wasm32)                                                |
-| `futures-timer-sleep` | `sleep::futures_timer()` async sleep adapter                                                |
-| `test-util`           | `test_util::VirtualClock` — deterministic testing of retry behavior without real sleeps    |
+| Flag                  | Purpose                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `std` (default)       | `clock::SystemClock` default for sync retries, `std::error::Error` on `RetryError`   |
+| `alloc`               | Boxed policies, `clock::VirtualClock` wait recording                                 |
+| `tokio-clock`         | `clock::TokioClock` async clock adapter                                              |
+| `embassy-clock`       | `clock::EmbassyClock` async clock adapter                                            |
+| `gloo-timers-clock`   | `clock::GlooClock` async clock adapter (wasm32)                                      |
+| `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter                                       |
 
 Async retry does not require `alloc`.
 
@@ -60,9 +59,9 @@ For full docs, see <https://docs.rs/relentless>. Behavior spec:
 [docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
 [`examples/`](./examples).
 
-Sync examples omit `.sleep(...)` because `std` builds fall back to
-`std::thread::sleep` automatically. Without `std`, pass an explicit sleeper
-before `.call()`.
+Sync examples omit `.clock(...)` because `std` builds default to
+`clock::SystemClock` (wall time + `std::thread::sleep`). Without `std`, inject
+an explicit clock before `.call()`.
 
 ### 1) Retry with defaults
 
@@ -205,9 +204,10 @@ with runnable versions in [`examples/`](./examples):
   `Result<T, E>` — polling can exhaust while the last outcome was still `Ok`),
   or `Rejected { last }` when a predicate deemed the error non-retryable
   (`last` is that error itself).
-- **Deterministic testing** — the `test-util` feature's `VirtualClock` asserts
-  the exact backoff schedule with zero wall-clock time spent, so timeout and
-  backoff tests stay fast and non-flaky.
+- **Deterministic testing** — `clock::VirtualClock` asserts the exact backoff
+  schedule with zero wall-clock time spent, so timeout and backoff tests stay
+  fast and non-flaky; one injected value drives both waits and elapsed time,
+  so the two can never disagree.
   ([`testing-with-virtual-clock.rs`](./examples/testing-with-virtual-clock.rs))
 - **Cancellation** — there is no built-in cancel primitive; the loop observes
   the cancellation your environment already provides (a dropped future, an
@@ -223,17 +223,17 @@ The full API surface — every strategy, predicate, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
 Builder chains read best in this order: **when/until** -> **wait** -> **stop**
--> sleep -> hooks -> stats -> call. That order is a reading convention, not a
+-> clock -> hooks -> stats -> call. That order is a reading convention, not a
 compiler contract — the types enforce only three rules: strategy overrides
 (`when`/`until`/`wait`/`stop`) exist only on builders that own their policy
 (below), everything is configured before `.with_stats()`, and an async chain
-needs `.sleep(...)` before `.call()`.
+needs `.clock(...)` before `.call()`.
 
 Where you start decides what you can override. The free-function and
 extension-trait builders own their policy, so they accept the strategy overrides
 `when`/`until`/`wait`/`stop`. An execution started from a shared `RetryPolicy`
 (`policy.retry(...)`) keeps that policy's strategies fixed and accepts only
-sleep, hooks, timing, and stats methods.
+clock, hooks, timing, and stats methods.
 
 ## MSRV
 
