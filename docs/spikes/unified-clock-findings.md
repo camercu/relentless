@@ -1,8 +1,10 @@
 # Spike: unified `Clock` abstraction (Option 2) — findings
 
-**Status:** exploratory spike on branch `spike/unified-clock`. NOT for merge as-is.
-Prototype: `examples/spike_unified_clock.rs` (compiles + runs:
-`cargo run --example spike_unified_clock`).
+**Status:** concluded. The exploration produced ADR-0005, which is implemented:
+the crate's `clock` module realizes the v15 capstone interface. The prototype
+files (`examples/spike_unified_clock*.rs`) never landed on `main` — this
+document and the ADR carry the lessons; the files remain reachable on the
+`spike/unified-clock` branch.
 
 ## Question
 
