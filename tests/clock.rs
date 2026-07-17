@@ -138,6 +138,6 @@ mod system_clock {
         let clock = SystemClock;
         let before = clock.now();
         clock.wait(ARBITRARY_DURATION);
-        assert!(clock.now() - before >= ARBITRARY_DURATION);
+        assert!(clock.now().saturating_sub(before) >= ARBITRARY_DURATION);
     }
 }

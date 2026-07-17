@@ -636,7 +636,6 @@ pub fn relentless::test_util::VirtualClock::clock(&self) -> impl core::ops::func
 pub fn relentless::test_util::VirtualClock::new() -> Self
 pub fn relentless::test_util::VirtualClock::now(&self) -> core::time::Duration
 pub fn relentless::test_util::VirtualClock::sleeps(&self) -> alloc::vec::Vec<core::time::Duration>
-pub fn relentless::test_util::VirtualClock::sync_sleep(&self) -> impl core::ops::function::FnMut(core::time::Duration) + core::marker::Send + 'static
 impl core::clone::Clone for relentless::test_util::VirtualClock
 pub fn relentless::test_util::VirtualClock::clone(&self) -> relentless::test_util::VirtualClock
 impl core::default::Default for relentless::test_util::VirtualClock
@@ -1052,7 +1051,7 @@ pub struct relentless::RetryPolicy<S, W, P>
 impl relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError>
 pub fn relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError>::new() -> Self
 impl<S, W, P> relentless::RetryPolicy<S, W, P> where S: relentless::stop::Stop, W: relentless::wait::Wait
-pub fn relentless::RetryPolicy<S, W, P>::retry<T, E, F>(&self, op: F) -> relentless::SyncRetry<'_, S, W, P, (), (), (), F, NoSyncSleep, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> core::result::Result<T, E>
+pub fn relentless::RetryPolicy<S, W, P>::retry<T, E, F>(&self, op: F) -> relentless::SyncRetry<'_, S, W, P, (), (), (), F, relentless::clock::SystemClock, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> core::result::Result<T, E>
 impl<S, W, P> relentless::RetryPolicy<S, W, P> where S: relentless::stop::Stop, W: relentless::wait::Wait
 pub fn relentless::RetryPolicy<S, W, P>::retry_async<T, E, F, Fut>(&self, op: F) -> relentless::AsyncRetry<'_, S, W, P, (), (), (), F, NoAsyncSleep, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<T, E>>
 impl<S, W, P> relentless::RetryPolicy<S, W, P>
@@ -1123,45 +1122,43 @@ impl core::marker::Unpin for relentless::RetryStats
 impl core::marker::UnsafeUnpin for relentless::RetryStats
 impl core::panic::unwind_safe::RefUnwindSafe for relentless::RetryStats
 impl core::panic::unwind_safe::UnwindSafe for relentless::RetryStats
-pub struct relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::after_attempt<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, BA, HookChain<AA, Hook>, OX, F, SleepFn, T, E> where Hook: for<'a> core::ops::function::FnMut(&relentless::AttemptState<'a, T, E>)
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::before_attempt<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, HookChain<BA, Hook>, AA, OX, F, SleepFn, T, E> where Hook: core::ops::function::FnMut(&relentless::RetryState)
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::on_exit<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, BA, AA, HookChain<OX, Hook>, F, SleepFn, T, E> where Hook: for<'a> core::ops::function::FnMut(&relentless::ExitState<'a, T, E>)
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::call(self) -> core::result::Result<T, relentless::RetryError<T, E>> where Policy: PolicyHandle, <Policy as >::Stop: relentless::stop::Stop, <Policy as >::Wait: relentless::wait::Wait, <Policy as >::Predicate: relentless::predicate::Predicate<T, E>, BA: BeforeAttemptHook, AA: AttemptHook<T, E>, OX: ExitHook<T, E>, F: RetryOp<T, E>, SleepFn: SyncSleep
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::elapsed_clock(self, clock: fn() -> core::time::Duration) -> Self
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::elapsed_clock_fn(self, clock: impl core::ops::function::Fn() -> core::time::Duration + 'static) -> Self
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::with_stats(self) -> relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, NoSyncSleep, T, E>
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, NoSyncSleep, T, E>::sleep<SleepFn>(self, sleeper: SleepFn) -> relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> where SleepFn: SyncSleep
-impl<S, W, P, BA, AA, OX, F, SleepFn, T, E> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>::stop<NewStop>(self, stop: NewStop) -> relentless::SyncRetryExec<relentless::RetryPolicy<NewStop, W, P>, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>::until<NewPredicate>(self, predicate: NewPredicate) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, relentless::predicate::PredicateUntil<NewPredicate>>, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>::wait<NewWait>(self, wait: NewWait) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, NewWait, P>, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>::when<NewPredicate>(self, predicate: NewPredicate) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::fmt::Debug for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::Freeze for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::Freeze, F: core::marker::Freeze, SleepFn: core::marker::Freeze, BA: core::marker::Freeze, AA: core::marker::Freeze, OX: core::marker::Freeze
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::marker::Send for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::marker::Sync for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::Unpin for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::Unpin, F: core::marker::Unpin, SleepFn: core::marker::Unpin, BA: core::marker::Unpin, AA: core::marker::Unpin, OX: core::marker::Unpin
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::UnsafeUnpin for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::UnsafeUnpin, F: core::marker::UnsafeUnpin, SleepFn: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::RefUnwindSafe for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::UnwindSafe for relentless::SyncRetryExec<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub struct relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>::call(self) -> (core::result::Result<T, relentless::RetryError<T, E>>, relentless::RetryStats) where Policy: PolicyHandle, <Policy as >::Stop: relentless::stop::Stop, <Policy as >::Wait: relentless::wait::Wait, <Policy as >::Predicate: relentless::predicate::Predicate<T, E>, BA: BeforeAttemptHook, AA: AttemptHook<T, E>, OX: ExitHook<T, E>, F: RetryOp<T, E>, SleepFn: SyncSleep
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::fmt::Debug for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-pub fn relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::Freeze for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::Freeze, F: core::marker::Freeze, SleepFn: core::marker::Freeze, BA: core::marker::Freeze, AA: core::marker::Freeze, OX: core::marker::Freeze
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::marker::Send for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::marker::Sync for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::Unpin for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::Unpin, F: core::marker::Unpin, SleepFn: core::marker::Unpin, BA: core::marker::Unpin, AA: core::marker::Unpin, OX: core::marker::Unpin
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> core::marker::UnsafeUnpin for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E> where Policy: core::marker::UnsafeUnpin, F: core::marker::UnsafeUnpin, SleepFn: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::RefUnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
-impl<Policy, BA, AA, OX, F, SleepFn, T, E> !core::panic::unwind_safe::UnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, SleepFn, T, E>
+pub struct relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>
+impl<Policy, BA, AA, OX, F, C, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::after_attempt<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, BA, HookChain<AA, Hook>, OX, F, C, T, E> where Hook: for<'a> core::ops::function::FnMut(&relentless::AttemptState<'a, T, E>)
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::before_attempt<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, HookChain<BA, Hook>, AA, OX, F, C, T, E> where Hook: core::ops::function::FnMut(&relentless::RetryState)
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::on_exit<Hook>(self, hook: Hook) -> relentless::SyncRetryExec<Policy, BA, AA, HookChain<OX, Hook>, F, C, T, E> where Hook: for<'a> core::ops::function::FnMut(&relentless::ExitState<'a, T, E>)
+impl<Policy, BA, AA, OX, F, C, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::call(self) -> core::result::Result<T, relentless::RetryError<T, E>> where Policy: PolicyHandle, <Policy as >::Stop: relentless::stop::Stop, <Policy as >::Wait: relentless::wait::Wait, <Policy as >::Predicate: relentless::predicate::Predicate<T, E>, BA: BeforeAttemptHook, AA: AttemptHook<T, E>, OX: ExitHook<T, E>, F: RetryOp<T, E>, C: relentless::clock::SyncClock
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::timeout(self, dur: core::time::Duration) -> Self
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::with_stats(self) -> relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>
+impl<Policy, BA, AA, OX, F, T, E> relentless::SyncRetryExec<Policy, BA, AA, OX, F, relentless::clock::SystemClock, T, E>
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, relentless::clock::SystemClock, T, E>::clock<NewClock>(self, clock: NewClock) -> relentless::SyncRetryExec<Policy, BA, AA, OX, F, NewClock, T, E> where NewClock: relentless::clock::SyncClock
+impl<S, W, P, BA, AA, OX, F, C, T, E> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>::stop<NewStop>(self, stop: NewStop) -> relentless::SyncRetryExec<relentless::RetryPolicy<NewStop, W, P>, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>::until<NewPredicate>(self, predicate: NewPredicate) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, relentless::predicate::PredicateUntil<NewPredicate>>, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>::wait<NewWait>(self, wait: NewWait) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, NewWait, P>, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>::when<NewPredicate>(self, predicate: NewPredicate) -> relentless::SyncRetryExec<relentless::RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, C, T, E>
+impl<Policy, BA, AA, OX, F, C, T, E> core::fmt::Debug for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Freeze for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Freeze, F: core::marker::Freeze, C: core::marker::Freeze, BA: core::marker::Freeze, AA: core::marker::Freeze, OX: core::marker::Freeze
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Send for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Send, F: core::marker::Send, C: core::marker::Send, BA: core::marker::Send, AA: core::marker::Send, OX: core::marker::Send
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Sync for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Sync, F: core::marker::Sync, C: core::marker::Sync, BA: core::marker::Sync, AA: core::marker::Sync, OX: core::marker::Sync
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Unpin for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Unpin, F: core::marker::Unpin, C: core::marker::Unpin, BA: core::marker::Unpin, AA: core::marker::Unpin, OX: core::marker::Unpin
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::UnsafeUnpin for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::UnsafeUnpin, F: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
+impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::RefUnwindSafe for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::panic::unwind_safe::RefUnwindSafe, F: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe, BA: core::panic::unwind_safe::RefUnwindSafe, AA: core::panic::unwind_safe::RefUnwindSafe, OX: core::panic::unwind_safe::RefUnwindSafe
+impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::UnwindSafe for relentless::SyncRetryExec<Policy, BA, AA, OX, F, C, T, E> where Policy: core::panic::unwind_safe::UnwindSafe, F: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, BA: core::panic::unwind_safe::UnwindSafe, AA: core::panic::unwind_safe::UnwindSafe, OX: core::panic::unwind_safe::UnwindSafe
+pub struct relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>
+impl<Policy, BA, AA, OX, F, C, T, E> relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>::call(self) -> (core::result::Result<T, relentless::RetryError<T, E>>, relentless::RetryStats) where Policy: PolicyHandle, <Policy as >::Stop: relentless::stop::Stop, <Policy as >::Wait: relentless::wait::Wait, <Policy as >::Predicate: relentless::predicate::Predicate<T, E>, BA: BeforeAttemptHook, AA: AttemptHook<T, E>, OX: ExitHook<T, E>, F: RetryOp<T, E>, C: relentless::clock::SyncClock
+impl<Policy, BA, AA, OX, F, C, T, E> core::fmt::Debug for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>
+pub fn relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Freeze for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Freeze, F: core::marker::Freeze, C: core::marker::Freeze, BA: core::marker::Freeze, AA: core::marker::Freeze, OX: core::marker::Freeze
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Send for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Send, F: core::marker::Send, C: core::marker::Send, BA: core::marker::Send, AA: core::marker::Send, OX: core::marker::Send
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Sync for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Sync, F: core::marker::Sync, C: core::marker::Sync, BA: core::marker::Sync, AA: core::marker::Sync, OX: core::marker::Sync
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::Unpin for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::Unpin, F: core::marker::Unpin, C: core::marker::Unpin, BA: core::marker::Unpin, AA: core::marker::Unpin, OX: core::marker::Unpin
+impl<Policy, BA, AA, OX, F, C, T, E> core::marker::UnsafeUnpin for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::marker::UnsafeUnpin, F: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
+impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::RefUnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::panic::unwind_safe::RefUnwindSafe, F: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe, BA: core::panic::unwind_safe::RefUnwindSafe, AA: core::panic::unwind_safe::RefUnwindSafe, OX: core::panic::unwind_safe::RefUnwindSafe
+impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::UnwindSafe for relentless::SyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::panic::unwind_safe::UnwindSafe, F: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, BA: core::panic::unwind_safe::UnwindSafe, AA: core::panic::unwind_safe::UnwindSafe, OX: core::panic::unwind_safe::UnwindSafe
 pub trait relentless::AsyncClock: relentless::clock::Clock
 pub type relentless::AsyncClock::Wait: core::future::future::Future<Output = ()>
 pub fn relentless::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
@@ -1346,7 +1343,7 @@ pub fn alloc::boxed::Box<W>::equal_jitter(self) -> relentless::wait::Jittered<Se
 pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
-pub fn relentless::retry<F, T, E>(op: F) -> relentless::SyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), F, policy::NoSyncSleep, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> core::result::Result<T, E>
+pub fn relentless::retry<F, T, E>(op: F) -> relentless::SyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), F, relentless::clock::SystemClock, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> core::result::Result<T, E>
 pub fn relentless::retry_async<F, T, E, Fut>(op: F) -> relentless::AsyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), F, policy::NoAsyncSleep, T, E> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<T, E>>
 pub type relentless::AsyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepImpl, T, E> = relentless::AsyncRetryExec<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>
 pub type relentless::AsyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepImpl, T, E> = relentless::AsyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>
@@ -1354,10 +1351,10 @@ pub type relentless::AsyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepImp
 pub type relentless::AsyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, SleepImpl, T, E> = relentless::AsyncRetryExecWithStats<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepImpl, T, E>
 pub type relentless::DefaultAsyncRetryBuilder<F, T, E> = relentless::AsyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessAsyncOp<F>, super::super::execution::async_exec::NoAsyncSleep, T, E>
 pub type relentless::DefaultAsyncRetryBuilderWithStats<F, SleepImpl, T, E> = relentless::AsyncRetryBuilderWithStats<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessAsyncOp<F>, SleepImpl, T, E>
-pub type relentless::DefaultSyncRetryBuilder<F, T, E> = relentless::SyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessOp<F>, super::super::execution::sync_exec::NoSyncSleep, T, E>
-pub type relentless::DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = relentless::SyncRetryBuilderWithStats<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessOp<F>, SleepFn, T, E>
+pub type relentless::DefaultSyncRetryBuilder<F, T, E> = relentless::SyncRetryBuilder<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessOp<F>, relentless::clock::SystemClock, T, E>
+pub type relentless::DefaultSyncRetryBuilderWithStats<F, C, T, E> = relentless::SyncRetryBuilderWithStats<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::predicate::PredicateAnyError, (), (), (), StatelessOp<F>, C, T, E>
 pub type relentless::RetryResult<T, E> = core::result::Result<T, relentless::RetryError<T, E>>
-pub type relentless::SyncRetry<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E> = relentless::SyncRetryExec<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
-pub type relentless::SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E> = relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
-pub type relentless::SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E> = relentless::SyncRetryExecWithStats<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
-pub type relentless::SyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, SleepFn, T, E> = relentless::SyncRetryExecWithStats<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
+pub type relentless::SyncRetry<'policy, S, W, P, BA, AA, OX, F, C, T, E> = relentless::SyncRetryExec<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>
+pub type relentless::SyncRetryBuilder<S, W, P, BA, AA, OX, F, C, T, E> = relentless::SyncRetryExec<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>
+pub type relentless::SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, C, T, E> = relentless::SyncRetryExecWithStats<relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>
+pub type relentless::SyncRetryWithStats<'policy, S, W, P, BA, AA, OX, F, C, T, E> = relentless::SyncRetryExecWithStats<&'policy relentless::RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>

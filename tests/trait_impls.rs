@@ -4,6 +4,8 @@
 //! - Default `RetryPolicy` is Send + Sync
 //! - Public value types implement Copy
 
+use relentless::clock::VirtualClock;
+
 fn assert_send_sync<T: Send + Sync>() {}
 
 #[test]
@@ -155,8 +157,14 @@ fn retry_policy_is_clone_when_components_are_clone() {
     let cloned = policy.clone();
 
     // Both clones produce the same results when used independently.
-    let result1 = policy.retry(|_| Ok::<i32, &str>(1)).sleep(|_| {}).call();
-    let result2 = cloned.retry(|_| Ok::<i32, &str>(1)).sleep(|_| {}).call();
+    let result1 = policy
+        .retry(|_| Ok::<i32, &str>(1))
+        .clock(VirtualClock::new())
+        .call();
+    let result2 = cloned
+        .retry(|_| Ok::<i32, &str>(1))
+        .clock(VirtualClock::new())
+        .call();
     assert_eq!(result1, result2);
 }
 

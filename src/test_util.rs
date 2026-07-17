@@ -23,24 +23,8 @@ struct Inner {
 /// Cloning yields a handle to the same underlying clock, so the clock and its
 /// adapters can be shared between the retry builder and test assertions.
 ///
-/// # Examples
-///
-/// ```
-/// use core::time::Duration;
-/// use relentless::test_util::VirtualClock;
-/// use relentless::{retry, stop, wait};
-///
-/// let clock = VirtualClock::new();
-///
-/// let result = retry(|_| Err::<(), &str>("boom"))
-///     .wait(wait::fixed(Duration::from_millis(50)))
-///     .stop(stop::attempts(2))
-///     .sleep(clock.sync_sleep())
-///     .call();
-///
-/// assert!(result.is_err());
-/// assert_eq!(clock.sleeps(), vec![Duration::from_millis(50)]);
-/// ```
+/// For synchronous execution use [`crate::clock::VirtualClock`] via
+/// `.clock(...)`; this test-util clock now only adapts the *async* sleep seam.
 #[derive(Clone, Debug, Default)]
 pub struct VirtualClock {
     inner: Arc<Mutex<Inner>>,
@@ -71,43 +55,28 @@ impl VirtualClock {
         inner.now = inner.now.saturating_add(dur);
     }
 
-    /// Returns an elapsed-clock function reading this clock's virtual time
-    /// ([`.elapsed_clock_fn(...)`](crate::SyncRetryExec::elapsed_clock_fn)).
+    /// Returns an elapsed-clock function reading this clock's virtual time.
     ///
-    /// Pair it with a sleep adapter ([`sync_sleep`](Self::sync_sleep) /
-    /// [`async_sleep`](Self::async_sleep)) from *this same* `VirtualClock` so
-    /// waits advance the elapsed budget.
+    /// Pair it with the [`async_sleep`](Self::async_sleep) adapter from *this
+    /// same* `VirtualClock` so waits advance the elapsed budget.
     ///
     /// # Warning
     ///
     /// A sleep adapter from a *different* `VirtualClock` only advances its own
     /// clock, leaving this elapsed clock stuck at zero. Then
     /// [`stop::elapsed`](crate::stop::elapsed) and
-    /// [`timeout`](crate::SyncRetryExec::timeout) never fire — if either is the
-    /// only stop condition, **the retry loop spins forever**. The type system
-    /// cannot catch the mismatch; always source the clock and its sleeper from
-    /// one instance (clone it — clones share state).
+    /// [`timeout`](crate::AsyncRetryExec::timeout) never fire — if either is
+    /// the only stop condition, **the retry loop spins forever**. The type
+    /// system cannot catch the mismatch; always source the clock and its
+    /// sleeper from one instance (clone it — clones share state).
     pub fn clock(&self) -> impl Fn() -> Duration + Clone + Send + Sync + 'static {
         let inner = Arc::clone(&self.inner);
         move || lock(&inner).now
     }
 
-    /// Returns a sleep function for sync execution
-    /// ([`.sleep(...)`](crate::SyncRetryExec::sleep)).
-    ///
-    /// The function records each requested sleep and advances virtual time by
-    /// that amount instead of blocking.
-    ///
-    /// When testing timeout or elapsed-stop behavior, source
-    /// [`clock`](Self::clock) from this same instance — see its warning about
-    /// mismatched clocks.
-    pub fn sync_sleep(&self) -> impl FnMut(Duration) + Send + 'static {
-        let inner = Arc::clone(&self.inner);
-        move |dur| record_sleep(&inner, dur)
-    }
-
     /// Returns a sleep function for async execution
     /// ([`.sleep(...)`](crate::AsyncRetryExec::sleep)).
+    ///
     ///
     /// The returned future completes immediately; the requested sleep is
     /// recorded and virtual time advances by that amount instead of waiting.

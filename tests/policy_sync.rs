@@ -4,10 +4,12 @@
 //! execution loop invariants (attempt counting, sleep timing, early exit on predicate
 //! rejection), hook firing order, reset across `.retry()` invocations, and the
 //! `RetryPolicy::default()` safe-defaults guarantee. The test harness avoids real
-//! sleeps by supplying no-op or recording sleep functions.
+//! sleeps by injecting a `VirtualClock`, whose waits advance virtual time
+//! instead of blocking.
 
 use core::cell::Cell;
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy, RetryState, StopReason};
 use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
@@ -22,42 +24,51 @@ const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
 const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
 const STORAGE_POLICY_WAIT: Duration = Duration::from_millis(1);
 
+/// Test-side clock that records each wait into a `Vec`, so wait-sequence
+/// assertions also run under `--no-default-features`, where the library's
+/// `VirtualClock` has no `alloc`-gated recorder. (The test binary always
+/// links `std`.)
+struct RecordingClock {
+    now: Cell<Duration>,
+    waits: RefCell<Vec<Duration>>,
+}
+
+impl RecordingClock {
+    fn new() -> Self {
+        Self {
+            now: Cell::new(Duration::ZERO),
+            waits: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn waits(&self) -> Vec<Duration> {
+        self.waits.borrow().clone()
+    }
+
+    /// Advances virtual time without recording a wait (simulates op runtime).
+    fn advance(&self, dur: Duration) {
+        self.now.set(self.now.get().saturating_add(dur));
+    }
+}
+
+impl relentless::Clock for RecordingClock {
+    fn now(&self) -> Duration {
+        self.now.get()
+    }
+}
+
+impl relentless::SyncClock for RecordingClock {
+    fn wait(&self, dur: Duration) {
+        self.now.set(self.now.get().saturating_add(dur));
+        self.waits.borrow_mut().push(dur);
+    }
+}
+
 // Baseline tests (SPEC 11.1.1): three whole 20 ms attempt steps — 20, 40, 60 —
 // against a 50 ms deadline, so the loop stops on the third attempt.
 const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
 const PER_ATTEMPT_MILLIS: u64 = 20;
 const BASELINE_DEADLINE: Duration = Duration::from_millis(50);
-
-// Helpers
-
-fn instant_sleep(_dur: Duration) {}
-
-/// Returns a closure that appends each sleep duration to `recorder`.
-/// Used to assert that the wait strategy produces the expected delay sequence.
-fn recording_sleep(recorder: &RefCell<Vec<Duration>>) -> impl FnMut(Duration) + '_ {
-    move |dur| recorder.borrow_mut().push(dur)
-}
-
-thread_local! {
-    /// Per-test elapsed clock. Thread-local rather than a shared `static` so the
-    /// parallel test harness (one thread per test) gives every test its own
-    /// isolated clock — eliminating the cross-test race a shared global would
-    /// have. Read through the bare `fn` seam below, so it also exercises the
-    /// no-alloc `elapsed_clock(fn)` path.
-    static ELAPSED_CLOCK_MILLIS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn elapsed_clock_millis() -> Duration {
-    Duration::from_millis(ELAPSED_CLOCK_MILLIS.with(Cell::get))
-}
-
-fn reset_elapsed_clock() {
-    ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(0));
-}
-
-fn advance_elapsed_clock(millis: u64) {
-    ELAPSED_CLOCK_MILLIS.with(|clock| clock.set(clock.get().saturating_add(millis)));
-}
 
 #[test]
 fn new_policy_retries_on_any_error_by_default() {
@@ -69,7 +80,7 @@ fn new_policy_retries_on_any_error_by_default() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
@@ -82,7 +93,7 @@ fn new_policy_accepts_ok_immediately() {
 
     let result = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -91,14 +102,11 @@ fn new_policy_accepts_ok_immediately() {
 #[test]
 fn new_policy_has_exponential_wait_by_default() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let clock = RecordingClock::new();
 
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .sleep(recording_sleep(&sleeps))
-        .call();
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    let recorded = sleeps.borrow();
+    let recorded = clock.waits();
     assert_eq!(recorded.len(), (MAX_ATTEMPTS - 1) as usize);
     assert_eq!(recorded[0], Duration::from_millis(100));
     assert_eq!(recorded[1], Duration::from_millis(200));
@@ -114,7 +122,7 @@ fn stop_builder_configures_stop_strategy() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
@@ -125,14 +133,11 @@ fn wait_builder_configures_wait_strategy() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(wait::fixed(WAIT_DURATION));
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let clock = RecordingClock::new();
 
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .sleep(recording_sleep(&sleeps))
-        .call();
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
+    assert_eq!(clock.waits(), vec![WAIT_DURATION]);
 }
 
 #[test]
@@ -148,7 +153,7 @@ fn when_builder_configures_predicate() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("retryable")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -160,7 +165,7 @@ fn when_builder_configures_predicate() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fatal")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
@@ -189,7 +194,7 @@ fn policy_is_easy_to_store_via_three_type_params() {
     let result = service
         .retry
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -207,7 +212,7 @@ fn retry_borrows_policy_without_mut() {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -231,7 +236,7 @@ fn retry_succeeds_after_transient_failures() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -243,7 +248,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep);
+        .clock(VirtualClock::new());
     let typed: relentless::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
@@ -254,7 +259,7 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 
     let result = policy
         .retry(|_| Err::<i32, _>("always fails"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     match result {
@@ -276,7 +281,7 @@ fn retry_predicate_evaluated_before_stop() {
 
     let result = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -300,7 +305,7 @@ fn retry_with_never_stop_still_returns_on_ok() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -310,53 +315,44 @@ fn retry_with_never_stop_still_returns_on_ok() {
 #[test]
 fn default_policy_uses_exponential_backoff() {
     let policy = RetryPolicy::default();
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let clock = RecordingClock::new();
 
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .sleep(recording_sleep(&sleeps))
-        .call();
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    let durations = sleeps.borrow();
+    let durations = clock.waits();
     assert_eq!(durations.len(), (DEFAULT_POLICY_MAX_ATTEMPTS - 1) as usize);
     assert_eq!(durations[0], DEFAULT_POLICY_INITIAL_WAIT);
     assert_eq!(durations[1], DEFAULT_POLICY_INITIAL_WAIT.saturating_mul(2),);
 }
 
 #[test]
-fn sleep_function_receives_computed_delay() {
-    let sleep_durations: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+fn clock_receives_computed_delay() {
+    let clock = RecordingClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .sleep(|dur| sleep_durations.borrow_mut().push(dur))
-        .call();
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    let durations = sleep_durations.borrow();
-    // Sleep is injected between attempts, not after the last one.
+    let durations = clock.waits();
+    // The wait is injected between attempts, not after the last one.
     assert_eq!(durations.len(), (MAX_ATTEMPTS - 1) as usize);
-    for d in durations.iter() {
+    for d in &durations {
         assert_eq!(*d, WAIT_DURATION);
     }
 }
 
 #[test]
 fn exponential_wait_increases_sleep_durations() {
-    let sleep_durations: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let clock = RecordingClock::new();
     let initial = Duration::from_millis(10);
     let policy = RetryPolicy::new()
         .stop(stop::attempts(4))
         .wait(wait::exponential(initial));
 
-    let _ = policy
-        .retry(|_| Err::<i32, _>("fail"))
-        .sleep(|dur| sleep_durations.borrow_mut().push(dur))
-        .call();
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    let durations = sleep_durations.borrow();
+    let durations = clock.waits();
     assert_eq!(durations.len(), 3);
     assert_eq!(durations[0], Duration::from_millis(10));
     assert_eq!(durations[1], Duration::from_millis(20));
@@ -373,7 +369,7 @@ fn policy_is_clone() {
 
     let result = policy2
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
@@ -387,7 +383,10 @@ fn boxed_local_erases_policy_types() {
         Box<dyn relentless::stop::Stop + 'static>,
         Box<dyn relentless::wait::Wait + 'static>,
     > = RetryPolicy::new().boxed_local();
-    let result = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
+    let result = policy
+        .retry(|_| Err::<(), _>("fail"))
+        .clock(VirtualClock::new())
+        .call();
     assert!(result.is_err());
 }
 
@@ -405,9 +404,12 @@ fn boxed_policy_reuses_across_different_ok_types() {
 
     let s = policy
         .retry(|_| Ok::<String, &str>("v".to_string()))
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
-    let u = policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
+    let u = policy
+        .retry(|_| Ok::<(), &str>(()))
+        .clock(VirtualClock::new())
+        .call();
 
     assert_eq!(s.unwrap(), "v");
     assert_eq!(u.unwrap(), ());
@@ -429,7 +431,7 @@ fn boxed_local_runs_full_retry_cycle() {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(
@@ -461,7 +463,7 @@ fn boxed_local_is_usable_without_send_bound() {
             counter_clone.set(counter_clone.get().saturating_add(1));
             Err::<(), _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(counter.get(), MAX_ATTEMPTS);
@@ -482,7 +484,7 @@ fn boxed_policy_erases_strategy_types() {
             call_count.set(call_count.get().saturating_add(1));
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
@@ -497,7 +499,7 @@ fn policy_resets_between_retry_invocations() {
 
     let result = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 
@@ -510,7 +512,7 @@ fn policy_resets_between_retry_invocations() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail again")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -526,13 +528,13 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
         .before_attempt(|_state| {
             before_calls.set(before_calls.get().saturating_add(1));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(before_calls.get(), 2);
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail again"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(
         before_calls.get(),
@@ -561,7 +563,7 @@ fn after_attempt_hook_fires_after_each_attempt() {
             let is_ok = state.outcome.is_ok();
             hook_results.borrow_mut().push((state.attempt, is_ok));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     let results = hook_results.borrow();
@@ -581,7 +583,7 @@ fn on_exit_hook_fires_when_stop_triggers() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_reason.set(Some(state.stop_reason));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(exit_reason.get(), Some(StopReason::Exhausted));
@@ -597,7 +599,7 @@ fn on_exit_hook_fires_on_success() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_reason.set(Some(state.stop_reason));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(exit_reason.get(), Some(StopReason::Succeeded));
@@ -605,10 +607,10 @@ fn on_exit_hook_fires_on_success() {
 
 #[test]
 #[cfg(feature = "std")]
-fn std_feature_provides_default_sleep() {
-    // Without the `std` feature there is no default sleep provider, so `.call()` requires
-    // an explicit `.sleep(fn)`. With `std` active the implicit provider uses
-    // `std::thread::sleep`, so the builder chain must compile without `.sleep()`.
+fn std_feature_provides_default_clock() {
+    // Without the `std` feature there is no default clock, so `.call()` requires
+    // an explicit `.clock(...)`. With `std` active the default `SystemClock`
+    // waits with `std::thread::sleep`, so the chain must compile without `.clock()`.
     const DEFAULT_SLEEP_WAIT: Duration = Duration::from_millis(1);
 
     let policy = RetryPolicy::new()
@@ -644,7 +646,7 @@ fn retry_with_single_attempt_calls_op_once() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(call_count.get(), 1);
@@ -660,7 +662,7 @@ fn retry_succeeds_on_first_attempt() {
             call_count.set(call_count.get() + 1);
             Ok::<_, &str>(SUCCESS_VALUE)
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -678,7 +680,7 @@ fn exhausted_returned_for_ok_predicate_exhaustion() {
 
     let result = policy
         .retry(|_| Ok::<_, &str>(-1_i32))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     match result {
@@ -710,7 +712,7 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
                 _ => Ok(SUCCESS_VALUE),
             }
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -731,7 +733,7 @@ fn predicate_rejects_err_means_immediate_return() {
             call_count.set(call_count.get() + 1);
             Err::<i32, _>("fatal")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(call_count.get(), 1);
@@ -747,24 +749,22 @@ fn predicate_rejects_err_means_immediate_return() {
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn timeout_stops_loop_when_budget_exceeded() {
-    reset_elapsed_clock();
-
     // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
 
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
-            advance_elapsed_clock(CUSTOM_CLOCK_STEP_MILLIS);
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
             Err::<i32, _>("fail")
         })
-        .elapsed_clock(elapsed_clock_millis)
+        .clock(&clock)
         .timeout(CUSTOM_CLOCK_DEADLINE)
-        .sleep(instant_sleep)
         .call();
 
     // The timeout is tighter than MAX_ATTEMPTS would allow, so only 1 attempt runs.
@@ -799,7 +799,7 @@ fn engine_feeds_previous_delay_forward_sync() {
             delay: FEEDBACK_DELAY,
         })
         .retry(|_| Err::<i32, &str>("fail"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     // First attempt has no previous delay; every later attempt sees the prior
@@ -837,30 +837,25 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
         }
     }
 
-    let clock = Rc::new(Cell::new(0_u64));
-    let op_elapsed: Rc<Cell<Option<Duration>>> = Rc::new(Cell::new(None));
+    let clock = VirtualClock::new();
+    let op_elapsed: Cell<Option<Duration>> = Cell::new(None);
     let wait_elapsed: Rc<RefCell<Vec<Option<Duration>>>> = Rc::new(RefCell::new(Vec::new()));
-
-    let clock_reader = Rc::clone(&clock);
-    let clock_op = Rc::clone(&clock);
-    let op_elapsed_ref = Rc::clone(&op_elapsed);
 
     let _ = RetryPolicy::new()
         .stop(stop::attempts(2))
         .wait(RecordingWait {
             seen: Rc::clone(&wait_elapsed),
         })
-        .retry(move |state: RetryState| {
+        .retry(|state: RetryState| {
             // Record the elapsed the op sees on the first attempt, then advance
             // the clock so the post-op read differs.
-            if op_elapsed_ref.get().is_none() {
-                op_elapsed_ref.set(state.elapsed);
+            if op_elapsed.get().is_none() {
+                op_elapsed.set(state.elapsed);
             }
-            clock_op.set(clock_op.get() + CUSTOM_CLOCK_STEP_MILLIS);
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
             Err::<i32, &str>("fail")
         })
-        .elapsed_clock_fn(move || Duration::from_millis(clock_reader.get()))
-        .sleep(instant_sleep)
+        .clock(&clock)
         .call();
 
     let op_saw = op_elapsed.get().expect("op ran at least once");
@@ -881,7 +876,7 @@ fn free_function_retry_uses_default_policy() {
         call_count.set(call_count.get().saturating_add(1));
         Err::<i32, &str>("always fails")
     })
-    .sleep(instant_sleep)
+    .clock(VirtualClock::new())
     .call();
 
     // Default is attempts(3), so 3 calls should be made.
@@ -901,7 +896,7 @@ fn free_function_retry_provides_retry_state_to_op() {
     })
     .stop(stop::attempts(3))
     .wait(wait::fixed(Duration::ZERO))
-    .sleep(instant_sleep)
+    .clock(VirtualClock::new())
     .call();
 
     assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
@@ -927,7 +922,7 @@ fn retry_ext_closure_takes_no_retry_state() {
     .retry()
     .stop(stop::attempts(3))
     .wait(wait::fixed(Duration::ZERO))
-    .sleep(instant_sleep)
+    .clock(VirtualClock::new())
     .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -950,11 +945,11 @@ fn policy_retry_borrows_self_immutably() {
 
     let r1 = policy
         .retry(|_| Ok::<i32, &str>(1))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     let r2 = policy
         .retry(|_| Ok::<i32, &str>(2))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert_eq!(r1, Ok(1));
     assert_eq!(r2, Ok(2));
@@ -975,8 +970,16 @@ fn shared_policy_reference_across_multiple_threads() {
     let p1 = Arc::clone(&policy);
     let p2 = Arc::clone(&policy);
 
-    let t1 = thread::spawn(move || p1.retry(|_| Ok::<i32, &str>(1)).sleep(|_| {}).call());
-    let t2 = thread::spawn(move || p2.retry(|_| Ok::<i32, &str>(2)).sleep(|_| {}).call());
+    let t1 = thread::spawn(move || {
+        p1.retry(|_| Ok::<i32, &str>(1))
+            .clock(VirtualClock::new())
+            .call()
+    });
+    let t2 = thread::spawn(move || {
+        p2.retry(|_| Ok::<i32, &str>(2))
+            .clock(VirtualClock::new())
+            .call()
+    });
 
     assert_eq!(t1.join().unwrap(), Ok(1));
     assert_eq!(t2.join().unwrap(), Ok(2));
@@ -988,7 +991,7 @@ fn call_returns_retry_result_type() {
     let result: relentless::RetryResult<i32, &str> = RetryPolicy::new()
         .stop(stop::attempts(1))
         .retry(|_| Err::<i32, &str>("fail"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
@@ -1002,7 +1005,7 @@ fn predicate_accepted_before_stop_fires() {
 
     let result = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -1019,7 +1022,7 @@ fn after_attempt_fires_including_final_attempt() {
         .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             attempt_nums.borrow_mut().push(state.attempt);
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*attempt_nums.borrow(), vec![1, 2, 3]);
@@ -1028,6 +1031,23 @@ fn after_attempt_fires_including_final_attempt() {
 /// §6.4
 #[test]
 fn sleep_occurs_after_after_attempt_hook_fires() {
+    /// Clock that logs each wait into a shared event list.
+    struct EventClock<'a> {
+        events: &'a RefCell<Vec<&'static str>>,
+        now: Cell<Duration>,
+    }
+    impl relentless::Clock for EventClock<'_> {
+        fn now(&self) -> Duration {
+            self.now.get()
+        }
+    }
+    impl relentless::SyncClock for EventClock<'_> {
+        fn wait(&self, dur: Duration) {
+            self.events.borrow_mut().push("sleep");
+            self.now.set(self.now.get().saturating_add(dur));
+        }
+    }
+
     let events: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
@@ -1038,8 +1058,9 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
         .after_attempt(|_: &relentless::AttemptState<i32, &str>| {
             events.borrow_mut().push("after_attempt");
         })
-        .sleep(|_| {
-            events.borrow_mut().push("sleep");
+        .clock(EventClock {
+            events: &events,
+            now: Cell::new(Duration::ZERO),
         })
         .call();
 
@@ -1053,20 +1074,18 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
 /// 11.4.4
 #[test]
 fn timeout_stop_reason_is_exhausted() {
-    reset_elapsed_clock();
-
     let policy = RetryPolicy::new()
         .stop(stop::attempts(100))
         .wait(wait::fixed(Duration::ZERO));
+    let clock = VirtualClock::new();
 
     let (result, stats) = policy
         .retry(|_| {
-            advance_elapsed_clock(10);
+            clock.advance(Duration::from_millis(10));
             Err::<i32, &str>("fail")
         })
-        .elapsed_clock(elapsed_clock_millis)
+        .clock(&clock)
         .timeout(Duration::from_millis(5))
-        .sleep(instant_sleep)
         .with_stats()
         .call();
 
@@ -1076,19 +1095,17 @@ fn timeout_stop_reason_is_exhausted() {
 
 #[test]
 fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
-    reset_elapsed_clock();
-
     let policy = RetryPolicy::new().stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE));
     let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
 
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
-            advance_elapsed_clock(CUSTOM_CLOCK_STEP_MILLIS);
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
             Err::<i32, _>("clocked failure")
         })
-        .elapsed_clock(elapsed_clock_millis)
-        .sleep(instant_sleep)
+        .clock(&clock)
         .call();
 
     assert_eq!(call_count.get(), 1);
@@ -1100,47 +1117,19 @@ fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
 /// builder and calling it must not consume the elapsed budget.
 #[test]
 fn elapsed_baseline_starts_at_call_not_builder_construction() {
-    reset_elapsed_clock();
-
+    let clock = VirtualClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::elapsed(BASELINE_DEADLINE))
         .wait(wait::fixed(Duration::ZERO));
     let execution = policy
         .retry(|_| {
-            advance_elapsed_clock(PER_ATTEMPT_MILLIS);
+            clock.advance(Duration::from_millis(PER_ATTEMPT_MILLIS));
             Err::<i32, &str>("fail")
         })
-        .elapsed_clock(elapsed_clock_millis)
-        .sleep(instant_sleep)
+        .clock(&clock)
         .with_stats();
 
-    advance_elapsed_clock(IDLE_BEFORE_CALL_MILLIS);
-    let (result, stats) = execution.call();
-
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(stats.attempts, 3);
-}
-
-/// 11.1.1 — same call-time baseline contract for the boxed-closure clock
-/// (`.elapsed_clock_fn`), which snapshots through separate construction code.
-#[cfg(feature = "alloc")]
-#[test]
-fn elapsed_baseline_starts_at_call_with_boxed_clock() {
-    reset_elapsed_clock();
-
-    let policy = RetryPolicy::new()
-        .stop(stop::elapsed(BASELINE_DEADLINE))
-        .wait(wait::fixed(Duration::ZERO));
-    let execution = policy
-        .retry(|_| {
-            advance_elapsed_clock(PER_ATTEMPT_MILLIS);
-            Err::<i32, &str>("fail")
-        })
-        .elapsed_clock_fn(elapsed_clock_millis)
-        .sleep(instant_sleep)
-        .with_stats();
-
-    advance_elapsed_clock(IDLE_BEFORE_CALL_MILLIS);
+    clock.advance(Duration::from_millis(IDLE_BEFORE_CALL_MILLIS));
     let (result, stats) = execution.call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -1166,7 +1155,7 @@ fn when_and_until_last_call_wins() {
             call_count.set(n);
             Ok::<i32, &str>(n)
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(3));
@@ -1184,7 +1173,7 @@ fn new_and_default_produce_same_policy() {
             call_count_new.set(call_count_new.get().saturating_add(1));
             Err::<i32, &str>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     let call_count_def = Cell::new(0_u32);
@@ -1194,7 +1183,7 @@ fn new_and_default_produce_same_policy() {
             call_count_def.set(call_count_def.get().saturating_add(1));
             Err::<i32, &str>("fail")
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(r_new, Err(RetryError::Exhausted { .. })));
@@ -1217,7 +1206,7 @@ fn builder_methods_return_typed_policy() {
 
     let result = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -1238,9 +1227,7 @@ fn std_sync_retry_uses_thread_sleep_by_default() {
 /// 11.4.1, 11.4.2, 11.4.3
 #[test]
 fn timeout_clamps_delay_to_remaining_budget() {
-    reset_elapsed_clock();
-
-    let sleep_calls = Cell::new(0_u32);
+    let clock = RecordingClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::attempts(10))
         .wait(wait::fixed(Duration::from_millis(100)));
@@ -1248,19 +1235,16 @@ fn timeout_clamps_delay_to_remaining_budget() {
     let result = policy
         .retry(|_| {
             // Advance clock past timeout on first attempt.
-            advance_elapsed_clock(10);
+            clock.advance(Duration::from_millis(10));
             Err::<i32, &str>("fail")
         })
-        .elapsed_clock(elapsed_clock_millis)
+        .clock(&clock)
         .timeout(Duration::from_millis(5))
-        .sleep(|_dur| {
-            sleep_calls.set(sleep_calls.get().saturating_add(1));
-        })
         .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    // Sleep should be skipped since the clamped delay is zero.
-    assert_eq!(sleep_calls.get(), 0);
+    // The wait must be skipped entirely: the clamped delay is zero.
+    assert_eq!(clock.waits(), Vec::new());
 }
 
 /// 11.4.2
@@ -1270,45 +1254,38 @@ fn timeout_clamps_delay_to_remaining_budget() {
 /// strategy's raw output.
 #[test]
 fn timeout_clamps_delay_to_partial_remaining_budget() {
-    reset_elapsed_clock();
-
     const TIMEOUT: Duration = Duration::from_millis(100);
     const RAW_DELAY: Duration = Duration::from_millis(80);
     const OP_RUNTIME_MILLIS: u64 = 30;
 
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let clock = RecordingClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::attempts(10))
         .wait(wait::fixed(RAW_DELAY));
 
     let result = policy
         .retry(|_| {
-            advance_elapsed_clock(OP_RUNTIME_MILLIS);
+            clock.advance(Duration::from_millis(OP_RUNTIME_MILLIS));
             Err::<i32, &str>("fail")
         })
-        .elapsed_clock(elapsed_clock_millis)
+        .clock(&clock)
         .timeout(TIMEOUT)
-        .sleep(recording_sleep(&sleeps))
         .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    // Elapsed after attempts 1-3: 30, 60, 90 ms → remaining budget 70, 40,
-    // 10 ms, each below the raw 80 ms delay. Attempt 4 exceeds the deadline.
-    assert_eq!(
-        *sleeps.borrow(),
-        vec![
-            Duration::from_millis(70),
-            Duration::from_millis(40),
-            Duration::from_millis(10),
-        ]
-    );
+    // Attempt 1 leaves elapsed at 30 ms → remaining budget 70 ms, below the
+    // raw 80 ms delay, so the wait is clamped to 70 ms. The wait itself
+    // consumes that budget (the clock is coherent: waiting advances elapsed),
+    // so attempt 2 ends at 130 ms ≥ 100 ms and the loop stops at the deadline
+    // with one final attempt (SPEC 11.4).
+    assert_eq!(clock.waits(), vec![Duration::from_millis(70)]);
 }
 
 /// 11.1.2
 #[test]
 #[cfg(feature = "std")]
 fn timeout_with_std_uses_instant_clock() {
-    // Just verify it compiles and runs correctly without an explicit elapsed_clock.
+    // Just verify it compiles and runs correctly with the default SystemClock.
     let result = RetryPolicy::new()
         .stop(stop::attempts(1))
         .wait(wait::fixed(Duration::ZERO))

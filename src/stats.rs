@@ -6,12 +6,13 @@ use core::fmt;
 /// # Examples
 ///
 /// ```
+/// use relentless::clock::VirtualClock;
 /// use relentless::{RetryPolicy, StopReason, stop};
 ///
 /// let policy = RetryPolicy::new().stop(stop::attempts(1));
 /// let (_result, stats) = policy
 ///     .retry(|_| Err::<(), _>("fail"))
-///     .sleep(|_dur| {})
+///     .clock(VirtualClock::new())
 ///     .with_stats()
 ///     .call();
 ///
@@ -45,6 +46,7 @@ impl fmt::Display for StopReason {
 /// # Examples
 ///
 /// ```
+/// use relentless::clock::VirtualClock;
 /// use relentless::{RetryPolicy, RetryStats, stop, wait};
 /// use core::time::Duration;
 ///
@@ -53,7 +55,7 @@ impl fmt::Display for StopReason {
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 /// let (_result, stats): (Result<(), _>, RetryStats) = policy
 ///     .retry(|_| Err::<(), _>("fail"))
-///     .sleep(|_dur| {})
+///     .clock(VirtualClock::new())
 ///     .with_stats()
 ///     .call();
 ///

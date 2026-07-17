@@ -4,11 +4,12 @@
 //! affect the cap invariant, and that each policy invocation and each clone produces
 //! a distinct sequence (decorrelation). Seeded tests confirm reproducibility.
 
+use core::cell::{Cell, RefCell};
 use core::time::Duration;
 use relentless::RetryPolicy;
 use relentless::Wait;
+use relentless::clock::VirtualClock;
 use relentless::{stop, wait};
-use std::cell::RefCell;
 
 const BASE_WAIT: Duration = Duration::from_millis(20);
 const MAX_JITTER: Duration = Duration::from_millis(10);
@@ -20,6 +21,41 @@ const SEEDED_JITTER_SEED: u64 = 0x11;
 
 fn state(attempt: u32) -> relentless::RetryState {
     relentless::RetryState::for_attempt(attempt)
+}
+
+/// Test-side clock that records each wait into a `Vec`, so wait-sequence
+/// assertions also run under `--no-default-features`, where the library's
+/// `VirtualClock` has no `alloc`-gated recorder. (The test binary always
+/// links `std`.)
+struct RecordingClock {
+    now: Cell<Duration>,
+    waits: RefCell<Vec<Duration>>,
+}
+
+impl RecordingClock {
+    fn new() -> Self {
+        Self {
+            now: Cell::new(Duration::ZERO),
+            waits: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn waits(&self) -> Vec<Duration> {
+        self.waits.borrow().clone()
+    }
+}
+
+impl relentless::Clock for RecordingClock {
+    fn now(&self) -> Duration {
+        self.now.get()
+    }
+}
+
+impl relentless::SyncClock for RecordingClock {
+    fn wait(&self, dur: Duration) {
+        self.now.set(self.now.get().saturating_add(dur));
+        self.waits.borrow_mut().push(dur);
+    }
 }
 
 #[test]
@@ -78,24 +114,21 @@ fn jitter_sequence_changes_between_policy_invocations() {
         .stop(stop::attempts(4))
         .wait(wait::fixed(Duration::ZERO).jitter(MAX_JITTER));
 
-    let first: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
-    let second: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
+    let first = RecordingClock::new();
+    let second = RecordingClock::new();
+
+    let _ = policy.retry(|_| Err::<(), _>("retry")).clock(&first).call();
 
     let _ = policy
         .retry(|_| Err::<(), _>("retry"))
-        .sleep(|dur| first.borrow_mut().push(dur))
+        .clock(&second)
         .call();
 
-    let _ = policy
-        .retry(|_| Err::<(), _>("retry"))
-        .sleep(|dur| second.borrow_mut().push(dur))
-        .call();
-
-    assert_eq!(first.borrow().len(), 3);
-    assert_eq!(second.borrow().len(), 3);
+    assert_eq!(first.waits().len(), 3);
+    assert_eq!(second.waits().len(), 3);
     assert_ne!(
-        *first.borrow(),
-        *second.borrow(),
+        first.waits(),
+        second.waits(),
         "jitter should decorrelate retries across independent invocations"
     );
 }
@@ -369,7 +402,7 @@ fn jittered_policy_is_shareable_across_threads() {
                             Err("first attempt fails to force a jitter draw")
                         }
                     })
-                    .sleep(|_| {})
+                    .clock(VirtualClock::new())
                     .call();
                 assert_eq!(result.unwrap(), 1);
             });

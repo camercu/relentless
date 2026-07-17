@@ -26,8 +26,9 @@
 //!
 //! ```
 //! use relentless::RetryExt;
+//! use relentless::clock::VirtualClock;
 //!
-//! let result = (|| Ok::<_, &str>(42)).retry().sleep(|_| {}).call();
+//! let result = (|| Ok::<_, &str>(42)).retry().clock(VirtualClock::new()).call();
 //! assert_eq!(result.unwrap(), 42);
 //! ```
 //!
@@ -36,11 +37,12 @@
 //!
 //! ```
 //! use relentless::retry;
+//! use relentless::clock::VirtualClock;
 //!
 //! let result = retry(|state| {
 //!     if state.attempt >= 2 { Ok(state.attempt) } else { Err("not yet") }
 //! })
-//! .sleep(|_| {})
+//! .clock(VirtualClock::new())
 //! .call();
 //!
 //! assert_eq!(result.unwrap(), 2);
@@ -53,6 +55,7 @@
 //!
 //! ```
 //! use core::time::Duration;
+//! use relentless::clock::VirtualClock;
 //! use relentless::{Wait, retry, predicate, stop, wait};
 //!
 //! let result = retry(|_| Err::<(), &str>("boom"))
@@ -63,7 +66,7 @@
 //!             .cap(Duration::from_secs(5)),
 //!     )
 //!     .stop(stop::attempts(3))
-//!     .sleep(|_| {})
+//!     .clock(VirtualClock::new())
 //!     .call();
 //!
 //! assert!(result.is_err());
@@ -86,6 +89,7 @@
 //!
 //! ```
 //! use core::time::Duration;
+//! use relentless::clock::VirtualClock;
 //! use relentless::{RetryPolicy, stop, wait};
 //!
 //! let policy = RetryPolicy::new()
@@ -96,8 +100,8 @@
 //!     .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)));
 //!
 //! // Same policy, different operations.
-//! let a = policy.retry(|_| Ok::<_, &str>("a")).sleep(|_| {}).call();
-//! let b = policy.retry(|_| Ok::<_, &str>("b")).sleep(|_| {}).call();
+//! let a = policy.retry(|_| Ok::<_, &str>("a")).clock(VirtualClock::new()).call();
+//! let b = policy.retry(|_| Ok::<_, &str>("b")).clock(VirtualClock::new()).call();
 //!
 //! assert_eq!(a.unwrap(), "a");
 //! assert_eq!(b.unwrap(), "b");
@@ -111,6 +115,7 @@
 //! matching outcome.
 //!
 //! ```
+//! use relentless::clock::VirtualClock;
 //! use relentless::{RetryPolicy, predicate};
 //!
 //! #[derive(Debug, PartialEq)]
@@ -123,7 +128,7 @@
 //!         count += 1;
 //!         Ok::<_, &str>(if count >= 2 { Status::Done } else { Status::Pending })
 //!     })
-//!     .sleep(|_| {})
+//!     .clock(VirtualClock::new())
 //!     .call();
 //!
 //! assert_eq!(result.unwrap(), Status::Done);
@@ -133,6 +138,7 @@
 //!
 //! ```
 //! use relentless::retry;
+//! use relentless::clock::VirtualClock;
 //!
 //! let (result, stats) = retry(|_| Ok::<_, &str>("done"))
 //!     .before_attempt(|state| {
@@ -145,7 +151,7 @@
 //!             eprintln!("attempt {} failed: {e}", state.attempt);
 //!         }
 //!     })
-//!     .sleep(|_| {})
+//!     .clock(VirtualClock::new())
 //!     .with_stats()
 //!     .call();
 //!
@@ -165,9 +171,10 @@
 //! error:
 //!
 //! ```
+//! use relentless::clock::VirtualClock;
 //! use relentless::{retry, RetryError};
 //!
-//! match retry(|_| Err::<(), &str>("boom")).sleep(|_| {}).call() {
+//! match retry(|_| Err::<(), &str>("boom")).clock(VirtualClock::new()).call() {
 //!     Ok(val) => println!("success: {val:?}"),
 //!     Err(RetryError::Exhausted { last }) => {
 //!         println!("gave up: {last:?}");
@@ -185,6 +192,7 @@
 //! for a failure — therefore reports the found error as `Rejected`:
 //!
 //! ```
+//! use relentless::clock::VirtualClock;
 //! use relentless::{retry, predicate, stop, RetryError};
 //!
 //! let mut attempts = 0;
@@ -194,7 +202,7 @@
 //! })
 //! .until(predicate::result(|o: &Result<(), &str>| o.is_err()))
 //! .stop(stop::attempts(10))
-//! .sleep(|_| {})
+//! .clock(VirtualClock::new())
 //! .call();
 //!
 //! match probe {
@@ -308,9 +316,9 @@ pub use policy::{
 };
 pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
 pub use policy::{SyncRetryExec, SyncRetryExecWithStats};
-// Sleeper sentinels for the "no sleep configured" type-state. Exported so the
-// return types of `retry`/`retry_async` (which mention them) are nameable.
-pub use policy::{NoAsyncSleep, NoSyncSleep};
+// Sleeper sentinel for the "no sleep configured" async type-state. Exported so
+// the return type of `retry_async` (which mentions it) is nameable.
+pub use policy::NoAsyncSleep;
 pub use predicate::Predicate;
 pub use sleep::Sleeper;
 pub use state::{AttemptState, ExitState, RetryState};
@@ -354,11 +362,12 @@ pub mod prelude {
 /// # Examples
 ///
 /// ```
+/// use relentless::clock::VirtualClock;
 /// use relentless::{retry, stop};
 ///
 /// let result = retry(|_| Ok::<u32, &str>(42))
 ///     .stop(stop::attempts(1))
-///     .sleep(|_| {})
+///     .clock(VirtualClock::new())
 ///     .call();
 /// assert_eq!(result.unwrap(), 42);
 /// ```
@@ -372,7 +381,7 @@ pub fn retry<F, T, E>(
     (),
     (),
     F,
-    policy::NoSyncSleep,
+    clock::SystemClock,
     T,
     E,
 >

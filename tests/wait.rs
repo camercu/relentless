@@ -512,25 +512,44 @@ fn wait_named_add_matches_operator_and_supports_custom_wait() {
 /// 3.2.8
 #[test]
 fn zero_duration_sleep_is_skipped() {
+    use core::cell::Cell;
     use relentless::{RetryPolicy, stop};
-    use std::cell::Cell;
 
-    let sleep_calls = Cell::new(0_u32);
+    /// Counts wait calls without allocating, so this SPEC 3.2.2 check also
+    /// runs under `--no-default-features`.
+    struct CountingClock {
+        now: Cell<Duration>,
+        wait_calls: Cell<u32>,
+    }
+    impl relentless::Clock for CountingClock {
+        fn now(&self) -> Duration {
+            self.now.get()
+        }
+    }
+    impl relentless::SyncClock for CountingClock {
+        fn wait(&self, dur: Duration) {
+            self.wait_calls.set(self.wait_calls.get().saturating_add(1));
+            self.now.set(self.now.get().saturating_add(dur));
+        }
+    }
+
+    let clock = CountingClock {
+        now: Cell::new(Duration::ZERO),
+        wait_calls: Cell::new(0),
+    };
     let policy = RetryPolicy::new()
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::ZERO));
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .sleep(|_dur| {
-            sleep_calls.set(sleep_calls.get().saturating_add(1));
-        })
+        .clock(&clock)
         .call();
 
     assert_eq!(
-        sleep_calls.get(),
+        clock.wait_calls.get(),
         0,
-        "sleep should not be called when wait returns Duration::ZERO"
+        "the clock must not be asked to wait when the delay is Duration::ZERO"
     );
 }
 

@@ -4,6 +4,7 @@
 //! including 1-indexed attempt numbers and Option<Duration> for elapsed time.
 
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 
 #[test]
 fn retry_state_attempt_is_one_indexed() {
@@ -54,7 +55,7 @@ fn retry_state_attempts_are_one_indexed_in_execution() {
             attempts_seen.borrow_mut().push(state.attempt);
             Err::<i32, &str>("fail")
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*attempts_seen.borrow(), vec![1, 2, 3]);
@@ -81,7 +82,7 @@ fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
         .before_attempt(|state| {
             before_attempts.borrow_mut().push(state.attempt);
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     // before_attempt and op both see 1, 2, 3 in order.
@@ -105,7 +106,7 @@ fn attempt_state_next_delay_none_on_final() {
         .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             next_delays.borrow_mut().push(state.next_delay);
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     let delays = next_delays.borrow();
@@ -129,7 +130,7 @@ fn exit_state_attempt_is_exactly_one_for_single_attempt_stop() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_attempt.set(state.attempt);
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(exit_attempt.get(), 1);
@@ -151,7 +152,7 @@ fn exit_state_attempt_matches_completed_attempts() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             exit_attempt.set(state.attempt);
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(exit_attempt.get(), 3);
@@ -171,7 +172,7 @@ fn exit_state_outcome_is_final_attempt_result() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             *final_outcome.borrow_mut() = Some(state.outcome.is_ok());
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*final_outcome.borrow(), Some(false));

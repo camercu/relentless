@@ -1,5 +1,6 @@
 use core::cell::Cell;
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::{RetryExt, stop, wait};
 
 fn main() {
@@ -20,7 +21,7 @@ fn main() {
         .retry()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(10)))
-        .sleep(|_dur| {}) // replaced with std::thread::sleep in production
+        .clock(VirtualClock::new()) // replaced with std::thread::sleep in production
         .call();
 
     assert_eq!(result, Ok("config_value=42"));

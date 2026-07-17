@@ -2,6 +2,8 @@
 //!
 //! These exercise `VirtualClock` exactly as a consumer testing their own retry
 //! policies would: deterministic backoff assertions with no real sleeping.
+//! Sync execution injects the core [`relentless::clock::VirtualClock`] via
+//! `.clock(...)`; the `test_util` clock adapts the remaining async sleep seam.
 
 #![cfg(feature = "test-util")]
 
@@ -11,7 +13,8 @@ use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use std::sync::Arc;
 
-use relentless::test_util::VirtualClock;
+use relentless::clock::{Clock as _, SyncClock as _, VirtualClock};
+use relentless::test_util::VirtualClock as AsyncVirtualClock;
 use relentless::{retry, retry_async, stop, wait};
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
@@ -50,12 +53,12 @@ fn records_exponential_backoff_schedule() {
     let result = retry(|_| Err::<(), &str>("boom"))
         .wait(wait::exponential(INITIAL_BACKOFF))
         .stop(stop::attempts(3))
-        .sleep(clock.sync_sleep())
+        .clock(&clock)
         .call();
 
     assert!(result.is_err());
     assert_eq!(
-        clock.sleeps(),
+        clock.waits(),
         vec![Duration::from_millis(100), Duration::from_millis(200)]
     );
 }
@@ -70,7 +73,7 @@ fn sleeping_advances_virtual_time() {
     let _ = retry(|_| Err::<(), &str>("boom"))
         .wait(wait::exponential(INITIAL_BACKOFF))
         .stop(stop::attempts(3))
-        .sleep(clock.sync_sleep())
+        .clock(&clock)
         .call();
 
     assert_eq!(clock.now(), Duration::from_millis(300));
@@ -86,14 +89,13 @@ fn timeout_runs_deterministically_on_virtual_time() {
     let result = retry(|_| Err::<(), &str>("boom"))
         .wait(wait::fixed(Duration::from_millis(100)))
         .stop(stop::never())
-        .elapsed_clock_fn(clock.clock())
+        .clock(&clock)
         .timeout(Duration::from_millis(250))
-        .sleep(clock.sync_sleep())
         .call();
 
     assert!(result.is_err());
     assert_eq!(
-        clock.sleeps(),
+        clock.waits(),
         vec![
             Duration::from_millis(100),
             Duration::from_millis(100),
@@ -109,12 +111,10 @@ fn timeout_runs_deterministically_on_virtual_time() {
 fn first_attempt_success_records_nothing() {
     let clock = VirtualClock::new();
 
-    let result = retry(|_| Ok::<_, &str>(42))
-        .sleep(clock.sync_sleep())
-        .call();
+    let result = retry(|_| Ok::<_, &str>(42)).clock(&clock).call();
 
     assert_eq!(result.unwrap(), 42);
-    assert_eq!((clock.sleeps(), clock.now()), (vec![], Duration::ZERO));
+    assert_eq!((clock.waits(), clock.now()), (vec![], Duration::ZERO));
 }
 
 /// GIVEN an operation that advances the clock manually (simulating slow attempts)
@@ -123,26 +123,24 @@ fn first_attempt_success_records_nothing() {
 #[test]
 fn manual_advance_consumes_elapsed_budget() {
     let clock = VirtualClock::new();
-    let advancing = clock.clone();
 
-    let result = retry(move |_| {
-        advancing.advance(Duration::from_millis(100));
+    let result = retry(|_| {
+        clock.advance(Duration::from_millis(100));
         Err::<(), &str>("boom")
     })
     .wait(wait::fixed(Duration::ZERO))
     .stop(stop::elapsed(Duration::from_millis(250)))
-    .elapsed_clock_fn(clock.clock())
-    .sleep(clock.sync_sleep())
+    .clock(&clock)
     .call();
 
     assert!(result.is_err());
     assert_eq!(clock.now(), Duration::from_millis(300));
 }
 
-/// GIVEN a clock advanced to `Duration::MAX` by `advance` and by a recorded sleep
+/// GIVEN a clock advanced to `Duration::MAX` by `advance` and by a recorded wait
 /// WHEN more time is added past the maximum
 /// THEN virtual time saturates at `Duration::MAX` rather than overflowing,
-///      while sleeps are still recorded verbatim (SPEC 12.4.4)
+///      while waits are still recorded verbatim (SPEC 12.4.4)
 #[test]
 fn time_arithmetic_saturates_at_max() {
     let advanced = VirtualClock::new();
@@ -150,15 +148,14 @@ fn time_arithmetic_saturates_at_max() {
     advanced.advance(ARBITRARY_DURATION);
     assert_eq!(advanced.now(), Duration::MAX);
 
-    let slept = VirtualClock::new();
-    let mut sleep = slept.sync_sleep();
-    sleep(Duration::MAX);
-    sleep(ARBITRARY_DURATION);
-    assert_eq!(slept.now(), Duration::MAX);
-    assert_eq!(slept.sleeps(), vec![Duration::MAX, ARBITRARY_DURATION]);
+    let waited = VirtualClock::new();
+    waited.wait(Duration::MAX);
+    waited.wait(ARBITRARY_DURATION);
+    assert_eq!(waited.now(), Duration::MAX);
+    assert_eq!(waited.waits(), vec![Duration::MAX, ARBITRARY_DURATION]);
 }
 
-/// GIVEN a `VirtualClock` shared across threads via `Clone`
+/// GIVEN a `test_util::VirtualClock` shared across threads via `Clone`
 /// WHEN many threads record sleeps through their own adapters concurrently
 /// THEN every sleep is recorded and virtual time equals their sum, with no
 ///      lost updates (SPEC 12.4.6: adapters are `Send + Sync`)
@@ -168,13 +165,13 @@ fn adapters_are_usable_across_threads() {
     const SLEEPS_PER_THREAD: u64 = 1000;
     const SLEEP: Duration = Duration::from_nanos(1);
 
-    let clock = VirtualClock::new();
+    let clock = AsyncVirtualClock::new();
     let handles: Vec<_> = (0..THREADS)
         .map(|_| {
-            let mut sleep = clock.sync_sleep();
+            let sleep = clock.async_sleep();
             std::thread::spawn(move || {
                 for _ in 0..SLEEPS_PER_THREAD {
-                    sleep(SLEEP);
+                    let _ready = sleep(SLEEP);
                 }
             })
         })
@@ -189,25 +186,28 @@ fn adapters_are_usable_across_threads() {
 }
 
 /// GIVEN an elapsed clock and a sleeper sourced from two *different*
-///       `VirtualClock` instances (the documented misuse: see `clock()`)
-/// WHEN a retried operation sleeps through the second clock's sleeper
+///       `test_util::VirtualClock` instances (the documented misuse on the
+///       async seam: see `clock()`)
+/// WHEN a retried async operation sleeps through the second clock's sleeper
 /// THEN the elapsed clock stays at zero — only the sleeper's own clock
 ///      advances — so an elapsed-based stop or timeout would never fire and
 ///      the loop could not terminate without the independent attempt bound
-///      (SPEC 12.4.3)
+///      (SPEC 12.4.3; the sync seam no longer permits this by construction)
 #[test]
 fn mismatched_clock_and_sleeper_leaves_elapsed_stuck() {
-    let elapsed = VirtualClock::new();
-    let sleeper = VirtualClock::new();
+    let elapsed = AsyncVirtualClock::new();
+    let sleeper = AsyncVirtualClock::new();
 
     // A stop that depends on `elapsed` would spin forever here; the attempt
     // bound is what actually terminates the loop, proving the hazard.
-    let result = retry(|_| Err::<(), &str>("boom"))
-        .wait(wait::fixed(INITIAL_BACKOFF))
-        .stop(stop::attempts(3))
-        .elapsed_clock_fn(elapsed.clock())
-        .sleep(sleeper.sync_sleep())
-        .call();
+    let result = block_on(
+        retry_async(|_| core::future::ready(Err::<(), &str>("boom")))
+            .wait(wait::fixed(INITIAL_BACKOFF))
+            .stop(stop::attempts(3))
+            .elapsed_clock_fn(elapsed.clock())
+            .sleep(sleeper.async_sleep())
+            .call(),
+    );
 
     assert!(result.is_err());
     assert_eq!(
@@ -227,7 +227,7 @@ fn mismatched_clock_and_sleeper_leaves_elapsed_stuck() {
 /// THEN the recorded sleeps match the sync engine's schedule
 #[test]
 fn async_sleep_records_backoff_schedule() {
-    let clock = VirtualClock::new();
+    let clock = AsyncVirtualClock::new();
 
     let result = block_on(
         retry_async(|_| core::future::ready(Err::<(), &str>("boom")))

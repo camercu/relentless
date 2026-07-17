@@ -8,7 +8,6 @@
 
 use core::cell::Cell;
 use core::time::Duration;
-use std::cell::RefCell;
 
 use relentless::stop;
 use relentless::{RetryError, RetryPolicy};
@@ -19,19 +18,19 @@ const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);
 #[test]
 fn elapsed_stop_counts_operation_runtime_with_real_sleep() {
     let policy = RetryPolicy::new().stop(stop::elapsed(ELAPSED_DEADLINE));
-    let sleeps: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
     let call_count = Cell::new(0_u32);
 
+    // Uses the default `SystemClock`: the 5 ms operation runtime alone
+    // exhausts the 1 ms elapsed deadline, so the loop stops after one attempt
+    // (and therefore never waits between attempts).
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
             std::thread::sleep(OPERATION_RUNTIME);
             Err::<i32, _>("slow failure")
         })
-        .sleep(|dur| sleeps.borrow_mut().push(dur))
         .call();
 
     assert_eq!(call_count.get(), 1);
-    assert!(sleeps.borrow().is_empty());
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }

@@ -1,7 +1,7 @@
 use super::super::execution::common::RetryOp;
-use super::super::execution::sync_exec::{NoSyncSleep, SyncRetryExec, SyncRetryExecWithStats};
-use super::super::time::ElapsedTracker;
+use super::super::execution::sync_exec::{SyncRetryExec, SyncRetryExecWithStats};
 use super::super::{ExecutionHooks, RetryPolicy};
+use crate::clock::SystemClock;
 use crate::state::RetryState;
 use crate::{predicate, stop, wait};
 
@@ -17,16 +17,18 @@ pub trait RetryExt<T, E>: FnMut() -> Result<T, E> + Sized {
     /// - exponential backoff starting at 100ms
     /// - retry on any error
     ///
-    /// In `std` builds, `.call()` works without `.sleep(...)`. The example
-    /// below still configures `.sleep(...)` so it also works in non-`std`
-    /// documentation tests.
+    /// In `std` builds, `.call()` works without `.clock(...)` — the default
+    /// [`SystemClock`](crate::clock::SystemClock) supplies wall time and a
+    /// blocking sleep. The example below still configures `.clock(...)` so it
+    /// also works in non-`std` documentation tests.
     ///
     /// ```
     /// use relentless::RetryExt;
+    /// use relentless::clock::VirtualClock;
     ///
     /// let _ = (|| Ok::<(), &str>(()))
     ///     .retry()
-    ///     .sleep(|_| {})
+    ///     .clock(VirtualClock::new())
     ///     .call();
     /// ```
     fn retry(self) -> DefaultSyncRetryBuilder<Self, T, E>;
@@ -55,8 +57,7 @@ where
             RetryPolicy::default(),
             ExecutionHooks::new(),
             StatelessOp(self),
-            NoSyncSleep,
-            ElapsedTracker::new(None),
+            SystemClock,
         )
     }
 }
@@ -69,40 +70,40 @@ where
 /// # Examples
 ///
 /// ```
-/// use core::time::Duration;
+/// use relentless::clock::VirtualClock;
 /// use relentless::{RetryExt, stop};
 ///
 /// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
 ///     .stop(stop::attempts(2))
-///     .sleep(|_dur: Duration| {});
+///     .clock(VirtualClock::new());
 ///
 /// let _ = retry;
 /// ```
-pub type SyncRetryBuilder<S, W, P, BA, AA, OX, F, SleepFn, T, E> =
-    SyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>;
+pub type SyncRetryBuilder<S, W, P, BA, AA, OX, F, C, T, E> =
+    SyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>;
 
 /// Owned sync retry builder wrapper that returns statistics.
 ///
 /// # Examples
 ///
 /// ```
-/// use core::time::Duration;
 /// use relentless::RetryExt;
+/// use relentless::clock::VirtualClock;
 ///
 /// let retry = (|| Ok::<u32, &str>(1))
 ///     .retry()
-///     .sleep(|_dur: Duration| {})
+///     .clock(VirtualClock::new())
 ///     .with_stats();
 ///
 /// let _ = retry;
 /// ```
-pub type SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, SleepFn, T, E> =
-    SyncRetryExecWithStats<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>;
+pub type SyncRetryBuilderWithStats<S, W, P, BA, AA, OX, F, C, T, E> =
+    SyncRetryExecWithStats<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E>;
 
 /// Alias for the default owned sync retry builder returned by [`RetryExt::retry`].
 ///
-/// This hides the default stop, wait, predicate, hook, and sleeper
+/// This hides the default stop, wait, predicate, hook, and clock
 /// state from user-facing type signatures.
 pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
     stop::StopAfterAttempts,
@@ -112,14 +113,14 @@ pub type DefaultSyncRetryBuilder<F, T, E> = SyncRetryBuilder<
     (),
     (),
     StatelessOp<F>,
-    NoSyncSleep,
+    SystemClock,
     T,
     E,
 >;
 
 /// Alias for the default owned sync retry builder-with-stats returned by
 /// calling `.with_stats()` on [`RetryExt::retry`].
-pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWithStats<
+pub type DefaultSyncRetryBuilderWithStats<F, C, T, E> = SyncRetryBuilderWithStats<
     stop::StopAfterAttempts,
     wait::WaitExponential,
     predicate::PredicateAnyError,
@@ -127,7 +128,7 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWi
     (),
     (),
     StatelessOp<F>,
-    SleepFn,
+    C,
     T,
     E,
 >;
@@ -142,17 +143,11 @@ pub type DefaultSyncRetryBuilderWithStats<F, SleepFn, T, E> = SyncRetryBuilderWi
 ///     .call();
 /// ```
 #[allow(dead_code)]
-fn _sync_retry_builder_requires_sleep_in_no_std() {}
+fn _sync_retry_builder_requires_clock_in_no_std() {}
 
-impl<S, W, P, F, T, E> SyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoSyncSleep, T, E> {
+impl<S, W, P, F, T, E> SyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, SystemClock, T, E> {
     pub(crate) fn from_policy(policy: RetryPolicy<S, W, P>, op: F) -> Self {
-        SyncRetryExec::new(
-            policy,
-            ExecutionHooks::new(),
-            op,
-            NoSyncSleep,
-            ElapsedTracker::new(None),
-        )
+        SyncRetryExec::new(policy, ExecutionHooks::new(), op, SystemClock)
     }
 }
 
@@ -161,15 +156,13 @@ impl<S, W, P, F, T, E> SyncRetryExec<RetryPolicy<S, W, P>, (), (), (), F, NoSync
 // Intentional: threading the full type-state keeps the zero-cost generics,
 // which naturally yields long concrete return types.
 #[allow(clippy::type_complexity)]
-impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
-    SyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, SleepFn, T, E>
-{
+impl<S, W, P, BA, AA, OX, F, C, T, E> SyncRetryExec<RetryPolicy<S, W, P>, BA, AA, OX, F, C, T, E> {
     /// Sets the stop condition for the retry policy.
     #[must_use]
     pub fn stop<NewStop>(
         self,
         stop: NewStop,
-    ) -> SyncRetryExec<RetryPolicy<NewStop, W, P>, BA, AA, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryExec<RetryPolicy<NewStop, W, P>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.stop(stop))
     }
 
@@ -178,7 +171,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
     pub fn wait<NewWait>(
         self,
         wait: NewWait,
-    ) -> SyncRetryExec<RetryPolicy<S, NewWait, P>, BA, AA, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryExec<RetryPolicy<S, NewWait, P>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.wait(wait))
     }
 
@@ -187,7 +180,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
     pub fn when<NewPredicate>(
         self,
         predicate: NewPredicate,
-    ) -> SyncRetryExec<RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, SleepFn, T, E> {
+    ) -> SyncRetryExec<RetryPolicy<S, W, NewPredicate>, BA, AA, OX, F, C, T, E> {
         self.map_policy(|policy| policy.when(predicate))
     }
 
@@ -205,7 +198,7 @@ impl<S, W, P, BA, AA, OX, F, SleepFn, T, E>
         AA,
         OX,
         F,
-        SleepFn,
+        C,
         T,
         E,
     > {

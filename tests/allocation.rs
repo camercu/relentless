@@ -39,7 +39,27 @@ fn allocation_test_guard() -> MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn instant_sleep(_dur: Duration) {}
+/// Wait-free clock with no wait recorder, so retry execution stays
+/// allocation-free (`clock::VirtualClock` records waits into a `Vec`).
+struct InstantClock(core::cell::Cell<Duration>);
+
+impl InstantClock {
+    fn new() -> Self {
+        Self(core::cell::Cell::new(Duration::ZERO))
+    }
+}
+
+impl relentless::Clock for InstantClock {
+    fn now(&self) -> Duration {
+        self.0.get()
+    }
+}
+
+impl relentless::SyncClock for InstantClock {
+    fn wait(&self, dur: Duration) {
+        self.0.set(self.0.get().saturating_add(dur));
+    }
+}
 
 #[cfg(feature = "alloc")]
 fn block_on<F: Future>(future: F) -> F::Output {
@@ -92,13 +112,13 @@ fn concrete_sync_retry_execution_is_allocation_free() {
     // Warm up one run to avoid one-time initialization noise.
     let _ = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
 
     let (min_allocations, min_bytes) = min_allocated_during(|| {
         let _ = policy
             .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-            .sleep(instant_sleep)
+            .clock(InstantClock::new())
             .call();
     });
 
@@ -119,13 +139,13 @@ fn jittered_sync_retry_execution_is_allocation_free() {
     // Warm up one run to avoid one-time initialization noise.
     let _ = policy
         .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
 
     let (min_allocations, min_bytes) = min_allocated_during(|| {
         let _ = policy
             .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-            .sleep(instant_sleep)
+            .clock(InstantClock::new())
             .call();
     });
 
@@ -159,13 +179,13 @@ fn boxed_sync_retry_execution_is_allocation_free_after_warmup() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
 
     let (min_allocations, min_bytes) = min_allocated_during(|| {
         let _ = policy
             .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-            .sleep(instant_sleep)
+            .clock(InstantClock::new())
             .call();
     });
 

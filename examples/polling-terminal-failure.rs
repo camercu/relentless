@@ -24,6 +24,7 @@
 //! Run: `cargo run --example polling-terminal-failure`
 use core::cell::Cell;
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::{RetryError, predicate, stop, wait};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +69,7 @@ fn poll_until_done(
         )
         .wait(wait::fixed(Duration::from_millis(10)))
         .stop(stop::attempts(10))
-        .sleep(|_| {}) // no real waiting in the example
+        .clock(VirtualClock::new()) // no real waiting in the example
         .call()
 }
 

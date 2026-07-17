@@ -7,13 +7,12 @@
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::RetryPolicy;
+use relentless::clock::VirtualClock;
 use relentless::{StopReason, predicate, stop, wait};
 use std::cell::RefCell;
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
-
-fn instant_sleep(_dur: Duration) {}
 
 #[test]
 fn before_attempt_and_after_attempt_fire_at_defined_points() {
@@ -33,7 +32,7 @@ fn before_attempt_and_after_attempt_fire_at_defined_points() {
         .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             events.borrow_mut().push(('a', state.attempt));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(
@@ -66,7 +65,7 @@ fn before_attempt_sees_previous_delay() {
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
         .before_attempt(|state| delays.borrow_mut().push(state.previous_delay))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(
@@ -92,7 +91,7 @@ fn after_attempt_runs_after_predicate_evaluation() {
         .after_attempt(|_state: &relentless::AttemptState<i32, &str>| {
             after_observed.borrow_mut().push(predicate_calls.get());
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*after_observed.borrow(), vec![1, 2]);
@@ -111,7 +110,7 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
         .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             seen.borrow_mut().push((state.attempt, state.next_delay));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     // next_delay is Some for attempts that will be retried, None for the terminal attempt
@@ -132,12 +131,12 @@ fn after_attempt_receives_next_delay_for_retryable_attempts() {
 fn after_attempt_sees_next_delay_clamped_to_timeout_budget() {
     const TIMEOUT: Duration = Duration::from_millis(100);
     const FULL_WAIT: Duration = Duration::from_millis(50);
-    const OP_RUNTIME: Duration = Duration::from_millis(40);
-    // Remaining budget when attempt 2 finishes: 100ms - 2 * 40ms.
-    const CLAMPED_WAIT: Duration = Duration::from_millis(20);
+    const OP_RUNTIME: Duration = Duration::from_millis(20);
+    // Remaining budget when attempt 2 finishes: 100 - (20 + 50 + 20) ms. The
+    // clock is coherent, so the attempt-1 wait consumes budget too.
+    const CLAMPED_WAIT: Duration = Duration::from_millis(10);
 
-    let clock_millis = std::rc::Rc::new(Cell::new(0_u64));
-    let op_clock = std::rc::Rc::clone(&clock_millis);
+    let clock = VirtualClock::new();
     let seen: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
 
     let policy = RetryPolicy::new()
@@ -146,19 +145,19 @@ fn after_attempt_sees_next_delay_clamped_to_timeout_budget() {
 
     let _ = policy
         .retry(|_| {
-            op_clock.set(op_clock.get() + OP_RUNTIME.as_millis() as u64);
+            clock.advance(OP_RUNTIME);
             Err::<i32, _>("fail")
         })
         .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
             seen.borrow_mut().push((state.attempt, state.next_delay));
         })
-        .sleep(instant_sleep)
+        .clock(&clock)
         .timeout(TIMEOUT)
-        .elapsed_clock_fn(move || Duration::from_millis(clock_millis.get()))
         .call();
 
-    // Attempt 1: 60ms budget left, full wait fits. Attempt 2: only 20ms left —
-    // the hook must see the clamp. Attempt 3: budget exhausted, terminal.
+    // Attempt 1: 80ms budget left, full wait fits (elapsed 70ms after it).
+    // Attempt 2: only 10ms left — the hook must see the clamp. Attempt 3:
+    // budget exhausted, terminal.
     assert_eq!(
         *seen.borrow(),
         vec![(1, Some(FULL_WAIT)), (2, Some(CLAMPED_WAIT)), (3, None),]
@@ -178,7 +177,7 @@ fn on_exit_fires_once_with_final_state() {
                 .borrow_mut()
                 .push((state.attempt, state.outcome.is_err(), state.stop_reason));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(
@@ -199,7 +198,7 @@ fn on_exit_reports_non_retryable_error_reason() {
         .on_exit(|state: &relentless::ExitState<i32, &str>| {
             reasons.borrow_mut().push(state.stop_reason);
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*reasons.borrow(), vec![StopReason::Rejected]);
@@ -223,7 +222,7 @@ fn multiple_hooks_of_same_kind_fire_in_registration_order() {
         })
         .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_1"))
         .on_exit(|_state: &relentless::ExitState<i32, &str>| calls.borrow_mut().push("exit_2"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(

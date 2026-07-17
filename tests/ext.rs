@@ -13,6 +13,7 @@ use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use relentless::clock::VirtualClock;
 use relentless::{
     AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, Stop, StopReason, Wait,
     predicate, stop, wait,
@@ -29,8 +30,6 @@ const STATEFUL_STOP_THRESHOLD: u32 = 2;
 const UNTIL_TARGET: u32 = 3;
 const CLOCK_STEP_MILLIS: u64 = 100;
 const TIMEOUT_DEADLINE: Duration = Duration::from_millis(50);
-
-fn instant_sleep(_dur: Duration) {}
 
 struct StatefulStop {
     consultations: Cell<u32>,
@@ -73,7 +72,7 @@ fn retry_ext_closure_form_retries_until_success() {
     .retry()
     .stop(stop::attempts(MAX_ATTEMPTS))
     .wait(wait::fixed(WAIT_DURATION))
-    .sleep(|_dur| {})
+    .clock(VirtualClock::new())
     .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -103,13 +102,12 @@ fn default_sync_retry_builder_alias_is_nameable() {
 #[test]
 fn default_sync_retry_builder_with_stats_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
-    type SleepFn = fn(Duration);
     type Builder =
-        relentless::DefaultSyncRetryBuilderWithStats<SyncWorkFn, SleepFn, i32, &'static str>;
+        relentless::DefaultSyncRetryBuilderWithStats<SyncWorkFn, VirtualClock, i32, &'static str>;
 
     let typed: Builder = (do_work as SyncWorkFn)
         .retry()
-        .sleep(instant_sleep as SleepFn)
+        .clock(VirtualClock::new())
         .with_stats();
     let (result, stats) = typed.call();
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -120,20 +118,19 @@ fn default_sync_retry_builder_with_stats_alias_is_nameable() {
 fn retry_ext_uses_default_policy_when_not_overridden() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
-    let sleeps = Rc::new(RefCell::new(Vec::new()));
-    let sleeps_ref = Rc::clone(&sleeps);
+    let clock = VirtualClock::new();
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Err::<i32, &str>(ERROR_VALUE)
     })
     .retry()
-    .sleep(move |dur| sleeps_ref.borrow_mut().push(dur))
+    .clock(&clock)
     .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
-    assert_eq!(*sleeps.borrow(), DEFAULT_WAIT_SEQUENCE);
+    assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
 }
 
 #[test]
@@ -148,7 +145,7 @@ fn retry_ext_with_stats_reports_attempts() {
         })
         .retry()
         .stop(stop::attempts(2))
-        .sleep(|_dur| {})
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -161,8 +158,7 @@ fn retry_ext_with_stats_reports_attempts() {
 fn retry_ext_stateful_stop_and_wait_work() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
-    let sleeps = Rc::new(RefCell::new(Vec::new()));
-    let sleeps_ref = Rc::clone(&sleeps);
+    let clock = VirtualClock::new();
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
@@ -176,12 +172,12 @@ fn retry_ext_stateful_stop_and_wait_work() {
     .wait(StatefulWait {
         calls: Cell::new(0),
     })
-    .sleep(move |dur| sleeps_ref.borrow_mut().push(dur))
+    .clock(&clock)
     .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(attempts.get(), STATEFUL_STOP_THRESHOLD);
-    assert_eq!(*sleeps.borrow(), vec![WAIT_DURATION]);
+    assert_eq!(clock.waits(), vec![WAIT_DURATION]);
 }
 
 #[test]
@@ -207,7 +203,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
                 state.stop_reason,
             ));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
@@ -231,7 +227,7 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
         .retry()
         .stop(stop::attempts(2))
         .when(predicate::ok(|_value: &i32| true))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(
@@ -246,7 +242,7 @@ fn retry_ext_non_retryable_error_returns_immediately() {
         .retry()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(
@@ -270,7 +266,7 @@ fn retry_ext_until_retries_until_predicate_fires() {
     .retry()
     .stop(stop::attempts(5))
     .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
-    .sleep(instant_sleep)
+    .clock(VirtualClock::new())
     .call();
 
     assert_eq!(result, Ok(UNTIL_TARGET));
@@ -279,22 +275,17 @@ fn retry_ext_until_retries_until_predicate_fires() {
 
 #[test]
 fn retry_ext_timeout_stops_on_deadline() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    let clock_millis = Arc::new(AtomicU64::new(0));
-    let clock_ref = Arc::clone(&clock_millis);
+    let clock = VirtualClock::new();
 
     let result = (|| {
-        clock_ref.fetch_add(CLOCK_STEP_MILLIS, Ordering::Relaxed);
+        clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
         Err::<i32, &str>(ERROR_VALUE)
     })
     .retry()
     .stop(stop::attempts(100))
     .wait(wait::fixed(WAIT_DURATION))
-    .elapsed_clock_fn(move || Duration::from_millis(clock_millis.load(Ordering::Relaxed)))
+    .clock(&clock)
     .timeout(TIMEOUT_DEADLINE)
-    .sleep(instant_sleep)
     .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -302,7 +293,7 @@ fn retry_ext_timeout_stops_on_deadline() {
 
 #[test]
 fn sync_retry_builder_debug_format() {
-    let builder = (|| Ok::<i32, &str>(1)).retry().sleep(instant_sleep);
+    let builder = (|| Ok::<i32, &str>(1)).retry().clock(VirtualClock::new());
     let debug = format!("{builder:?}");
     // `SyncRetryBuilder` is a type alias over the shared `SyncRetryExec` engine.
     assert!(debug.contains("SyncRetryExec"));
@@ -312,7 +303,7 @@ fn sync_retry_builder_debug_format() {
 fn sync_retry_builder_with_stats_debug_format() {
     let builder = (|| Ok::<i32, &str>(1))
         .retry()
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats();
     let debug = format!("{builder:?}");
     assert!(debug.contains("SyncRetryExecWithStats"));
@@ -632,12 +623,12 @@ mod async_tests {
 fn policy_and_extension_forms_are_equivalent_for_basic_case() {
     let from_ext = (|| Err::<i32, &str>(ERROR_VALUE))
         .retry()
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     let from_policy = RetryPolicy::default()
         .retry(|_state: RetryState| Err::<i32, &str>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(

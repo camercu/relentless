@@ -14,8 +14,8 @@
 //!   but the operation receives the current [`RetryState`](crate::RetryState).
 //!
 //! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
-//! keeps the reusable policy focused on stop, wait, predicate, and clock
-//! configuration, while per-call hooks, sleepers, and stats remain
+//! keeps the reusable policy focused on stop, wait, and predicate
+//! configuration, while per-call hooks, clocks, and stats remain
 //! local to a specific execution.
 
 #[cfg(feature = "alloc")]
@@ -45,6 +45,7 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 /// # Examples
 ///
 /// ```
+/// use relentless::clock::VirtualClock;
 /// use relentless::{RetryPolicy, stop, wait};
 /// use core::time::Duration;
 ///
@@ -52,7 +53,7 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 ///     .stop(stop::attempts(3))
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 ///
-/// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_dur| {}).call();
+/// let _ = policy.retry(|_| Err::<(), _>("fail")).clock(VirtualClock::new()).call();
 /// ```
 ///
 /// ```compile_fail
@@ -79,9 +80,10 @@ impl RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::Pred
     ///
     /// ```
     /// use relentless::RetryPolicy;
+    /// use relentless::clock::VirtualClock;
     ///
     /// let policy = RetryPolicy::new();
-    /// let _ = policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// let _ = policy.retry(|_| Ok::<(), &str>(())).clock(VirtualClock::new()).call();
     /// ```
     #[must_use]
     pub fn new() -> Self {
@@ -172,6 +174,7 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     ///
     /// ```
     /// use core::time::Duration;
+    /// use relentless::clock::VirtualClock;
     /// use relentless::{RetryPolicy, Stop, Wait, stop, wait};
     ///
     /// struct Client {
@@ -185,8 +188,8 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     ///         .boxed(),
     /// };
     ///
-    /// let a: Result<u32, _> = client.policy.retry(|_| Ok::<u32, &str>(1)).sleep(|_| {}).call();
-    /// let b: Result<(), _> = client.policy.retry(|_| Ok::<(), &str>(())).sleep(|_| {}).call();
+    /// let a: Result<u32, _> = client.policy.retry(|_| Ok::<u32, &str>(1)).clock(VirtualClock::new()).call();
+    /// let b: Result<(), _> = client.policy.retry(|_| Ok::<(), &str>(())).clock(VirtualClock::new()).call();
     /// assert_eq!(a.unwrap(), 1);
     /// assert_eq!(b.unwrap(), ());
     /// ```
@@ -216,9 +219,10 @@ impl<S, W, P> RetryPolicy<S, W, P> {
     ///
     /// ```
     /// use relentless::RetryPolicy;
+    /// use relentless::clock::VirtualClock;
     ///
     /// let policy = RetryPolicy::new().boxed_local();
-    /// let _ = policy.retry(|_| Err::<(), _>("fail")).sleep(|_| {}).call();
+    /// let _ = policy.retry(|_| Err::<(), _>("fail")).clock(VirtualClock::new()).call();
     /// ```
     #[cfg(feature = "alloc")]
     #[must_use]
@@ -337,7 +341,6 @@ pub use execution::async_exec::{
 };
 pub(crate) use execution::hooks::HookChain;
 pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
-pub use execution::sync_exec::NoSyncSleep;
 pub use execution::sync_exec::{
     SyncRetry, SyncRetryExec, SyncRetryExecWithStats, SyncRetryWithStats,
 };

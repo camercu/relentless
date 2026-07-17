@@ -12,7 +12,26 @@ const ERROR_VALUE: &str = "fail";
 const FIXED_WAIT: Duration = Duration::from_millis(1);
 const BENCHMARK_KIND_SUFFIX: &str = ": benchmark";
 
-fn instant_sleep(_dur: Duration) {}
+/// Wait-free clock with no recorder, keeping the hot path allocation-free.
+struct InstantClock(core::cell::Cell<Duration>);
+
+impl InstantClock {
+    fn new() -> Self {
+        Self(core::cell::Cell::new(Duration::ZERO))
+    }
+}
+
+impl relentless::Clock for InstantClock {
+    fn now(&self) -> Duration {
+        self.0.get()
+    }
+}
+
+impl relentless::SyncClock for InstantClock {
+    fn wait(&self, dur: Duration) {
+        self.0.set(self.0.get().saturating_add(dur));
+    }
+}
 
 fn run_case(name: &str, mut case: impl FnMut()) {
     for _ in 0..WARMUP_ITERS {
@@ -33,7 +52,7 @@ fn sync_success_first_attempt() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let result = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
     black_box(result).expect("success path benchmark must succeed");
 }
@@ -53,7 +72,7 @@ fn sync_retry_until_success() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
     black_box(result).expect("retry benchmark must eventually succeed");
 }
@@ -64,7 +83,7 @@ fn sync_retry_exhausted_with_wait() {
         .wait(wait::fixed(FIXED_WAIT));
     let result = policy
         .retry(|_| Err::<i32, &str>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(InstantClock::new())
         .call();
     let _ = black_box(result);
 }

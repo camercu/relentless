@@ -6,6 +6,7 @@
 
 use core::cell::Cell;
 use relentless::Predicate;
+use relentless::clock::VirtualClock;
 use relentless::predicate;
 
 // READY_VALUE is the threshold at which a polling result is "ready".
@@ -381,7 +382,7 @@ fn policy_until_sets_predicate() {
             counter.set(n);
             Ok::<u32, &str>(n)
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result.unwrap(), READY_VALUE);
@@ -403,7 +404,7 @@ fn builder_until_sets_predicate() {
     .stop(stop::attempts(15))
     .wait(wait::fixed(Duration::from_millis(1)))
     .until(predicate::ok(|value: &u32| *value >= READY_VALUE))
-    .sleep(|_| {})
+    .clock(VirtualClock::new())
     .call();
 
     assert_eq!(result.unwrap(), READY_VALUE);
@@ -431,7 +432,7 @@ fn until_ok_retries_errors_by_default() {
                 Ok(n)
             }
         })
-        .sleep(|_| {})
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result.unwrap(), 3);

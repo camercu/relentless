@@ -3,6 +3,7 @@
 //! `.and()`, `.retry()`) resolves without importing each trait by name.
 
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::prelude::*;
 use relentless::{predicate, stop, wait};
 
@@ -36,6 +37,9 @@ fn prelude_enables_predicate_combinators() {
 #[test]
 fn prelude_enables_retry_ext() {
     // `.retry()` is the `RetryExt` method on closures; resolved via prelude.
-    let result = (|| Ok::<u32, &str>(7)).retry().sleep(|_| {}).call();
+    let result = (|| Ok::<u32, &str>(7))
+        .retry()
+        .clock(VirtualClock::new())
+        .call();
     assert_eq!(result.unwrap(), 7);
 }

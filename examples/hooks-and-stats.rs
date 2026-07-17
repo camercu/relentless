@@ -1,4 +1,5 @@
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryExt, predicate, stop, wait};
 
 fn main() {
@@ -18,7 +19,7 @@ fn main() {
                 eprintln!("attempt {} failed: {error}", state.attempt);
             }
         })
-        .sleep(|_dur: Duration| {})
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 

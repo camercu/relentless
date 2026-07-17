@@ -19,7 +19,8 @@ use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
 use proptest::prelude::{Strategy, any, prop_assert_eq, proptest};
-use relentless::test_util::VirtualClock;
+use relentless::clock::VirtualClock;
+use relentless::test_util::VirtualClock as AsyncVirtualClock;
 use relentless::{RetryError, RetryStats, predicate, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
@@ -149,8 +150,7 @@ fn run_sync(scenario: &Scenario) -> Trace {
                 ),
             );
         })
-        .elapsed_clock_fn(clock.clock())
-        .sleep(clock.sync_sleep());
+        .clock(&clock);
 
     let (result, stats): (Result<u32, RetryError<u32, &str>>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
@@ -172,13 +172,13 @@ fn run_sync(scenario: &Scenario) -> Trace {
     Trace {
         result: format!("{result:?}"),
         hooks: hooks.lock().expect("hook log poisoned").clone(),
-        sleeps: clock.sleeps(),
+        sleeps: clock.waits(),
         stats,
     }
 }
 
 fn run_async(scenario: &Scenario) -> Trace {
-    let clock = VirtualClock::new();
+    let clock = AsyncVirtualClock::new();
     let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
     let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
 

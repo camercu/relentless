@@ -1,4 +1,4 @@
-use super::sync_exec::SyncSleep;
+use crate::clock::SyncClock;
 use crate::compat::Duration;
 use crate::error::RetryError;
 use crate::policy::time::ElapsedTracker;
@@ -290,12 +290,11 @@ fn debug_assert_timeout_has_clock(timeout: Option<Duration>, elapsed_tracker: &E
     );
 }
 
-pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, SleepFn, T, E, const COLLECT_STATS: bool>(
+pub(crate) fn execute_sync_loop<S, W, P, BA, AA, OX, F, C, T, E, const COLLECT_STATS: bool>(
     policy: &RetryPolicy<S, W, P>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     op: &mut F,
-    sleeper: &mut SleepFn,
-    elapsed_tracker: &mut ElapsedTracker,
+    clock: &C,
     timeout: Option<Duration>,
 ) -> (Result<T, RetryError<T, E>>, Option<RetryStats>)
 where
@@ -306,10 +305,13 @@ where
     AA: AttemptHook<T, E>,
     OX: ExitHook<T, E>,
     F: RetryOp<T, E>,
-    SleepFn: SyncSleep,
+    C: SyncClock,
 {
     // Execution starts here: capture the elapsed baseline (SPEC 11.1.1).
-    elapsed_tracker.start();
+    let origin = clock.now();
+    // The clock is mandatory, so elapsed time is always available; the
+    // `Option` shape survives only because the state types expose one.
+    let elapsed = |clock: &C| Some(clock.now().saturating_sub(origin));
 
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
@@ -317,17 +319,15 @@ where
     // feedback wait strategies (e.g. decorrelated jitter) can read it.
     let mut previous_delay: Option<Duration> = None;
 
-    debug_assert_timeout_has_clock(timeout, elapsed_tracker);
-
     loop {
-        let state = fire_before_attempt(hooks, attempt, elapsed_tracker.elapsed(), previous_delay);
+        let state = fire_before_attempt(hooks, attempt, elapsed(clock), previous_delay);
         let outcome = op.call_op(state);
         match transition_from_outcome(
             policy,
             hooks,
             outcome,
             attempt,
-            elapsed_tracker.elapsed(),
+            elapsed(clock),
             previous_delay,
             total_wait,
             COLLECT_STATS,
@@ -341,7 +341,7 @@ where
                 let next_delay = clamp_and_fire_after_attempt(
                     hooks,
                     attempt,
-                    elapsed_tracker.elapsed(),
+                    elapsed(clock),
                     &attempt_last_result,
                     next_delay,
                     timeout,
@@ -350,7 +350,7 @@ where
                 // Avoid a blocking syscall for zero-duration waits (e.g. when
                 // the timeout budget is already exhausted).
                 if !next_delay.is_zero() {
-                    sleeper.sleep(next_delay);
+                    clock.wait(next_delay);
                 }
                 total_wait = total_wait.saturating_add(next_delay);
                 previous_delay = Some(next_delay);

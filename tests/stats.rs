@@ -1,9 +1,10 @@
 //! Tests for retry statistics (`RetryStats`, `StopReason`, `.with_stats()`).
 //!
 //! Verifies that stats are accumulated fresh per invocation, that attempt counts and
-//! `total_wait` match expected values, that `StopReason` correctly distinguishes Succeeded/Rejected from
-//! Exhausted (including the rejected-error case), and that `total_elapsed` is
-//! Some only when the `std` feature is active.
+//! `total_wait` match expected values, and that `StopReason` correctly
+//! distinguishes Succeeded/Rejected from Exhausted (including the
+//! rejected-error case). The sync engine's mandatory clock means
+//! `total_elapsed` is always available there.
 
 use core::cell::Cell;
 #[cfg(all(feature = "alloc", feature = "std"))]
@@ -13,6 +14,7 @@ use core::pin::Pin;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
+use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy};
 use relentless::{RetryStats, StopReason, predicate, stop, wait};
 #[cfg(all(feature = "alloc", feature = "std"))]
@@ -24,8 +26,6 @@ const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(5);
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
-
-fn instant_sleep(_dur: Duration) {}
 
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn noop_waker() -> Waker {
@@ -80,7 +80,7 @@ fn sync_with_stats_returns_result_and_stats() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -90,10 +90,8 @@ fn sync_with_stats_returns_result_and_stats() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    #[cfg(feature = "std")]
+    // The clock is mandatory, so elapsed time is always tracked.
     assert!(stats.total_elapsed.is_some());
-    #[cfg(not(feature = "std"))]
-    assert!(stats.total_elapsed.is_none());
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
@@ -139,17 +137,15 @@ fn sync_first_attempt_success_has_minimal_stats() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    #[cfg(feature = "std")]
+    // The clock is mandatory, so elapsed time is always tracked.
     assert!(stats.total_elapsed.is_some());
-    #[cfg(not(feature = "std"))]
-    assert!(stats.total_elapsed.is_none());
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
@@ -163,7 +159,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
 
     let (_result, stats) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -181,7 +177,7 @@ fn sync_stop_reason_succeeded_with_default_predicate() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -197,7 +193,7 @@ fn sync_stop_reason_exhausted_on_exhaustion() {
 
     let (_result, stats) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -217,7 +213,7 @@ fn sync_stop_reason_succeeded_for_custom_predicate_on_ok() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -235,7 +231,7 @@ fn sync_stop_reason_succeeded_for_result_predicate_on_ok() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -252,7 +248,7 @@ fn sync_stop_reason_succeeded_for_error_predicate_on_ok() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -271,7 +267,7 @@ fn sync_stop_reason_rejected_for_non_retryable_error() {
 
     let (result, stats) = policy
         .retry(|_| Err::<i32, _>("fatal"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -288,7 +284,7 @@ fn sync_stop_reason_exhausted_on_condition_not_met() {
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(-1_i32))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -394,7 +390,7 @@ fn sync_call_without_stats_returns_plain_result() {
 
     let result: Result<i32, RetryError<i32, &str>> = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
@@ -407,7 +403,7 @@ fn sync_total_elapsed_is_some_with_std() {
 
     let (_result, stats) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -476,7 +472,7 @@ fn sync_stats_are_fresh_after_policy_reuse() {
 
     let (_result1, stats1) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert_eq!(stats1.attempts, MAX_ATTEMPTS);
@@ -484,7 +480,7 @@ fn sync_stats_are_fresh_after_policy_reuse() {
 
     let (result2, stats2) = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert_eq!(result2, Ok(SUCCESS_VALUE));
@@ -511,7 +507,7 @@ fn sync_stats_work_alongside_hooks() {
         .before_attempt(|_state| {
             hook_calls.set(hook_calls.get().saturating_add(1));
         })
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -527,7 +523,7 @@ fn stats_attempts_always_at_least_one() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let (_, stats) = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert!(stats.attempts >= 1);
@@ -545,7 +541,7 @@ fn stats_total_wait_excludes_final_attempt_delay() {
 
     let (_, stats) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -567,7 +563,7 @@ fn stats_total_wait_includes_zero_duration_delays() {
 
     let (_, stats) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
 
@@ -584,7 +580,7 @@ fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let (_, stats) = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
@@ -595,7 +591,7 @@ fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
         .when(predicate::error(|e: &&str| *e == "retryable"));
     let (_, stats2) = policy2
         .retry(|_| Err::<i32, _>("fatal"))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert_eq!(stats2.stop_reason, StopReason::Rejected);
@@ -609,7 +605,7 @@ fn stop_reason_exhausted_when_stop_strategy_fires() {
         .wait(wait::fixed(Duration::ZERO));
     let (_, stats) = policy
         .retry(|_| Err::<i32, _>(ERROR_VALUE))
-        .sleep(instant_sleep)
+        .clock(VirtualClock::new())
         .with_stats()
         .call();
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
