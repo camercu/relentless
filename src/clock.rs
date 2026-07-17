@@ -66,6 +66,13 @@ pub trait Clock {
 /// A sibling of [`AsyncClock`], not its supertrait: a sync-only clock carries
 /// no async surface, and the async engine's `AsyncClock` bound rejects it at
 /// compile time.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot drive the synchronous retry engine",
+    label = "not a `SyncClock`",
+    note = "supply a clock with `.clock(...)` before `.call()` — e.g. \
+            `clock::VirtualClock` for tests; under `std` the default \
+            `SystemClock` already satisfies this"
+)]
 pub trait SyncClock: Clock {
     /// Waits for `dur`: blocks the thread on a real clock, or advances virtual
     /// time on a test clock. Afterwards, [`now()`](Clock::now) reflects the
@@ -77,6 +84,13 @@ pub trait SyncClock: Clock {
 ///
 /// A sibling of [`SyncClock`]: an async-only clock (e.g. a runtime timer) is
 /// not forced to carry a blocking wait.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot drive the asynchronous retry engine",
+    label = "not an `AsyncClock`",
+    note = "supply an async clock with `.clock(...)` before `.call()` — e.g. \
+            `clock::TokioClock` (feature `tokio-clock`) in production or \
+            `&VirtualClock` in tests; there is no async default"
+)]
 pub trait AsyncClock: Clock {
     /// The concrete future returned by [`wait_async`](AsyncClock::wait_async) —
     /// a runtime's named timer future in production, or a poll-advancing
