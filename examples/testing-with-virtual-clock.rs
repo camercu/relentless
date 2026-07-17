@@ -1,6 +1,6 @@
 //! Testing retry logic deterministically with `clock::VirtualClock`.
 //!
-//! Run with: `cargo run --example testing-with-virtual-clock --features test-util`
+//! Run with: `cargo run --example testing-with-virtual-clock`
 //!
 //! The lesson: structure production retry code to accept its clock as a
 //! parameter. Production wires the default `SystemClock` (wall time +

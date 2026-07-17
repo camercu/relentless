@@ -251,6 +251,8 @@ impl<Policy, BA, AA, OX, F, T, E> SyncRetryExec<Policy, BA, AA, OX, F, SystemClo
     /// Replaces the default [`SystemClock`](crate::clock::SystemClock)
     /// (wall time + `std::thread::sleep`); use
     /// [`VirtualClock`](crate::clock::VirtualClock) for deterministic tests.
+    /// Callable at most once: the method exists only while the builder still
+    /// carries the default clock type.
     #[must_use]
     pub fn clock<NewClock>(
         self,

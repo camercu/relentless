@@ -224,10 +224,11 @@ The full API surface — every strategy, predicate, and type — lives on
 
 Builder chains read best in this order: **when/until** -> **wait** -> **stop**
 -> clock -> hooks -> stats -> call. That order is a reading convention, not a
-compiler contract — the types enforce only three rules: strategy overrides
+compiler contract — the types enforce only four rules: strategy overrides
 (`when`/`until`/`wait`/`stop`) exist only on builders that own their policy
-(below), everything is configured before `.with_stats()`, and an async chain
-needs `.clock(...)` before `.call()`.
+(below), everything is configured before `.with_stats()`, an async chain needs
+`.clock(...)` before `.call()`, and `.clock(...)` can be called at most once
+(it exists only while the builder still carries the default clock).
 
 Where you start decides what you can override. The free-function and
 extension-trait builders own their policy, so they accept the strategy overrides

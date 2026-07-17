@@ -262,10 +262,10 @@
 //! |------|---------|
 //! | `std` (default) | [`clock::SystemClock`] default for sync retries, `std::error::Error` on `RetryError` |
 //! | `alloc` | Boxed policies, [`clock::VirtualClock`] wait recording |
-//! | `tokio-clock` | [`clock::TokioClock`] async clock adapter |
-//! | `embassy-clock` | [`clock::EmbassyClock`] async clock adapter |
+//! | `tokio-clock` | `clock::TokioClock` async clock adapter |
+//! | `embassy-clock` | `clock::EmbassyClock` async clock adapter |
 //! | `gloo-timers-clock` | `clock::GlooClock` async clock adapter (wasm32) |
-//! | `futures-timer-clock` | [`clock::FuturesTimerClock`] async clock adapter |
+//! | `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter |
 //!
 //! Async retry does not require `alloc`. Sync `std` builds default to
 //! [`clock::SystemClock`], so `.clock(...)` is optional there.

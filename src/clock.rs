@@ -19,6 +19,18 @@
 //!
 //! [`VirtualClock`] is the deterministic clock for tests: waits advance virtual
 //! time instead of sleeping, and reads report that same virtual time.
+//!
+//! # Implementing your own clock
+//!
+//! Implement [`Clock`] plus the capability trait(s) for the engines you
+//! target. The contract: `now()` is monotonically non-decreasing, and a
+//! completed wait is reflected in subsequent `now()` readings (see
+//! [`Clock::now`]). For an async clock whose wait future needs access to the
+//! clock's own state, implement [`AsyncClock`] on the *reference* type
+//! (`impl AsyncClock for &MyClock`) so the returned future can borrow the
+//! clock without a generic associated type — this is how [`VirtualClock`]
+//! does it. Production runtime clocks usually return the runtime's own owned
+//! timer future instead and implement [`AsyncClock`] directly.
 
 use crate::compat::Duration;
 use core::cell::Cell;
@@ -177,7 +189,8 @@ impl VirtualClock {
     /// Returns every wait requested so far, in request order.
     ///
     /// A point-in-time snapshot: the returned `Vec` is unaffected by waits
-    /// recorded after the call.
+    /// recorded after the call. Only available with the `alloc` feature
+    /// (recording needs a `Vec`); the clock's time-keeping never does.
     #[cfg(feature = "alloc")]
     #[must_use]
     pub fn waits(&self) -> Vec<Duration> {
@@ -259,7 +272,8 @@ pub struct TokioClock {
 impl TokioClock {
     /// Creates a clock anchored at the current Tokio instant.
     ///
-    /// Must be called within a Tokio runtime context (as must the waits).
+    /// Construction works outside a runtime; the waits (and paused-time
+    /// reads) must run within a Tokio runtime context.
     #[must_use]
     pub fn new() -> Self {
         Self {

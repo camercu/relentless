@@ -197,7 +197,9 @@ impl<Policy, BA, AA, OX, F, T, E> AsyncRetryExec<Policy, BA, AA, OX, F, SystemCl
     /// always agree — including under paused-time runtimes, whose clock
     /// adapters (e.g. `TokioClock`) pair a coherent `now` with the runtime's
     /// timer. There is no async default: `.clock(...)` is required before
-    /// `.call()` is available.
+    /// `.call()` is available, and callable at most once — the method exists
+    /// only while the builder still carries the default (non-async) clock
+    /// type.
     #[must_use]
     pub fn clock<NewClock>(
         self,

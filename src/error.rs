@@ -4,7 +4,7 @@ use core::fmt;
 /// Error returned when a retry loop terminates without producing an accepted result.
 ///
 /// `RetryError` implements [`Display`](core::fmt::Display) and (with `std`)
-/// [`std::error::Error`], so the simplest handling is to **propagate it
+/// `std::error::Error`, so the simplest handling is to **propagate it
 /// directly** — `?` into `anyhow::Error`/`Box<dyn Error>`, or a `thiserror`
 /// `#[from]` field — rather than unwrapping it.
 ///
