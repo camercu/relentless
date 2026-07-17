@@ -113,13 +113,13 @@ fn bounded_u64(state: &mut u64, max_inclusive: u64) -> u64 {
 
 fn make_state(state: &mut u64) -> relentless::RetryState {
     let attempt = bounded_u32(state, MAX_ATTEMPT);
+    // The coin flip keeps the fixed-width per-sample stream layout from the
+    // Option-elapsed era, so seeded sequences stay reproducible; zero now
+    // plays the old "no reading" role.
     let elapsed = if next_u64(state) & 1 == 0 {
-        Some(Duration::from_millis(bounded_u64(
-            state,
-            MAX_ELAPSED_MILLIS,
-        )))
+        Duration::from_millis(bounded_u64(state, MAX_ELAPSED_MILLIS))
     } else {
-        None
+        Duration::ZERO
     };
     // Advance the stream by one slot that was reserved for next_delay when
     // this helper was designed, so all three property tests draw from the

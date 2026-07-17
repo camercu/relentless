@@ -132,8 +132,10 @@ fn sync_with_stats_returns_result_and_stats() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    // The clock is mandatory, so elapsed time is always tracked.
-    assert!(stats.total_elapsed.is_some());
+    // The clock is mandatory, so elapsed time is always tracked; with a
+    // virtual clock the waits are the only time source, so elapsed equals
+    // total_wait exactly.
+    assert_eq!(stats.total_elapsed, stats.total_wait);
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
@@ -169,7 +171,9 @@ fn async_with_stats_returns_result_and_stats() {
         stats.total_wait,
         WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
     );
-    assert!(stats.total_elapsed.is_some());
+    // The async test clock advances only through its waits, so elapsed
+    // equals total_wait exactly.
+    assert_eq!(stats.total_elapsed, stats.total_wait);
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
@@ -186,8 +190,10 @@ fn sync_first_attempt_success_has_minimal_stats() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    // The clock is mandatory, so elapsed time is always tracked.
-    assert!(stats.total_elapsed.is_some());
+    // The clock is mandatory, so elapsed time is always tracked; with a
+    // virtual clock the waits are the only time source, so elapsed equals
+    // total_wait exactly.
+    assert_eq!(stats.total_elapsed, stats.total_wait);
     assert_eq!(stats.stop_reason, StopReason::Succeeded);
 }
 
@@ -438,47 +444,51 @@ fn sync_call_without_stats_returns_plain_result() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
+/// The clock is mandatory, so elapsed tracking cannot be absent: an op that
+/// consumes virtual time must see exactly that time reported.
 #[test]
-#[cfg(feature = "std")]
-fn sync_total_elapsed_is_some_with_std() {
+fn sync_total_elapsed_reports_clock_time() {
+    const OP_RUNTIME: Duration = Duration::from_millis(7);
+    let clock = relentless::clock::VirtualClock::new();
     let policy = RetryPolicy::new().stop(stop::attempts(1));
 
     let (_result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .clock(VirtualClock::new())
+        .retry(|_| {
+            clock.advance(OP_RUNTIME);
+            Ok::<_, &str>(SUCCESS_VALUE)
+        })
+        .clock(&clock)
         .with_stats()
         .call();
 
-    assert!(
-        stats.total_elapsed.is_some(),
-        "total_elapsed should be Some when std feature is active"
-    );
+    assert_eq!(stats.total_elapsed, OP_RUNTIME);
 }
 
+/// Async mirror of the mandatory-elapsed contract: virtual waits are the only
+/// time source, so elapsed equals the accumulated wait exactly.
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_total_elapsed_is_some_with_std() {
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
+fn async_total_elapsed_reports_clock_time() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(WAIT_DURATION));
 
     let (_result, stats) = block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .clock(InstantAsyncClock::new())
             .with_stats()
             .call(),
     );
 
-    assert!(
-        stats.total_elapsed.is_some(),
-        "total_elapsed should be Some when std feature is active"
-    );
+    assert_eq!(stats.total_elapsed, WAIT_DURATION);
 }
 
 #[test]
 fn retry_stats_implements_debug_and_clone() {
     let stats = RetryStats {
         attempts: MAX_ATTEMPTS,
-        total_elapsed: Some(Duration::from_secs(1)),
+        total_elapsed: Duration::from_secs(1),
         total_wait: WAIT_DURATION,
         stop_reason: StopReason::Succeeded,
     };
@@ -665,7 +675,7 @@ fn stop_reason_display_format() {
 fn retry_stats_implements_copy() {
     let stats = RetryStats {
         attempts: 2,
-        total_elapsed: None,
+        total_elapsed: Duration::ZERO,
         total_wait: Duration::from_millis(5),
         stop_reason: StopReason::Exhausted,
     };

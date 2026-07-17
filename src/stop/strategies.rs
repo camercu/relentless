@@ -40,8 +40,11 @@ impl Stop for StopAfterAttempts {
 
 /// Stops when wall-clock elapsed time meets or exceeds a deadline.
 ///
-/// Created by [`elapsed`]. When `state.elapsed` is `None` (no clock
-/// available), this strategy never fires.
+/// Created by [`elapsed`]. Elapsed time is read from the injected clock —
+/// the same value that performs the waits — so this deadline tracks both
+/// operation runtime and inter-attempt waits. A non-advancing clock pins
+/// elapsed at zero and this strategy never fires; pair it with
+/// [`attempts`] to stay bounded regardless.
 ///
 /// # Examples
 ///
@@ -51,7 +54,7 @@ impl Stop for StopAfterAttempts {
 /// use relentless::stop;
 ///
 /// let s = stop::elapsed(Duration::from_secs(30));
-/// # let state = relentless::RetryState::for_attempt(1).with_elapsed(Some(Duration::from_secs(31)));
+/// # let state = relentless::RetryState::for_attempt(1).with_elapsed(Duration::from_secs(31));
 /// assert!(s.should_stop(&state));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,9 +70,7 @@ pub fn elapsed(deadline: Duration) -> StopAfterElapsed {
 
 impl Stop for StopAfterElapsed {
     fn should_stop(&self, state: &RetryState) -> bool {
-        state
-            .elapsed
-            .is_some_and(|elapsed| elapsed >= self.deadline)
+        state.elapsed >= self.deadline
     }
 }
 

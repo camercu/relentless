@@ -70,7 +70,7 @@ fn exit_state_from<'a, T, E>(
 fn clamp_and_fire_after_attempt<BA, AA, OX, T, E>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
-    elapsed: Option<Duration>,
+    elapsed: Duration,
     last_result: &Result<T, E>,
     next_delay: Duration,
     timeout: Option<Duration>,
@@ -80,9 +80,9 @@ where
 {
     // Prevent sleeping past the deadline: cap the delay to the remaining
     // timeout budget so the loop terminates on time.
-    let clamped = match (timeout, elapsed) {
-        (Some(timeout_dur), Some(elapsed)) => next_delay.min(timeout_dur.saturating_sub(elapsed)),
-        _ => next_delay,
+    let clamped = match timeout {
+        Some(timeout_dur) => next_delay.min(timeout_dur.saturating_sub(elapsed)),
+        None => next_delay,
     };
 
     let retry_state = RetryState::for_attempt(attempt).with_elapsed(elapsed);
@@ -101,7 +101,7 @@ enum TerminalOutcomeKind {
 fn maybe_stats(
     collect_stats: bool,
     attempts: u32,
-    total_elapsed: Option<Duration>,
+    total_elapsed: Duration,
     total_wait: Duration,
     stop_reason: StopReason,
 ) -> Option<RetryStats> {
@@ -194,7 +194,7 @@ pin_project! {
 fn fire_before_attempt<BA, AA, OX>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     attempt: u32,
-    elapsed: Option<Duration>,
+    elapsed: Duration,
     previous_delay: Option<Duration>,
 ) -> RetryState
 where
@@ -213,7 +213,7 @@ fn transition_from_outcome<S, W, P, BA, AA, OX, T, E>(
     hooks: &mut ExecutionHooks<BA, AA, OX>,
     outcome: Result<T, E>,
     attempt: u32,
-    elapsed: Option<Duration>,
+    elapsed: Duration,
     previous_delay: Option<Duration>,
     total_wait: Duration,
     collect_stats: bool,
@@ -243,10 +243,7 @@ where
 
     let next_delay = policy.wait.next_wait(&retry_state);
 
-    let timeout_exceeded = match (timeout, retry_state.elapsed) {
-        (Some(t), Some(e)) => e >= t,
-        _ => false,
-    };
+    let timeout_exceeded = timeout.is_some_and(|t| retry_state.elapsed >= t);
 
     if policy.stop.should_stop(&retry_state) || timeout_exceeded {
         return finish_terminal_transition(
@@ -287,9 +284,7 @@ where
 {
     // Execution starts here: capture the elapsed baseline (SPEC 11.1.1).
     let origin = clock.now();
-    // The clock is mandatory, so elapsed time is always available; the
-    // `Option` shape survives only because the state types expose one.
-    let elapsed = |clock: &C| Some(clock.now().saturating_sub(origin));
+    let elapsed = |clock: &C| clock.now().saturating_sub(origin);
 
     let mut attempt: u32 = 1;
     let mut total_wait = Duration::ZERO;
@@ -423,9 +418,7 @@ where
         // Execution starts at the first poll: capture the elapsed baseline
         // (SPEC 11.1.1). Later polls leave it unchanged.
         let origin = *this.origin.get_or_insert_with(|| this.clock.now());
-        // The clock is mandatory, so elapsed time is always available; the
-        // `Option` shape survives only because the state types expose one.
-        let elapsed = |clock: &C| Some(clock.now().saturating_sub(origin));
+        let elapsed = |clock: &C| clock.now().saturating_sub(origin);
 
         loop {
             match this.phase.as_mut().project() {

@@ -30,9 +30,10 @@ pub struct RetryState {
     /// For `Stop` and `Wait`, this is the just-completed attempt.
     pub attempt: u32,
 
-    /// Wall-clock time elapsed since the first attempt began.
-    /// `None` when no clock is available (e.g. `no_std` without a time source).
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time elapsed since the first attempt began, read from the
+    /// injected clock. Zero in hand-constructed states until set with
+    /// [`with_elapsed`](Self::with_elapsed).
+    pub elapsed: Duration,
 
     /// The delay applied before this attempt — the previous inter-attempt sleep,
     /// after cap/timeout clamping — or `None` on the first attempt.
@@ -45,9 +46,10 @@ pub struct RetryState {
 impl RetryState {
     /// Creates a `RetryState` for the given 1-indexed attempt.
     ///
-    /// [`elapsed`](Self::elapsed) and [`previous_delay`](Self::previous_delay)
-    /// default to `None`; set them with [`with_elapsed`](Self::with_elapsed)
-    /// and [`with_previous_delay`](Self::with_previous_delay).
+    /// [`elapsed`](Self::elapsed) defaults to zero and
+    /// [`previous_delay`](Self::previous_delay) to `None`; set them with
+    /// [`with_elapsed`](Self::with_elapsed) and
+    /// [`with_previous_delay`](Self::with_previous_delay).
     ///
     /// # Panics
     ///
@@ -57,7 +59,7 @@ impl RetryState {
         debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed: None,
+            elapsed: Duration::ZERO,
             previous_delay: None,
         }
     }
@@ -65,7 +67,7 @@ impl RetryState {
     /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
     /// chaining.
     #[must_use]
-    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+    pub const fn with_elapsed(mut self, elapsed: Duration) -> Self {
         self.elapsed = elapsed;
         self
     }
@@ -100,9 +102,9 @@ pub struct AttemptState<'a, T, E> {
     /// The 1-indexed attempt number that just completed.
     pub attempt: u32,
 
-    /// Wall-clock time elapsed since the first attempt began.
-    /// `None` when no clock is available.
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time elapsed since the first attempt began, read from the
+    /// injected clock.
+    pub elapsed: Duration,
 
     /// A reference to the outcome of the most recent attempt.
     pub outcome: &'a Result<T, E>,
@@ -117,8 +119,9 @@ impl<'a, T, E> AttemptState<'a, T, E> {
     /// Creates an `AttemptState` for the given 1-indexed attempt and its
     /// outcome.
     ///
-    /// [`elapsed`](Self::elapsed) and [`next_delay`](Self::next_delay) default
-    /// to `None`; set them with [`with_elapsed`](Self::with_elapsed) and
+    /// [`elapsed`](Self::elapsed) defaults to zero and
+    /// [`next_delay`](Self::next_delay) to `None`; set them with
+    /// [`with_elapsed`](Self::with_elapsed) and
     /// [`with_next_delay`](Self::with_next_delay).
     ///
     /// # Panics
@@ -129,7 +132,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
         debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed: None,
+            elapsed: Duration::ZERO,
             outcome,
             next_delay: None,
         }
@@ -138,7 +141,7 @@ impl<'a, T, E> AttemptState<'a, T, E> {
     /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
     /// chaining.
     #[must_use]
-    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+    pub const fn with_elapsed(mut self, elapsed: Duration) -> Self {
         self.elapsed = elapsed;
         self
     }
@@ -175,9 +178,9 @@ pub struct ExitState<'a, T, E> {
     /// The number of completed attempts. Always >= 1.
     pub attempt: u32,
 
-    /// Wall-clock time elapsed since the first attempt began.
-    /// `None` when no clock is available.
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time elapsed since the first attempt began, read from the
+    /// injected clock.
+    pub elapsed: Duration,
 
     /// A reference to the final outcome.
     pub outcome: &'a Result<T, E>,
@@ -190,7 +193,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
     /// Creates an `ExitState` for the given 1-indexed final attempt, its
     /// outcome, and the loop's termination reason.
     ///
-    /// [`elapsed`](Self::elapsed) defaults to `None`; set it with
+    /// [`elapsed`](Self::elapsed) defaults to zero; set it with
     /// [`with_elapsed`](Self::with_elapsed).
     ///
     /// # Panics
@@ -205,7 +208,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
         debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
-            elapsed: None,
+            elapsed: Duration::ZERO,
             outcome,
             stop_reason,
         }
@@ -214,7 +217,7 @@ impl<'a, T, E> ExitState<'a, T, E> {
     /// Sets [`elapsed`](Self::elapsed), consuming and returning `self` for
     /// chaining.
     #[must_use]
-    pub const fn with_elapsed(mut self, elapsed: Option<Duration>) -> Self {
+    pub const fn with_elapsed(mut self, elapsed: Duration) -> Self {
         self.elapsed = elapsed;
         self
     }

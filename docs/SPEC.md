@@ -93,7 +93,7 @@ Stop semantics:
 - `stop::attempts(n)` treats `n` as the maximum number of completed attempts
 - **3.1.3** `attempts` fires when `state.attempt >= n`; `n = 1` means "run at most one attempt"
 - **3.1.4** `attempts(0)` panics unconditionally
-- **3.1.5** `stop::elapsed(dur)` fires when `state.elapsed >= Some(dur)` and never fires when `state.elapsed` is `None`
+- **3.1.5** `stop::elapsed(dur)` fires when `state.elapsed >= dur`
 - **3.1.6** `stop::never()` always returns false
 
 ### 3.2 Wait
@@ -391,9 +391,9 @@ pub struct RetryState {
     /// this is the attempt about to start. For `Stop` and `Wait`, this
     /// is the just-completed attempt.
     pub attempt: u32,
-    /// Wall-clock time since retry execution started, or `None` when
-    /// no elapsed clock is available.
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time since retry execution started, read from the
+    /// injected clock. Zero in hand-constructed states until set.
+    pub elapsed: Duration,
     /// The delay applied before this attempt (the previous inter-attempt sleep,
     /// after cap/timeout clamping), or `None` on the first attempt. Wait
     /// strategies use this for feedback backoff (e.g. decorrelated jitter).
@@ -406,8 +406,8 @@ pub struct RetryState {
 pub struct AttemptState<'a, T, E> {
     /// 1-indexed attempt number just completed.
     pub attempt: u32,
-    /// Wall-clock time since retry execution started, or `None`.
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time since retry execution started.
+    pub elapsed: Duration,
     /// Outcome of the just-completed attempt.
     pub outcome: &'a Result<T, E>,
     /// Delay before the next attempt, or `None` when this is the final
@@ -421,8 +421,8 @@ pub struct AttemptState<'a, T, E> {
 pub struct ExitState<'a, T, E> {
     /// 1-indexed number of completed attempts. Always >= 1.
     pub attempt: u32,
-    /// Wall-clock time since retry execution started, or `None`.
-    pub elapsed: Option<Duration>,
+    /// Wall-clock time since retry execution started.
+    pub elapsed: Duration,
     /// Outcome of the final attempt.
     pub outcome: &'a Result<T, E>,
     /// Why the retry loop terminated.
@@ -434,28 +434,28 @@ Constructor signatures:
 
 ```rust
 impl RetryState {
-    // `elapsed` and `previous_delay` default to `None`; set them via the
-    // `with_*` setters.
+    // `elapsed` defaults to zero and `previous_delay` to `None`; set them
+    // via the `with_*` setters.
     pub fn for_attempt(attempt: u32) -> Self;
-    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
+    pub fn with_elapsed(self, elapsed: Duration) -> Self;
     pub fn with_previous_delay(self, previous_delay: Option<Duration>) -> Self;
 }
 
 impl<'a, T, E> AttemptState<'a, T, E> {
-    // `elapsed` and `next_delay` default to `None`.
+    // `elapsed` defaults to zero and `next_delay` to `None`.
     pub fn for_attempt(attempt: u32, outcome: &'a Result<T, E>) -> Self;
-    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
+    pub fn with_elapsed(self, elapsed: Duration) -> Self;
     pub fn with_next_delay(self, next_delay: Option<Duration>) -> Self;
 }
 
 impl<'a, T, E> ExitState<'a, T, E> {
-    // `elapsed` defaults to `None`.
+    // `elapsed` defaults to zero.
     pub fn for_attempt(
         attempt: u32,
         outcome: &'a Result<T, E>,
         stop_reason: StopReason,
     ) -> Self;
-    pub fn with_elapsed(self, elapsed: Option<Duration>) -> Self;
+    pub fn with_elapsed(self, elapsed: Duration) -> Self;
 }
 ```
 
@@ -478,9 +478,9 @@ iteration — the semantic distinction is whether the attempt has run yet.
 Field meanings:
 
 - `attempt` is 1-indexed for completed or about-to-start attempts
-- **3.6.4** `elapsed` is always `Some` in states produced by the engines (the
-  clock is mandatory); it is `Option` because hand-constructed states (custom
-  strategy tests) may omit it, and `None` then means "not provided"
+- **3.6.4** `elapsed` is a plain `Duration`: the clock is mandatory, so the
+  engines always supply a reading. Hand-constructed states (custom strategy
+  tests) default it to zero until `with_elapsed` is called
 - **3.6.5** `AttemptState.next_delay` is `None` on the final attempt; `Some(delay)` means
   another attempt will follow after the delay
 - **3.6.6** `ExitState.attempt` is always the number of completed attempts
@@ -576,8 +576,8 @@ pub struct RetryStats {
     /// Completed attempts. Always >= 1.
     pub attempts: u32,
     /// Wall-clock time from retry execution start until terminal exit,
-    /// or `None` when no clock is available.
-    pub total_elapsed: Option<Duration>,
+    /// read from the injected clock.
+    pub total_elapsed: Duration,
     /// Sum of delays for retries that reached the sleep phase (step 9
     /// onward). This is requested wait budget, not measured sleep time.
     /// Includes zero-duration delays (which skip actual sleep). Excludes
@@ -590,7 +590,8 @@ pub struct RetryStats {
 
 **4.3.1** `attempts` is always ≥ 1.
 
-**4.3.2** `total_elapsed` is `None` when no elapsed clock is available.
+**4.3.2** `total_elapsed` is always present: the injected clock is mandatory,
+so elapsed tracking cannot be absent.
 
 **4.3.3** `total_wait` is the sum of delays that reached the sleep phase (step 9 onward); excludes delays preempted by stop at steps 7–8; includes zero-duration delays.
 
@@ -898,9 +899,8 @@ The async loop uses the same transition order as sync execution.
 ### 6.6 Statistics
 
 Retry execution always tracks statistics internally. The cost is one `u32`
-counter, one `Option<Duration>` accumulator, one `Duration` accumulator, and
-one `StopReason` — no additional allocations or timing beyond what the chosen
-clock already provides.
+counter, two `Duration` accumulators, and one `StopReason` — no additional
+allocations or timing beyond what the chosen clock already provides.
 
 Statistics are accessed via:
 

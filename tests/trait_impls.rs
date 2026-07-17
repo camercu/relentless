@@ -119,7 +119,7 @@ fn retry_stats_is_clone_and_copy() {
 
     let stats = RetryStats {
         attempts: 2,
-        total_elapsed: Some(Duration::from_secs(1)),
+        total_elapsed: Duration::from_secs(1),
         total_wait: Duration::from_millis(100),
         stop_reason: StopReason::Exhausted,
     };
@@ -136,7 +136,7 @@ fn retry_state_is_clone_copy_partial_eq() {
     use core::time::Duration;
     use relentless::RetryState;
 
-    let s = RetryState::for_attempt(3).with_elapsed(Some(Duration::from_secs(1)));
+    let s = RetryState::for_attempt(3).with_elapsed(Duration::from_secs(1));
     let cloned = s; // Copy
     let copied = s; // Copy again — would fail if s were moved
     assert_eq!(s, cloned);

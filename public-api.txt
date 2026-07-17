@@ -1086,12 +1086,12 @@ impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::RefUnwindSafe for
 impl<Policy, BA, AA, OX, F, C, T, E> core::panic::unwind_safe::UnwindSafe for relentless::AsyncRetryExecWithStats<Policy, BA, AA, OX, F, C, T, E> where Policy: core::panic::unwind_safe::UnwindSafe, F: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, BA: core::panic::unwind_safe::UnwindSafe, AA: core::panic::unwind_safe::UnwindSafe, OX: core::panic::unwind_safe::UnwindSafe
 #[non_exhaustive] pub struct relentless::AttemptState<'a, T, E>
 pub relentless::AttemptState::attempt: u32
-pub relentless::AttemptState::elapsed: core::option::Option<core::time::Duration>
+pub relentless::AttemptState::elapsed: core::time::Duration
 pub relentless::AttemptState::next_delay: core::option::Option<core::time::Duration>
 pub relentless::AttemptState::outcome: &'a core::result::Result<T, E>
 impl<'a, T, E> relentless::AttemptState<'a, T, E>
 pub const fn relentless::AttemptState<'a, T, E>::for_attempt(attempt: u32, outcome: &'a core::result::Result<T, E>) -> Self
-pub const fn relentless::AttemptState<'a, T, E>::with_elapsed(self, elapsed: core::option::Option<core::time::Duration>) -> Self
+pub const fn relentless::AttemptState<'a, T, E>::with_elapsed(self, elapsed: core::time::Duration) -> Self
 pub const fn relentless::AttemptState<'a, T, E>::with_next_delay(self, next_delay: core::option::Option<core::time::Duration>) -> Self
 impl<'a, T: core::clone::Clone, E: core::clone::Clone> core::clone::Clone for relentless::AttemptState<'a, T, E>
 pub fn relentless::AttemptState<'a, T, E>::clone(&self) -> relentless::AttemptState<'a, T, E>
@@ -1107,12 +1107,12 @@ impl<'a, T, E> core::panic::unwind_safe::RefUnwindSafe for relentless::AttemptSt
 impl<'a, T, E> core::panic::unwind_safe::UnwindSafe for relentless::AttemptState<'a, T, E> where T: core::panic::unwind_safe::RefUnwindSafe, E: core::panic::unwind_safe::RefUnwindSafe
 #[non_exhaustive] pub struct relentless::ExitState<'a, T, E>
 pub relentless::ExitState::attempt: u32
-pub relentless::ExitState::elapsed: core::option::Option<core::time::Duration>
+pub relentless::ExitState::elapsed: core::time::Duration
 pub relentless::ExitState::outcome: &'a core::result::Result<T, E>
 pub relentless::ExitState::stop_reason: relentless::StopReason
 impl<'a, T, E> relentless::ExitState<'a, T, E>
 pub const fn relentless::ExitState<'a, T, E>::for_attempt(attempt: u32, outcome: &'a core::result::Result<T, E>, stop_reason: relentless::StopReason) -> Self
-pub const fn relentless::ExitState<'a, T, E>::with_elapsed(self, elapsed: core::option::Option<core::time::Duration>) -> Self
+pub const fn relentless::ExitState<'a, T, E>::with_elapsed(self, elapsed: core::time::Duration) -> Self
 impl<'a, T: core::clone::Clone, E: core::clone::Clone> core::clone::Clone for relentless::ExitState<'a, T, E>
 pub fn relentless::ExitState<'a, T, E>::clone(&self) -> relentless::ExitState<'a, T, E>
 impl<'a, T: core::fmt::Debug, E: core::fmt::Debug> core::fmt::Debug for relentless::ExitState<'a, T, E>
@@ -1158,11 +1158,11 @@ impl<S, W, P> core::panic::unwind_safe::RefUnwindSafe for relentless::RetryPolic
 impl<S, W, P> core::panic::unwind_safe::UnwindSafe for relentless::RetryPolicy<S, W, P> where S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, P: core::panic::unwind_safe::UnwindSafe
 #[non_exhaustive] pub struct relentless::RetryState
 pub relentless::RetryState::attempt: u32
-pub relentless::RetryState::elapsed: core::option::Option<core::time::Duration>
+pub relentless::RetryState::elapsed: core::time::Duration
 pub relentless::RetryState::previous_delay: core::option::Option<core::time::Duration>
 impl relentless::RetryState
 pub const fn relentless::RetryState::for_attempt(attempt: u32) -> Self
-pub const fn relentless::RetryState::with_elapsed(self, elapsed: core::option::Option<core::time::Duration>) -> Self
+pub const fn relentless::RetryState::with_elapsed(self, elapsed: core::time::Duration) -> Self
 pub const fn relentless::RetryState::with_previous_delay(self, previous_delay: core::option::Option<core::time::Duration>) -> Self
 impl core::clone::Clone for relentless::RetryState
 pub fn relentless::RetryState::clone(&self) -> relentless::RetryState
@@ -1182,7 +1182,7 @@ impl core::panic::unwind_safe::UnwindSafe for relentless::RetryState
 pub struct relentless::RetryStats
 pub relentless::RetryStats::attempts: u32
 pub relentless::RetryStats::stop_reason: relentless::StopReason
-pub relentless::RetryStats::total_elapsed: core::option::Option<core::time::Duration>
+pub relentless::RetryStats::total_elapsed: core::time::Duration
 pub relentless::RetryStats::total_wait: core::time::Duration
 impl core::clone::Clone for relentless::RetryStats
 pub fn relentless::RetryStats::clone(&self) -> relentless::RetryStats

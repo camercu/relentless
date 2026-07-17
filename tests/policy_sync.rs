@@ -828,7 +828,7 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
     use std::rc::Rc;
 
     struct RecordingWait {
-        seen: Rc<RefCell<Vec<Option<Duration>>>>,
+        seen: Rc<RefCell<Vec<Duration>>>,
     }
     impl relentless::Wait for RecordingWait {
         fn next_wait(&self, state: &relentless::RetryState) -> Duration {
@@ -839,7 +839,7 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
 
     let clock = VirtualClock::new();
     let op_elapsed: Cell<Option<Duration>> = Cell::new(None);
-    let wait_elapsed: Rc<RefCell<Vec<Option<Duration>>>> = Rc::new(RefCell::new(Vec::new()));
+    let wait_elapsed: Rc<RefCell<Vec<Duration>>> = Rc::new(RefCell::new(Vec::new()));
 
     let _ = RetryPolicy::new()
         .stop(stop::attempts(2))
@@ -850,7 +850,7 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
             // Record the elapsed the op sees on the first attempt, then advance
             // the clock so the post-op read differs.
             if op_elapsed.get().is_none() {
-                op_elapsed.set(state.elapsed);
+                op_elapsed.set(Some(state.elapsed));
             }
             clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
             Err::<i32, &str>("fail")
@@ -859,7 +859,7 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
         .call();
 
     let op_saw = op_elapsed.get().expect("op ran at least once");
-    let wait_saw = wait_elapsed.borrow()[0].expect("wait ran with a clock configured");
+    let wait_saw = wait_elapsed.borrow()[0];
     assert!(
         wait_saw > op_saw,
         "wait should see post-op elapsed ({wait_saw:?}), later than the op ({op_saw:?})"
@@ -932,8 +932,8 @@ fn retry_ext_closure_takes_no_retry_state() {
 /// 16.2, 16.3
 #[test]
 fn compat_duration_is_core_time_duration() {
-    let _: relentless::RetryState = relentless::RetryState::for_attempt(1)
-        .with_elapsed(Some(core::time::Duration::from_millis(5)));
+    let _: relentless::RetryState =
+        relentless::RetryState::for_attempt(1).with_elapsed(core::time::Duration::from_millis(5));
 }
 
 /// §6

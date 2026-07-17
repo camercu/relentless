@@ -17,7 +17,7 @@ fn make_state(attempt: u32) -> relentless::RetryState {
 }
 
 fn make_state_with_elapsed(attempt: u32, elapsed: Duration) -> relentless::RetryState {
-    relentless::RetryState::for_attempt(attempt).with_elapsed(Some(elapsed))
+    relentless::RetryState::for_attempt(attempt).with_elapsed(elapsed)
 }
 
 /// Minimal Stop implementation used to verify the trait contract.

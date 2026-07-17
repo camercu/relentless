@@ -66,8 +66,8 @@ impl fmt::Display for StopReason {
 pub struct RetryStats {
     /// The total number of attempts executed.
     pub attempts: u32,
-    /// Total wall-clock elapsed time, or `None` when no clock is available.
-    pub total_elapsed: Option<Duration>,
+    /// Total wall-clock elapsed time, read from the injected clock.
+    pub total_elapsed: Duration,
     /// Cumulative duration requested from the wait strategy.
     pub total_wait: Duration,
     /// The reason the retry loop terminated.
