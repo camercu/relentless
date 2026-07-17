@@ -430,34 +430,36 @@ impl AsyncClock for FuturesTimerClock {
 /// source (wasm32 only).
 ///
 /// Wasm has no `std::time::Instant`, so the monotonic reader must be supplied
-/// explicitly — e.g. a `js_sys`/`web_sys` `performance.now()` shim converted
-/// to a [`Duration`]. The supplied function must be monotonically
-/// non-decreasing and must observe real time passing during the `gloo` waits,
-/// or `timeout`/`stop::elapsed` will misbehave.
+/// explicitly — e.g. a closure over a `web_sys` `Performance` handle whose
+/// `performance.now()` reading is converted to a [`Duration`]. The supplied
+/// function must be monotonically non-decreasing and must observe real time
+/// passing during the `gloo` waits, or `timeout`/`stop::elapsed` will
+/// misbehave.
 #[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
 #[derive(Debug, Clone, Copy)]
-pub struct GlooClock {
-    now: fn() -> Duration,
+pub struct GlooClock<F = fn() -> Duration> {
+    now: F,
 }
 
 #[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
-impl GlooClock {
-    /// Creates a clock waiting through `gloo-timers` and reading `now`.
+impl<F: Fn() -> Duration> GlooClock<F> {
+    /// Creates a clock waiting through `gloo-timers` and reading `now` —
+    /// any `Fn() -> Duration`, including closures capturing state.
     #[must_use]
-    pub fn with_now(now: fn() -> Duration) -> Self {
+    pub fn with_now(now: F) -> Self {
         Self { now }
     }
 }
 
 #[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
-impl Clock for GlooClock {
+impl<F: Fn() -> Duration> Clock for GlooClock<F> {
     fn now(&self) -> Duration {
         (self.now)()
     }
 }
 
 #[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
-impl AsyncClock for GlooClock {
+impl<F: Fn() -> Duration> AsyncClock for GlooClock<F> {
     type Wait = gloo_timers::future::TimeoutFuture;
 
     fn wait_async(&self, dur: Duration) -> Self::Wait {

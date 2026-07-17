@@ -1179,8 +1179,9 @@ each pairing a coherent `now()` source with that runtime's timer:
 - `clock::EmbassyClock` with `embassy-clock` — `embassy_time::Instant` +
   `embassy_time::Timer` (requires a linked embassy time driver)
 - `clock::GlooClock` with `gloo-timers-clock` on `wasm32` — `gloo-timers`
-  waits paired with a caller-supplied `fn() -> Duration` now-source
-  (`GlooClock::with_now`), because wasm has no `std::time::Instant`
+  waits paired with a caller-supplied now-source (`GlooClock::with_now`,
+  any `Fn() -> Duration` including capturing closures), because wasm has no
+  `std::time::Instant`
 - `clock::FuturesTimerClock` with `futures-timer-clock` —
   `std::time::Instant` + `futures_timer::Delay`
 

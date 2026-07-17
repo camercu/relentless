@@ -46,7 +46,7 @@ cargo add relentless
 | `alloc`               | Boxed policies, `clock::VirtualClock` wait recording                                 |
 | `tokio-clock`         | `clock::TokioClock` async clock adapter                                              |
 | `embassy-clock`       | `clock::EmbassyClock` async clock adapter                                            |
-| `gloo-timers-clock`   | `clock::GlooClock` async clock adapter (wasm32)                                      |
+| `gloo-timers-clock`   | `clock::GlooClock` async clock adapter (wasm32; caller supplies the now-source)      |
 | `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter                                       |
 
 Async retry does not require `alloc`.
