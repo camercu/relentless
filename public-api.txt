@@ -140,6 +140,9 @@ pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duratio
 impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
 pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
 pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl<C: relentless::clock::AsyncClock> relentless::clock::AsyncClock for &C
+pub type &C::Wait = <C as relentless::clock::AsyncClock>::Wait
+pub fn &C::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 pub trait relentless::clock::Clock
 pub fn relentless::clock::Clock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::EmbassyClock
@@ -390,6 +393,9 @@ pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duratio
 impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
 pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
 pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl<C: relentless::clock::AsyncClock> relentless::clock::AsyncClock for &C
+pub type &C::Wait = <C as relentless::clock::AsyncClock>::Wait
+pub fn &C::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 pub trait relentless::prelude::AsyncRetryExt<T, E, Fut> where Fut: core::future::future::Future<Output = core::result::Result<T, E>>: core::ops::function::FnMut() -> Fut + core::marker::Sized
 pub fn relentless::prelude::AsyncRetryExt::retry_async(self) -> relentless::DefaultAsyncRetryBuilder<Self, T, E>
 impl<T, E, Fut, F> relentless::AsyncRetryExt<T, E, Fut> for F where F: core::ops::function::FnMut() -> Fut + core::marker::Sized, Fut: core::future::future::Future<Output = core::result::Result<T, E>>
@@ -1252,6 +1258,9 @@ pub fn relentless::clock::TokioClock::wait_async(&self, dur: core::time::Duratio
 impl<'clock> relentless::clock::AsyncClock for &'clock relentless::clock::VirtualClock
 pub type &'clock relentless::clock::VirtualClock::Wait = relentless::clock::VirtualWait<'clock>
 pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
+impl<C: relentless::clock::AsyncClock> relentless::clock::AsyncClock for &C
+pub type &C::Wait = <C as relentless::clock::AsyncClock>::Wait
+pub fn &C::wait_async(&self, dur: core::time::Duration) -> Self::Wait
 pub trait relentless::AsyncRetryExt<T, E, Fut> where Fut: core::future::future::Future<Output = core::result::Result<T, E>>: core::ops::function::FnMut() -> Fut + core::marker::Sized
 pub fn relentless::AsyncRetryExt::retry_async(self) -> relentless::DefaultAsyncRetryBuilder<Self, T, E>
 impl<T, E, Fut, F> relentless::AsyncRetryExt<T, E, Fut> for F where F: core::ops::function::FnMut() -> Fut + core::marker::Sized, Fut: core::future::future::Future<Output = core::result::Result<T, E>>

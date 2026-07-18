@@ -35,6 +35,19 @@ mod tokio_clock {
         let second = clock.now();
         assert!(second >= first);
     }
+
+    /// A shared reference is itself an `AsyncClock` (blanket impl), so a
+    /// caller can inject `&clock` and keep the handle.
+    #[tokio::test(start_paused = true)]
+    async fn a_shared_reference_is_itself_an_async_clock() {
+        async fn takes_async_clock<C: AsyncClock>(clock: C) {
+            clock.wait_async(WAIT).await;
+        }
+        let clock = TokioClock::new();
+        let before = clock.now();
+        takes_async_clock(&clock).await;
+        assert!(clock.now().saturating_sub(before) >= WAIT);
+    }
 }
 
 #[cfg(feature = "futures-timer-clock")]

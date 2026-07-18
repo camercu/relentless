@@ -361,10 +361,11 @@ implementations; it is a per-impl contract (structural for the shipped
 `VirtualClock`, whose reads and waits share one cell; guaranteed by the OS for
 real clocks).
 
-**3.5.4** `Clock` and `SyncClock` are blanket-implemented for `&C` where `C`
-implements them, so a test can inject `&VirtualClock` and keep the handle for
-assertions. `AsyncClock` has no blanket reference impl; instead
-`&VirtualClock` implements it directly (its wait future borrows the clock).
+**3.5.4** All three traits are blanket-implemented for `&C` where `C`
+implements them, so a caller can inject `&clock` and keep the handle for
+assertions. Additionally, `&VirtualClock` implements `AsyncClock` directly
+(its wait future borrows the clock; the owned `VirtualClock` implements only
+the sync capability, so the direct impl does not overlap the blanket).
 
 **3.5.5** `AsyncClock::Wait` is an owned, named future. The wait must take
 effect when the future is polled, not when it is created: the engine may build

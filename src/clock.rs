@@ -29,8 +29,10 @@
 //! clock's own state, implement [`AsyncClock`] on the *reference* type
 //! (`impl AsyncClock for &MyClock`) so the returned future can borrow the
 //! clock without a generic associated type — this is how [`VirtualClock`]
-//! does it. Production runtime clocks usually return the runtime's own owned
-//! timer future instead and implement [`AsyncClock`] directly.
+//! does it (its owned form stays sync-only, so the direct reference impl
+//! does not overlap the blanket `AsyncClock for &C`). Production runtime
+//! clocks usually return the runtime's own owned timer future instead and
+//! implement [`AsyncClock`] directly.
 
 use crate::compat::Duration;
 use core::cell::Cell;
@@ -115,6 +117,14 @@ impl<C: Clock + ?Sized> Clock for &C {
 impl<C: SyncClock + ?Sized> SyncClock for &C {
     fn wait(&self, dur: Duration) {
         (**self).wait(dur);
+    }
+}
+
+impl<C: AsyncClock> AsyncClock for &C {
+    type Wait = C::Wait;
+
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        (**self).wait_async(dur)
     }
 }
 
