@@ -1250,7 +1250,7 @@ fn timeout_clamps_delay_to_remaining_budget() {
 /// 11.4.2
 ///
 /// Unlike the zero-budget case above, here each attempt leaves budget on the
-/// table, so the sleeper must observe the *clamped* delays — not the wait
+/// table, so the clock must observe the *clamped* delays — not the wait
 /// strategy's raw output.
 #[test]
 fn timeout_clamps_delay_to_partial_remaining_budget() {

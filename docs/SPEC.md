@@ -581,7 +581,7 @@ pub struct RetryStats {
     /// Sum of delays for retries that reached the sleep phase (step 9
     /// onward). This is requested wait budget, not measured sleep time.
     /// Includes zero-duration delays (which skip actual sleep). Excludes
-    /// delays computed but preempted by stop at steps 7–8.
+    /// delays computed but preempted by stop at steps 6–7.
     pub total_wait: Duration,
     /// Why the retry loop terminated.
     pub stop_reason: StopReason,
@@ -593,7 +593,7 @@ pub struct RetryStats {
 **4.3.2** `total_elapsed` is always present: the injected clock is mandatory,
 so elapsed tracking cannot be absent.
 
-**4.3.3** `total_wait` is the sum of delays that reached the sleep phase (step 9 onward); excludes delays preempted by stop at steps 7–8; includes zero-duration delays.
+**4.3.3** `total_wait` is the sum of delays that reached the sleep phase (step 9 onward); excludes delays preempted by stop at steps 6–7; includes zero-duration delays.
 
 **4.3.4** `stop_reason` matches the termination reason.
 
@@ -859,12 +859,13 @@ loop:
         a. Fire `after_attempt` with next_delay = None.
         b. Terminate.
     5.  Compute the next wait duration via Wait::next_wait.
-    6.  If timeout is configured and elapsed is Some, clamp delay to
-        max(0, timeout - elapsed). (See Timeout.)
-    7.  Evaluate the stop strategy.
-    8.  If stop fires:
+    6.  Evaluate the stop strategy; a configured timeout whose deadline the
+        elapsed time has met or exceeded also counts as a stop. (See Timeout.)
+    7.  If stop fires:
         a. Fire `after_attempt` with next_delay = None.
         b. Terminate.
+    8.  If timeout is configured, clamp delay to
+        max(0, timeout - elapsed). (See Timeout.)
     9.  Fire `after_attempt` with next_delay = Some(delay).
     10. If delay > zero, wait for the computed delay via the clock.
     11. attempt += 1, continue to step 1.
@@ -1141,7 +1142,7 @@ entire retry execution. It combines two behaviors:
    effective stop of `stop::attempts(5).or(stop::elapsed(30s))`.
 1. **11.4.2** After computing the wait duration (step 5), clamps the delay to
    the remaining budget: `delay = min(delay, max(0, timeout - elapsed))`
-   (step 6). The wait itself consumes elapsed budget — the clock that waits is
+   (step 8). The wait itself consumes elapsed budget — the clock that waits is
    the clock that reports elapsed — so a clamped wait ends at the deadline and
    the loop performs one final attempt there (11.4.5).
 

@@ -21,7 +21,7 @@ fn main() {
         .retry()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(10)))
-        .clock(VirtualClock::new()) // replaced with std::thread::sleep in production
+        .clock(VirtualClock::new()) // omit in production: std defaults to SystemClock
         .call();
 
     assert_eq!(result, Ok("config_value=42"));

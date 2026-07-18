@@ -371,7 +371,7 @@ impl AsyncClock for EmbassyClock {
 /// including its round-up-to-a-tick behavior) because Embassy's own `u64`
 /// conversion arithmetic overflows near `u64::MAX` microseconds.
 #[cfg(feature = "embassy-clock")]
-pub(crate) fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
+fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
     const MICROS_PER_SEC: u128 = 1_000_000;
     let ticks_ceil = dur
         .as_micros()
@@ -463,7 +463,10 @@ impl<F: Fn() -> Duration> AsyncClock for GlooClock<F> {
     type Wait = gloo_timers::future::TimeoutFuture;
 
     fn wait_async(&self, dur: Duration) -> Self::Wait {
-        gloo_timers::future::sleep(dur)
+        // `gloo`'s `sleep` helper panics past u32::MAX milliseconds (~49.7
+        // days); saturate instead — SPEC 15.3 forbids panicking waits.
+        let millis = u32::try_from(dur.as_millis()).unwrap_or(u32::MAX);
+        gloo_timers::future::TimeoutFuture::new(millis)
     }
 }
 

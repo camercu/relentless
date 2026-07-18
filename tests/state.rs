@@ -1,7 +1,7 @@
 //! Tests for state types passed to Stop strategies and hooks.
 //!
 //! Verifies the public field layout of `RetryState`, `AttemptState`, and `ExitState`,
-//! including 1-indexed attempt numbers and Option<Duration> for elapsed time.
+//! including 1-indexed attempt numbers and plain `Duration` elapsed time.
 
 use core::time::Duration;
 use relentless::clock::VirtualClock;

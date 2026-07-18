@@ -367,6 +367,8 @@ where
     S: Stop,
     W: Wait,
 {
+    /// Creates an asynchronous retry execution for the given operation.
+    ///
     /// ```
     /// use relentless::{RetryPolicy, stop};
     /// use relentless::clock::VirtualClock;

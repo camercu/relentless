@@ -168,7 +168,7 @@ fn engine_feeds_previous_delay_forward_async() {
 }
 
 #[test]
-fn retry_async_executes_when_sleeper_is_set() {
+fn retry_async_executes_when_clock_is_set() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let clock = RecordingClock::new();
 
@@ -348,7 +348,7 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
 }
 
 #[test]
-fn async_sleep_receives_wait_strategy_delays() {
+fn async_clock_receives_wait_strategy_delays() {
     let clock = RecordingClock::new();
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
