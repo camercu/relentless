@@ -120,7 +120,7 @@ impl<C: SyncClock + ?Sized> SyncClock for &C {
     }
 }
 
-impl<C: AsyncClock> AsyncClock for &C {
+impl<C: AsyncClock + ?Sized> AsyncClock for &C {
     type Wait = C::Wait;
 
     fn wait_async(&self, dur: Duration) -> Self::Wait {
@@ -473,9 +473,15 @@ impl<F: Fn() -> Duration> AsyncClock for GlooClock<F> {
     type Wait = gloo_timers::future::TimeoutFuture;
 
     fn wait_async(&self, dur: Duration) -> Self::Wait {
-        // `gloo`'s `sleep` helper panics past u32::MAX milliseconds (~49.7
-        // days); saturate instead — SPEC 15.3 forbids panicking waits.
-        let millis = u32::try_from(dur.as_millis()).unwrap_or(u32::MAX);
+        // `gloo`'s `sleep` helper panics past u32::MAX milliseconds, and
+        // anything above i32::MAX milliseconds (~24.8 days) reaches JS
+        // `setTimeout` as a negative number, which the platform clamps to an
+        // *immediate* fire. Saturate to the largest wait the platform can
+        // actually perform — SPEC 15.3 forbids panicking waits, and an
+        // immediately-completing "wait" would violate the Clock contract.
+        const MAX_TIMEOUT_MILLIS: u128 = i32::MAX as u128;
+        let millis = u32::try_from(dur.as_millis().min(MAX_TIMEOUT_MILLIS))
+            .expect("value clamped to i32::MAX fits in u32");
         gloo_timers::future::TimeoutFuture::new(millis)
     }
 }
