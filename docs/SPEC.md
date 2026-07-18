@@ -1258,7 +1258,10 @@ like any production clock.
   request order (a point-in-time snapshot).
 - **12.4.6** All methods take `&self` via interior mutability (`Cell`); the
   clock is neither `Sync` nor intended to cross threads. Multi-threaded
-  executors need a user-provided lock-based clock.
+  executors need a user-provided lock-based clock. (A lock-based `Sync`
+  variant was considered and declined: `Cell` keeps the clock `no_std`-clean
+  and dependency-free, and the hand-rolled pattern is small; revisit on real
+  demand.)
 
 ## 13. Public API surface
 
