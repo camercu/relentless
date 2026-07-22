@@ -6,9 +6,9 @@ Date: 2026-07-21
 
 Proposed — design settled empirically. Reviewed 2026-07-21: method name
 **`.decide()`**, the two-way type **`Decision`**, **before-classification
-`after_attempt` timing**, and keeping **`StopReason::Succeeded`** are all
-settled (concurred). Sole remaining open item: the abort-capable type name
-**`Verdict` is provisional** (see Open questions).
+`after_attempt` timing**, and renaming the success stop reason to
+**`StopReason::Returned`** are all settled. Sole remaining open item: the
+abort-capable type name **`Verdict` is provisional** (see Open questions).
 
 ## Context
 
@@ -68,11 +68,11 @@ Adopt the J1 composite design:
    `Aborted { last: A }` / `Exhausted { last: O }`; Result-shaped helpers
    (`last_error`, `into_last_error`, `Display`/`Error` impls) survive via a
    specialized impl on `RetryError<E, Result<T, E>>`. `StopReason` becomes
-   the terminal-verdict discriminant (`Return`→`Succeeded`,
-   `Abort`→`Aborted` — renamed from `Rejected` — stop-during-`Retry`→
-   `Exhausted`), deleting the engine's `TerminalOutcomeKind` +
-   `outcome.is_ok()` double discrimination. `RetryStats` and `RetryState`
-   are already outcome-free and unchanged.
+   the terminal-verdict discriminant, its variants renamed to mirror the
+   verdict vocabulary (`Return`→`Returned`, `Abort`→`Aborted`,
+   stop-during-`Retry`→`Exhausted`), deleting the engine's
+   `TerminalOutcomeKind` + `outcome.is_ok()` double discrimination.
+   `RetryStats` and `RetryState` are already outcome-free and unchanged.
 
 5. **Exit view replaces `ExitState.outcome`.** The by-value classifier
    consumes the outcome, so no `&O` survives a `Return`/`Abort` exit — the
@@ -139,7 +139,9 @@ Adopt the J1 composite design:
    hook — no information is lost. Rejected alternative: fire after
    classification on the retry path only (keeps `next_delay` but stops firing
    on terminal attempts, a behavior change to hook semantics).
-4. **`StopReason` success variant — SETTLED: keep `Succeeded`** (concurred
-   2026-07-21). Stays accurate (the loop achieved its goal) and minimizes
-   churn; `Returned` would mirror the verdict vocabulary exactly but rename a
-   variant for no behavioral gain.
+4. **`StopReason` success variant — SETTLED: rename to `Returned`**
+   (2026-07-21). Mirrors the verdict vocabulary exactly — the three stop
+   reasons now read as the three terminal verdicts (`Returned` / `Aborted` /
+   `Exhausted`), one consistent vocabulary across `Decision`/`Verdict`,
+   `RetryError`, and `StopReason`. The churn (renaming one variant) is a
+   pre-1.0 spelling break, already in scope alongside `Rejected`→`Aborted`.
