@@ -14,7 +14,7 @@
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{Decide, DefaultClassifier, Verdict};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Verdict};
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
 use crate::wait::{self, Wait, WaitExponential};
@@ -111,6 +111,29 @@ impl<F, C, S, W, Cl> Retry<F, C, S, W, Cl> {
             stop: self.stop,
             wait: self.wait,
             clock,
+        }
+    }
+
+    /// Installs a classifier closure, replacing the classifier slot.
+    ///
+    /// The closure returns either [`Decision`](crate::decision::Decision) (no
+    /// abort) or [`Verdict`] (abort-capable); [`IntoDecision`] unifies both. The
+    /// `F: FnMut(RetryState) -> O` bound here (not deferred to `.call()`) lets
+    /// the closure's parameter infer from the operation's output, so inline
+    /// classifiers need no annotations.
+    #[must_use]
+    pub fn decide<O, D, NewC>(self, classifier: NewC) -> Retry<F, ClosureClassifier<NewC>, S, W, Cl>
+    where
+        F: FnMut(RetryState) -> O,
+        NewC: Fn(O) -> D,
+        D: IntoDecision<O>,
+    {
+        Retry {
+            op: self.op,
+            classifier: ClosureClassifier(classifier),
+            stop: self.stop,
+            wait: self.wait,
+            clock: self.clock,
         }
     }
 }
@@ -214,5 +237,50 @@ mod tests {
 
         assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
         assert_eq!(counter.get(), 3, "should attempt exactly the stop budget");
+    }
+
+    #[test]
+    fn decide_can_abort_on_a_projected_payload() {
+        use crate::decision::Verdict;
+
+        // Fuzzing shape: keep retrying transient errors, but abort fatally on a
+        // specific one — the abort arm pins the payload type inline.
+        let result = retry(|_| Err::<i32, &str>("fatal"))
+            .decide(|o| match o {
+                Ok(v) => Verdict::Return(v),
+                Err("fatal") => Verdict::Abort("boom"),
+                Err(_) => Verdict::Retry(o),
+            })
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(VirtualClock::new())
+            .call();
+
+        assert_eq!(result, Err(RetryError::Aborted { last: "boom" }));
+    }
+
+    #[test]
+    fn decide_returns_the_sought_error_through_ok() {
+        use crate::decision::Decision;
+
+        // The inverted-polling wart, gone: probe until a failure appears and
+        // deliver that failure as the success value via `Ok` — no `RetryError`.
+        let counter = Cell::new(0);
+        let result = retry(|_| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            if n >= 3 { Err("crash") } else { Ok(()) }
+        })
+        .decide(|o| match o {
+            Err(e) => Decision::Return(e),
+            Ok(()) => Decision::Retry(o),
+        })
+        .stop(stop::attempts(10))
+        .wait(wait::fixed(Duration::ZERO))
+        .clock(VirtualClock::new())
+        .call();
+
+        assert_eq!(result, Ok("crash"));
+        assert_eq!(counter.get(), 3);
     }
 }

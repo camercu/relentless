@@ -14,6 +14,23 @@
 // re-exports it. Remove this allow then.
 #![allow(dead_code)]
 
+use core::convert::Infallible;
+
+/// A two-way decision about a completed outcome: accept it or try again.
+///
+/// The common-case classifier currency — polling, searching, inverted probes —
+/// where no outcome is ever fatal. It has no abort type parameter, so a closure
+/// returning `Decision` can never leave an abort type unconstrained. Reach for
+/// [`Verdict`] when you need an `Abort` arm; the `Return`/`Retry` variants are
+/// spelled the same, so upgrading is a one-word change plus the new arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision<R, O> {
+    /// Accept this outcome as success. `call()` yields `Ok(value)`.
+    Return(R),
+    /// Try again; the whole outcome is handed back to the engine.
+    Retry(O),
+}
+
 /// A three-way decision about a completed outcome: accept it, retry it, or abort.
 ///
 /// `O` is the whole outcome type the operation produces; `R` is what the caller
@@ -99,6 +116,70 @@ impl<O: Outcome> Decide<O> for DefaultClassifier {
 
     fn decide(&self, outcome: O) -> Verdict<O::Return, O::Abort, O> {
         outcome.classify()
+    }
+}
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Unifies [`Decision`] and [`Verdict`] under one `.decide` method.
+///
+/// A `.decide` closure returns either enum; this trait converts it into the
+/// engine's canonical [`Verdict`]. It is sealed — users return one of the two
+/// enums, never implement this themselves.
+pub trait IntoDecision<O>: sealed::Sealed {
+    /// The value produced on `Return`.
+    type R;
+    /// The value produced on `Abort`.
+    type A;
+    /// Converts into the canonical three-way form.
+    fn into_verdict(self) -> Verdict<Self::R, Self::A, O>;
+}
+
+impl<R, O> sealed::Sealed for Decision<R, O> {}
+impl<R, A, O> sealed::Sealed for Verdict<R, A, O> {}
+
+impl<R, O> IntoDecision<O> for Decision<R, O> {
+    type R = R;
+    // A no-abort decision has no abort payload; `Infallible` makes the abort
+    // arm uninhabited.
+    type A = Infallible;
+
+    fn into_verdict(self) -> Verdict<R, Infallible, O> {
+        match self {
+            Decision::Return(r) => Verdict::Return(r),
+            Decision::Retry(o) => Verdict::Retry(o),
+        }
+    }
+}
+
+impl<R, A, O> IntoDecision<O> for Verdict<R, A, O> {
+    type R = R;
+    type A = A;
+
+    fn into_verdict(self) -> Verdict<R, A, O> {
+        self
+    }
+}
+
+/// Wraps any `Fn(O) -> impl IntoDecision<O>` closure as a classifier.
+///
+/// Installed by `.decide(closure)`. One struct, one impl; the closure's return
+/// type (`Decision` or `Verdict`) selects the [`IntoDecision`] impl, so there
+/// is no coherence overlap between the two currencies.
+pub struct ClosureClassifier<C>(pub C);
+
+impl<O, D, C> Decide<O> for ClosureClassifier<C>
+where
+    C: Fn(O) -> D,
+    D: IntoDecision<O>,
+{
+    type R = D::R;
+    type A = D::A;
+
+    fn decide(&self, outcome: O) -> Verdict<D::R, D::A, O> {
+        (self.0)(outcome).into_verdict()
     }
 }
 
