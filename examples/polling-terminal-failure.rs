@@ -19,7 +19,7 @@
 //! | `Ok(Done)`     | yes (ok)     | success `Ok(Done)`             |
 //! | `Ok(Pending)`  | no           | retry                          |
 //! | `Err(Transient)` | no         | retry                          |
-//! | `Err(Fatal)`   | yes (error)  | `RetryError::Rejected{Fatal}`  |
+//! | `Err(Fatal)`   | yes (error)  | `RetryError::Aborted{Fatal}`  |
 //!
 //! Run: `cargo run --example polling-terminal-failure`
 use core::cell::Cell;
@@ -61,7 +61,7 @@ fn scripted_poller(
 
 fn poll_until_done(
     poller: impl Fn() -> Result<JobStatus, JobError>,
-) -> Result<JobStatus, RetryError<JobStatus, JobError>> {
+) -> Result<JobStatus, RetryError<JobError, Result<JobStatus, JobError>>> {
     relentless::retry(|_| poller())
         .until(
             predicate::ok(|s: &JobStatus| *s == JobStatus::Done)
@@ -93,7 +93,7 @@ fn main() {
     println!("fatal path : {fatal:?}");
     assert!(matches!(
         fatal,
-        Err(RetryError::Rejected {
+        Err(RetryError::Aborted {
             last: JobError::Fatal(_)
         })
     ));

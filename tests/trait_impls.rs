@@ -91,7 +91,7 @@ fn wait_exponential_has_partial_eq_not_eq() {
 fn stop_reason_display_values() {
     use relentless::StopReason;
 
-    assert_eq!(format!("{}", StopReason::Succeeded), "succeeded");
+    assert_eq!(format!("{}", StopReason::Returned), "returned");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 
@@ -100,15 +100,15 @@ fn stop_reason_display_values() {
 fn retry_error_display_format() {
     use relentless::RetryError;
 
-    let e: RetryError<(), String> = RetryError::Exhausted {
+    let e: RetryError<String, Result<(), String>> = RetryError::Exhausted {
         last: Err("network timeout".to_string()),
     };
     assert_eq!(format!("{e}"), "retries exhausted: network timeout");
 
-    let r: RetryError<i32, String> = RetryError::Rejected {
+    let r: RetryError<String, Result<i32, String>> = RetryError::Aborted {
         last: "fatal".to_string(),
     };
-    assert_eq!(format!("{r}"), "rejected: fatal");
+    assert_eq!(format!("{r}"), "aborted: fatal");
 }
 
 /// §14

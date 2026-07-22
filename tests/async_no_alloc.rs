@@ -41,7 +41,7 @@ fn policy_async_retry_remains_available_without_alloc() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let clock = VirtualClock::new();
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: Result<i32, RetryError<&str, Result<i32, &str>>> = block_on(
         policy
             .retry_async(|_| {
                 attempts.set(attempts.get().saturating_add(1));
@@ -75,7 +75,7 @@ fn async_retry_ext_remains_available_without_alloc() {
     let events: RefCell<Vec<char>> = RefCell::new(Vec::new());
 
     let clock = VirtualClock::new();
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: Result<i32, RetryError<&str, Result<i32, &str>>> = block_on(
         (|| {
             attempts.set(attempts.get().saturating_add(1));
             if attempts.get() < MAX_ATTEMPTS {

@@ -20,7 +20,7 @@ use std::vec::Vec;
 
 use proptest::prelude::{Strategy, any, prop_assert_eq, proptest};
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, RetryStats, predicate, retry, retry_async, stop, wait};
+use relentless::{RetryStats, predicate, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
 
@@ -132,26 +132,14 @@ fn run_sync(scenario: &Scenario) -> Trace {
             );
         })
         .after_attempt(move |state| {
-            log(
-                &after,
-                format!(
-                    "after:{}:{:?}:{:?}:{:?}",
-                    state.attempt, state.elapsed, state.outcome, state.next_delay
-                ),
-            );
+            log(&after, format!("after:{state:?}"));
         })
         .on_exit(move |state| {
-            log(
-                &exit,
-                format!(
-                    "exit:{}:{:?}:{:?}:{:?}",
-                    state.attempt, state.elapsed, state.outcome, state.stop_reason
-                ),
-            );
+            log(&exit, format!("exit:{state:?}"));
         })
         .clock(&clock);
 
-    let (result, stats): (Result<u32, RetryError<u32, &str>>, RetryStats) =
+    let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
             (Some(rejected), None) => exec
                 .when(predicate::error(move |e: &&str| *e != rejected))
@@ -198,26 +186,14 @@ fn run_async(scenario: &Scenario) -> Trace {
         );
     })
     .after_attempt(move |state| {
-        log(
-            &after,
-            format!(
-                "after:{}:{:?}:{:?}:{:?}",
-                state.attempt, state.elapsed, state.outcome, state.next_delay
-            ),
-        );
+        log(&after, format!("after:{state:?}"));
     })
     .on_exit(move |state| {
-        log(
-            &exit,
-            format!(
-                "exit:{}:{:?}:{:?}:{:?}",
-                state.attempt, state.elapsed, state.outcome, state.stop_reason
-            ),
-        );
+        log(&exit, format!("exit:{state:?}"));
     })
     .clock(&clock);
 
-    let (result, stats): (Result<u32, RetryError<u32, &str>>, RetryStats) =
+    let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
             (Some(rejected), None) => block_on(
                 exec.when(predicate::error(move |e: &&str| *e != rejected))
@@ -343,8 +319,8 @@ fn parity_rejected_by_predicate() {
 
     let trace = run_sync(&scenario);
     assert!(
-        trace.result.contains("Rejected"),
-        "guard: predicate must reject; got {}",
+        trace.result.contains("Aborted"),
+        "guard: predicate must abort; got {}",
         trace.result
     );
     assert_parity(&scenario);

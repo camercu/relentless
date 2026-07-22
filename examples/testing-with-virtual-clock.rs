@@ -25,7 +25,7 @@ const BUDGET: Duration = Duration::from_millis(400);
 fn fetch_with_retries<C: SyncClock>(
     mut operation: impl FnMut() -> Result<u32, &'static str>,
     clock: C,
-) -> Result<u32, RetryError<u32, &'static str>> {
+) -> Result<u32, RetryError<&'static str, Result<u32, &'static str>>> {
     retry(move |_| operation())
         .wait(wait::exponential(INITIAL_BACKOFF).cap(BACKOFF_CAP))
         // Bound the whole operation by wall-clock time, not attempt count.

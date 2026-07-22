@@ -7,7 +7,7 @@
 //! those libraries make awkward:
 //!
 //! - **Polling**, where `Ok("pending")` means "keep going" and you need
-//!   [`.until(predicate)`](SyncRetryBuilder::until) rather than just retrying errors.
+//!   [`.until(predicate)`](Retry::until) rather than just retrying errors.
 //! - **Policy reuse**, where a single [`RetryPolicy`] captures your retry rules and
 //!   gets shared across multiple call sites — no duplicated builder chains.
 //! - **Strategy composition**, where
@@ -73,7 +73,7 @@
 //! ```
 //!
 //! To bound the **total** wall-clock time across all attempts and sleeps, add
-//! [`.timeout(dur)`](SyncRetryBuilder::timeout). It OR-folds an elapsed deadline
+//! [`.timeout(dur)`](Retry::timeout). It OR-folds an elapsed deadline
 //! into the stop strategy and clamps each inter-attempt sleep to the remaining
 //! budget; it does not interrupt an attempt already running. A sleep clamped to
 //! the last of the budget still ends with one final attempt at the deadline, so
@@ -109,8 +109,8 @@
 //!
 //! # Polling for a condition
 //!
-//! Use [`.until(predicate)`](SyncRetryBuilder::until) to keep retrying until a
-//! success condition is met. Unlike [`.when()`](SyncRetryBuilder::when), which
+//! Use [`.until(predicate)`](Retry::until) to keep retrying until a
+//! success condition is met. Unlike [`.when()`](Retry::when), which
 //! retries on matching outcomes, `.until()` retries on everything *except* the
 //! matching outcome.
 //!
@@ -160,15 +160,16 @@
 //!
 //! # Error handling
 //!
-//! The retry loop returns `Ok(T)` on success. On failure it returns
-//! [`RetryError`], which distinguishes between exhaustion (stop strategy fired)
-//! and rejection (predicate deemed the error non-retryable). The payloads
-//! differ: `Exhausted { last }` carries the final attempt's full
-//! `Result<T, E>`, because polling with [`.until()`](SyncRetryBuilder::until)
-//! can exhaust while the last outcome was still `Ok` (e.g. a job stuck at
-//! `Pending`). `Rejected { last }` carries the non-retryable error itself —
-//! terminating on an accepted `Ok` is always a plain `Ok` return, never an
-//! error:
+//! The retry loop returns `Ok(R)` — the value the classifier accepted — on
+//! success. On failure it returns [`RetryError`], with two variants:
+//!
+//! - `Exhausted { last }` — the stop strategy fired (or the timeout elapsed)
+//!   while the classifier still wanted to retry. `last` is the final *whole*
+//!   outcome (on the `Result` path a `Result<T, E>`, because polling with
+//!   [`.until()`](Retry::until) can exhaust while the last outcome was an
+//!   unaccepted `Ok`, e.g. a job stuck at `Pending`).
+//! - `Aborted { last }` — the classifier rejected the outcome as fatal. On the
+//!   `.when`/`.until` path `last` is the bare error `E`.
 //!
 //! ```
 //! use relentless::clock::VirtualClock;
@@ -176,40 +177,38 @@
 //!
 //! match retry(|_| Err::<(), &str>("boom")).clock(VirtualClock::new()).call() {
 //!     Ok(val) => println!("success: {val:?}"),
-//!     Err(RetryError::Exhausted { last }) => {
-//!         println!("gave up: {last:?}");
-//!     }
-//!     Err(RetryError::Rejected { last }) => {
-//!         println!("non-retryable: {last}");
-//!     }
+//!     Err(RetryError::Exhausted { last }) => println!("gave up: {last:?}"),
+//!     Err(RetryError::Aborted { last }) => println!("aborted: {last}"),
 //!     // `RetryError` is `#[non_exhaustive]`; match future variants here.
 //!     Err(_) => {}
 //! }
 //! ```
 //!
-//! Termination is classified by the final outcome's `Result` variant, not by
-//! intent. Inverted polling — retrying *until an error appears*, e.g. probing
-//! for a failure — therefore reports the found error as `Rejected`:
+//! # Retrying for a specific outcome
+//!
+//! The classifier — not the `Result` variant — decides which outcome is
+//! "success", so you can retry *until an error appears* and deliver that error
+//! through `Ok`. Return [`Decision::Return`] for the outcome you are probing
+//! for; there is no need to smuggle a found failure out through an error:
 //!
 //! ```
 //! use relentless::clock::VirtualClock;
-//! use relentless::{retry, predicate, stop, RetryError};
+//! use relentless::{retry, stop, Decision};
 //!
 //! let mut attempts = 0;
-//! let probe = retry(|_| {
+//! let found = retry(|_| {
 //!     attempts += 1;
 //!     if attempts >= 3 { Err("crash") } else { Ok(()) }
 //! })
-//! .until(predicate::result(|o: &Result<(), &str>| o.is_err()))
+//! .decide(|o| match o {
+//!     Err(e) => Decision::Return(e), // the failure we sought is the success
+//!     Ok(()) => Decision::Retry(o),
+//! })
 //! .stop(stop::attempts(10))
 //! .clock(VirtualClock::new())
 //! .call();
 //!
-//! match probe {
-//!     // The failure we were looking for arrives via `Rejected`.
-//!     Err(RetryError::Rejected { last }) => assert_eq!(last, "crash"),
-//!     other => panic!("expected Rejected, got {other:?}"),
-//! }
+//! assert_eq!(found.unwrap(), "crash");
 //! ```
 //!
 //! # Cancellation
@@ -219,16 +218,16 @@
 //! attempt boundaries (a running operation or sleep is never interrupted
 //! mid-flight).
 //!
-//! - **Async:** the future returned by [`.call()`](AsyncRetryExec::call) is
+//! - **Async:** the future returned by [`.call()`](AsyncRetry::call) is
 //!   cancel-safe — drop it (e.g. via `tokio::time::timeout` or `select!`) to
 //!   stop at the next `.await`. Note `on_exit` does **not** fire on drop; use
 //!   `Drop` on your own types for guaranteed cleanup. See the `async-cancel`
 //!   example.
-//! - **Sync:** bound the wall-clock with [`.timeout()`](SyncRetryBuilder::timeout),
+//! - **Sync:** bound the wall-clock with [`.timeout()`](Retry::timeout),
 //!   or check a flag inside the operation and return a sentinel error. With the
 //!   default `any_error()` predicate that sentinel is *retried*, so make it
-//!   non-retryable via [`.when()`](SyncRetryBuilder::when) (it then terminates as
-//!   [`RetryError::Rejected`]). See the `sync-cancel` example.
+//!   non-retryable via [`.when()`](Retry::when) (it then terminates as
+//!   [`RetryError::Aborted`]). See the `sync-cancel` example.
 //!
 //! # Custom wait strategies
 //!
@@ -290,34 +289,25 @@ mod compat;
 
 pub mod clock;
 mod decision;
-mod error;
-// The classifier-driven engine (ADR-6), built in parallel and not yet
-// re-exported; the predicate engine below remains the public surface until
-// cutover.
 mod engine;
 mod policy;
 pub mod predicate;
 mod state;
-mod stats;
 pub mod stop;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
-pub use error::{RetryError, RetryResult};
+pub use decision::{
+    ClosureClassifier, Decide, Decision, DefaultClassifier, IntoDecision, Outcome, Until, Verdict,
+    When,
+};
+pub use engine::{
+    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, AttemptState, DropStats, Exit, Retry,
+    RetryError, RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
+};
 pub use policy::RetryPolicy;
-pub use policy::{
-    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryExt, AsyncRetryWithStats,
-};
-pub use policy::{
-    AsyncRetryBuilder, AsyncRetryBuilderWithStats, DefaultAsyncRetryBuilder,
-    DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
-    SyncRetryBuilder, SyncRetryBuilderWithStats,
-};
-pub use policy::{RetryExt, SyncRetry, SyncRetryWithStats};
-pub use policy::{SyncRetryExec, SyncRetryExecWithStats};
 pub use predicate::Predicate;
-pub use state::{AttemptState, ExitState, RetryState};
-pub use stats::{RetryStats, StopReason};
+pub use state::RetryState;
 pub use stop::Stop;
 pub use wait::Wait;
 
@@ -349,79 +339,4 @@ pub use wait::Wait;
 /// re-exported here; import them explicitly by name.
 pub mod prelude {
     pub use crate::{AsyncClock, AsyncRetryExt, Clock, Predicate, RetryExt, Stop, SyncClock, Wait};
-}
-
-/// Returns a [`SyncRetryBuilder`] with default policy: `attempts(3)`,
-/// `exponential(100ms)`, `any_error()`.
-///
-/// # Examples
-///
-/// ```
-/// use relentless::clock::VirtualClock;
-/// use relentless::{retry, stop};
-///
-/// let result = retry(|_| Ok::<u32, &str>(42))
-///     .stop(stop::attempts(1))
-///     .clock(VirtualClock::new())
-///     .call();
-/// assert_eq!(result.unwrap(), 42);
-/// ```
-pub fn retry<F, T, E>(
-    op: F,
-) -> SyncRetryBuilder<
-    stop::StopAfterAttempts,
-    wait::WaitExponential,
-    predicate::PredicateAnyError,
-    (),
-    (),
-    (),
-    F,
-    clock::SystemClock,
-    T,
-    E,
->
-where
-    F: FnMut(RetryState) -> Result<T, E>,
-{
-    SyncRetryBuilder::from_policy(RetryPolicy::new(), op)
-}
-
-/// Returns an [`AsyncRetryBuilder`] with default policy: `attempts(3)`,
-/// `exponential(100ms)`, `any_error()`.
-///
-/// # Examples
-///
-/// ```
-/// use relentless::clock::VirtualClock;
-/// use relentless::retry_async;
-///
-/// # async fn doc() {
-/// // Async terminates with `.call().await` (mirroring the sync `.call()`).
-/// let clock = VirtualClock::new();
-/// let result = retry_async(|_| async { Ok::<u32, &str>(42) })
-///     .clock(&clock)
-///     .call()
-///     .await;
-/// assert_eq!(result.unwrap(), 42);
-/// # }
-/// ```
-pub fn retry_async<F, T, E, Fut>(
-    op: F,
-) -> AsyncRetryBuilder<
-    stop::StopAfterAttempts,
-    wait::WaitExponential,
-    predicate::PredicateAnyError,
-    (),
-    (),
-    (),
-    F,
-    clock::SystemClock,
-    T,
-    E,
->
-where
-    F: FnMut(RetryState) -> Fut,
-    Fut: core::future::Future<Output = Result<T, E>>,
-{
-    AsyncRetryBuilder::from_policy(RetryPolicy::new(), op)
 }

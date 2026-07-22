@@ -10,10 +10,6 @@
 //! This module is the vocabulary; the engine that consumes it lives in
 //! [`crate::engine`].
 
-// Parallel ADR-6 engine: unreachable from the public API until cutover (S8)
-// re-exports it. Remove this allow then.
-#![allow(dead_code)]
-
 use crate::predicate::Predicate;
 use core::convert::Infallible;
 
@@ -119,7 +115,7 @@ impl<O, C: Decide<O> + ?Sized> Decide<O> for &C {
 /// Carries no outcome type of its own, so it can sit in a policy built before
 /// any operation exists; `O` is pinned by the operation at `.call()`, where the
 /// `O: Outcome` bound is required (mirroring the old `P: Predicate<T, E>` bound).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultClassifier;
 
 impl<O: Outcome> Decide<O> for DefaultClassifier {
@@ -180,6 +176,7 @@ impl<R, A, O> IntoDecision<O> for Verdict<R, A, O> {
 /// Installed by `.decide(closure)`. One struct, one impl; the closure's return
 /// type (`Decision` or `Verdict`) selects the [`IntoDecision`] impl, so there
 /// is no coherence overlap between the two currencies.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosureClassifier<C>(pub C);
 
 impl<O, D, C> Decide<O> for ClosureClassifier<C>
@@ -201,7 +198,14 @@ where
 /// This bridges the `Result`-shaped [`Predicate`] world onto the classifier:
 /// a rejected `Err(e)` becomes `Verdict::Abort(e)` (the payload the old engine
 /// reported as `RetryError::Rejected`).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct When<P>(pub(crate) P);
+
+impl<P> When<P> {
+    pub(crate) fn new(predicate: P) -> Self {
+        When(predicate)
+    }
+}
 
 impl<T, E, P> Decide<Result<T, E>> for When<P>
 where
@@ -224,7 +228,14 @@ where
 
 /// Classifier from `.until(p)`: the inverse of [`When`] — retry *until* the
 /// predicate is satisfied, then accept.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Until<P>(pub(crate) P);
+
+impl<P> Until<P> {
+    pub(crate) fn new(predicate: P) -> Self {
+        Until(predicate)
+    }
+}
 
 impl<T, E, P> Decide<Result<T, E>> for Until<P>
 where

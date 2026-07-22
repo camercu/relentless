@@ -43,6 +43,21 @@ pub struct AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     timeout: Option<Duration>,
 }
 
+impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AsyncRetry").finish_non_exhaustive()
+    }
+}
+
+impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug
+    for AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AsyncRetryWithStats")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Begins a classifier-driven async retry from an operation.
 ///
 /// Defaults mirror [`retry`](super::retry): `stop::attempts(3)`,
@@ -63,11 +78,26 @@ type DefaultAsyncRetry<F> =
 impl<F> DefaultAsyncRetry<F> {
     /// Builds a default-configured async retry around an operation.
     fn from_op(op: F) -> Self {
+        AsyncRetry::from_parts(
+            op,
+            DefaultClassifier,
+            stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait::exponential(DEFAULT_INITIAL_WAIT),
+        )
+    }
+}
+
+impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
+    /// Assembles an async retry from an operation and pre-chosen
+    /// classifier/stop/wait, with no hooks or timeout. Used by
+    /// [`RetryPolicy::retry_async`](crate::RetryPolicy::retry_async) to borrow a
+    /// reusable policy's parts.
+    pub(crate) fn from_parts(op: F, classifier: C, stop: S, wait: W) -> Self {
         AsyncRetry {
             op,
-            classifier: DefaultClassifier,
-            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            classifier,
+            stop,
+            wait,
             clock: SystemClock,
             hooks: ExecutionHooks::new(),
             timeout: None,
@@ -460,6 +490,8 @@ where
                                 ));
                             }
 
+                            // Consult the wait strategy only now that a retry is
+                            // certain (matching the sync engine).
                             let next_delay = this.wait.next_wait(&state);
                             let delay = match *this.timeout {
                                 Some(t) => next_delay.min(t.saturating_sub(post_elapsed)),

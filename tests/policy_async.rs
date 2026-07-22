@@ -144,7 +144,7 @@ fn engine_feeds_previous_delay_forward_async() {
     const FEEDBACK_DELAY: Duration = Duration::from_millis(7);
     let seen: Rc<RefCell<Vec<Option<Duration>>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let _: Result<i32, RetryError<i32, &str>> = block_on(
+    let _: relentless::RetryResult<i32, &str> = block_on(
         RetryPolicy::new()
             .stop(stop::attempts(4))
             .wait(RecordingWait {
@@ -156,14 +156,11 @@ fn engine_feeds_previous_delay_forward_async() {
             .call(),
     );
 
+    // The wait strategy is consulted once per retry, not on the terminal
+    // attempt (which stops before any wait) — matching the sync engine.
     assert_eq!(
         *seen.borrow(),
-        vec![
-            None,
-            Some(FEEDBACK_DELAY),
-            Some(FEEDBACK_DELAY),
-            Some(FEEDBACK_DELAY)
-        ]
+        vec![None, Some(FEEDBACK_DELAY), Some(FEEDBACK_DELAY)]
     );
 }
 
@@ -185,7 +182,7 @@ fn retry_async_executes_when_clock_is_set() {
         }
     });
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(future.clock(clock.clone()).call());
+    let result: relentless::RetryResult<i32, &str> = block_on(future.clock(clock.clone()).call());
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(call_count.get(), MAX_ATTEMPTS);
 }
@@ -193,12 +190,9 @@ fn retry_async_executes_when_clock_is_set() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<S, W, P, BA, AA, OE, F, Fut, C, T, E>(
-        retry: relentless::AsyncRetry<'_, S, W, P, BA, AA, OE, F, C, T, E>,
-    ) where
-        F: FnMut(relentless::RetryState) -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
+    fn assert_nameable<F, C, S, W, Cl, BA, AA, OX>(
+        retry: relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
+    ) {
         let _ = retry;
     }
 
@@ -207,7 +201,7 @@ fn async_retry_type_is_nameable_from_crate_root() {
         .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
         .clock(RecordingClock::new());
     assert_nameable(retry);
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .clock(RecordingClock::new())
@@ -225,7 +219,7 @@ fn async_retry_call_returns_an_awaitable_future() {
         .clock(clock)
         .call();
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(async_retry);
+    let result: relentless::RetryResult<i32, &str> = block_on(async_retry);
     assert_eq!(result, Ok(SUCCESS_VALUE));
 }
 
@@ -257,7 +251,7 @@ fn retry_async_borrows_policy_immutably() {
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Rc::new(Cell::new(0_u32));
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| {
                 let call_count = Rc::clone(&call_count);
@@ -277,7 +271,7 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let clock = RecordingClock::new();
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .clock(clock)
@@ -354,7 +348,7 @@ fn async_clock_receives_wait_strategy_delays() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
-    let _result: Result<i32, RetryError<i32, &str>> = block_on(
+    let _result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .clock(clock.clone())
@@ -537,18 +531,22 @@ fn async_hooks_fire_in_expected_places() {
 
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let _result: Result<i32, RetryError<i32, &str>> = block_on(
+    let _result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
             .before_attempt(move |state| {
                 before_attempt_ref.borrow_mut().push(state.attempt);
             })
-            .after_attempt(move |state: &relentless::AttemptState<'_, i32, &str>| {
-                after_attempt_ref.borrow_mut().push(state.attempt);
-            })
-            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.stop_reason));
-            })
+            .after_attempt(
+                move |state: &relentless::AttemptState<'_, Result<i32, &str>>| {
+                    after_attempt_ref.borrow_mut().push(state.attempt);
+                },
+            )
+            .on_exit(
+                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
+                    exit_reason_ref.set(Some(exit.stop_reason()));
+                },
+            )
             .clock(clock)
             .call(),
     );
@@ -567,18 +565,20 @@ fn async_on_exit_reports_success_reason() {
     let exit_reason_ref = Rc::clone(&exit_reason);
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.stop_reason));
-            })
+            .on_exit(
+                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
+                    exit_reason_ref.set(Some(exit.stop_reason()));
+                },
+            )
             .clock(RecordingClock::new())
             .call(),
     );
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Succeeded));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Returned));
 }
 
 #[test]
@@ -589,18 +589,20 @@ fn async_on_exit_reports_non_retryable_error_reason() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"));
 
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>("fatal") })
-            .on_exit(move |state: &relentless::ExitState<'_, i32, &str>| {
-                exit_reason_ref.set(Some(state.stop_reason));
-            })
+            .on_exit(
+                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
+                    exit_reason_ref.set(Some(exit.stop_reason()));
+                },
+            )
             .clock(RecordingClock::new())
             .call(),
     );
 
-    assert!(matches!(result, Err(RetryError::Rejected { .. })));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Rejected));
+    assert!(matches!(result, Err(RetryError::Aborted { .. })));
+    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Aborted));
 }
 
 #[test]
@@ -612,9 +614,11 @@ fn async_hooks_are_per_call_and_do_not_persist() {
     let _ = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .on_exit(move |_state: &relentless::ExitState<'_, i32, &str>| {
-                exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
-            })
+            .on_exit(
+                move |_e: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
+                    exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
+                },
+            )
             .clock(RecordingClock::new())
             .call(),
     );
@@ -633,7 +637,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 #[test]
 fn tokio_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .clock(relentless::clock::TokioClock::new())
@@ -646,7 +650,7 @@ fn tokio_clock_adapter_is_available() {
 #[test]
 fn embassy_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .clock(relentless::clock::EmbassyClock::new())
@@ -662,7 +666,7 @@ fn gloo_clock_adapter_is_available() {
         Duration::ZERO
     }
     let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .clock(relentless::clock::GlooClock::with_now(zero_now))
@@ -675,7 +679,7 @@ fn gloo_clock_adapter_is_available() {
 #[test]
 fn futures_timer_clock_adapter_is_available() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: Result<i32, RetryError<i32, &str>> = block_on(
+    let result: relentless::RetryResult<i32, &str> = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
             .clock(relentless::clock::FuturesTimerClock::new())

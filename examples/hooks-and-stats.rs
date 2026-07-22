@@ -14,7 +14,7 @@ fn main() {
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::from_millis(5)))
         .when(predicate::any_error())
-        .after_attempt(|state: &relentless::AttemptState<(), &str>| {
+        .after_attempt(|state: &relentless::AttemptState<Result<(), &str>>| {
             if let Err(error) = state.outcome {
                 eprintln!("attempt {} failed: {error}", state.attempt);
             }

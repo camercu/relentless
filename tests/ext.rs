@@ -4,7 +4,7 @@
 //! pointer without constructing a `RetryPolicy` first. Tests verify that the
 //! default policy applied by `RetryExt` matches `RetryPolicy::default()`, that
 //! stateful `Stop`/`Wait` implementors work through the extension trait, and that
-//! the builder type aliases (`DefaultSyncRetryBuilder`, etc.) are nameable — a
+//! the ext builders drive to completion — a
 //! regression guard for the public type API.
 #![cfg(feature = "std")]
 
@@ -61,7 +61,7 @@ fn retry_ext_closure_form_retries_until_success() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let result: Result<i32, RetryError<i32, &str>> = (move || {
+    let result: relentless::RetryResult<i32, &str> = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         if attempts_ref.get() < MAX_ATTEMPTS {
             Err(ERROR_VALUE)
@@ -93,19 +93,16 @@ fn retry_ext_function_pointer_form_works() {
 #[test]
 fn default_sync_retry_builder_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
-    type Builder = relentless::DefaultSyncRetryBuilder<SyncWorkFn, i32, &'static str>;
 
-    let typed: Builder = (do_work as SyncWorkFn).retry();
+    let typed = (do_work as SyncWorkFn).retry();
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
 #[test]
 fn default_sync_retry_builder_with_stats_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
-    type Builder =
-        relentless::DefaultSyncRetryBuilderWithStats<SyncWorkFn, VirtualClock, i32, &'static str>;
 
-    let typed: Builder = (do_work as SyncWorkFn)
+    let typed = (do_work as SyncWorkFn)
         .retry()
         .clock(VirtualClock::new())
         .with_stats();
@@ -138,7 +135,7 @@ fn retry_ext_with_stats_reports_attempts() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
+    let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
         (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             Err(ERROR_VALUE)
@@ -183,7 +180,7 @@ fn retry_ext_stateful_stop_and_wait_work() {
 #[test]
 fn retry_ext_hooks_match_policy_hook_points() {
     let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
+    let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
     let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
     let _ = (|| Err::<i32, _>(ERROR_VALUE))
@@ -191,30 +188,24 @@ fn retry_ext_hooks_match_policy_hook_points() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION))
         .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
-            after_calls
-                .borrow_mut()
-                .push((state.attempt, state.next_delay));
+        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
+            after_calls.borrow_mut().push(state.attempt);
         })
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            exit_calls.borrow_mut().push((
-                state.attempt,
-                state.outcome.is_err(),
-                state.stop_reason,
-            ));
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            let is_err = match exit {
+                relentless::Exit::Returned { .. } => false,
+                relentless::Exit::Exhausted { last, .. } => last.is_err(),
+                _ => true,
+            };
+            exit_calls
+                .borrow_mut()
+                .push((exit.attempt(), is_err, exit.stop_reason()));
         })
         .clock(VirtualClock::new())
         .call();
 
     assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-    assert_eq!(
-        *after_calls.borrow(),
-        vec![
-            (1, Some(WAIT_DURATION)),
-            (2, Some(WAIT_DURATION)),
-            (3, None),
-        ]
-    );
+    assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
     assert_eq!(
         *exit_calls.borrow(),
         vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
@@ -247,7 +238,7 @@ fn retry_ext_non_retryable_error_returns_immediately() {
 
     assert!(matches!(
         result,
-        Err(RetryError::Rejected {
+        Err(RetryError::Aborted {
             last: ERROR_VALUE,
             ..
         })
@@ -295,8 +286,8 @@ fn retry_ext_timeout_stops_on_deadline() {
 fn sync_retry_builder_debug_format() {
     let builder = (|| Ok::<i32, &str>(1)).retry().clock(VirtualClock::new());
     let debug = format!("{builder:?}");
-    // `SyncRetryBuilder` is a type alias over the shared `SyncRetryExec` engine.
-    assert!(debug.contains("SyncRetryExec"));
+    // The builder Debug is opaque (finish_non_exhaustive).
+    assert!(debug.contains("Retry"));
 }
 
 #[test]
@@ -306,7 +297,7 @@ fn sync_retry_builder_with_stats_debug_format() {
         .clock(VirtualClock::new())
         .with_stats();
     let debug = format!("{builder:?}");
-    assert!(debug.contains("SyncRetryExecWithStats"));
+    assert!(debug.contains("RetryWithStats"));
 }
 
 #[cfg(feature = "alloc")]
@@ -381,7 +372,7 @@ mod async_tests {
         .clock(ReadyClock)
         .call();
 
-        let result: Result<i32, RetryError<i32, &str>> = block_on(future);
+        let result: relentless::RetryResult<i32, &str> = block_on(future);
         assert_eq!(result, Ok(SUCCESS_VALUE));
         assert_eq!(attempts.get(), MAX_ATTEMPTS);
     }
@@ -410,28 +401,21 @@ mod async_tests {
     #[test]
     fn default_async_retry_builder_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-        type Builder = relentless::DefaultAsyncRetryBuilder<AsyncWorkFn, i32, &'static str>;
 
-        let typed: Builder = (do_async_work as AsyncWorkFn).retry_async();
-        let result: Result<i32, RetryError<i32, &str>> = block_on(typed.clock(ReadyClock).call());
+        let typed = (do_async_work as AsyncWorkFn).retry_async();
+        let result: relentless::RetryResult<i32, &str> = block_on(typed.clock(ReadyClock).call());
         assert_eq!(result, Ok(SUCCESS_VALUE));
     }
 
     #[test]
     fn default_async_retry_builder_with_stats_alias_is_nameable() {
         type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-        type Builder = relentless::DefaultAsyncRetryBuilderWithStats<
-            AsyncWorkFn,
-            ReadyClock,
-            i32,
-            &'static str,
-        >;
 
-        let typed: Builder = (do_async_work as AsyncWorkFn)
+        let typed = (do_async_work as AsyncWorkFn)
             .retry_async()
             .clock(ReadyClock)
             .with_stats();
-        let (result, stats): (Result<i32, RetryError<i32, &str>>, relentless::RetryStats) =
+        let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
             block_on(typed.call());
         assert_eq!(result, Ok(SUCCESS_VALUE));
         assert_eq!(stats.attempts, 1);
@@ -440,7 +424,7 @@ mod async_tests {
     #[test]
     fn async_retry_ext_hooks_match_policy_hook_points() {
         let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-        let after_calls: RefCell<Vec<(u32, Option<Duration>)>> = RefCell::new(Vec::new());
+        let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
         let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
         let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
@@ -448,17 +432,18 @@ mod async_tests {
             .stop(stop::attempts(MAX_ATTEMPTS))
             .wait(wait::fixed(WAIT_DURATION))
             .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-            .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
-                after_calls
-                    .borrow_mut()
-                    .push((state.attempt, state.next_delay));
+            .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
+                after_calls.borrow_mut().push(state.attempt);
             })
-            .on_exit(|state: &relentless::ExitState<i32, &str>| {
-                exit_calls.borrow_mut().push((
-                    state.attempt,
-                    state.outcome.is_err(),
-                    state.stop_reason,
-                ));
+            .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+                let is_err = match exit {
+                    relentless::Exit::Returned { .. } => false,
+                    relentless::Exit::Exhausted { last, .. } => last.is_err(),
+                    _ => true,
+                };
+                exit_calls
+                    .borrow_mut()
+                    .push((exit.attempt(), is_err, exit.stop_reason()));
             })
             .clock(ReadyClock)
             .call();
@@ -466,14 +451,7 @@ mod async_tests {
         let _ = block_on(future);
 
         assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-        assert_eq!(
-            *after_calls.borrow(),
-            vec![
-                (1, Some(WAIT_DURATION)),
-                (2, Some(WAIT_DURATION)),
-                (3, None),
-            ]
-        );
+        assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
         assert_eq!(
             *exit_calls.borrow(),
             vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
@@ -609,8 +587,8 @@ mod async_tests {
             .retry_async()
             .clock(ReadyClock);
         let debug = format!("{builder:?}");
-        // `AsyncRetryBuilder` is a type alias over the shared `AsyncRetryExec` engine.
-        assert!(debug.contains("AsyncRetryExec"));
+        // The builder Debug is opaque (finish_non_exhaustive).
+        assert!(debug.contains("AsyncRetry"));
     }
 
     #[test]
@@ -620,7 +598,7 @@ mod async_tests {
             .clock(ReadyClock)
             .with_stats();
         let debug = format!("{builder:?}");
-        assert!(debug.contains("AsyncRetryExecWithStats"));
+        assert!(debug.contains("AsyncRetryWithStats"));
     }
 }
 

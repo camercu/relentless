@@ -9,10 +9,6 @@
 //! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full
 //! classifier surface — `.decide`/`.when`/`.until`, hooks, stats, and timeout.
 
-// Parallel ADR-6 engine: unreachable from the public API until cutover (S8)
-// re-exports it. Remove this allow then.
-#![allow(dead_code)]
-
 mod async_engine;
 mod error;
 mod hooks;
@@ -20,8 +16,6 @@ mod op;
 mod state;
 mod stats;
 
-// `RetryResult` is public API, reachable at cutover (S8).
-#[allow(unused_imports)]
 pub use error::{RetryError, RetryResult};
 
 use op::{RetryOp, StatelessOp};
@@ -30,8 +24,6 @@ use op::{RetryOp, StatelessOp};
 type DefaultRetry<F> =
     Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock, (), (), ()>;
 
-// Reachable at cutover (S8) when the engine is wired to the crate root.
-#[allow(unused_imports)]
 pub use async_engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, DropStats, retry_async,
 };
@@ -68,6 +60,18 @@ pub struct Retry<F, C, S, W, Cl, BA, AA, OX> {
     timeout: Option<Duration>,
 }
 
+impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for Retry<F, C, S, W, Cl, BA, AA, OX> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Retry").finish_non_exhaustive()
+    }
+}
+
+impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RetryWithStats").finish_non_exhaustive()
+    }
+}
+
 /// Begins a classifier-driven retry from an operation.
 ///
 /// Defaults: `stop::attempts(3)`, `wait::exponential(100ms)`, the default
@@ -83,11 +87,26 @@ where
 impl<F> DefaultRetry<F> {
     /// Builds a default-configured retry around an operation.
     fn from_op(op: F) -> Self {
+        Retry::from_parts(
+            op,
+            DefaultClassifier,
+            stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait::exponential(DEFAULT_INITIAL_WAIT),
+        )
+    }
+}
+
+impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
+    /// Assembles a retry from an operation and pre-chosen classifier/stop/wait,
+    /// with the default clock, no hooks, and no timeout. Used by
+    /// [`RetryPolicy::retry`](crate::RetryPolicy::retry) to borrow a reusable
+    /// policy's parts.
+    pub(crate) fn from_parts(op: F, classifier: C, stop: S, wait: W) -> Self {
         Retry {
             op,
-            classifier: DefaultClassifier,
-            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            classifier,
+            stop,
+            wait,
             clock: SystemClock,
             hooks: ExecutionHooks::new(),
             timeout: None,
@@ -392,8 +411,9 @@ where
                         );
                     }
 
-                    // Clamp the next sleep to the remaining timeout budget so the
-                    // loop terminates close to the deadline.
+                    // The wait strategy is consulted only now that a retry is
+                    // certain: no next attempt means no wait to compute. Clamp
+                    // the sleep to the remaining timeout budget.
                     let next_delay = self.wait.next_wait(&state);
                     let delay = match self.timeout {
                         Some(t) => next_delay.min(t.saturating_sub(post_elapsed)),
@@ -419,7 +439,7 @@ pub struct RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
 
 impl<F, C, S, W, Cl, BA, AA, OX, O> RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: FnMut(RetryState) -> O,
+    F: RetryOp<Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -664,7 +684,7 @@ mod tests {
         let seen = Cell::new(None);
         let _ = retry(|_| Ok::<i32, &str>(1))
             .on_exit(|e: &Exit<i32, &str, IntResult>| {
-                seen.set(Some((e.stop_reason(), e.attempt())))
+                seen.set(Some((e.stop_reason(), e.attempt())));
             })
             .stop(stop::attempts(ARBITRARY_ATTEMPTS))
             .wait(wait::fixed(Duration::ZERO))

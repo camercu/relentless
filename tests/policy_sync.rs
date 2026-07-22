@@ -169,7 +169,7 @@ fn when_builder_configures_predicate() {
         .call();
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::Rejected { last }) => {
+        Err(RetryError::Aborted { last }) => {
             assert_eq!(last, "fatal");
         }
         other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
@@ -179,7 +179,7 @@ fn when_builder_configures_predicate() {
 #[test]
 fn policy_is_easy_to_store_via_three_type_params() {
     type DbPolicy =
-        RetryPolicy<stop::StopAfterAttempts, wait::WaitFixed, predicate::PredicateAnyError>;
+        RetryPolicy<stop::StopAfterAttempts, wait::WaitFixed, relentless::DefaultClassifier>;
 
     struct Service {
         retry: DbPolicy,
@@ -249,7 +249,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let retry = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .clock(VirtualClock::new());
-    let typed: relentless::SyncRetry<'_, _, _, _, _, _, _, _, _, i32, &str> = retry;
+    let typed: relentless::Retry<_, _, _, _, _, (), (), ()> = retry;
     assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
 }
 
@@ -378,7 +378,7 @@ fn policy_is_clone() {
 #[test]
 fn boxed_local_erases_policy_types() {
     // `.boxed_local()` erases stop+wait only; the predicate keeps its concrete
-    // type (here the default `PredicateAnyError`, via the third defaulted param).
+    // type (here the default `DefaultClassifier`, via the third defaulted param).
     let policy: RetryPolicy<
         Box<dyn relentless::stop::Stop + 'static>,
         Box<dyn relentless::wait::Wait + 'static>,
@@ -559,7 +559,7 @@ fn after_attempt_hook_fires_after_each_attempt() {
                 Ok(SUCCESS_VALUE)
             }
         })
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
             let is_ok = state.outcome.is_ok();
             hook_results.borrow_mut().push((state.attempt, is_ok));
         })
@@ -580,8 +580,8 @@ fn on_exit_hook_fires_when_stop_triggers() {
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            exit_reason.set(Some(state.stop_reason));
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            exit_reason.set(Some(exit.stop_reason()));
         })
         .clock(VirtualClock::new())
         .call();
@@ -596,13 +596,13 @@ fn on_exit_hook_fires_on_success() {
 
     let _ = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            exit_reason.set(Some(state.stop_reason));
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            exit_reason.set(Some(exit.stop_reason()));
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(exit_reason.get(), Some(StopReason::Succeeded));
+    assert_eq!(exit_reason.get(), Some(StopReason::Returned));
 }
 
 #[test]
@@ -722,7 +722,7 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
 #[test]
 fn predicate_rejects_err_means_immediate_return() {
     // When the predicate does not match an Err, the loop exits immediately with
-    // RetryError::Rejected rather than waiting for the stop strategy to fire.
+    // RetryError::Aborted rather than waiting for the stop strategy to fire.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
@@ -738,7 +738,7 @@ fn predicate_rejects_err_means_immediate_return() {
 
     assert_eq!(call_count.get(), 1);
     match result {
-        Err(RetryError::Rejected { last }) => {
+        Err(RetryError::Aborted { last }) => {
             assert_eq!(last, "fatal");
         }
         other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
@@ -802,16 +802,12 @@ fn engine_feeds_previous_delay_forward_sync() {
         .clock(VirtualClock::new())
         .call();
 
-    // First attempt has no previous delay; every later attempt sees the prior
-    // (constant) delay fed forward by the engine.
+    // The wait strategy is consulted once per *retry* (not on the terminal
+    // attempt, which stops before any wait). The first consultation sees no
+    // previous delay; each later one sees the prior (constant) delay fed forward.
     assert_eq!(
         *seen.borrow(),
-        vec![
-            None,
-            Some(FEEDBACK_DELAY),
-            Some(FEEDBACK_DELAY),
-            Some(FEEDBACK_DELAY)
-        ]
+        vec![None, Some(FEEDBACK_DELAY), Some(FEEDBACK_DELAY)]
     );
 }
 
@@ -1019,7 +1015,7 @@ fn after_attempt_fires_including_final_attempt() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
+        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
             attempt_nums.borrow_mut().push(state.attempt);
         })
         .clock(VirtualClock::new())
@@ -1055,7 +1051,7 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|_: &relentless::AttemptState<i32, &str>| {
+        .after_attempt(|_: &relentless::AttemptState<Result<i32, &str>>| {
             events.borrow_mut().push("after_attempt");
         })
         .clock(EventClock {

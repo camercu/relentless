@@ -1,7 +1,7 @@
 //! Tests for state types passed to Stop strategies and hooks.
 //!
-//! Verifies the public field layout of `RetryState`, `AttemptState`, and `ExitState`,
-//! including 1-indexed attempt numbers and plain `Duration` elapsed time.
+//! Verifies the public layout of `RetryState` and `AttemptState`, the 1-indexed
+//! attempt numbers, and the `Exit` view delivered to `on_exit`.
 
 use core::time::Duration;
 use relentless::clock::VirtualClock;
@@ -13,13 +13,12 @@ fn retry_state_attempt_is_one_indexed() {
 }
 
 #[test]
-fn attempt_state_with_err_outcome() {
+fn attempt_state_exposes_attempt_elapsed_and_outcome() {
     let outcome: Result<(), String> = Err("network timeout".to_string());
+    let state = relentless::AttemptState::new(1, Duration::ZERO, &outcome);
 
-    let state = relentless::AttemptState::for_attempt(1, &outcome)
-        .with_elapsed(Duration::ZERO)
-        .with_next_delay(Some(Duration::ZERO));
-
+    assert_eq!(state.attempt, 1);
+    assert_eq!(state.elapsed, Duration::ZERO);
     assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
 }
 
@@ -90,36 +89,10 @@ fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
     assert_eq!(*op_attempts.borrow(), vec![1, 2, 3]);
 }
 
-/// 3.6.5
-#[test]
-fn attempt_state_next_delay_none_on_final() {
-    use relentless::{RetryPolicy, stop, wait};
-    use std::cell::RefCell;
-
-    let next_delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::from_millis(10)));
-
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("fail"))
-        .after_attempt(|state: &relentless::AttemptState<i32, &str>| {
-            next_delays.borrow_mut().push(state.next_delay);
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    let delays = next_delays.borrow();
-    // First two attempts have a next delay, the final one does not.
-    assert_eq!(delays[0], Some(Duration::from_millis(10)));
-    assert_eq!(delays[1], Some(Duration::from_millis(10)));
-    assert_eq!(delays[2], None, "final attempt should have next_delay=None");
-}
-
 /// 3.6.6
 #[test]
-fn exit_state_attempt_is_exactly_one_for_single_attempt_stop() {
-    use relentless::{RetryPolicy, stop};
+fn exit_attempt_is_exactly_one_for_single_attempt_stop() {
+    use relentless::{Exit, RetryPolicy, stop};
     use std::cell::Cell;
 
     let exit_attempt = Cell::new(0_u32);
@@ -127,8 +100,8 @@ fn exit_state_attempt_is_exactly_one_for_single_attempt_stop() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            exit_attempt.set(state.attempt);
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_attempt.set(exit.attempt());
         })
         .clock(VirtualClock::new())
         .call();
@@ -138,8 +111,8 @@ fn exit_state_attempt_is_exactly_one_for_single_attempt_stop() {
 
 /// 3.6.6
 #[test]
-fn exit_state_attempt_matches_completed_attempts() {
-    use relentless::{RetryPolicy, stop, wait};
+fn exit_attempt_matches_completed_attempts() {
+    use relentless::{Exit, RetryPolicy, stop, wait};
     use std::cell::Cell;
 
     let exit_attempt = Cell::new(0_u32);
@@ -149,8 +122,8 @@ fn exit_state_attempt_matches_completed_attempts() {
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            exit_attempt.set(state.attempt);
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_attempt.set(exit.attempt());
         })
         .clock(VirtualClock::new())
         .call();
@@ -160,8 +133,8 @@ fn exit_state_attempt_matches_completed_attempts() {
 
 /// 3.6.7
 #[test]
-fn exit_state_outcome_is_final_attempt_result() {
-    use relentless::{RetryPolicy, stop};
+fn exit_exposes_the_final_exhausted_outcome() {
+    use relentless::{Exit, RetryPolicy, stop};
     use std::cell::RefCell;
 
     let final_outcome: RefCell<Option<bool>> = RefCell::new(None); // true=ok, false=err
@@ -169,8 +142,10 @@ fn exit_state_outcome_is_final_attempt_result() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let _ = policy
         .retry(|_| Err::<i32, &str>("final error"))
-        .on_exit(|state: &relentless::ExitState<i32, &str>| {
-            *final_outcome.borrow_mut() = Some(state.outcome.is_ok());
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            if let Exit::Exhausted { last, .. } = exit {
+                *final_outcome.borrow_mut() = Some(last.is_ok());
+            }
         })
         .clock(VirtualClock::new())
         .call();
@@ -225,60 +200,14 @@ fn retry_state_for_attempt_zero_panics_in_debug() {
 
 /// 3.6.1
 #[test]
-fn attempt_state_for_attempt_defaults_optional_fields_to_none() {
-    let outcome: Result<i32, &str> = Ok(42);
-    let state = relentless::AttemptState::for_attempt(2, &outcome);
-
-    assert_eq!(state.attempt, 2);
-    assert_eq!(*state.outcome, Ok(42));
-    assert_eq!(state.elapsed, Duration::ZERO);
-    assert_eq!(state.next_delay, None);
-}
-
-#[test]
-fn attempt_state_with_elapsed_and_next_delay_set_fields() {
-    let outcome: Result<i32, &str> = Ok(42);
-    let state = relentless::AttemptState::for_attempt(1, &outcome)
-        .with_elapsed(Duration::ZERO)
-        .with_next_delay(Some(Duration::from_millis(100)));
-
-    assert_eq!(state.elapsed, Duration::ZERO);
-    assert_eq!(state.next_delay, Some(Duration::from_millis(100)));
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "attempt is 1-indexed")]
-fn attempt_state_for_attempt_zero_panics_in_debug() {
-    let outcome: Result<i32, &str> = Ok(1);
-    let _ = relentless::AttemptState::for_attempt(0, &outcome);
-}
-
-/// 3.6.1
-#[test]
-fn exit_state_for_attempt_defaults_elapsed_to_none() {
-    let outcome = Err::<i32, &str>("fatal");
-    let state = relentless::ExitState::for_attempt(2, &outcome, relentless::StopReason::Exhausted);
-
-    assert_eq!(state.attempt, 2);
-    assert_eq!(*state.outcome.as_ref().unwrap_err(), "fatal");
-    assert_eq!(state.elapsed, Duration::ZERO);
-    assert_eq!(state.stop_reason, relentless::StopReason::Exhausted);
-}
-
-#[test]
-fn exit_state_with_elapsed_sets_elapsed() {
-    let outcome: Result<i32, &str> = Ok(1);
-    let state = relentless::ExitState::for_attempt(1, &outcome, relentless::StopReason::Succeeded)
-        .with_elapsed(Duration::from_secs(2));
-
-    assert_eq!(state.elapsed, Duration::from_secs(2));
-}
-
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "attempt is 1-indexed")]
-fn exit_state_for_attempt_zero_panics_in_debug() {
-    let outcome: Result<i32, &str> = Ok(1);
-    let _ = relentless::ExitState::for_attempt(0, &outcome, relentless::StopReason::Succeeded);
+fn attempt_state_new_zero_panics_in_debug() {
+    // Guarded separately: the panic path only exists in debug builds.
+    #[cfg(debug_assertions)]
+    {
+        let outcome: Result<i32, &str> = Ok(1);
+        let result = std::panic::catch_unwind(|| {
+            let _ = relentless::AttemptState::new(0, Duration::ZERO, &outcome);
+        });
+        assert!(result.is_err(), "attempt 0 should panic in debug");
+    }
 }

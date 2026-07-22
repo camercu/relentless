@@ -1,48 +1,35 @@
-//! `RetryPolicy` builder and sync/async execution engines.
+//! [`RetryPolicy`]: reusable retry configuration.
 //!
-//! This module exposes three related entry-point families:
-//!
-//! - [`RetryPolicy::retry`] and [`RetryPolicy::retry_async`] borrow a policy by
-//!   `&self`. All core traits use `&self` receivers, so policies are freely
-//!   reusable across sequential executions without mutation.
-//! - [`crate::RetryExt`] and [`crate::AsyncRetryExt`] start from
-//!   [`RetryPolicy::default()`] and own the policy immediately. Use those for
-//!   one-off operations where you want to configure retries inline from the
-//!   operation itself. The operation takes no parameters.
-//! - The [`crate::retry`] and [`crate::retry_async`] free functions are the
-//!   stateful counterpart to the ext traits: they also own a default policy,
-//!   but the operation receives the current [`RetryState`](crate::RetryState).
-//!
-//! Hook callbacks live on the execution builders, not on `RetryPolicy`. That
-//! keeps the reusable policy focused on stop, wait, and predicate
-//! configuration, while per-call hooks, clocks, and stats remain
-//! local to a specific execution.
+//! A policy captures the stop strategy, wait strategy, and classifier once, then
+//! is reused across operations via [`RetryPolicy::retry`] and
+//! [`RetryPolicy::retry_async`], which borrow the policy by `&self`. Per-call
+//! concerns (hooks, clock, stats, timeout) live on the returned builder, not on
+//! the policy.
 
+use crate::clock::SystemClock;
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
 use crate::compat::Duration;
-use crate::predicate;
-use crate::stop;
+use crate::decision::{ClosureClassifier, DefaultClassifier, Until, When};
+use crate::engine::{AsyncRetry, Retry};
+use crate::state::RetryState;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;
-use crate::wait;
+use crate::stop::{self, StopAfterAttempts};
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
+use crate::wait::{self, WaitExponential};
+use core::future::Future;
+
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
-/// Reusable retry configuration.
+/// Reusable retry configuration: a stop strategy, a wait strategy, and a
+/// classifier.
 ///
-/// `RetryPolicy` stores retry strategies and can be reused across multiple
-/// operations. Hook callbacks are configured per-execution on `SyncRetry` and
-/// `AsyncRetry` builders.
-///
-/// Construction options:
-/// - [`RetryPolicy::new`] returns a safe default policy: `attempts(3)`,
-///   `exponential(100ms)`, `any_error()`.
-/// - [`Default::default`] delegates to `new()`.
-///
-/// # Examples
+/// Construct with [`RetryPolicy::new`] (safe defaults: `attempts(3)`,
+/// `exponential(100ms)`, retry on any `Err`), customize with `.stop`/`.wait`/
+/// `.when`/`.until`/`.decide`, then reuse across operations:
 ///
 /// ```
 /// use relentless::clock::VirtualClock;
@@ -53,151 +40,107 @@ const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 ///     .stop(stop::attempts(3))
 ///     .wait(wait::fixed(Duration::from_millis(5)));
 ///
-/// let _ = policy.retry(|_| Err::<(), _>("fail")).clock(VirtualClock::new()).call();
-/// ```
-///
-/// ```compile_fail
-/// use relentless::{RetryPolicy, stop};
-///
-/// let _ = RetryPolicy::new()
-///     .stop(stop::attempts(1))
-///     .before_attempt(|_state| {});
+/// let a = policy.retry(|_| Ok::<_, &str>("a")).clock(VirtualClock::new()).call();
+/// let b = policy.retry(|_| Ok::<_, &str>("b")).clock(VirtualClock::new()).call();
+/// assert_eq!(a.unwrap(), "a");
+/// assert_eq!(b.unwrap(), "b");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetryPolicy<
-    S = stop::StopAfterAttempts,
-    W = wait::WaitExponential,
-    P = predicate::PredicateAnyError,
-> {
+pub struct RetryPolicy<S = StopAfterAttempts, W = WaitExponential, C = DefaultClassifier> {
     stop: S,
     wait: W,
-    predicate: P,
+    classifier: C,
 }
 
-impl RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::PredicateAnyError> {
+impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
     /// Creates a policy with safe defaults: `attempts(3)`, `exponential(100ms)`,
-    /// `any_error()`.
-    ///
-    /// ```
-    /// use relentless::RetryPolicy;
-    /// use relentless::clock::VirtualClock;
-    ///
-    /// let policy = RetryPolicy::new();
-    /// let _ = policy.retry(|_| Ok::<(), &str>(())).clock(VirtualClock::new()).call();
-    /// ```
+    /// and the default classifier (retry on any `Err`).
     #[must_use]
     pub fn new() -> Self {
         RetryPolicy {
             stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait: wait::exponential(DEFAULT_INITIAL_WAIT),
-            predicate: predicate::any_error(),
+            classifier: DefaultClassifier,
         }
     }
 }
 
-impl Default
-    for RetryPolicy<stop::StopAfterAttempts, wait::WaitExponential, predicate::PredicateAnyError>
-{
+impl Default for RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<S, W, P> RetryPolicy<S, W, P> {
-    /// Sets the stop condition for the retry policy.
+impl<S, W, C> RetryPolicy<S, W, C> {
+    /// Sets the stop strategy.
     #[must_use]
-    pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, P> {
+    pub fn stop<NewStop>(self, stop: NewStop) -> RetryPolicy<NewStop, W, C> {
         RetryPolicy {
             stop,
             wait: self.wait,
-            predicate: self.predicate,
+            classifier: self.classifier,
         }
     }
 
-    /// Sets the wait strategy used between retry attempts.
+    /// Sets the wait strategy used between attempts.
     #[must_use]
-    pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, P> {
+    pub fn wait<NewWait>(self, wait: NewWait) -> RetryPolicy<S, NewWait, C> {
         RetryPolicy {
             stop: self.stop,
             wait,
-            predicate: self.predicate,
+            classifier: self.classifier,
         }
     }
 
-    /// Sets the predicate that decides whether a failed attempt should be retried.
+    /// Retries while `predicate` wants to; otherwise accepts (an `Err` aborts
+    /// with the bare error). Replaces the classifier slot.
     #[must_use]
-    pub fn when<NewPredicate>(self, predicate: NewPredicate) -> RetryPolicy<S, W, NewPredicate> {
+    pub fn when<P>(self, predicate: P) -> RetryPolicy<S, W, When<P>> {
         RetryPolicy {
             stop: self.stop,
             wait: self.wait,
-            predicate,
+            classifier: When::new(predicate),
         }
     }
 
-    /// Sets a predicate that retries *until* `p.should_retry()` returns `true`.
-    ///
-    /// Wraps `p` in [`predicate::PredicateUntil`](crate::predicate::PredicateUntil),
-    /// negating its result. Natural for polling:
-    /// `.until(ok(|s| s.is_ready()))` reads "retry until ready."
+    /// Retries *until* `predicate` is satisfied, then accepts. Replaces the
+    /// classifier slot; natural for polling (`.until(ok(is_ready))`).
     #[must_use]
-    pub fn until<NewPredicate>(
-        self,
-        predicate: NewPredicate,
-    ) -> RetryPolicy<S, W, predicate::PredicateUntil<NewPredicate>> {
+    pub fn until<P>(self, predicate: P) -> RetryPolicy<S, W, Until<P>> {
         RetryPolicy {
             stop: self.stop,
             wait: self.wait,
-            predicate: predicate::until(predicate),
+            classifier: Until::new(predicate),
         }
     }
 
-    /// Erases the generic stop and wait parameters behind trait objects,
-    /// leaving the predicate type intact.
+    /// Installs a classifier closure, replacing the classifier slot.
     ///
-    /// This produces a single, nameable type —
-    /// `RetryPolicy<Box<dyn Stop + Send>, Box<dyn Wait + Send>, P>` — suitable
-    /// for a struct field or a heterogeneous collection, without spelling out
-    /// the full nested stop/wait generics.
+    /// Policy-first construction has no operation to anchor inference on, so the
+    /// closure's parameter needs a type annotation (unlike the op-first
+    /// [`Retry::decide`](crate::Retry::decide)).
+    #[must_use]
+    pub fn decide<NewC>(self, classifier: NewC) -> RetryPolicy<S, W, ClosureClassifier<NewC>> {
+        RetryPolicy {
+            stop: self.stop,
+            wait: self.wait,
+            classifier: ClosureClassifier(classifier),
+        }
+    }
+
+    /// Erases the stop and wait strategies behind `Send` trait objects, leaving
+    /// the classifier intact.
     ///
-    /// The predicate is deliberately **not** erased. The default predicate
-    /// ([`PredicateAnyError`](predicate::PredicateAnyError)) implements
-    /// [`Predicate<T, E>`](crate::Predicate) for *every* `T` and `E`, so a default-predicate boxed
-    /// policy can be reused across operations with **different** success and
-    /// error types. Boxing the predicate (as `Box<dyn Predicate<T, E>>`) would
-    /// pin it to one `(T, E)` and defeat that reuse — which is why only stop and
-    /// wait are erased here.
-    ///
-    /// # Examples
-    ///
-    /// Store one customized policy in a struct and reuse it across operations
-    /// whose `Ok` types differ:
-    ///
-    /// ```
-    /// use core::time::Duration;
-    /// use relentless::clock::VirtualClock;
-    /// use relentless::{RetryPolicy, Stop, Wait, stop, wait};
-    ///
-    /// struct Client {
-    ///     policy: RetryPolicy<Box<dyn Stop + Send>, Box<dyn Wait + Send>>,
-    /// }
-    ///
-    /// let client = Client {
-    ///     policy: RetryPolicy::new()
-    ///         .stop(stop::attempts(3) | stop::elapsed(Duration::from_secs(2)))
-    ///         .wait(wait::fixed(Duration::from_millis(10)))
-    ///         .boxed(),
-    /// };
-    ///
-    /// let a: Result<u32, _> = client.policy.retry(|_| Ok::<u32, &str>(1)).clock(VirtualClock::new()).call();
-    /// let b: Result<(), _> = client.policy.retry(|_| Ok::<(), &str>(())).clock(VirtualClock::new()).call();
-    /// assert_eq!(a.unwrap(), 1);
-    /// assert_eq!(b.unwrap(), ());
-    /// ```
+    /// Produces one nameable type,
+    /// `RetryPolicy<Box<dyn Stop + Send>, Box<dyn Wait + Send>, C>`, suitable for
+    /// a struct field. The classifier is deliberately not erased: the default
+    /// classifier works for every outcome type, so a default-classifier boxed
+    /// policy stays reusable across operations with different `Ok`/`Err` types.
     #[cfg(feature = "alloc")]
     #[must_use]
     pub fn boxed(
         self,
-    ) -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, P>
+    ) -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, C>
     where
         S: Stop + Send + 'static,
         W: Wait + Send + 'static,
@@ -205,28 +148,15 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         RetryPolicy {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
-            predicate: self.predicate,
+            classifier: self.classifier,
         }
     }
 
-    /// Erases the generic stop and wait parameters behind local trait objects,
-    /// leaving the predicate type intact.
-    ///
     /// Like [`boxed`](Self::boxed) but without `Send` bounds, for policies that
     /// do not cross thread boundaries.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use relentless::RetryPolicy;
-    /// use relentless::clock::VirtualClock;
-    ///
-    /// let policy = RetryPolicy::new().boxed_local();
-    /// let _ = policy.retry(|_| Err::<(), _>("fail")).clock(VirtualClock::new()).call();
-    /// ```
     #[cfg(feature = "alloc")]
     #[must_use]
-    pub fn boxed_local(self) -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, P>
+    pub fn boxed_local(self) -> RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, C>
     where
         S: Stop + 'static,
         W: Wait + 'static,
@@ -234,117 +164,30 @@ impl<S, W, P> RetryPolicy<S, W, P> {
         RetryPolicy {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
-            predicate: self.predicate,
+            classifier: self.classifier,
         }
     }
-}
 
-/// Abstracts over owned (`RetryPolicy<S,W,P>`) and borrowed (`&RetryPolicy<S,W,P>`)
-/// storage so that `SyncRetry`/`AsyncRetry` (which borrow) and the ext-trait
-/// builders (which own) can share the same execution engine.
-///
-/// The stop/wait/predicate types are exposed as associated types so that the
-/// shared `SyncRetryExec`/`AsyncRetryExec` engines can name them through the
-/// stored policy without carrying `S`, `W`, and `P` as redundant type
-/// parameters — important for the async `Future` impl, whose `poll` signature
-/// cannot introduce method-level generics.
-pub(crate) trait PolicyHandle {
-    type Stop;
-    type Wait;
-    type Predicate;
+    /// Creates a synchronous retry for `op`, borrowing this policy's parts so it
+    /// stays reusable.
+    #[allow(clippy::type_complexity)]
+    pub fn retry<F, O>(&self, op: F) -> Retry<F, &C, &S, &W, SystemClock, (), (), ()>
+    where
+        F: FnMut(RetryState) -> O,
+    {
+        Retry::from_parts(op, &self.classifier, &self.stop, &self.wait)
+    }
 
-    fn policy_ref(&self) -> &RetryPolicy<Self::Stop, Self::Wait, Self::Predicate>;
-}
-
-impl<S, W, P> PolicyHandle for RetryPolicy<S, W, P> {
-    type Stop = S;
-    type Wait = W;
-    type Predicate = P;
-
-    fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
-        self
+    /// Creates an asynchronous retry for `op`, borrowing this policy's parts.
+    #[allow(clippy::type_complexity)]
+    pub fn retry_async<F, Fut, O>(
+        &self,
+        op: F,
+    ) -> AsyncRetry<F, &C, &S, &W, SystemClock, (), (), ()>
+    where
+        F: FnMut(RetryState) -> Fut,
+        Fut: Future<Output = O>,
+    {
+        AsyncRetry::from_parts(op, &self.classifier, &self.stop, &self.wait)
     }
 }
-
-impl<S, W, P> PolicyHandle for &RetryPolicy<S, W, P> {
-    type Stop = S;
-    type Wait = W;
-    type Predicate = P;
-
-    fn policy_ref(&self) -> &RetryPolicy<S, W, P> {
-        self
-    }
-}
-
-/// Generates hook-chaining methods for a builder.
-///
-/// Produces `before_attempt`, `after_attempt`, and `on_exit` methods that
-/// delegate to `self.map_hooks(|h| h.chain_*(hook))`.
-macro_rules! impl_hook_chain {
-    (
-        impl[$($gen:tt)*] $Builder:ty
-        $(where { $($wc:tt)* })? =>
-        before_attempt -> { $($ba:tt)* },
-        after_attempt -> { $($aa:tt)* },
-        on_exit -> { $($ox:tt)* } $(,)?
-    ) => {
-        // Intentional: hook chaining preserves type-state and avoids runtime
-        // indirection; signatures are long but mechanically structured.
-        #[allow(clippy::type_complexity)]
-        impl<$($gen)*> $Builder
-        $(where $($wc)*)?
-        {
-            /// Registers a hook that runs before each retry attempt.
-            #[must_use]
-            pub fn before_attempt<Hook>(
-                self,
-                hook: Hook,
-            ) -> $($ba)*
-            where
-                Hook: FnMut(&RetryState),
-            {
-                self.map_hooks(|hooks| hooks.chain_before_attempt(hook))
-            }
-
-            /// Registers a hook that runs after each retry attempt.
-            #[must_use]
-            pub fn after_attempt<Hook>(
-                self,
-                hook: Hook,
-            ) -> $($aa)*
-            where
-                Hook: for<'a> FnMut(&AttemptState<'a, T, E>),
-            {
-                self.map_hooks(|hooks| hooks.chain_after_attempt(hook))
-            }
-
-            /// Registers a hook that runs when the retry loop exits.
-            #[must_use]
-            pub fn on_exit<Hook>(
-                self,
-                hook: Hook,
-            ) -> $($ox)*
-            where
-                Hook: for<'a> FnMut(&ExitState<'a, T, E>),
-            {
-                self.map_hooks(|hooks| hooks.chain_on_exit(hook))
-            }
-        }
-    };
-}
-
-mod execution;
-mod ext;
-pub use execution::async_exec::{
-    AsyncRetry, AsyncRetryExec, AsyncRetryExecWithStats, AsyncRetryWithStats,
-};
-pub(crate) use execution::hooks::HookChain;
-pub(crate) use execution::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook};
-pub use execution::sync_exec::{
-    SyncRetry, SyncRetryExec, SyncRetryExecWithStats, SyncRetryWithStats,
-};
-pub use ext::{
-    AsyncRetryBuilder, AsyncRetryBuilderWithStats, AsyncRetryExt, DefaultAsyncRetryBuilder,
-    DefaultAsyncRetryBuilderWithStats, DefaultSyncRetryBuilder, DefaultSyncRetryBuilderWithStats,
-    RetryExt, SyncRetryBuilder, SyncRetryBuilderWithStats,
-};

@@ -136,7 +136,7 @@ fn sync_with_stats_returns_result_and_stats() {
     // virtual clock the waits are the only time source, so elapsed equals
     // total_wait exactly.
     assert_eq!(stats.total_elapsed, stats.total_wait);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn async_with_stats_returns_result_and_stats() {
     // The async test clock advances only through its waits, so elapsed
     // equals total_wait exactly.
     assert_eq!(stats.total_elapsed, stats.total_wait);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn sync_first_attempt_success_has_minimal_stats() {
     // virtual clock the waits are the only time source, so elapsed equals
     // total_wait exactly.
     assert_eq!(stats.total_elapsed, stats.total_wait);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn sync_stop_reason_succeeded_with_default_predicate() {
         .call();
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn sync_stop_reason_succeeded_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -285,7 +285,7 @@ fn sync_stop_reason_succeeded_for_result_predicate_on_ok() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn sync_stop_reason_succeeded_for_error_predicate_on_ok() {
 
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -319,9 +319,9 @@ fn sync_stop_reason_rejected_for_non_retryable_error() {
         .with_stats()
         .call();
 
-    assert!(matches!(result, Err(RetryError::Rejected { .. })));
+    assert!(matches!(result, Err(RetryError::Aborted { .. })));
     assert_eq!(stats.attempts, 1);
-    assert_eq!(stats.stop_reason, StopReason::Rejected);
+    assert_eq!(stats.stop_reason, StopReason::Aborted);
 }
 
 #[test]
@@ -385,7 +385,7 @@ fn async_first_attempt_success_has_minimal_stats() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -429,14 +429,14 @@ fn async_stop_reason_succeeded_for_custom_predicate_on_ok() {
     assert_eq!(result, Ok(SUCCESS_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
 fn sync_call_without_stats_returns_plain_result() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
-    let result: Result<i32, RetryError<i32, &str>> = policy
+    let result: Result<i32, RetryError<&str, Result<i32, &str>>> = policy
         .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
         .clock(VirtualClock::new())
         .call();
@@ -490,7 +490,7 @@ fn retry_stats_implements_debug_and_clone() {
         attempts: MAX_ATTEMPTS,
         total_elapsed: Duration::from_secs(1),
         total_wait: WAIT_DURATION,
-        stop_reason: StopReason::Succeeded,
+        stop_reason: StopReason::Returned,
     };
 
     let cloned = stats;
@@ -502,7 +502,7 @@ fn retry_stats_implements_debug_and_clone() {
 
 #[test]
 fn stop_reason_implements_debug_clone_copy_eq() {
-    let reason = StopReason::Succeeded;
+    let reason = StopReason::Returned;
 
     let copied = reason; // Copy
     assert_eq!(reason, copied);
@@ -511,9 +511,9 @@ fn stop_reason_implements_debug_clone_copy_eq() {
     assert_clone(&reason); // Clone (compile-time check)
 
     let debug = format!("{reason:?}");
-    assert!(debug.contains("Succeeded"), "Debug output: {debug}");
+    assert!(debug.contains("Returned"), "Debug output: {debug}");
 
-    assert_ne!(StopReason::Succeeded, StopReason::Exhausted); // Eq, both variants distinct
+    assert_ne!(StopReason::Returned, StopReason::Exhausted); // Eq, both variants distinct
 }
 
 #[test]
@@ -538,7 +538,7 @@ fn sync_stats_are_fresh_after_policy_reuse() {
     assert_eq!(result2, Ok(SUCCESS_VALUE));
     assert_eq!(stats2.attempts, 1);
     assert_eq!(stats2.total_wait, Duration::ZERO);
-    assert_eq!(stats2.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats2.stop_reason, StopReason::Returned);
 }
 
 #[test]
@@ -635,7 +635,7 @@ fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
         .clock(VirtualClock::new())
         .with_stats()
         .call();
-    assert_eq!(stats.stop_reason, StopReason::Succeeded);
+    assert_eq!(stats.stop_reason, StopReason::Returned);
 
     // Rejected Err (predicate does not match — Rejected)
     let policy2 = RetryPolicy::new()
@@ -646,7 +646,7 @@ fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
         .clock(VirtualClock::new())
         .with_stats()
         .call();
-    assert_eq!(stats2.stop_reason, StopReason::Rejected);
+    assert_eq!(stats2.stop_reason, StopReason::Aborted);
 }
 
 /// 4.2.2
@@ -666,7 +666,7 @@ fn stop_reason_exhausted_when_stop_strategy_fires() {
 /// 4.2.3
 #[test]
 fn stop_reason_display_format() {
-    assert_eq!(format!("{}", StopReason::Succeeded), "succeeded");
+    assert_eq!(format!("{}", StopReason::Returned), "returned");
     assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
 }
 

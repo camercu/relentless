@@ -19,7 +19,7 @@
 //!    and retried — the loop keeps running even after the flag is set.
 //!    Use `.when(error(|e| e.is_transient()))` (or equivalent) so the cancel
 //!    error is non-retryable and terminates the loop immediately as
-//!    `RetryError::Rejected`.
+//!    `RetryError::Aborted`.
 //!
 //! Run with:
 //!   cargo run --example sync-cancel
@@ -115,7 +115,7 @@ fn main() {
 
     match result {
         Ok(val) => println!("pattern 2 — success: {val:?}"),
-        Err(RetryError::Rejected { last }) => {
+        Err(RetryError::Aborted { last }) => {
             println!("pattern 2 — cancelled after flag set, error: {last:?}");
         }
         Err(RetryError::Exhausted { last }) => {
