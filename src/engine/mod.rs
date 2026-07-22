@@ -6,17 +6,21 @@
 //! [`RetryState`] — and swaps the boolean predicate for a [`Decide`] classifier
 //! that consumes each outcome by value.
 //!
-//! The sync path carries the classifier surface (`.decide`/`.when`/`.until`);
-//! hooks, stats, and the async path arrive in later slices.
+//! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full
+//! classifier surface — `.decide`/`.when`/`.until`, hooks, stats, and timeout.
 
 // Parallel ADR-6 engine: unreachable from the public API until cutover (S8)
 // re-exports it. Remove this allow then.
 #![allow(dead_code)]
 
+mod async_engine;
 mod hooks;
 mod state;
 mod stats;
 
+// Reachable at cutover (S8) when the engine is wired to the crate root.
+#[allow(unused_imports)]
+pub use async_engine::{AsyncRetry, AsyncRetryWithStats, AsyncRun, DropStats, retry_async};
 pub use state::{AttemptState, Exit, StopReason};
 pub use stats::RetryStats;
 
