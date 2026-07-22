@@ -1,0 +1,130 @@
+//! The outcome-classification layer.
+//!
+//! Where the engine once asked a boolean [`Predicate`](crate::Predicate) "should
+//! this outcome retry?", it now asks a *classifier* to sort each outcome into a
+//! three-way [`Verdict`]: return it to the caller, retry it, or abort with a
+//! projected payload. This lets the retry decision be independent of
+//! `Result<T, E>` semantics — a sought-after `Err`, a non-`Result` poll enum, or
+//! a search state can each drive the loop directly.
+//!
+//! This module is the vocabulary; the engine that consumes it lives in
+//! [`crate::engine`].
+
+// Parallel ADR-6 engine: unreachable from the public API until cutover (S8)
+// re-exports it. Remove this allow then.
+#![allow(dead_code)]
+
+/// A three-way decision about a completed outcome: accept it, retry it, or abort.
+///
+/// `O` is the whole outcome type the operation produces; `R` is what the caller
+/// receives on success (`Ok(R)`); `A` is the payload projected on a fatal abort.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict<R, A, O> {
+    /// Accept this outcome as success. `call()` yields `Ok(value)`.
+    Return(R),
+    /// Try again; the whole outcome is handed back to the engine.
+    Retry(O),
+    /// Reject as fatal. `call()` yields `Err(RetryError::Aborted { last })`.
+    Abort(A),
+}
+
+/// Projects an owned outcome type into a [`Verdict`].
+///
+/// Implement this for a type you own to make it classify itself, so the default
+/// engine path needs no `.decide(...)` closure at the call site. A blanket impl
+/// covers `Result<T, E>` with today's semantics: `Ok(v)` returns `v`, any `Err`
+/// retries.
+///
+/// # Orphan-rule note
+///
+/// The blanket `impl<T, E> Outcome for Result<T, E>` already covers every
+/// `Result`, so you cannot write your own `impl Outcome for Result<MyT, MyE>`.
+/// For custom `Result` classification, use `.decide(closure)` or wrap the
+/// `Result` in a newtype you own.
+pub trait Outcome: Sized {
+    /// The value delivered to the caller on `Return` (what `Ok` carries).
+    type Return;
+    /// The value delivered on `Abort` (what `RetryError::Aborted { last }` carries).
+    type Abort;
+
+    /// Classifies this outcome into a three-way [`Verdict`].
+    fn classify(self) -> Verdict<Self::Return, Self::Abort, Self>;
+}
+
+/// Default: `Ok(v)` → `Return(v)`, any `Err` → `Retry`.
+///
+/// This encodes today's engine semantics — every error is retried, so the loop
+/// terminates on an error only by exhausting its stop strategy
+/// (`RetryError::Exhausted`), never by aborting on the default path. `Abort` is
+/// typed as `E` (not `Infallible`) so the default and `.when`/`.until` paths
+/// share one `RetryError<E, Result<T, E>>` shape.
+impl<T, E> Outcome for Result<T, E> {
+    type Return = T;
+    type Abort = E;
+
+    fn classify(self) -> Verdict<T, E, Result<T, E>> {
+        match self {
+            Ok(value) => Verdict::Return(value),
+            Err(_) => Verdict::Retry(self),
+        }
+    }
+}
+
+/// The engine-facing classifier trait. Users never name or implement it; it is
+/// carried in the builder's classifier slot and driven by the retry loop.
+///
+/// A classifier consumes each outcome **by value** and returns a [`Verdict`].
+/// The `&self` receiver lets one classifier serve every attempt of a loop.
+pub trait Decide<O> {
+    /// The value produced on `Return` (what `Ok` carries).
+    type R;
+    /// The value produced on `Abort` (what `RetryError::Aborted { last }` carries).
+    type A;
+
+    /// Consumes an outcome and decides its fate.
+    fn decide(&self, outcome: O) -> Verdict<Self::R, Self::A, O>;
+}
+
+/// The default classifier slot: delegates to `O: Outcome`.
+///
+/// Carries no outcome type of its own, so it can sit in a policy built before
+/// any operation exists; `O` is pinned by the operation at `.call()`, where the
+/// `O: Outcome` bound is required (mirroring the old `P: Predicate<T, E>` bound).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultClassifier;
+
+impl<O: Outcome> Decide<O> for DefaultClassifier {
+    type R = O::Return;
+    type A = O::Abort;
+
+    fn decide(&self, outcome: O) -> Verdict<O::Return, O::Abort, O> {
+        outcome.classify()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_ok_classifies_as_return() {
+        let outcome: Result<i32, &str> = Ok(7);
+        assert_eq!(outcome.classify(), Verdict::Return(7));
+    }
+
+    #[test]
+    fn result_err_classifies_as_retry_carrying_the_whole_outcome() {
+        let outcome: Result<i32, &str> = Err("boom");
+        assert_eq!(outcome.classify(), Verdict::Retry(Err("boom")));
+    }
+
+    #[test]
+    fn default_classifier_delegates_to_outcome() {
+        let classifier = DefaultClassifier;
+        assert_eq!(classifier.decide(Ok::<i32, &str>(1)), Verdict::Return(1));
+        assert_eq!(
+            classifier.decide(Err::<i32, &str>("x")),
+            Verdict::Retry(Err("x"))
+        );
+    }
+}

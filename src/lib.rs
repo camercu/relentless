@@ -289,7 +289,12 @@ extern crate std;
 mod compat;
 
 pub mod clock;
+mod decision;
 mod error;
+// The classifier-driven engine (ADR-6), built in parallel and not yet
+// re-exported; the predicate engine below remains the public surface until
+// cutover.
+mod engine;
 mod policy;
 pub mod predicate;
 mod state;
