@@ -1363,7 +1363,7 @@ Free functions:
 
 - constructors: `any_error`, `error`, `ok`, `result`
 - types: `PredicateAnyError`, `PredicateError`, `PredicateOk`,
-  `PredicateResult`, `PredicateAny`, `PredicateAll`, `PredicateUntil`
+  `PredicateResult`, `PredicateAny`, `PredicateAll`
 
 `clock` module:
 
@@ -1374,12 +1374,13 @@ Free functions:
 
 ### 13.3 Combinator type opacity
 
-Combinator types (`StopAny`, `StopAll`, `WaitCapped`, `WaitChain`,
-`WaitCombine`, `PredicateAny`, `PredicateAll`, `PredicateUntil`, `Jittered`,
-`Jittered`, and similar) are **exposed but unstable**: they are
-`pub` for technical reasons (they appear in return types of composition methods
-and `.until()`), but users should not name them in function signatures. Use
-`impl Stop`, `impl Wait`, or `impl Predicate<T, E>` instead.
+Combinator and classifier-wrapper types (`StopAny`, `StopAll`, `WaitCapped`,
+`WaitChain`, `WaitCombine`, `PredicateAny`, `PredicateAll`, `Jittered`, and the
+classifier wrappers `When`, `Until`, `ClosureClassifier`) are **exposed but
+unstable**: they are `pub` for technical reasons (they appear in the return
+types of composition and classifier-installing methods), but users should not
+name them in function signatures. Use `impl Stop`, `impl Wait`,
+`impl Predicate<T, E>`, or the builder methods instead.
 
 > Combinator type names and their generic parameters may change in minor
 > releases.

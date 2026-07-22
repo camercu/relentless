@@ -327,45 +327,6 @@ fn predicate_and_method_short_circuits_when_left_rejects() {
 }
 
 #[test]
-fn predicate_until_negates_inner() {
-    // `until` inverts the inner predicate: it retries while inner returns false,
-    // and stops when inner returns true. This lets callers express "retry until <condition>".
-    let inner = predicate::ok(|value: &u32| *value >= READY_VALUE);
-    let until = predicate::until(inner);
-
-    // Not ready (inner returns false) → until says retry (true)
-    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    // Ready (inner returns true) → until says stop (false)
-    assert!(!until.should_retry(&ok(READY_VALUE)));
-    // Err → inner ok() returns false → until negates to true (retry errors)
-    assert!(until.should_retry(&err(TestError::Retryable)));
-}
-
-#[test]
-fn predicate_until_with_any_error_retries_ok_stops_on_error() {
-    // until(any_error()): any_error() returns true for Err, false for Ok;
-    // until negates so the result retries on Ok and stops on Err.
-    let until = predicate::until(predicate::any_error());
-
-    assert!(until.should_retry(&ok(ARBITRARY_OK_VALUE)));
-    assert!(!until.should_retry(&err(TestError::Retryable)));
-}
-
-#[test]
-fn predicate_until_composes_with_operators() {
-    // until(ok(ready) | error(fatal)): retries until the value is ready OR a fatal error occurs.
-    // Inner returns true for ready/fatal (stop condition met), until negates to false (stop retrying).
-    let inner = predicate::ok(|value: &u32| *value >= READY_VALUE)
-        | predicate::error(|error: &TestError| matches!(error, TestError::Fatal));
-    let until = predicate::until(inner);
-
-    assert!(until.should_retry(&ok(ARBITRARY_NOT_READY_VALUE))); // not ready → keep retrying
-    assert!(until.should_retry(&err(TestError::Retryable))); // not fatal → keep retrying
-    assert!(!until.should_retry(&ok(READY_VALUE))); // ready → stop
-    assert!(!until.should_retry(&err(TestError::Fatal))); // fatal → stop
-}
-
-#[test]
 fn policy_until_sets_predicate() {
     use core::time::Duration;
     use relentless::{RetryPolicy, stop, wait};

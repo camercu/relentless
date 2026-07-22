@@ -177,7 +177,6 @@ fn all_predicate_types_implement_clone() {
     let _ = predicate::error(|_e: &&str| true).clone();
     let _ = predicate::ok(|_v: &u32| true).clone();
     let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
-    let _ = predicate::until(predicate::any_error()).clone();
     let _ = (predicate::any_error() | predicate::any_error()).clone();
     let _ = (predicate::any_error() & predicate::any_error()).clone();
 }

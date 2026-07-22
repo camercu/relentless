@@ -297,14 +297,21 @@ pub mod stop;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
-pub use decision::{
-    ClosureClassifier, Decide, Decision, DefaultClassifier, IntoDecision, Outcome, Until, Verdict,
-    When,
-};
+pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Until, Verdict, When};
+// `Decide`/`IntoDecision` are sealed engine-facing classifier traits: users
+// never implement or name them, but they appear in public bounds, so they must
+// be reachable. Hidden from the docs to keep the surface focused on the names
+// users actually write (`Decision`/`Verdict`/`Outcome`).
+#[doc(hidden)]
+pub use decision::{Decide, IntoDecision};
 pub use engine::{
-    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, AttemptState, DropStats, Exit, Retry,
-    RetryError, RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
+    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AttemptState, Exit, Retry, RetryError,
+    RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
 };
+// The async builder future types: you `.await` `.call()` rather than naming
+// them, so they are reachable (as the return type) but not featured.
+#[doc(hidden)]
+pub use engine::{AsyncRun, DropStats};
 pub use policy::RetryPolicy;
 pub use predicate::Predicate;
 pub use state::RetryState;
