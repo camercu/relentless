@@ -78,6 +78,7 @@ test-readme:
 test-examples:
     cargo run --example basic-retry
     cargo run --example hooks-and-stats
+    cargo run --example custom-outcome
     cargo run --example sync-cancel
     cargo run --example testing-with-virtual-clock
     cargo run --example async-polling --features tokio-clock

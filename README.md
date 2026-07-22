@@ -202,6 +202,10 @@ with runnable versions in [`examples/`](./examples):
 - **Hooks & stats** — observe the retry lifecycle for logging or metrics with
   `.before_attempt` / `.after_attempt`, and collect a `RetryStats` summary via
   `.with_stats()`. ([`hooks-and-stats.rs`](./examples/hooks-and-stats.rs))
+- **Self-classifying outcomes** — implement `Outcome` for a domain type (a poll
+  enum, a search state) so it sorts itself into return / retry / abort, and the
+  default engine drives it with no `.decide` at the call site.
+  ([`custom-outcome.rs`](./examples/custom-outcome.rs))
 - **Error handling** — on failure you get a `RetryError`: `Exhausted { last }`
   when the stop strategy fired (`last` is the final attempt's full
   `Result<T, E>` — polling can exhaust while the last outcome was still `Ok`),

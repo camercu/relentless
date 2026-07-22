@@ -90,6 +90,10 @@ name = "sync-cancel"
 required-features = ["std"]
 
 [[example]]
+name = "custom-outcome"
+required-features = ["std"]
+
+[[example]]
 name = "testing-with-virtual-clock"
 required-features = ["std"]
 
