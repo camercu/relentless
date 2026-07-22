@@ -4,11 +4,15 @@ Date: 2026-07-21
 
 ## Status
 
-Proposed — design settled empirically. Reviewed 2026-07-21: method name
-**`.decide()`**, the two-way type **`Decision`**, **before-classification
-`after_attempt` timing**, and renaming the success stop reason to
-**`StopReason::Returned`** are all settled. Sole remaining open item: the
-abort-capable type name **`Verdict` is provisional** (see Open questions).
+Accepted — implemented 2026-07-22. `.decide()`, `Decision`/`Verdict`,
+before-classification `after_attempt` timing, and `StopReason::Returned` shipped
+as specified. `Verdict` was kept (per Open question 2). Reconciliations settled
+during implementation: the default `Result` path uses `Abort = E` (not
+`Infallible`) so the default and `.when`/`.until` paths share one
+`RetryError<E, Result<T, E>>` shape; the `Exit` view keeps `attempt`/`elapsed`
+accessors alongside its outcome-view variant; and the wait strategy is consulted
+only when a retry is certain (after the stop check), never on the terminal
+attempt.
 
 ## Context
 

@@ -1,31 +1,22 @@
 //! Polling where an outcome can be *pending*, *succeeded*, or *terminally
 //! failed* — the realistic shape of "wait for a deployment / job / migration."
 //!
-//! The key modeling rule: a retry predicate returns a single bool, and stopping
-//! on an `Ok` always resolves to **success**. There is no way to make an
-//! `Ok(_)` terminate as a failure. So a *terminal failure* must live in the
-//! `Err` channel, and the fail-fast condition is combined (with `|`) *inside*
-//! `.until(...)`:
+//! A classifier (`.decide`) sorts each poll outcome into a three-way `Verdict`,
+//! so pending, success, and terminal failure are each modeled directly — no
+//! encoding tricks, and the `Result` variant does not dictate the outcome:
 //!
-//! ```text
-//! .until( ok(is_done) | error(is_fatal) )
-//! ```
-//!
-//! `.until(p)` retries until `p` accepts, i.e. it retries on `!p`. So `p` is the
-//! set of *terminal* outcomes:
-//!
-//! | outcome        | `p` accepts? | result                         |
-//! |----------------|--------------|--------------------------------|
-//! | `Ok(Done)`     | yes (ok)     | success `Ok(Done)`             |
-//! | `Ok(Pending)`  | no           | retry                          |
-//! | `Err(Transient)` | no         | retry                          |
-//! | `Err(Fatal)`   | yes (error)  | `RetryError::Aborted{Fatal}`  |
+//! | outcome          | verdict          | result                       |
+//! |------------------|------------------|------------------------------|
+//! | `Ok(Done)`       | `Return(Done)`   | success `Ok(Done)`           |
+//! | `Ok(Pending)`    | `Retry`          | retry                        |
+//! | `Err(Transient)` | `Retry`          | retry                        |
+//! | `Err(Fatal)`     | `Abort(Fatal)`   | `RetryError::Aborted{Fatal}` |
 //!
 //! Run: `cargo run --example polling-terminal-failure`
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, predicate, stop, wait};
+use relentless::{RetryError, Verdict, stop, wait};
 
 #[derive(Debug, Clone, PartialEq)]
 enum JobStatus {
@@ -39,12 +30,6 @@ enum JobError {
     Transient,
     /// Job rolled back / crashed — terminal, stop immediately.
     Fatal(&'static str),
-}
-
-impl JobError {
-    fn is_fatal(&self) -> bool {
-        matches!(self, JobError::Fatal(_))
-    }
 }
 
 /// Drives a scripted sequence of poll outcomes so the example is deterministic.
@@ -63,10 +48,12 @@ fn poll_until_done(
     poller: impl Fn() -> Result<JobStatus, JobError>,
 ) -> Result<JobStatus, RetryError<JobError, Result<JobStatus, JobError>>> {
     relentless::retry(|_| poller())
-        .until(
-            predicate::ok(|s: &JobStatus| *s == JobStatus::Done)
-                | predicate::error(JobError::is_fatal),
-        )
+        .decide(|outcome| match outcome {
+            Ok(JobStatus::Done) => Verdict::Return(JobStatus::Done),
+            Err(JobError::Fatal(msg)) => Verdict::Abort(JobError::Fatal(msg)),
+            // Still pending or a transient blip: keep polling.
+            Ok(JobStatus::Pending) | Err(JobError::Transient) => Verdict::Retry(outcome),
+        })
         .wait(wait::fixed(Duration::from_millis(10)))
         .stop(stop::attempts(10))
         .clock(VirtualClock::new()) // no real waiting in the example
