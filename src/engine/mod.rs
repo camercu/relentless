@@ -15,12 +15,21 @@
 
 mod async_engine;
 mod hooks;
+mod op;
 mod state;
 mod stats;
 
+use op::{RetryOp, StatelessOp};
+
+/// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
+type DefaultRetry<F> =
+    Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock, (), (), ()>;
+
 // Reachable at cutover (S8) when the engine is wired to the crate root.
 #[allow(unused_imports)]
-pub use async_engine::{AsyncRetry, AsyncRetryWithStats, AsyncRun, DropStats, retry_async};
+pub use async_engine::{
+    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, DropStats, retry_async,
+};
 pub use state::{AttemptState, Exit, StopReason};
 pub use stats::RetryStats;
 
@@ -80,20 +89,41 @@ pub struct Retry<F, C, S, W, Cl, BA, AA, OX> {
 /// Defaults: `stop::attempts(3)`, `wait::exponential(100ms)`, the default
 /// classifier, no hooks, and [`SystemClock`]. In non-`std` builds `.clock(...)`
 /// must be set before `.call()`.
-pub fn retry<F, O>(
-    op: F,
-) -> Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock, (), (), ()>
+pub fn retry<F, O>(op: F) -> DefaultRetry<F>
 where
     F: FnMut(RetryState) -> O,
 {
-    Retry {
-        op,
-        classifier: DefaultClassifier,
-        stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
-        wait: wait::exponential(DEFAULT_INITIAL_WAIT),
-        clock: SystemClock,
-        hooks: ExecutionHooks::new(),
-        timeout: None,
+    Retry::from_op(op)
+}
+
+impl<F> DefaultRetry<F> {
+    /// Builds a default-configured retry around an operation.
+    fn from_op(op: F) -> Self {
+        Retry {
+            op,
+            classifier: DefaultClassifier,
+            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            clock: SystemClock,
+            hooks: ExecutionHooks::new(),
+            timeout: None,
+        }
+    }
+}
+
+/// Starts a sync retry directly from a no-argument closure or function.
+///
+/// The operation takes no parameters; use [`retry`] when you need the
+/// [`RetryState`]. Defaults match [`retry`]: `stop::attempts(3)`,
+/// `wait::exponential(100ms)`, retry on any `Err` (via the default classifier).
+pub trait RetryExt<O>: FnMut() -> O + Sized {
+    /// Begins an owned retry builder from this closure.
+    fn retry(self) -> DefaultRetry<StatelessOp<Self>>;
+}
+
+impl<O, F: FnMut() -> O> RetryExt<O> for F {
+    fn retry(self) -> DefaultRetry<StatelessOp<Self>> {
+        Retry::from_op(StatelessOp(self))
     }
 }
 
@@ -144,16 +174,16 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     ///
     /// The closure returns either [`Decision`](crate::decision::Decision) (no
     /// abort) or [`Verdict`] (abort-capable); [`IntoDecision`] unifies both. The
-    /// `F: FnMut(RetryState) -> O` bound here (not deferred to `.call()`) lets
-    /// the closure's parameter infer from the operation's output, so inline
-    /// classifiers need no annotations.
+    /// op-anchored `F: RetryOp<Output = O>` bound here (not deferred to
+    /// `.call()`) lets the closure's parameter infer from the operation's
+    /// output, so inline classifiers need no annotations.
     #[must_use]
     pub fn decide<O, D, NewC>(
         self,
         classifier: NewC,
     ) -> Retry<F, ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX>
     where
-        F: FnMut(RetryState) -> O,
+        F: RetryOp<Output = O>,
         NewC: Fn(O) -> D,
         D: IntoDecision<O>,
     {
@@ -168,7 +198,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl, BA, AA, OX>
     where
-        F: FnMut(RetryState) -> Result<T, E>,
+        F: RetryOp<Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(When(predicate))
@@ -179,7 +209,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl, BA, AA, OX>
     where
-        F: FnMut(RetryState) -> Result<T, E>,
+        F: RetryOp<Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(Until(predicate))
@@ -244,7 +274,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         hook: Hook,
     ) -> Retry<F, C, S, W, Cl, BA, HookChain<AA, Hook>, OX>
     where
-        F: FnMut(RetryState) -> O,
+        F: RetryOp<Output = O>,
         Hook: for<'a> FnMut(&AttemptState<'a, O>),
     {
         Retry {
@@ -262,7 +292,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn on_exit<O, Hook>(self, hook: Hook) -> Retry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
     where
-        F: FnMut(RetryState) -> O,
+        F: RetryOp<Output = O>,
         C: Decide<O>,
         Hook: for<'a> FnMut(&Exit<'a, C::R, C::A, O>),
     {
@@ -280,7 +310,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
 
 impl<F, C, S, W, Cl, BA, AA, OX, O> Retry<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: FnMut(RetryState) -> O,
+    F: RetryOp<Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -321,7 +351,7 @@ where
                 .with_elapsed(elapsed(&self.clock))
                 .with_previous_delay(previous_delay);
             self.hooks.before_attempt.call(&before_state);
-            let outcome = (self.op)(before_state);
+            let outcome = self.op.call_op(before_state);
 
             // Elapsed is re-read after the operation so the post-attempt hooks
             // and stop/wait see the time the attempt actually took.
@@ -692,6 +722,43 @@ mod tests {
             3,
             "after_attempt fires on the terminal attempt too"
         );
+    }
+
+    #[test]
+    fn retry_ext_starts_from_a_no_arg_closure() {
+        let counter = Cell::new(0);
+        let result = (|| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            if n >= 2 { Ok::<i32, &str>(5) } else { Err("x") }
+        })
+        .retry()
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .clock(VirtualClock::new())
+        .call();
+
+        assert_eq!(result, Ok(5));
+        assert_eq!(counter.get(), 2);
+    }
+
+    #[test]
+    fn retry_ext_supports_the_classifier_surface() {
+        // The stateless-ext builder still reaches `.until`, because the op slot
+        // is unified behind `RetryOp` rather than a bare `FnMut`.
+        let counter = Cell::new(0);
+        let result = (|| {
+            counter.set(counter.get() + 1);
+            Ok::<i32, &str>(counter.get())
+        })
+        .retry()
+        .until(predicate::ok(|v: &i32| *v >= 3))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .clock(VirtualClock::new())
+        .call();
+
+        assert_eq!(result, Ok(3));
     }
 
     #[test]
