@@ -15,12 +15,10 @@
 
 mod hooks;
 mod state;
+mod stats;
 
-// `StopReason` is public API but is only reachable through the engine's own
-// not-yet-exported surface until cutover (S8); `RetryStats` will reference it in
-// the next slice.
-#[allow(unused_imports)]
 pub use state::{AttemptState, Exit, StopReason};
+pub use stats::RetryStats;
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
@@ -70,6 +68,7 @@ pub struct Retry<F, C, S, W, Cl, BA, AA, OX> {
     wait: W,
     clock: Cl,
     hooks: ExecutionHooks<BA, AA, OX>,
+    timeout: Option<Duration>,
 }
 
 /// Begins a classifier-driven retry from an operation.
@@ -90,6 +89,7 @@ where
         wait: wait::exponential(DEFAULT_INITIAL_WAIT),
         clock: SystemClock,
         hooks: ExecutionHooks::new(),
+        timeout: None,
     }
 }
 
@@ -104,6 +104,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock: self.clock,
             hooks: self.hooks,
+            timeout: self.timeout,
         }
     }
 
@@ -117,6 +118,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait,
             clock: self.clock,
             hooks: self.hooks,
+            timeout: self.timeout,
         }
     }
 
@@ -130,6 +132,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock,
             hooks: self.hooks,
+            timeout: self.timeout,
         }
     }
 
@@ -178,6 +181,25 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         self.with_classifier(Until(predicate))
     }
 
+    /// Sets a wall-clock budget for the whole execution.
+    ///
+    /// A boundary check, not a preemptive timeout: it is evaluated between
+    /// attempts. The next inter-attempt wait is clamped to the remaining budget,
+    /// and the loop stops (as `Exhausted`) once elapsed time exceeds `dur`. It
+    /// cannot interrupt an operation or wait already in progress.
+    #[must_use]
+    pub fn timeout(mut self, dur: Duration) -> Self {
+        self.timeout = Some(dur);
+        self
+    }
+
+    /// Wraps this execution so [`call`](RetryWithStats::call) also returns
+    /// [`RetryStats`].
+    #[must_use]
+    pub fn with_stats(self) -> RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+        RetryWithStats { inner: self }
+    }
+
     fn with_classifier<NewC>(self, classifier: NewC) -> Retry<F, NewC, S, W, Cl, BA, AA, OX> {
         Retry {
             op: self.op,
@@ -186,6 +208,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock: self.clock,
             hooks: self.hooks,
+            timeout: self.timeout,
         }
     }
 
@@ -205,6 +228,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock: self.clock,
             hooks: self.hooks.chain_before_attempt(hook),
+            timeout: self.timeout,
         }
     }
 
@@ -226,6 +250,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock: self.clock,
             hooks: self.hooks.chain_after_attempt(hook),
+            timeout: self.timeout,
         }
     }
 
@@ -244,6 +269,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
             wait: self.wait,
             clock: self.clock,
             hooks: self.hooks.chain_on_exit(hook),
+            timeout: self.timeout,
         }
     }
 }
@@ -263,18 +289,27 @@ where
     ///
     /// Returns `Ok(value)` on the classifier's first [`Verdict::Return`],
     /// `Err(RetryError::Aborted { .. })` on a [`Verdict::Abort`], and
-    /// `Err(RetryError::Exhausted { .. })` when the stop strategy fires while
-    /// the classifier still wants to retry.
+    /// `Err(RetryError::Exhausted { .. })` when the stop strategy fires (or the
+    /// timeout is exceeded) while the classifier still wants to retry.
     ///
     /// # Errors
     ///
     /// Returns [`RetryError`] on abort or exhaustion.
-    pub fn call(mut self) -> Result<C::R, RetryError<C::A, O>> {
+    pub fn call(self) -> Result<C::R, RetryError<C::A, O>> {
+        self.run().0
+    }
+
+    /// Shared driver for [`call`](Self::call) and the stats wrapper: runs the
+    /// loop and always produces [`RetryStats`] (they are `Copy`, so collecting
+    /// them unconditionally is free and keeps the loop allocation-free).
+    #[allow(clippy::type_complexity)]
+    fn run(mut self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
         let origin = self.clock.now();
         let elapsed = |clock: &Cl| clock.now().saturating_sub(origin);
 
         let mut attempt: u32 = 1;
         let mut previous_delay: Option<Duration> = None;
+        let mut total_wait = Duration::ZERO;
 
         loop {
             // One clock read for the before-attempt state and the operation.
@@ -298,6 +333,13 @@ where
                 .with_elapsed(post_elapsed)
                 .with_previous_delay(previous_delay);
 
+            let stats_for = |reason| RetryStats {
+                attempts: attempt,
+                total_elapsed: post_elapsed,
+                total_wait,
+                stop_reason: reason,
+            };
+
             match self.classifier.decide(outcome) {
                 Verdict::Return(value) => {
                     self.hooks.on_exit.call(&Exit::Returned {
@@ -305,7 +347,7 @@ where
                         elapsed: post_elapsed,
                         value: &value,
                     });
-                    return Ok(value);
+                    return (Ok(value), stats_for(StopReason::Returned));
                 }
                 Verdict::Abort(last) => {
                     self.hooks.on_exit.call(&Exit::Aborted {
@@ -313,26 +355,69 @@ where
                         elapsed: post_elapsed,
                         last: &last,
                     });
-                    return Err(RetryError::Aborted { last });
+                    return (
+                        Err(RetryError::Aborted { last }),
+                        stats_for(StopReason::Aborted),
+                    );
                 }
                 Verdict::Retry(last) => {
-                    if self.stop.should_stop(&state) {
+                    let timeout_exceeded = self.timeout.is_some_and(|t| post_elapsed >= t);
+                    if self.stop.should_stop(&state) || timeout_exceeded {
                         self.hooks.on_exit.call(&Exit::Exhausted {
                             attempt,
                             elapsed: post_elapsed,
                             last: &last,
                         });
-                        return Err(RetryError::Exhausted { last });
+                        return (
+                            Err(RetryError::Exhausted { last }),
+                            stats_for(StopReason::Exhausted),
+                        );
                     }
-                    let delay = self.wait.next_wait(&state);
+
+                    // Clamp the next sleep to the remaining timeout budget so the
+                    // loop terminates close to the deadline.
+                    let next_delay = self.wait.next_wait(&state);
+                    let delay = match self.timeout {
+                        Some(t) => next_delay.min(t.saturating_sub(post_elapsed)),
+                        None => next_delay,
+                    };
                     if !delay.is_zero() {
                         self.clock.wait(delay);
                     }
+                    total_wait = total_wait.saturating_add(delay);
                     previous_delay = Some(delay);
                     attempt = attempt.saturating_add(1);
                 }
             }
         }
+    }
+}
+
+/// A [`Retry`] wrapper whose [`call`](RetryWithStats::call) also returns
+/// [`RetryStats`]. Created by [`Retry::with_stats`].
+pub struct RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+    inner: Retry<F, C, S, W, Cl, BA, AA, OX>,
+}
+
+impl<F, C, S, W, Cl, BA, AA, OX, O> RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
+where
+    F: FnMut(RetryState) -> O,
+    C: Decide<O>,
+    S: Stop,
+    W: Wait,
+    Cl: SyncClock,
+    BA: BeforeAttemptHook,
+    AA: AttemptHook<O>,
+    OX: ExitHook<C::R, C::A, O>,
+{
+    /// Drives the retry loop and returns both the result and the stats.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RetryError`] on abort or exhaustion.
+    #[allow(clippy::type_complexity)]
+    pub fn call(self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
+        self.inner.run()
     }
 }
 
@@ -603,5 +688,42 @@ mod tests {
             3,
             "after_attempt fires on the terminal attempt too"
         );
+    }
+
+    #[test]
+    fn with_stats_reports_attempts_wait_elapsed_and_reason() {
+        let (result, stats) = retry(|_| Err::<i32, &str>("boom"))
+            .stop(stop::attempts(3))
+            .wait(wait::fixed(Duration::from_millis(5)))
+            .clock(VirtualClock::new())
+            .with_stats()
+            .call();
+
+        assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
+        assert_eq!(stats.attempts, 3);
+        // Two inter-attempt waits of 5ms; the terminal attempt does not wait.
+        assert_eq!(stats.total_wait, Duration::from_millis(10));
+        assert_eq!(stats.total_elapsed, Duration::from_millis(10));
+        assert_eq!(stats.stop_reason, StopReason::Exhausted);
+    }
+
+    #[test]
+    fn timeout_stops_the_loop_once_the_budget_is_exceeded() {
+        // 10ms waits under a 25ms budget: attempts run at t=0,10,20,25; the last
+        // wait is clamped to 5ms to land exactly on the deadline, where the next
+        // boundary check exhausts the loop.
+        let (result, stats) = retry(|_| Err::<i32, &str>("x"))
+            .stop(stop::attempts(100))
+            .wait(wait::fixed(Duration::from_millis(10)))
+            .timeout(Duration::from_millis(25))
+            .clock(VirtualClock::new())
+            .with_stats()
+            .call();
+
+        assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+        assert_eq!(stats.attempts, 4);
+        assert_eq!(stats.total_elapsed, Duration::from_millis(25));
+        assert_eq!(stats.total_wait, Duration::from_millis(25));
+        assert_eq!(stats.stop_reason, StopReason::Exhausted);
     }
 }
