@@ -239,9 +239,32 @@ where
 mod tests {
     use super::*;
     use crate::clock::VirtualClock;
+    use crate::decision::Outcome;
     use core::cell::Cell;
 
     const ARBITRARY_ATTEMPTS: u32 = 5;
+
+    /// A non-`Result` poll outcome that classifies itself, so the default path
+    /// drives it with no `.decide` at the call site.
+    #[derive(Debug, PartialEq)]
+    enum Poll {
+        Pending,
+        Ready(i32),
+        Failed(&'static str),
+    }
+
+    impl Outcome for Poll {
+        type Return = i32;
+        type Abort = &'static str;
+
+        fn classify(self) -> Verdict<i32, &'static str, Poll> {
+            match self {
+                Poll::Ready(value) => Verdict::Return(value),
+                Poll::Failed(error) => Verdict::Abort(error),
+                Poll::Pending => Verdict::Retry(self),
+            }
+        }
+    }
 
     #[test]
     fn retries_on_err_then_returns_the_ok_value() {
@@ -369,5 +392,37 @@ mod tests {
             .call();
 
         assert_eq!(result, Err(RetryError::Aborted { last: "fatal" }));
+    }
+
+    #[test]
+    fn owned_outcome_type_returns_via_the_default_path() {
+        let counter = Cell::new(0);
+        let result = retry(|_| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            if n >= 3 {
+                Poll::Ready(9)
+            } else {
+                Poll::Pending
+            }
+        })
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .clock(VirtualClock::new())
+        .call();
+
+        assert_eq!(result, Ok(9));
+        assert_eq!(counter.get(), 3);
+    }
+
+    #[test]
+    fn owned_outcome_type_aborts_via_the_default_path() {
+        let result = retry(|_| Poll::Failed("io"))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(VirtualClock::new())
+            .call();
+
+        assert_eq!(result, Err(RetryError::Aborted { last: "io" }));
     }
 }
