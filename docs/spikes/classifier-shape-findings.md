@@ -33,9 +33,12 @@ surface, op returns arbitrary `O`, `call()` stays `Result`-shaped with
   'cargo test --manifest-path spikes/<id>/Cargo.toml'` (toolchain 1.94.1).
 - Honesty mandate in every brief; misuse diagnostics captured verbatim (S10).
 
-## Run state (checkpoint — resume from here)
+## Run state (checkpoint)
 
-- Phase: converge → gating round-1 eliminations + refine-round proposal
+- Phase: **COMPLETE (2026-07-21).** Winner J1; concluding ADR-0006 drafted.
+  Rounds A/B/D/E (breadth) → F1–F4 (refine) → G1–G4 (Outcome trait) →
+  H (obsolete) → J1 (winner) → K (observation-layer analysis). History below
+  retained as written; live verdict + recommendation at end of doc.
 - Tier: heavy
 - Workspace: `/Users/cameron/repos/relentless/.spike-workspace/` (durable, on
   real disk, git-init'd, excluded via `.git/info/exclude`). NOTE: ephemeral
@@ -216,10 +219,173 @@ green. Artifact committed.
   (fixes the common-path E0282) and E (no nesting, no dual builder) FOR THE
   COMMON CASE, if the project accepts a two-method surface + opt-in abort.
 
+### F2-decompose — RESULT (informed), then ELIMINATED on values axis
+
+- Shape: `.classify(Fn(O) -> ControlFlow<R,O>)` (Break=Return, Continue=Retry) +
+  SEPARATE `.abort_when(Fn(&O) -> bool)`. `call() -> Result<C::Return,
+  RetryError<O>>`. Kills E0282 (proven: abort-less `ControlFlow<R,O>` closure
+  compiles; identical `Decision<R,A,O>` fails). Native `? -> T`. Builder arity
+  4 (`F,C,A,H`). All 11 scenarios + S9b green.
+- Distinguishing property: **abort is CARRIED, never PROJECTED** — abort value
+  is always the whole outcome (`Aborted{last: O}`), no third payload type.
+- Compiled abort-on-`Ok` comparison (examples/abort_on_ok.rs in both spikes):
+  poll where `Ok(Corrupted)` is fatal → F1 prints `Aborted(Corrupted)` (projects
+  a domain `PollError`), F2 prints `Aborted(Ok(Corrupted))` (carries raw
+  outcome).
+- **USER DECISION: projected abort REQUIRED.** → F2 ELIMINATED. Why lost:
+  cannot project the abort value (carry-only). What didn't work: abort as a
+  boolean axis is orthogonal + inference-clean but structurally cannot produce
+  a value ≠ the outcome. Carry forward: the decomposition (abort as a separate
+  predicate axis) is a clean OPTIONAL convenience — F1 could ALSO offer
+  `.abort_when` sugar for the carry case atop `.classify_aborting` for the
+  projected case. Open item for the real build, not a blocker.
+
+## Terminology (ubiquitous language — settled with user)
+
+- **Outcome** (`O`): what one attempt produces; Result-agnostic.
+- **Classifier**: `Outcome -> Decision`; replaces the boolean predicate.
+- **Decision**: Return(`R`) | Retry(`O`) | Abort(`A`).
+- **Return value** (`R`), **Abort value** (`A`).
+- **Carried** vs **Projected**: terminal value IS the outcome (carried) vs
+  computed by the classifier, type independent of `O` (projected). "bare-`E`
+  abort" = the default/`.when` sugar's built-in projection to `E`.
+- **RetryError**: Aborted | Exhausted. **Predicate**: `.when`/`.until` sugar =
+  degenerate classifier.
+
+## Standing after user values input
+
+- **Projected abort required** → shapes must support Abort carrying a value ≠
+  outcome. Survivors: **F1** (two-tier, projected abort via `.classify_aborting`,
+  common-path E0282-free) and **B** (transform, projected natively but
+  common-path E0282 wall). F1 DOMINATES B. F2, E, C, A all out.
+- F1 is the presumptive winner. Its one real wart = the two-method split
+  (`.classify` return/retry-only vs `.classify_aborting` adding projected
+  abort), forced by trait coherence + inference.
+- Open: does **F3-cleanroom** (still building, optimizing for projected-capable
+  + single-method + annotation-free) find a shape that delivers projected abort
+  WITHOUT F1's two-method split? That is the last question before verdict.
+
+### F3-cleanroom — RESULT (clean-room, fully unanchored) — CONVERGES on F1
+
+Independently landed on the SAME necessary split as F1. 6 tests green (incl.
+S9b), all 11 scenarios byte-identical, `#![forbid(unsafe_code)]`, core-only.
+
+- Shape: `Decision<R, O, A = Infallible> { Return, Retry, Abort }` + `Classify<O>`
+  trait with assoc `type Return; type Abort;` and TWO closure blanket impls:
+  (A) `FnMut(O) -> Decision<R,O,Infallible>` — no-abort, Abort FIXED to
+  Infallible; (B) `Aborting<F>` newtype wrapping `FnMut(O) -> Decision<R,O,A>`
+  for genuine projected abort. `Builder<Op,O,C,H>` arity 4; `call() ->
+  Result<C::Return, RetryError<O, C::Abort>>`.
+- SAME split as F1, DIFFERENT encoding: F1 puts the opt-in in a second builder
+  METHOD (`.classify_aborting`); F3 puts it in a call-site NEWTYPE
+  (`.classify(Aborting(|o| ...))`). Both isolate "no-abort closure
+  (Infallible-fixed, inference-clean)" from "abort closure (needs an explicit
+  opt-in to pin `A`)".
+- **PROVES the split is the floor (key negative result):** the `A = Infallible`
+  DEFAULT TYPE PARAM is a RED HERRING — it does NOT fire when `A` is inferred
+  through the call with no downstream pin; captured `error[E0282]: cannot infer
+  type of the type parameter A`. What makes no-abort closures infer is the
+  dedicated blanket impl that FIXES Abort=Infallible for bodies building only
+  Return/Retry — NOT the default param. So "one Decision<R,A,O> + default A"
+  (a tempting single-method unification) is disproven by construction.
+- Convergence verdict: informed-on-F1 (F1) and fully-clean-room (F3) landed on
+  the identical split from opposite starting points → strong evidence the
+  return/retry-vs-abort split is NECESSARY, not an artifact. The only remaining
+  design freedom is its ENCODING: second builder method (F1) vs call-site
+  newtype (F3).
+- Shared warts: opt-in marker for 3-way (method or wrapper); async needs a
+  parallel classify surface (mirrors the crate's existing sync/async split);
+  standalone borrowed-outcome closure needs a `fn` signature (lifetime, not
+  E0282). F3 `Exhausted` carries whole `Result` (F1 same).
+
+## Standing before F4
+
+Split is the FLOOR (F1≈F3 converged independently; default-param unification
+disproven). F4-refine (Fable, informed) is the last attempt to beat it — if it
+too fails to unify, verdict is locked: adopt the split, choose encoding
+(method vs newtype), write ADR.
+
+### F4-refine — RESULT (Fable, informed) — single-method encoding, but RELOCATES the split into a newcomer trap
+
+Claimed to "dominate F1": ONE `.classify` + ONE `Decision<R,A,O>` via smart
+constructors `Decision::ret(r)`/`retry(o)` (fix `A=Infallible`) + raw
+`Decision::abort(a)`/variants for projected abort. 6 tests green, 11 lines +
+S11 projected-abort-on-Ok byte-identical. Orchestrator verified tests pass.
+
+**Independent refutation (orchestrator, reviewer≠author) — the domination claim
+does NOT hold:**
+- Compiled the newcomer trap (`examples/newcomer_trap.rs`): a no-abort closure
+  written with the OBVIOUS variant names `Decision::Return(v)`/`Decision::Retry(o)`
+  → **`error[E0282]: cannot infer type of the type parameter A`** — the exact
+  round-1 killer the redesign exists to eliminate. F4 compiles ONLY with the
+  non-obvious `ret`/`retry` smart constructors.
+- So F4 did NOT eliminate the split — it RELOCATED it from two named methods
+  into a constructor-naming convention, and put the trap on the MOST NATURAL
+  syntax. F4's own report rated this "tie/slight better"; the compiled trap
+  shows it is a first-use faceplant → WORSE UX on the axis that matters.
+- Contrast F1: its common-path `.classify` takes `Decision2<R,O>` which HAS NO
+  Abort variant, so the trap is UNTYPEABLE — the two-enum "wart" is precisely
+  what makes F1 trap-safe. F4 traded trap-safety for one fewer type.
+
+Net: F4 is a THIRD independent encoding of the SAME necessary split (confirms
+F3's floor), not a dissolution of it. Value: proves the single-enum unification
+reintroduces the E0282 trap → the split's floor is now triangulated by 3 teams
+(F1 informed, F3 clean-room, F4 Fable) from 3 directions.
+
+## Interim verdict (round F — SUPERSEDED by rounds G/H/J below)
+
+At the close of round F this doc recommended **E1 (F1) — two methods**,
+believing the no-abort vs projected-abort split was structurally necessary and
+that any single-method encoding either wrapped abort (F3) or reintroduced the
+E0282 newcomer trap (F4). Rounds G–J disproved the "necessary two methods"
+claim. Retained here for history; the live verdict is below.
+
+- E1 (F1) — two methods. Trap-safe, cost 2 methods + 2 enums.
+- E2 (F3) — one method + `Aborting(..)` newtype. Unusual wrapper idiom.
+- E3 (F4) — one method + one enum + smart-ctor convention. E0282 trap on
+  obvious variant names.
+
+## Verdict (FINAL — tournament complete 2026-07-21)
+
+Winner: **J1 — paired decision enums + op-anchored bounds**
+(`.spike-workspace/J1-paired-decision/`). One classifier method, raw variants
+everywhere, no smart constructors, no wrapper idiom, no two-method split.
+
+The round-F premise ("the split is structurally necessary") was wrong: it
+assumed a single three-parameter decision enum. J1 splits the enum, not the
+method — the no-abort currency (`Decision<R, O>`) has no abort parameter, so
+E0282 is *structurally impossible* rather than trap-avoided; the abort-capable
+currency (`Verdict<R, A, O>`) pins `A` via its `Abort` arm. A sealed
+`IntoDecision<O>` trait unifies both under one method. Orthogonally,
+op-anchored classifier bounds remove even the closure-parameter annotation
+that every earlier finalist paid, and move misuse errors to the call site.
+
+Later rounds in full:
+
+- **Round G** — `Outcome` trait (G2/G3): zero-call-site classification for
+  owned domain types; orphan rule forces `.classify(closure)` for custom
+  `Result`. Adopted as a complementary path, not the closure representation.
+- **Round H** — builder-carries-`A` (`.abort_type::<A>()`): never built; J1
+  delivers its promised wins (raw variants, inline 3-way, actionable errors)
+  without a builder type-state parameter or ordering rule. Obsolete.
+- **Round J** — J1: proved E0282 removable structurally. Winner.
+- **Round K** (analysis) — observation-layer consequences: `StopReason`
+  simplifies to the terminal-verdict discriminant (`Rejected`→`Aborted`);
+  `ExitState.outcome: &O` is unimplementable under the by-value classifier and
+  is replaced by a borrowed `Exit<'a, R, A, O>` view; `RetryStats`/
+  `RetryState` unchanged.
+
 ## Finalists
 
-(none yet)
+- **J1** (winner) — paired decisions + op-anchored bounds.
+- F4 (round-2/3 best single-enum) — dominated by J1 on every measured axis.
+- G3 `Outcome` trait — orthogonal, adopted alongside J1.
 
 ## Recommendation
 
-(pending)
+Adopt **J1 closure path + G3 `Outcome` trait + unchanged when/until/default
+paths**. Concluding decision record:
+[ADR-0006](../adr/0006-paired-decision-classifier-engine.md). Flagged open for
+review before implementation: exact names (`.classify()` vs `.decide()`,
+`Decision`, `Verdict`) and the `after_attempt` timing choice — see the ADR's
+Open questions.
