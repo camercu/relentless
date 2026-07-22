@@ -136,3 +136,11 @@ where
         (**self).next_wait(state)
     }
 }
+
+/// A shared reference to a wait strategy is itself one, so a builder can borrow
+/// a strategy stored in a reusable [`RetryPolicy`](crate::RetryPolicy).
+impl<W: Wait + ?Sized> Wait for &W {
+    fn next_wait(&self, state: &RetryState) -> Duration {
+        (**self).next_wait(state)
+    }
+}

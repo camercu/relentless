@@ -91,3 +91,11 @@ where
         (**self).should_stop(state)
     }
 }
+
+/// A shared reference to a stop strategy is itself one, so a builder can borrow
+/// a strategy stored in a reusable [`RetryPolicy`](crate::RetryPolicy).
+impl<S: Stop + ?Sized> Stop for &S {
+    fn should_stop(&self, state: &RetryState) -> bool {
+        (**self).should_stop(state)
+    }
+}
