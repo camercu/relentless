@@ -14,10 +14,15 @@
 #![allow(dead_code)]
 
 mod async_engine;
+mod error;
 mod hooks;
 mod op;
 mod state;
 mod stats;
+
+// `RetryResult` is public API, reachable at cutover (S8).
+#[allow(unused_imports)]
+pub use error::{RetryError, RetryResult};
 
 use op::{RetryOp, StatelessOp};
 
@@ -46,27 +51,6 @@ use hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain}
 
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
-
-/// Error returned when the retry loop terminates without a `Return`.
-///
-/// - `Aborted` — the classifier chose [`Verdict::Abort`]; `last` is the
-///   projected abort payload.
-/// - `Exhausted` — the stop strategy fired while the classifier still wanted to
-///   retry; `last` is the final whole outcome.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum RetryError<A, O> {
-    /// The classifier rejected an outcome as fatal.
-    Aborted {
-        /// The abort payload chosen by the classifier.
-        last: A,
-    },
-    /// The stop strategy fired while the classifier still wanted to retry.
-    Exhausted {
-        /// The final whole outcome seen before giving up.
-        last: O,
-    },
-}
 
 /// A classifier-driven sync retry builder.
 ///
