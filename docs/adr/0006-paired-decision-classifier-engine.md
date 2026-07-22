@@ -4,10 +4,11 @@ Date: 2026-07-21
 
 ## Status
 
-Proposed — design settled empirically. Naming reviewed 2026-07-21: method
-name **`.decide()`** and the two-way type **`Decision`** are settled
-(concurred); the abort-capable type name **`Verdict` is provisional** and the
-`after_attempt` timing choice is still open (see Open questions).
+Proposed — design settled empirically. Reviewed 2026-07-21: method name
+**`.decide()`**, the two-way type **`Decision`**, **before-classification
+`after_attempt` timing**, and keeping **`StopReason::Succeeded`** are all
+settled (concurred). Sole remaining open item: the abort-capable type name
+**`Verdict` is provisional** (see Open questions).
 
 ## Context
 
@@ -129,12 +130,16 @@ Adopt the J1 composite design:
    discovery aids: `Decision` docs open with "need to abort? return a
    `Verdict`", `#[doc(alias = "abort")]` on `Verdict`, and the E0599/E0308
    misuse errors already name both types.
-3. **`after_attempt` timing** (forced by the by-value classifier):
-   (a) fire before classification with `&O` for every attempt, dropping the
-   `next_delay` field (the value reappears as the next attempt's
-   `RetryState.previous_delay`) — recommended; or (b) fire after
-   classification on the retry path only, keeping `next_delay`, with
-   terminal attempts covered by the exit hook.
-4. **`StopReason::Succeeded` vs `Returned`.** `Succeeded` stays accurate
-   (the loop achieved its goal) and minimizes churn; `Returned` would mirror
-   the verdict vocabulary exactly. Current lean: keep `Succeeded`.
+3. **`after_attempt` timing — SETTLED: fire before classification**
+   (concurred 2026-07-21). The hook fires once per attempt with `&O`, before
+   the classifier consumes the outcome, so it sees every raw outcome
+   including terminal ones under a uniform contract. The `next_delay` field is
+   dropped from `AttemptState`; its value reappears as the next attempt's
+   `RetryState.previous_delay`, and terminal attempts are covered by the exit
+   hook — no information is lost. Rejected alternative: fire after
+   classification on the retry path only (keeps `next_delay` but stops firing
+   on terminal attempts, a behavior change to hook semantics).
+4. **`StopReason` success variant — SETTLED: keep `Succeeded`** (concurred
+   2026-07-21). Stays accurate (the loop achieved its goal) and minimizes
+   churn; `Returned` would mirror the verdict vocabulary exactly but rename a
+   variant for no behavioral gain.
