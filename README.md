@@ -17,6 +17,9 @@ those libraries make awkward:
 
 - **Polling**, where `Ok("pending")` means "keep going" and you need
   `.until(predicate::ok(...))` rather than just retrying errors.
+- **Outcome classification**, where `.decide(...)` sorts each outcome into
+  return / retry / abort — so a sought-after `Err`, a non-`Result` poll enum, or
+  a search state can drive the loop directly, independent of `Result` semantics.
 - **Policy reuse**, where a single `RetryPolicy` captures your retry rules and
   gets shared across multiple call sites — no duplicated builder chains.
 - **Strategy composition**, where `wait::fixed(50ms) + wait::exponential(100ms)`
@@ -202,8 +205,9 @@ with runnable versions in [`examples/`](./examples):
 - **Error handling** — on failure you get a `RetryError`: `Exhausted { last }`
   when the stop strategy fired (`last` is the final attempt's full
   `Result<T, E>` — polling can exhaust while the last outcome was still `Ok`),
-  or `Rejected { last }` when a predicate deemed the error non-retryable
-  (`last` is that error itself).
+  or `Aborted { last }` when the classifier rejected the outcome as fatal
+  (`last` is the bare error). A classifier (`.decide`) can also make any outcome
+  the success value, so a probe can return its found `Err` through `Ok`.
 - **Deterministic testing** — `clock::VirtualClock` asserts the exact backoff
   schedule with zero wall-clock time spent, so timeout and backoff tests stay
   fast and non-flaky; one injected value drives both waits and elapsed time,
