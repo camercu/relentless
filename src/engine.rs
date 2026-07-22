@@ -6,7 +6,8 @@
 //! [`RetryState`] — and swaps the boolean predicate for a [`Decide`] classifier
 //! that consumes each outcome by value.
 //!
-//! Only the sync path and the default classifier exist so far (S1 skeleton).
+//! The sync path carries the classifier surface (`.decide`/`.when`/`.until`);
+//! hooks, stats, and the async path arrive in later slices.
 
 // Parallel ADR-6 engine: unreachable from the public API until cutover (S8)
 // re-exports it. Remove this allow then.
@@ -14,7 +15,10 @@
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Verdict};
+use crate::decision::{
+    ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, Verdict, When,
+};
+use crate::predicate::Predicate;
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
 use crate::wait::{self, Wait, WaitExponential};
@@ -131,6 +135,43 @@ impl<F, C, S, W, Cl> Retry<F, C, S, W, Cl> {
         Retry {
             op: self.op,
             classifier: ClosureClassifier(classifier),
+            stop: self.stop,
+            wait: self.wait,
+            clock: self.clock,
+        }
+    }
+
+    /// Retries while `predicate` wants to; otherwise accepts the outcome
+    /// (`Ok` returns, a rejected `Err` aborts with the bare error).
+    ///
+    /// `Result`-only sugar over [`decide`](Self::decide). The predicate's
+    /// `&Result<T, E>` parameter infers from the operation's output.
+    #[must_use]
+    pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl>
+    where
+        F: FnMut(RetryState) -> Result<T, E>,
+        P: Predicate<T, E>,
+    {
+        Retry {
+            op: self.op,
+            classifier: When(predicate),
+            stop: self.stop,
+            wait: self.wait,
+            clock: self.clock,
+        }
+    }
+
+    /// Retries *until* `predicate` is satisfied, then accepts. The inverse of
+    /// [`when`](Self::when); natural for polling (`.until(ok(is_ready))`).
+    #[must_use]
+    pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl>
+    where
+        F: FnMut(RetryState) -> Result<T, E>,
+        P: Predicate<T, E>,
+    {
+        Retry {
+            op: self.op,
+            classifier: Until(predicate),
             stop: self.stop,
             wait: self.wait,
             clock: self.clock,
@@ -282,5 +323,51 @@ mod tests {
 
         assert_eq!(result, Ok("crash"));
         assert_eq!(counter.get(), 3);
+    }
+
+    #[test]
+    fn until_polls_a_result_until_ready() {
+        use crate::predicate;
+
+        #[derive(Debug, PartialEq)]
+        enum Status {
+            Pending,
+            Done,
+        }
+
+        let counter = Cell::new(0);
+        let result = retry(|_| {
+            let n = counter.get() + 1;
+            counter.set(n);
+            Ok::<Status, &str>(if n >= 2 {
+                Status::Done
+            } else {
+                Status::Pending
+            })
+        })
+        .until(predicate::ok(|s: &Status| *s == Status::Done))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .clock(VirtualClock::new())
+        .call();
+
+        assert_eq!(result, Ok(Status::Done));
+        assert_eq!(counter.get(), 2);
+    }
+
+    #[test]
+    fn when_aborts_on_a_rejected_error() {
+        use crate::predicate;
+
+        // Retry only "transient"; any other error is non-retryable and aborts
+        // with the bare error payload.
+        let result = retry(|_| Err::<i32, &str>("fatal"))
+            .when(predicate::error(|e: &&str| *e == "transient"))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(VirtualClock::new())
+            .call();
+
+        assert_eq!(result, Err(RetryError::Aborted { last: "fatal" }));
     }
 }

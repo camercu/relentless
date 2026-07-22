@@ -14,6 +14,7 @@
 // re-exports it. Remove this allow then.
 #![allow(dead_code)]
 
+use crate::predicate::Predicate;
 use core::convert::Infallible;
 
 /// A two-way decision about a completed outcome: accept it or try again.
@@ -180,6 +181,56 @@ where
 
     fn decide(&self, outcome: O) -> Verdict<D::R, D::A, O> {
         (self.0)(outcome).into_verdict()
+    }
+}
+
+/// Classifier from `.when(p)`: retry while the predicate wants to; otherwise
+/// accept, returning an `Ok` and aborting on an `Err` with the bare error.
+///
+/// This bridges the `Result`-shaped [`Predicate`] world onto the classifier:
+/// a rejected `Err(e)` becomes `Verdict::Abort(e)` (the payload the old engine
+/// reported as `RetryError::Rejected`).
+pub struct When<P>(pub(crate) P);
+
+impl<T, E, P> Decide<Result<T, E>> for When<P>
+where
+    P: Predicate<T, E>,
+{
+    type R = T;
+    type A = E;
+
+    fn decide(&self, outcome: Result<T, E>) -> Verdict<T, E, Result<T, E>> {
+        if self.0.should_retry(&outcome) {
+            Verdict::Retry(outcome)
+        } else {
+            match outcome {
+                Ok(value) => Verdict::Return(value),
+                Err(error) => Verdict::Abort(error),
+            }
+        }
+    }
+}
+
+/// Classifier from `.until(p)`: the inverse of [`When`] — retry *until* the
+/// predicate is satisfied, then accept.
+pub struct Until<P>(pub(crate) P);
+
+impl<T, E, P> Decide<Result<T, E>> for Until<P>
+where
+    P: Predicate<T, E>,
+{
+    type R = T;
+    type A = E;
+
+    fn decide(&self, outcome: Result<T, E>) -> Verdict<T, E, Result<T, E>> {
+        if self.0.should_retry(&outcome) {
+            match outcome {
+                Ok(value) => Verdict::Return(value),
+                Err(error) => Verdict::Abort(error),
+            }
+        } else {
+            Verdict::Retry(outcome)
+        }
     }
 }
 
