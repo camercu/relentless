@@ -224,9 +224,9 @@
 //!   `Drop` on your own types for guaranteed cleanup. See the `async-cancel`
 //!   example.
 //! - **Sync:** bound the wall-clock with [`.timeout()`](Retry::timeout),
-//!   or check a flag inside the operation and return a sentinel error. With the
-//!   default `any_error()` predicate that sentinel is *retried*, so make it
-//!   non-retryable via [`.when()`](Retry::when) (it then terminates as
+//!   or check a flag inside the operation and return a sentinel error. The
+//!   default classifier *retries* every `Err`, so make the sentinel terminal
+//!   via [`.when()`](Retry::when) (it then terminates as
 //!   [`RetryError::Aborted`]). See the `sync-cancel` example.
 //!
 //! # Custom wait strategies
@@ -321,7 +321,7 @@ pub use wait::Wait;
 /// Commonly used traits, glob-imported to enable the builder DSL.
 ///
 /// The combinator methods (`.cap()`, `.full_jitter()`, `.chain()` on [`Wait`];
-/// `.or()`/`.and()` on [`Stop`] and [`Predicate`]) and the closure extensions
+/// `.or()`/`.and()` on [`Stop`]) and the closure extensions
 /// (`.retry()` on [`RetryExt`], `.retry_async()` on [`AsyncRetryExt`]) are trait
 /// methods, so the trait must be in scope to call them. Glob-import this module
 /// to bring them all in at once:
@@ -337,13 +337,12 @@ pub use wait::Wait;
 ///     .cap(Duration::from_secs(5));
 /// ```
 ///
-/// Operator composition (`+` on waits, `|`/`&` on stops and predicates) works
-/// without any trait imports — the prelude is only needed for the method-form
-/// combinators, the closure extension traits, and implementing custom
-/// strategies.
+/// Operator composition (`+` on waits, `|`/`&` on stops) works without any
+/// trait imports — the prelude is only needed for the method-form combinators,
+/// the closure extension traits, and implementing custom strategies.
 ///
 /// Strategy constructors (`wait::exponential`, `stop::attempts`, …) are *not*
 /// re-exported here; import them explicitly by name.
 pub mod prelude {
-    pub use crate::{AsyncClock, AsyncRetryExt, Clock, Predicate, RetryExt, Stop, SyncClock, Wait};
+    pub use crate::{AsyncClock, AsyncRetryExt, Clock, RetryExt, Stop, SyncClock, Wait};
 }
