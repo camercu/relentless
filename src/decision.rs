@@ -177,7 +177,7 @@ impl<R, A, O> IntoDecision<O> for Verdict<R, A, O> {
 /// type (`Decision` or `Verdict`) selects the [`IntoDecision`] impl, so there
 /// is no coherence overlap between the two currencies.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClosureClassifier<C>(pub C);
+pub struct ClosureClassifier<C>(pub(crate) C);
 
 impl<O, D, C> Decide<O> for ClosureClassifier<C>
 where

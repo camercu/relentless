@@ -1022,7 +1022,7 @@ impl<'a, O> core::marker::Unpin for relentless::AttemptState<'a, O>
 impl<'a, O> core::marker::UnsafeUnpin for relentless::AttemptState<'a, O>
 impl<'a, O> core::panic::unwind_safe::RefUnwindSafe for relentless::AttemptState<'a, O> where O: core::panic::unwind_safe::RefUnwindSafe
 impl<'a, O> core::panic::unwind_safe::UnwindSafe for relentless::AttemptState<'a, O> where O: core::panic::unwind_safe::RefUnwindSafe
-pub struct relentless::ClosureClassifier<C>(pub C)
+pub struct relentless::ClosureClassifier<C>(_)
 impl<C: core::clone::Clone> core::clone::Clone for relentless::ClosureClassifier<C>
 pub fn relentless::ClosureClassifier<C>::clone(&self) -> relentless::ClosureClassifier<C>
 impl<C: core::cmp::Eq> core::cmp::Eq for relentless::ClosureClassifier<C>
