@@ -2,8 +2,9 @@
 
 **Status:** living catalog. Records UX warts surfaced by a dogfooding pass over
 the public surface (2026-07-23), ranked as candidates for future polish. Item 1a
-(timeout on the policy) has since shipped; item 1b (hooks on the policy) was
-worked through and declined. The rest remain open — each names the friction, the
+(timeout on the policy) has since shipped; item 1b (hooks on the policy) and item
+2 (an attempt-count shortcut) were worked through and declined. The rest remain
+open — each names the friction, the
 evidence, and the open design question a spike would resolve; none is scheduled;
 none is a defect in current behavior. Two prior UX spikes already concluded
 (ADR-0005 unified clock,
@@ -17,7 +18,7 @@ next tier down.
 |---|------|-------|------|
 | 1a | `RetryPolicy` cannot carry `timeout` | ~~High~~ **DONE** | Resolved |
 | 1b | `RetryPolicy` cannot carry hooks | Low | Declined (see below) |
-| 2 | No shortcut for the most common tweak (attempt count) | Medium | Sugar |
+| 2 | No shortcut for the most common tweak (attempt count) | ~~Medium~~ | Declined (see below) |
 | 3 | Closure arity differs silently across entry points | Medium | Signposting |
 | 4 | Async `VirtualClock` needs `&`, sync does not | Low | Test ergonomics |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
@@ -79,19 +80,61 @@ becomes a real, felt need (not a symmetry itch), it warrants its own spike on a
 outcome-agnostic — rather than lifting the current type-state hooks onto the
 policy. Low priority until a concrete use case pushes on it.
 
-## 2. No shortcut for the most common tweak (attempt count)
+## 2. No shortcut for the most common tweak (attempt count) — declined (2026-07-23)
 
-Changing the retry count from the default 3 requires importing the `stop`
-module and replacing the whole stop strategy:
+The friction: changing the retry count from the default 3 requires importing the
+`stop` module and replacing the whole stop strategy:
 `use relentless::stop; …​.stop(stop::attempts(5))`. Compare backon's
 `.with_max_times(5)`. The single most common customization carries the most
-import ceremony.
+import ceremony. The compositional stop model
+(`stop::attempts(5) | stop::elapsed(2s)`) is deliberate, so any convenience
+risks introducing a second way to set the count.
 
-Tension: the compositional stop model (`stop::attempts(5) | stop::elapsed(2s)`)
-is deliberate and a convenience `.max_attempts(n)` introduces a second way to
-set the count. The question is whether the common case should subsidize the
-general one — a `.max_attempts` that ORs/replaces just the attempt bound, or a
-documented one-liner, versus holding the line on composition.
+The candidate fix — a `.max_attempts(n)` builder method — was worked through and
+**declined**. The cleanest form is an inherent method constrained to the default
+stop type (`impl Retry<F, C, StopAfterAttempts, …>`), mutating the field and
+returning `Self` so the type stays stable. It looked attractive: definitionally
+identical to `.stop(stop::attempts(n))`, so not a *divergent* second way. But a
+red-team pass found the shape does not hold up:
+
+- **It misses the highest-value entry point.** `RetryPolicy::retry` borrows its
+  parts and returns `Retry<F, &C, &S, &W, …>` (`src/policy/mod.rs:195`), so a
+  default policy's stop type is `&StopAfterAttempts`, not `StopAfterAttempts`.
+  The constrained impl does not match the reference, so
+  `policy.retry(op).max_attempts(5)` would not compile — and "reuse a shared
+  policy, bump attempts for one call" is precisely the case the sugar was for.
+  The user's only fix there is `.stop(stop::attempts(5))`, the exact ceremony we
+  set out to remove. Making it work needs a *type-changing* impl
+  (`&StopAfterAttempts` → `StopAfterAttempts`), which forfeits the type-stable
+  `-> Self` property that motivated the method.
+- **Compose-vs-replace trap.** `.timeout` composes into the effective stop (ORs
+  a deadline, SPEC 11.4.1); `.max_attempts` would *overwrite* the stop value.
+  Same surface syntax, opposite semantics, so a later `.stop(...)` silently
+  discards a preceding `.max_attempts(n)` with no diagnostic. `.timeout`'s field
+  pattern is a misleading analogy, not a precedent.
+- **Silent re-override.** `.stop(stop::attempts(3)).max_attempts(5)` would
+  compile and silently move 3 → 5 — two spellings for one value in one chain.
+- **Duplication tax for zero capability.** Uniform coverage needs the constrained
+  impl on `Retry`, `AsyncRetry`, and `RetryPolicy` (plus a fourth for the
+  policy-borrow case) — three-to-four near-identical blocks for sugar that adds
+  no capability the composition path lacks. Against maintenance-first
+  (remove more than add, single way to do things), a losing trade.
+
+Resolution: **hold the line on composition; make the existing one-liner
+discoverable** rather than adding surface. `.stop(stop::attempts(n))` already
+works identically on every entry point, including the policy borrow, and keeps
+composition the single mechanism. If the ergonomic gap is ever felt sharply
+enough to reopen, the decision is purely "is backon-style sugar worth the
+redundancy," made knowing the policy-borrow hole and the compose-vs-replace
+trap — not a fresh design question. (Naming and off-by-one were *not* the
+blockers: `max_attempts` correctly mirrors `stop::attempts` and
+`DEFAULT_MAX_ATTEMPTS`, counting total attempts, not retries.)
+
+Adjacent option, also declined: re-export `attempts()` from the `prelude`. It
+removes only the import line, not the `.stop(...)` wrapper; unqualified
+generic-named constructors (`elapsed`, `never`) hurt readability and risk
+collisions; and it overturns the prelude's documented exclusion of strategy
+constructors (`src/lib.rs:347`).
 
 ## 3. Closure arity differs silently across entry points
 
