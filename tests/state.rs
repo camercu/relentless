@@ -153,6 +153,33 @@ fn exit_exposes_the_final_exhausted_outcome() {
     assert_eq!(*final_outcome.borrow(), Some(false));
 }
 
+/// 3.6.6
+#[test]
+fn exit_reports_elapsed_since_first_attempt() {
+    use relentless::{Exit, RetryPolicy, stop};
+    use std::cell::Cell;
+
+    // The op advances the virtual clock by one step before failing, so the
+    // terminal `Exit` must report exactly that elapsed — not zero.
+    const STEP: Duration = Duration::from_millis(50);
+    let clock = VirtualClock::new();
+    let exit_elapsed = Cell::new(Duration::ZERO);
+
+    let _ = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .retry(|_| {
+            clock.advance(STEP);
+            Err::<i32, &str>("fail")
+        })
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_elapsed.set(exit.elapsed());
+        })
+        .clock(&clock)
+        .call();
+
+    assert_eq!(exit_elapsed.get(), STEP);
+}
+
 /// 3.6.1
 #[test]
 fn retry_state_for_attempt_defaults_elapsed_zero_and_delay_none() {
