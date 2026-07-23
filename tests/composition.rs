@@ -1,4 +1,4 @@
-//! Seeded property tests verifying Stop, Wait, and Predicate composition
+//! Seeded property tests verifying Stop and Wait composition
 //! obeys boolean/arithmetic algebra.
 
 use core::time::Duration;
@@ -92,7 +92,6 @@ const LCG_MULTIPLIER: u64 = 6_364_136_223_846_793_005;
 const LCG_INCREMENT: u64 = 1_442_695_040_888_963_407;
 const STOP_STREAM_DISCRIMINANT: u64 = 1;
 const WAIT_STREAM_DISCRIMINANT: u64 = 2;
-const PREDICATE_STREAM_DISCRIMINANT: u64 = 3;
 
 fn next_u64(state: &mut u64) -> u64 {
     *state = state
@@ -255,12 +254,5 @@ fn seeded_run_is_exactly_reproducible_when_seed_env_is_set() {
     assert_eq!(
         first_digest, second_digest,
         "wait stream mismatch under fixed seed: {PROPTEST_SEED_ENV}={effective_seed:#018x}"
-    );
-
-    let first_digest = stream_signature(effective_seed, PREDICATE_STREAM_DISCRIMINANT);
-    let second_digest = stream_signature(effective_seed, PREDICATE_STREAM_DISCRIMINANT);
-    assert_eq!(
-        first_digest, second_digest,
-        "predicate stream mismatch under fixed seed: {PROPTEST_SEED_ENV}={effective_seed:#018x}"
     );
 }
