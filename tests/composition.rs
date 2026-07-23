@@ -2,7 +2,7 @@
 //! obeys boolean/arithmetic algebra.
 
 use core::time::Duration;
-use relentless::{Predicate, Stop, Wait, predicate, stop, wait};
+use relentless::{Stop, Wait, stop, wait};
 use std::env;
 
 const PROPTEST_SEED_ENV: &str = "RELENTLESS_PROPTEST_SEED";
@@ -83,9 +83,7 @@ const MAX_INITIAL_WAIT_MILLIS: u64 = 50;
 const MAX_INCREMENT_MILLIS: u64 = 20;
 const WAIT_CAP_MILLIS: u64 = 60;
 const CHAIN_SWITCH_ATTEMPT: u32 = 5;
-const OK_THRESHOLD: u32 = 40;
 const SAMPLE_INDEX_OFFSET: u32 = 1;
-const PREDICATE_PAYLOAD_MAX: u32 = 100;
 const REPRO_SEQUENCE_LENGTH: u32 = 128;
 const DIGEST_ROTATE_LEFT_BITS: u32 = 7;
 const DIGEST_MIX_MULTIPLIER: u64 = 0x0000_0001_0000_01B3;
@@ -224,43 +222,6 @@ fn wait_composition_matches_saturating_arithmetic_and_builders() {
             chained.next_wait(&state),
             expected,
             "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=wait-chain"
-        );
-    }
-}
-
-#[test]
-fn predicate_composition_matches_boolean_algebra() {
-    let run_seed = run_seed();
-    let mut seed = derive_stream_seed(run_seed, PREDICATE_STREAM_DISCRIMINANT);
-
-    for sample_index in 0..SAMPLE_COUNT {
-        let payload = bounded_u32(&mut seed, PREDICATE_PAYLOAD_MAX);
-        let outcome: Result<u32, u32> = if next_u64(&mut seed) & 1 == 0 {
-            Ok(payload)
-        } else {
-            Err(payload)
-        };
-        let sample = sample_index + SAMPLE_INDEX_OFFSET;
-
-        let left = predicate::error(|err: &u32| err % 2 == 0);
-        let right = predicate::ok(|value: &u32| *value < OK_THRESHOLD);
-        let left_value = left.should_retry(&outcome);
-        let right_value = right.should_retry(&outcome);
-
-        let either = predicate::error(|err: &u32| err % 2 == 0)
-            | predicate::ok(|value: &u32| *value < OK_THRESHOLD);
-        let both = predicate::error(|err: &u32| err % 2 == 0)
-            & predicate::ok(|value: &u32| *value < OK_THRESHOLD);
-
-        assert_eq!(
-            either.should_retry(&outcome),
-            left_value || right_value,
-            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=predicate-or"
-        );
-        assert_eq!(
-            both.should_retry(&outcome),
-            left_value && right_value,
-            "repro: {PROPTEST_SEED_ENV}={run_seed:#018x}; sample={sample}; invariant=predicate-and"
         );
     }
 }

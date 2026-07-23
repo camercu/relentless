@@ -5,7 +5,7 @@
 use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::prelude::*;
-use relentless::{predicate, stop, wait};
+use relentless::{stop, wait};
 
 const ARBITRARY_DURATION: Duration = Duration::from_millis(10);
 
@@ -21,17 +21,6 @@ fn prelude_enables_wait_combinators() {
 fn prelude_enables_stop_combinators() {
     // `.or()` / `.and()` are `Stop` methods; resolved via prelude.
     let _strategy = stop::attempts(3).or(stop::elapsed(Duration::from_secs(1)));
-}
-
-#[test]
-fn prelude_enables_predicate_combinators() {
-    // `.or()` is a `Predicate` method; resolved via prelude. Use an
-    // `E`-pinning matcher as the receiver so the named method isn't ambiguous.
-    let pred = predicate::error(|e: &&str| *e == "boom").or(predicate::ok(|v: &u32| *v < 2));
-    assert!(pred.should_retry(&Err::<u32, &str>("boom")));
-    assert!(!pred.should_retry(&Err::<u32, &str>("fatal")));
-    assert!(pred.should_retry(&Ok::<u32, &str>(1)));
-    assert!(!pred.should_retry(&Ok::<u32, &str>(5)));
 }
 
 #[test]

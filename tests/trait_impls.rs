@@ -61,8 +61,6 @@ fn all_strategy_types_implement_debug() {
     // but the wrapper structs do. Verify the named container types are Debug:
     fn assert_debug<T: core::fmt::Debug>(_: &T) {}
     assert_debug(&predicate::any_error());
-    assert_debug(&(predicate::any_error() | predicate::any_error()));
-    assert_debug(&(predicate::any_error() & predicate::any_error()));
     let _ = format!("{:?}", predicate::any_error());
 }
 
@@ -177,6 +175,4 @@ fn all_predicate_types_implement_clone() {
     let _ = predicate::error(|_e: &&str| true).clone();
     let _ = predicate::ok(|_v: &u32| true).clone();
     let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
-    let _ = (predicate::any_error() | predicate::any_error()).clone();
-    let _ = (predicate::any_error() & predicate::any_error()).clone();
 }

@@ -696,10 +696,9 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(
-            predicate::error(|error: &&str| *error == "transient")
-                | predicate::ok(|value: &i32| *value < SUCCESS_VALUE),
-        );
+        .when(predicate::result(|o: &Result<i32, &str>| {
+            matches!(o, Err("transient")) || matches!(o, Ok(v) if *v < SUCCESS_VALUE)
+        }));
 
     let call_count = Cell::new(0_u32);
     let result = policy

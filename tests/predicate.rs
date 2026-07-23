@@ -200,8 +200,10 @@ fn ok_does_not_call_matcher_for_error_values() {
 
 #[test]
 fn polling_can_retry_selected_errors_and_not_ready_values() {
-    let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_VALUE);
+    // Composition lives inside a `result` closure now (native `||`).
+    let predicate = predicate::result(|o: &TestResult| {
+        matches!(o, Err(TestError::Retryable)) || matches!(o, Ok(v) if *v < READY_VALUE)
+    });
 
     assert!(predicate.should_retry(&err(TestError::Retryable)));
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
@@ -221,109 +223,6 @@ fn result_can_express_polling_rules_in_one_predicate() {
     assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
     assert!(!predicate.should_retry(&err(TestError::Fatal)));
     assert!(!predicate.should_retry(&ok(READY_VALUE)));
-}
-
-#[test]
-fn predicate_or_retries_when_either_side_retries() {
-    let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_VALUE);
-
-    assert!(predicate.should_retry(&err(TestError::Retryable)));
-    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    assert!(!predicate.should_retry(&err(TestError::Fatal)));
-    assert!(!predicate.should_retry(&ok(READY_VALUE)));
-}
-
-#[test]
-fn predicate_or_supports_chained_composition() {
-    let predicate = predicate::error(|error: &TestError| matches!(error, TestError::Retryable))
-        | predicate::ok(|value: &u32| *value < READY_VALUE)
-        | predicate::result(
-            |outcome: &TestResult| matches!(outcome, Ok(value) if *value == READY_VALUE),
-        );
-
-    assert!(predicate.should_retry(&err(TestError::Retryable)));
-    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    assert!(predicate.should_retry(&ok(READY_VALUE)));
-    assert!(!predicate.should_retry(&err(TestError::Fatal)));
-}
-
-#[test]
-fn predicate_or_short_circuits_when_left_retries() {
-    let right_calls = Cell::new(0_u32);
-    let predicate = predicate::result(|_outcome: &TestResult| true)
-        | predicate::result(|_outcome: &TestResult| {
-            right_calls.set(right_calls.get().saturating_add(1));
-            false
-        });
-
-    assert!(predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
-    assert_eq!(right_calls.get(), 0);
-}
-
-#[test]
-fn predicate_and_retries_only_when_both_sides_retry() {
-    let predicate = predicate::any_error()
-        & predicate::error(|error: &TestError| matches!(error, TestError::Retryable));
-
-    assert!(predicate.should_retry(&err(TestError::Retryable)));
-    assert!(!predicate.should_retry(&err(TestError::Fatal)));
-    assert!(!predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
-}
-
-#[test]
-fn predicate_and_supports_chained_composition() {
-    let predicate = predicate::result(|outcome: &TestResult| outcome.is_ok())
-        & predicate::ok(|value: &u32| *value < READY_VALUE)
-        & predicate::result(|outcome: &TestResult| matches!(outcome, Ok(value) if *value > 0));
-
-    assert!(predicate.should_retry(&ok(ARBITRARY_NOT_READY_VALUE)));
-    assert!(!predicate.should_retry(&ok(READY_VALUE)));
-    assert!(!predicate.should_retry(&err(TestError::Retryable)));
-}
-
-#[test]
-fn predicate_and_short_circuits_when_left_rejects() {
-    let right_calls = Cell::new(0_u32);
-    let predicate = predicate::result(|_outcome: &TestResult| false)
-        & predicate::result(|_outcome: &TestResult| {
-            right_calls.set(right_calls.get().saturating_add(1));
-            true
-        });
-
-    assert!(!predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
-    assert_eq!(right_calls.get(), 0);
-}
-
-// The `.or()`/`.and()` methods route through the same composites as `|`/`&`, so
-// they must short-circuit identically. Pin the contract on the method entry
-// point too, not just the operators.
-#[test]
-fn predicate_or_method_short_circuits_when_left_retries() {
-    let right_calls = Cell::new(0_u32);
-    let predicate = predicate::result(|_outcome: &TestResult| true).or(predicate::result(
-        |_outcome: &TestResult| {
-            right_calls.set(right_calls.get().saturating_add(1));
-            false
-        },
-    ));
-
-    assert!(predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
-    assert_eq!(right_calls.get(), 0);
-}
-
-#[test]
-fn predicate_and_method_short_circuits_when_left_rejects() {
-    let right_calls = Cell::new(0_u32);
-    let predicate = predicate::result(|_outcome: &TestResult| false).and(predicate::result(
-        |_outcome: &TestResult| {
-            right_calls.set(right_calls.get().saturating_add(1));
-            true
-        },
-    ));
-
-    assert!(!predicate.should_retry(&ok(ARBITRARY_OK_VALUE)));
-    assert_eq!(right_calls.get(), 0);
 }
 
 #[test]
@@ -425,44 +324,6 @@ fn closure_predicate_can_be_used_in_generic_context() {
     assert!(evaluate(&closure, Err(TestError::Retryable)));
     assert!(!evaluate(&closure, Err(TestError::Fatal)));
     assert!(!evaluate(&closure, Ok(ARBITRARY_OK_VALUE)));
-}
-
-#[test]
-fn predicate_named_combinators_match_operator_forms() {
-    let named_or = predicate::error(|err: &&str| *err == "retryable")
-        .or(predicate::ok(|value: &u32| *value < 2));
-    let op_or = predicate::error(|err: &&str| *err == "retryable")
-        | predicate::ok(|value: &u32| *value < 2);
-
-    assert_eq!(
-        named_or.should_retry(&Err("retryable")),
-        op_or.should_retry(&Err("retryable"))
-    );
-    assert_eq!(
-        named_or.should_retry(&Ok(1_u32)),
-        op_or.should_retry(&Ok(1_u32))
-    );
-    assert_eq!(
-        named_or.should_retry(&Err("fatal")),
-        op_or.should_retry(&Err("fatal"))
-    );
-
-    let named_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
-        .and(predicate::error(|err: &&str| *err == "retryable"));
-    let op_and = predicate::result(|r: &Result<u32, &str>| r.is_err())
-        & predicate::error(|err: &&str| *err == "retryable");
-    assert_eq!(
-        named_and.should_retry(&Err::<u32, &str>("retryable")),
-        op_and.should_retry(&Err::<u32, &str>("retryable"))
-    );
-    assert_eq!(
-        named_and.should_retry(&Err::<u32, &str>("fatal")),
-        op_and.should_retry(&Err::<u32, &str>("fatal"))
-    );
-    assert_eq!(
-        named_and.should_retry(&Ok(1_u32)),
-        op_and.should_retry(&Ok(1_u32))
-    );
 }
 
 /// Boxed predicates delegate `should_retry` to the boxed impl — all three

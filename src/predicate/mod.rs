@@ -6,25 +6,20 @@
 //! - [`result`] retries based on the full `Result<T, E>`.
 //! - [`ok`] retries on selected `Ok` values and treats any `Err` as terminal.
 //!
-//! Predicates compose with `|` and `&` operators, or via `.or()` and `.and()`
-//! methods on the [`Predicate`] trait.
-//!
-//! Prefer the operators when composing built-in predicates standalone. The
-//! method forms resolve only once both outcome types are pinned at the call
-//! site: `error(…).or(ok(…))` infers (the closures pin `E` and `T`), but
-//! `error(…).or(error(…))` alone leaves `T` undetermined and fails with
-//! E0282 — turbofish cannot supply it, since `T` lives on the trait, not the
-//! method. The operators sidestep this entirely by deferring type resolution
-//! to the point of use (e.g. `.when(...)`).
+//! These are `Result`-shaped sugar over the classifier used by
+//! [`Retry::when`](crate::Retry::when) / [`Retry::until`](crate::Retry::until).
+//! For conditions that need boolean composition, put the logic inside a
+//! [`result`] closure (`result(|o| a(o) || b(o))`); for full return / retry /
+//! abort control, use [`Retry::decide`](crate::Retry::decide).
 
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
-use core::ops::{BitAnd, BitOr};
 
 /// Examines the outcome of an operation and decides whether to retry.
 ///
-/// Composition methods are provided directly on the trait with
-/// `where Self: Sized` bounds.
+/// Any `Fn(&Result<T, E>) -> bool` is a `Predicate` via the blanket impl, so
+/// the built-in factories ([`any_error`], [`error`], [`ok`], [`result`]) and
+/// plain closures both work with `.when` / `.until`.
 ///
 /// # Examples
 ///
@@ -42,48 +37,6 @@ use core::ops::{BitAnd, BitOr};
 pub trait Predicate<T, E> {
     /// Returns `true` if the retry loop should retry based on this outcome.
     fn should_retry(&self, outcome: &Result<T, E>) -> bool;
-
-    /// Returns a predicate that retries when either side retries.
-    ///
-    /// This is the named equivalent of the `|` operator. Evaluation
-    /// short-circuits: the right predicate is skipped once the left one
-    /// retries. (`Stop` composition, by contrast, always evaluates both sides.)
-    ///
-    /// ```
-    /// use relentless::{Predicate, predicate};
-    ///
-    /// // These are equivalent:
-    /// let a = predicate::error(|e: &&str| *e == "retry").or(predicate::ok(|v: &u32| *v < 2));
-    /// let b = predicate::error(|e: &&str| *e == "retry") | predicate::ok(|v: &u32| *v < 2);
-    /// ```
-    #[must_use]
-    fn or<P: Predicate<T, E>>(self, other: P) -> PredicateAny<Self, P>
-    where
-        Self: Sized,
-    {
-        PredicateAny::new(self, other)
-    }
-
-    /// Returns a predicate that retries only when both sides retry.
-    ///
-    /// This is the named equivalent of the `&` operator. Evaluation
-    /// short-circuits: the right predicate is skipped once the left one
-    /// declines. (`Stop` composition, by contrast, always evaluates both sides.)
-    ///
-    /// ```
-    /// use relentless::{Predicate, predicate};
-    ///
-    /// // These are equivalent:
-    /// let a = predicate::error(|e: &&str| *e == "retry").and(predicate::ok(|v: &u32| *v < 2));
-    /// let b = predicate::error(|e: &&str| *e == "retry") & predicate::ok(|v: &u32| *v < 2);
-    /// ```
-    #[must_use]
-    fn and<P: Predicate<T, E>>(self, other: P) -> PredicateAll<Self, P>
-    where
-        Self: Sized,
-    {
-        PredicateAll::new(self, other)
-    }
 }
 
 /// Any `Fn(&Result<T, E>) -> bool` can be used directly as a [`Predicate`],
@@ -287,126 +240,3 @@ where
         }
     }
 }
-
-/// Composite predicate that retries when **either** predicate retries.
-///
-/// Created by combining predicates with the `|` operator or the
-/// [`Predicate::or`] named method.
-///
-/// Evaluation short-circuits: the right predicate is skipped once the left one
-/// retries, so a stateful predicate on the right may not be consulted.
-///
-/// # Examples
-///
-/// ```
-/// use relentless::{Predicate, predicate};
-///
-/// let p = predicate::error(|err: &&str| *err == "retryable") | predicate::ok(|value: &u32| *value < 2);
-/// assert!(p.should_retry(&Err("retryable")));
-/// assert!(p.should_retry(&Ok(1)));
-/// assert!(!p.should_retry(&Ok(5)));
-///
-/// // Equivalent using the named method:
-/// let p = predicate::error(|err: &&str| *err == "retryable").or(predicate::ok(|value: &u32| *value < 2));
-/// ```
-#[derive(Debug, Clone)]
-pub struct PredicateAny<A, B> {
-    left: A,
-    right: B,
-}
-
-impl<A, B> PredicateAny<A, B> {
-    /// Prefer the `|` operator or [`Predicate::or`] method over this constructor.
-    #[must_use]
-    pub fn new(left: A, right: B) -> Self {
-        Self { left, right }
-    }
-}
-
-impl<T, E, A, B> Predicate<T, E> for PredicateAny<A, B>
-where
-    A: Predicate<T, E>,
-    B: Predicate<T, E>,
-{
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
-        self.left.should_retry(outcome) || self.right.should_retry(outcome)
-    }
-}
-
-/// Composite predicate that retries only when **both** predicates retry.
-///
-/// Created by combining predicates with the `&` operator or the
-/// [`Predicate::and`] named method.
-///
-/// Evaluation short-circuits: the right predicate is skipped once the left one
-/// declines, so a stateful predicate on the right may not be consulted.
-///
-/// # Examples
-///
-/// ```
-/// use relentless::{Predicate, predicate};
-///
-/// let p = predicate::result(|outcome: &Result<u32, &str>| outcome.is_err())
-///     & predicate::error(|err: &&str| *err == "retryable");
-///
-/// assert!(p.should_retry(&Err("retryable")));
-/// assert!(!p.should_retry(&Err("fatal")));
-///
-/// // Equivalent using the named method:
-/// let p = predicate::result(|outcome: &Result<u32, &str>| outcome.is_err())
-///     .and(predicate::error(|err: &&str| *err == "retryable"));
-/// ```
-#[derive(Debug, Clone)]
-pub struct PredicateAll<A, B> {
-    left: A,
-    right: B,
-}
-
-impl<A, B> PredicateAll<A, B> {
-    /// Prefer the `&` operator or [`Predicate::and`] method over this constructor.
-    #[must_use]
-    pub fn new(left: A, right: B) -> Self {
-        Self { left, right }
-    }
-}
-
-impl<T, E, A, B> Predicate<T, E> for PredicateAll<A, B>
-where
-    A: Predicate<T, E>,
-    B: Predicate<T, E>,
-{
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool {
-        self.left.should_retry(outcome) && self.right.should_retry(outcome)
-    }
-}
-
-/// Generates `BitOr` / `BitAnd` operator impls for a [`Predicate`] type,
-/// producing [`PredicateAny`] / [`PredicateAll`] composites respectively.
-/// Trailing `$param`s name the type's own generic parameters so composites and
-/// leaves share one macro.
-macro_rules! impl_predicate_ops {
-    ($ty:ty $(, $param:ident)*) => {
-        impl<$($param,)* Rhs> BitOr<Rhs> for $ty {
-            type Output = PredicateAny<Self, Rhs>;
-
-            fn bitor(self, rhs: Rhs) -> Self::Output {
-                PredicateAny::new(self, rhs)
-            }
-        }
-
-        impl<$($param,)* Rhs> BitAnd<Rhs> for $ty {
-            type Output = PredicateAll<Self, Rhs>;
-
-            fn bitand(self, rhs: Rhs) -> Self::Output {
-                PredicateAll::new(self, rhs)
-            }
-        }
-    };
-}
-
-impl_predicate_ops!(PredicateAnyError);
-impl_predicate_ops!(PredicateError<F>, F);
-impl_predicate_ops!(PredicateResult<F>, F);
-impl_predicate_ops!(PredicateOk<F>, F);
-impl_predicate_ops!(PredicateAny<A, B>, A, B);
-impl_predicate_ops!(PredicateAll<A, B>, A, B);

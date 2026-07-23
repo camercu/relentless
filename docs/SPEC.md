@@ -312,16 +312,14 @@ pub trait Outcome { type Return; type Abort; fn classify(self) -> Verdict<..>; }
   `.decide` defers the bound and needs one parameter annotation.
 - **3.4.5** `.when(p)` / `.until(p)` — `Result`-shaped `Predicate` sugar (below).
 
-**Predicate (`.when` / `.until`).** `Predicate<T, E>` is retained for the common
-`Result` case; composition methods carry `where Self: Sized` bounds.
+**Predicate (`.when` / `.until`).** `Predicate<T, E>` is retained as `Result`-shaped
+sugar; it is a single method, blanket-implemented for any
+`Fn(&Result<T, E>) -> bool`, so the built-in factories and plain closures both
+work.
 
 ```rust
 pub trait Predicate<T, E> {
     fn should_retry(&self, outcome: &Result<T, E>) -> bool;
-    fn or<P: Predicate<T, E>>(self, other: P) -> predicate::PredicateAny<Self, P>
-    where Self: Sized { ... }
-    fn and<P: Predicate<T, E>>(self, other: P) -> predicate::PredicateAll<Self, P>
-    where Self: Sized { ... }
 }
 ```
 
@@ -329,18 +327,17 @@ pub trait Predicate<T, E> {
   accepts — `Ok(v)` → `Return(v)`, `Err(e)` → `Abort(e)` (the bare error).
 - **3.4.7** `.until(p)` is the inverse: retry until `p.should_retry()` is `true`,
   then accept with the same `Ok`→return / `Err`→abort mapping.
-- **3.4.8** The `|` operator equals `.or()` and `&` equals `.and()`; composition
-  short-circuits (`|` skips the right once the left retries, `&` skips once the
-  left declines), differing from `Stop` composition (§3.1.2), which evaluates
-  both sides.
+- **3.4.8** Predicates carry no composition algebra. Compose boolean conditions
+  inside a `result` closure — `.when(result(|o| a(o) || b(o)))` — or drop to
+  `.decide` for full return / retry / abort control.
 
 `.when(error(|e| e.is_transient()))` reads "retry when transient error";
 `.until(ok(|s| s.is_ready()))` reads "retry until ready."
 
 **3.4.9** With `.until(ok(f))`, errors are retried by default (`ok(f)` is `false`
-for any `Err`, which `until` inverts to retry). Compose to make errors terminal:
-`.until(ok(is_ready).or(error(is_fatal)))` aborts on fatal. Alternatively,
-`.decide` gives direct control over which outcome returns, retries, or aborts.
+for any `Err`, which `until` inverts to retry). Make errors terminal with a
+`result` closure — `.until(result(|o| is_ready(o) || is_fatal(o)))` — or with
+`.decide`.
 
 Built-in predicate constructors (`should_retry` semantics):
 
@@ -1330,7 +1327,7 @@ Traits:
 - `Stop` (includes `.or()`, `.and()` as provided methods)
 - `Wait` (includes `.cap()`, `.chain()`, `.add()`, `.jitter()`,
   `.full_jitter()`, `.equal_jitter()` as provided methods)
-- `Predicate` (includes `.or()`, `.and()` as provided methods)
+- `Predicate` (single method, blanket-implemented for `Fn(&Result<T, E>) -> bool`)
 - `Outcome` (user-implementable for owned outcome types); `Decide`,
   `IntoDecision` (sealed engine-facing classifier traits, named only in bounds)
 - `Clock`, `SyncClock`, `AsyncClock` (re-exported from `clock`)
@@ -1363,7 +1360,7 @@ Free functions:
 
 - constructors: `any_error`, `error`, `ok`, `result`
 - types: `PredicateAnyError`, `PredicateError`, `PredicateOk`,
-  `PredicateResult`, `PredicateAny`, `PredicateAll`
+  `PredicateResult`
 
 `clock` module:
 
@@ -1375,7 +1372,7 @@ Free functions:
 ### 13.3 Combinator type opacity
 
 Combinator and classifier-wrapper types (`StopAny`, `StopAll`, `WaitCapped`,
-`WaitChain`, `WaitCombine`, `PredicateAny`, `PredicateAll`, `Jittered`, and the
+`WaitChain`, `WaitCombine`, `Jittered`, and the
 classifier wrappers `When`, `Until`, `ClosureClassifier`) are **exposed but
 unstable**: they are `pub` for technical reasons (they appear in the return
 types of composition and classifier-installing methods), but users should not

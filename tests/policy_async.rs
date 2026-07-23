@@ -313,10 +313,9 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(
-            predicate::error(|error: &&str| *error == ERROR_VALUE)
-                | predicate::ok(|value: &i32| *value < SUCCESS_VALUE),
-        );
+        .when(predicate::result(|o: &Result<i32, &str>| {
+            matches!(o, Err(e) if *e == ERROR_VALUE) || matches!(o, Ok(v) if *v < SUCCESS_VALUE)
+        }));
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
