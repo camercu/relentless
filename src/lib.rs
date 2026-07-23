@@ -73,9 +73,10 @@
 //! ```
 //!
 //! To bound the **total** wall-clock time across all attempts and sleeps, add
-//! [`.timeout(dur)`](Retry::timeout). It OR-folds an elapsed deadline
-//! into the stop strategy and clamps each inter-attempt sleep to the remaining
-//! budget; it does not interrupt an attempt already running. A sleep clamped to
+//! [`.timeout(dur)`](Retry::timeout). Between attempts it stops the loop once
+//! elapsed time reaches the deadline — alongside, not through, the stop strategy
+//! — and clamps each inter-attempt sleep to the remaining budget; it does not
+//! interrupt an attempt already running. A sleep clamped to
 //! the last of the budget still ends with one final attempt at the deadline, so
 //! total wall-clock time can exceed `dur` by roughly that attempt's duration.
 //! See [Cancellation] for the runtime-agnostic deadline pattern.
