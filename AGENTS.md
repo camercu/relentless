@@ -16,22 +16,34 @@ changing code.
 
 - Start behavior checks from [docs/SPEC.md](/docs/SPEC.md), then read
   [src/lib.rs](/src/lib.rs) for the public surface, then
-  [src/policy/mod.rs](/src/policy/mod.rs) for policy construction.
-- Treat [src/policy/execution/common.rs](/src/policy/execution/common.rs) as the
-  semantic center of the crate. It owns retry-loop transitions, hook timing,
-  cancellation exits, and stats reasons. The sync and async execution files
-  mostly wrap this shared state machine.
-- Expect the API to be duplicated across four files:
-  [src/policy/execution/sync_exec.rs](/src/policy/execution/sync_exec.rs),
-  [src/policy/execution/async_exec.rs](/src/policy/execution/async_exec.rs),
-  [src/policy/ext/sync_builder.rs](/src/policy/ext/sync_builder.rs), and
-  [src/policy/ext/async_builder.rs](/src/policy/ext/async_builder.rs).
-  Behavioral drift between the sync and async engines is caught by the
+  [src/decision.rs](/src/decision.rs) for the classifier model
+  (`Decide`/`Decision`/`Verdict`/`Outcome`) and
+  [src/policy/mod.rs](/src/policy/mod.rs) for the reusable `RetryPolicy` config.
+  The engine is classifier-driven (ADR-6): each outcome is consumed by value by
+  a `Decide` classifier, not tested by a boolean predicate.
+- Treat the two retry loops as the semantic center of the crate. They are
+  hand-written twins, not a shared core plus wrappers:
+  [src/engine/mod.rs](/src/engine/mod.rs) `Retry::run` is the sync loop and
+  entry points (`retry`, `RetryExt`);
+  [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll` is
+  the async loop (`retry_async`, `AsyncRetryExt`). Each independently owns the
+  same classify → stop → wait → hook → exit transitions, so keeping them in step
+  is the primary maintenance risk.
+- The loops share only building blocks, not control flow:
+  [src/engine/state.rs](/src/engine/state.rs) (`AttemptState`, `Exit`,
+  `StopReason`), [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain`
+  type-state), [src/engine/op.rs](/src/engine/op.rs)
+  (`RetryOp`/`AsyncRetryOp`), [src/engine/error.rs](/src/engine/error.rs)
+  (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)
+  (`RetryStats`); the outcome-agnostic `Stop`/`Wait`/`Clock`/`RetryState`
+  infrastructure is reused unchanged.
+- Behavioral drift between the sync and async loops is caught by the
   differential suite in [tests/parity.rs](/tests/parity.rs) (needs `alloc`, so
   it runs in any default or `alloc`-enabled run, including bare `just test`).
-  When you change hooks, cancellation, stats, or type-state ergonomics, extend
-  a parity scenario for the new behavior and still audit the
-  two builder files for surface/docs drift the suite cannot see.
+  When you change hooks, cancellation, stats, or type-state ergonomics, edit
+  both loops in lockstep, extend a parity scenario for the new behavior, and
+  audit the builder methods in both files for surface/docs drift the suite
+  cannot see.
 - Verify feature claims explicitly. Prefer the repo's `just` targets over ad hoc
   `cargo` commands. The fastest useful checks are `just test`,
   `just test-no-default`, `just check-no-std`, and `just check-wasm`.
