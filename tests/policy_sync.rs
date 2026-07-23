@@ -719,6 +719,38 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
 }
 
 #[test]
+fn until_ok_retries_through_transient_errors_while_polling() {
+    // `.until(ok(is_ready))` retries on everything except a matching `Ok`, so a
+    // poll that errors keeps polling rather than surfacing the error. This locks
+    // the semantics documented on `.until` (retry on everything except the match)
+    // and on `predicate::ok`: under `.until`, `Err` is retried, not terminal.
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO))
+        .until(predicate::ok(|v: &i32| *v >= SUCCESS_VALUE));
+
+    let call_count = Cell::new(0_u32);
+    let result = policy
+        .retry(|_| {
+            let next_call = call_count.get().saturating_add(1);
+            call_count.set(next_call);
+            match next_call {
+                1 | 2 => Err("transient"),
+                _ => Ok(SUCCESS_VALUE),
+            }
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(
+        call_count.get(),
+        3,
+        "Err retries; only a matching Ok returns"
+    );
+}
+
+#[test]
 fn predicate_rejects_err_means_immediate_return() {
     // When the predicate does not match an Err, the loop exits immediately with
     // RetryError::Aborted rather than waiting for the stop strategy to fire.

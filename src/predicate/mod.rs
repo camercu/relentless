@@ -211,19 +211,25 @@ pub struct PredicateOk<F> {
 }
 
 /// Produces a predicate that retries when `outcome` is `Ok(value)` and
-/// `matcher(value)` returns `true`.
+/// `matcher(value)` returns `true`. It never fires on `Err`.
 ///
-/// Use this when `Err` outcomes should return immediately, and only selected
-/// `Ok` values should continue retrying.
+/// How that maps onto `Err` at the engine level depends on which classifier
+/// consumes the predicate:
 ///
-/// If the stop strategy fires while `ok(...)` is still asking for another
-/// attempt, execution terminates with
-/// [`RetryError::Exhausted`](crate::RetryError::Exhausted).
+/// - [`.until(ok(is_ready))`](crate::Retry::until) is the natural polling form:
+///   the loop retries on everything *except* a matching `Ok`, so a matching `Ok`
+///   returns while any `Err` keeps polling — transient poll failures are retried,
+///   not surfaced.
+/// - [`.when(ok(m))`](crate::Retry::when) retries only the matching `Ok`; a
+///   non-matching `Ok` returns and an `Err` aborts with
+///   [`RetryError::Aborted`](crate::RetryError::Aborted).
 ///
-/// For polling flows:
-/// - use `ok(|value| !is_ready(value))` when any `Err` should stop immediately
-/// - combine it with [`error`] when only selected errors are retryable
-/// - use [`result`] when the retry decision needs the full `Result<T, E>`
+/// If the stop strategy fires while a retry is still wanted, execution
+/// terminates with [`RetryError::Exhausted`](crate::RetryError::Exhausted).
+///
+/// To make a poll `Err` terminal rather than retried, classify the whole outcome
+/// with [`Retry::decide`](crate::Retry::decide), or use [`result`] when the
+/// decision needs the full `Result<T, E>`.
 #[must_use]
 pub fn ok<F>(matcher: F) -> PredicateOk<F> {
     PredicateOk { matcher }
