@@ -75,9 +75,12 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for RetryWithStats<F, C, S, W,
 
 /// Begins a classifier-driven retry from an operation.
 ///
-/// Defaults: `stop::attempts(3)`, `wait::exponential(100ms)`, the default
-/// classifier, no hooks, and [`SystemClock`]. In non-`std` builds `.clock(...)`
-/// must be set before `.call()`.
+/// The operation receives the [`RetryState`]; when it ignores that state, the
+/// [`RetryExt::retry`] extension form (`(|| op()).retry()`) is equivalent and
+/// drops the unused argument. Defaults: `stop::attempts(3)`,
+/// `wait::exponential(100ms)`, the default classifier, no hooks, and
+/// [`SystemClock`]. In non-`std` builds `.clock(...)` must be set before
+/// `.call()`.
 pub fn retry<F, O>(op: F) -> DefaultRetry<F>
 where
     F: FnMut(RetryState) -> O,
@@ -124,8 +127,11 @@ impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
 
 /// Starts a sync retry directly from a no-argument closure or function.
 ///
-/// The operation takes no parameters; use [`retry`] when you need the
-/// [`RetryState`]. Defaults match [`retry`]: `stop::attempts(3)`,
+/// This is the stateless twin of [`retry`]: `(|| op()).retry()` behaves
+/// identically to `retry(|_| op())` — the extension form simply discards the
+/// [`RetryState`]. Reach for the free [`retry`] when the operation needs that
+/// state (e.g. the attempt number); the switch is mechanical, changing only the
+/// closure's argument. Defaults match [`retry`]: `stop::attempts(3)`,
 /// `wait::exponential(100ms)`, retry on any `Err` (via the default classifier).
 pub trait RetryExt<O>: FnMut() -> O + Sized {
     /// Begins an owned retry builder from this closure.

@@ -3,7 +3,9 @@
 **Status:** living catalog. Records UX warts surfaced by a dogfooding pass over
 the public surface (2026-07-23), ranked as candidates for future polish. Item 1a
 (timeout on the policy) has since shipped; item 1b (hooks on the policy) and item
-2 (an attempt-count shortcut) were worked through and declined. The rest remain
+2 (an attempt-count shortcut) were worked through and declined; item 3 (closure
+arity across entry points) was resolved with docs after a diagnostic fix was
+prototyped and rejected. The rest remain
 open — each names the friction, the
 evidence, and the open design question a spike would resolve; none is scheduled;
 none is a defect in current behavior. Two prior UX spikes already concluded
@@ -19,7 +21,7 @@ next tier down.
 | 1a | `RetryPolicy` cannot carry `timeout` | ~~High~~ **DONE** | Resolved |
 | 1b | `RetryPolicy` cannot carry hooks | Low | Declined (see below) |
 | 2 | No shortcut for the most common tweak (attempt count) | ~~Medium~~ | Declined (see below) |
-| 3 | Closure arity differs silently across entry points | Medium | Signposting |
+| 3 | Closure arity differs across entry points | ~~Medium~~ | Resolved (docs) |
 | 4 | Async `VirtualClock` needs `&`, sync does not | Low | Test ergonomics |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
 
@@ -136,17 +138,60 @@ generic-named constructors (`elapsed`, `never`) hurt readability and risk
 collisions; and it overturns the prelude's documented exclusion of strategy
 constructors (`src/lib.rs:347`).
 
-## 3. Closure arity differs silently across entry points
+## 3. Closure arity differs across entry points — resolved as docs (2026-07-23)
 
 `src/engine/op.rs`. `retry(|state| …)` and `policy.retry(|state| …)` take a
 stateful `FnMut(RetryState) -> O`; the extension form `(|| …).retry()` takes a
 stateless `FnMut() -> O` (adapted via `StatelessOp`, which discards the state).
-Refactoring between the free-function/policy forms and the ext form silently
-changes the closure's shape, and nothing at the call site signposts it.
+Refactoring between the free-function/policy forms and the ext form changes the
+closure's shape, and nothing at the call site signposted the sibling spelling.
 
-This is inherent — an extension method cannot thread an argument into its
-receiver — so the fix is signposting, not unification: clearer docs at the
-switch point, or a naming cue that the ext form is stateless.
+Scoped down on inspection: a **learnability** wart, not a defect. There is no
+semantic divergence — `retry(|_| f())` and `(|| f()).retry()` drive the same
+engine to the same result and attempt count — and the compiler already rejects a
+wrong-arity closure. Only *which* error, and whether it names the sibling form,
+was ever at issue.
+
+A compiler-diagnostic fix was **prototyped and rejected**: route `retry`'s bound
+through `F: RetryOp<Output = O>` and hang a `#[diagnostic::on_unimplemented]` on
+`RetryOp`/`RetryExt` naming the other entry point. It fails on two counts, both
+verified by compiling the cases:
+
+- **The note never fires for the target case.** A 0-arg closure still
+  structurally matches the `FnMut(RetryState) -> O` blanket impl, so rustc
+  selects that impl and reports its *nested* arity obligation (E0593, "closure
+  takes 0 arguments, expected 1") — the same error class as today. A trait-level
+  `on_unimplemented` only surfaces for a `Self` matching *no* impl (e.g.
+  `retry(5i32)`), which a closure never is. The ext direction fails through
+  method resolution (E0599), which `on_unimplemented` also does not reach.
+- **The bound change regresses inference.** `FnMut(RetryState) -> O` pins the
+  closure's argument structurally at the signature, so
+  `retry(|state| state.attempt …)` infers `state: RetryState`.
+  `RetryOp<Output = O>` determines the argument only indirectly via blanket-impl
+  selection, so a body that *uses* `state` hits E0282 ("type annotations
+  needed") — breaking the crate's own headline doctest (`src/lib.rs:42`) and the
+  stateful tests. The change degrades the very entry point it touches.
+
+True unification is separately **coherence-blocked** (confirmed E0119): a second
+direct blanket `impl RetryOp for FnMut() -> O` conflicts with the
+`FnMut(RetryState)` one — exactly why `StatelessOp` is a newtype. No stable path
+merges the two spellings.
+
+Resolution: **docs-only signposting**, shipped 2026-07-23. The equivalence
+`(|| op()).retry()` ≡ `retry(|_| op())` now sits on `RetryExt::retry` and
+`AsyncRetryExt::retry_async` (the stateless side, whose E0599 was the only
+genuinely cryptic message), and the free `retry` cross-links the ext form for
+no-arg operations. The equivalence is locked by an executable test
+(`tests/ext.rs::free_fn_and_extension_forms_agree_when_state_is_ignored`), which
+asserts both forms agree on result and attempt count, so the documented claim
+cannot silently drift.
+
+Deferred harder option, recorded only for a future breaking release: **delete
+the ext form** (one shape, `retry(|_| …)`; drop `RetryExt`/`AsyncRetryExt`/
+`StatelessOp` and half of `op.rs`). The purest maintenance-first move (one way
+to do things) and it needs no bound change, but it forfeits the fluent
+`op.retry()` style and the `|_|`-free ergonomics for a wart the compiler already
+catches — not worth scheduling on its own.
 
 ## 4. Async `VirtualClock` needs `&`, sync does not
 

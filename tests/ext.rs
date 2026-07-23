@@ -15,8 +15,8 @@ use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
 use relentless::{
-    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, Stop, StopReason, Wait,
-    predicate, stop, wait,
+    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, StopReason,
+    Wait, predicate, retry, stop, wait,
 };
 
 const MAX_ATTEMPTS: u32 = 3;
@@ -628,4 +628,41 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
             ..
         })
     ));
+}
+
+// Locks the equivalence documented on `RetryExt::retry`: `(|| op()).retry()`
+// behaves identically to the free `retry(|_| op())`, because the extension form
+// only discards the `RetryState`. Both must agree on the returned value and the
+// attempt count over a retry-then-succeed run under the shared defaults.
+#[test]
+fn free_fn_and_extension_forms_agree_when_state_is_ignored() {
+    const SUCCEED_ON_ATTEMPT: u32 = 3;
+
+    fn op(n: &Cell<u32>) -> Result<u32, &'static str> {
+        n.set(n.get().saturating_add(1));
+        if n.get() >= SUCCEED_ON_ATTEMPT {
+            Ok(n.get())
+        } else {
+            Err(ERROR_VALUE)
+        }
+    }
+
+    let ext_n = Cell::new(0);
+    let (ext_result, ext_stats): (relentless::RetryResult<u32, &str>, RetryStats) = (|| op(&ext_n))
+        .retry()
+        .clock(VirtualClock::new())
+        .with_stats()
+        .call();
+
+    let free_n = Cell::new(0);
+    let (free_result, free_stats): (relentless::RetryResult<u32, &str>, RetryStats) =
+        retry(|_state: RetryState| op(&free_n))
+            .clock(VirtualClock::new())
+            .with_stats()
+            .call();
+
+    assert_eq!(ext_result, free_result);
+    assert_eq!(ext_stats.attempts, free_stats.attempts);
+    assert_eq!(ext_result, Ok(SUCCEED_ON_ATTEMPT));
+    assert_eq!(ext_stats.attempts, SUCCEED_ON_ATTEMPT);
 }

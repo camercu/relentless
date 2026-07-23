@@ -113,8 +113,10 @@ impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
 
 /// Starts an async retry directly from a no-argument closure or function.
 ///
-/// The async twin of [`RetryExt`](super::RetryExt); use [`retry_async`] when you
-/// need the [`RetryState`].
+/// The async twin of [`RetryExt`](super::RetryExt): `(|| op()).retry_async()`
+/// behaves identically to `retry_async(|_| op())`, discarding the
+/// [`RetryState`]. Use the free [`retry_async`] when the operation needs that
+/// state; the switch changes only the closure's argument.
 pub trait AsyncRetryExt<Fut, O>: FnMut() -> Fut + Sized
 where
     Fut: Future<Output = O>,
