@@ -1,10 +1,12 @@
 # UX polish candidates — findings
 
-**Status:** open catalog. Not a concluded spike. Records UX warts surfaced by a
-dogfooding pass over the public surface (2026-07-23), ranked as candidates for
-future polish. Each entry names the friction, the evidence, and the open design
-question a spike would resolve. None is scheduled; none is a defect in current
-behavior. Two prior UX spikes already concluded (ADR-0005 unified clock,
+**Status:** living catalog. Records UX warts surfaced by a dogfooding pass over
+the public surface (2026-07-23), ranked as candidates for future polish. Item 1a
+(timeout on the policy) has since shipped; item 1b (hooks on the policy) was
+worked through and declined. The rest remain open — each names the friction, the
+evidence, and the open design question a spike would resolve; none is scheduled;
+none is a defect in current behavior. Two prior UX spikes already concluded
+(ADR-0005 unified clock,
 ADR-0006 paired-decision classifier), and the obvious footguns are already
 polished to a high bar — see "Already handled" below — so this list is the
 next tier down.
@@ -13,41 +15,69 @@ next tier down.
 
 | # | Wart | Value | Kind |
 |---|------|-------|------|
-| 1 | `RetryPolicy` cannot carry `timeout` or hooks | High | Design question |
+| 1a | `RetryPolicy` cannot carry `timeout` | ~~High~~ **DONE** | Resolved |
+| 1b | `RetryPolicy` cannot carry hooks | Low | Declined (see below) |
 | 2 | No shortcut for the most common tweak (attempt count) | Medium | Sugar |
 | 3 | Closure arity differs silently across entry points | Medium | Signposting |
 | 4 | Async `VirtualClock` needs `&`, sync does not | Low | Test ergonomics |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
 
-## 1. `RetryPolicy` cannot carry `timeout` or hooks
+## 1. `RetryPolicy` and cross-cutting concerns
 
-`src/policy/mod.rs`. `RetryPolicy<S, W, C>` captures stop, wait, and classifier
-only. SPEC 5.x, SPEC line 974 ("Hooks are configured on execution builders, not
-on `RetryPolicy`"), and SPEC 11.4 (`.timeout` on the execution builder) make
-`timeout` and the three hooks (`before_attempt`/`after_attempt`/`on_exit`)
-per-call-site concerns by design.
+The original wart bundled two problems under one coat. They split cleanly, and
+the split changes the verdict: **timeout was the real gap and is now fixed;
+hooks turn out to be the wrong thing to move.**
 
-The friction: the crate's headline pitch for `RetryPolicy` is "capture your
-retry rules once, share across call sites — no duplicated builder chains"
-(`src/lib.rs:11-12`). But a shared wall-clock deadline and a shared
-observability hook (metrics, structured logging) are exactly the cross-cutting
-concerns that N call sites repeat. The policy removes the *strategy*
-duplication while leaving the *cross-cutting* duplication — often the part that
-hurts most at scale.
+The shared friction that motivated both: the headline pitch for `RetryPolicy`
+is "capture your retry rules once, share across call sites — no duplicated
+builder chains" (`src/lib.rs`). A shared wall-clock deadline and a shared
+observability hook are exactly the cross-cutting concerns N call sites repeat,
+and the policy removed only the *strategy* duplication.
 
-`timeout` is the sharper case. It is a retry *rule* (it bounds the total budget
-and clamps each inter-attempt sleep to the remaining budget, SPEC 11.4.2), not
-an environment concern like `clock`. Its sleep-clamping behavior cannot be
-reached through `stop::elapsed`, so a reusable policy literally cannot express
-"all these operations share a 30s wall-clock budget."
+### 1a. Timeout on the policy — DONE (2026-07-23)
 
-Open design question for a spike: should `timeout` (and optionally the hooks)
-move onto `RetryPolicy`? Constraints to weigh — hooks carry generic type-state
-slots (`BA`/`AA`/`OX`) that the policy currently does not model; adding them
-widens `RetryPolicy`'s arity and its boxing story (`.boxed`/`.boxed_local`).
-`timeout` is a single `Duration` field and is cheaper to add than hooks. A
-partial answer (timeout on the policy, hooks left on the builder) may be the
-right cut.
+`timeout` was the sharper case: a retry *rule* (it bounds the budget and clamps
+each inter-attempt sleep to the remaining budget, SPEC 11.4.2), not an
+environment concern like `clock`, and its sleep-clamp behavior is *not*
+expressible via `stop::elapsed` — so a reusable policy literally could not say
+"all these operations share a 30s budget."
+
+Implemented as a plain `Option<Duration>` field on `RetryPolicy` (not a type
+parameter), a `.timeout()` policy method, and seeding through
+`.retry`/`.retry_async`. A builder `.timeout()` **replaces** the seeded value
+for that call (last-wins, not min). Cost was as predicted: no arity change, no
+impact on `.boxed`/`Clone`, one-line public-API delta. SPEC 5.10 + 11.4;
+tests in `tests/policy_sync.rs` and `tests/policy_async.rs`
+(`policy_timeout_seeds_builder`, `policy_timeout_replaced_by_builder`, async
+twins).
+
+### 1b. Hooks on the policy — declined (updated perspective)
+
+Initial notes floated "timeout on the policy, hooks left on the builder — a
+partial answer may be the right cut." Working through the timeout change
+sharpened that hedge into a firm **no** for hooks, for reasons that are
+structural, not effort:
+
+- **Arity.** Hooks are type-state slots (`BA`/`AA`/`OX`, `src/engine/hooks.rs`),
+  not a plain field like timeout. Carrying them doubles `RetryPolicy<S, W, C>`
+  to `<S, W, C, BA, AA, OX>`. Timeout dodged this precisely because it is a
+  value, not a slot; hooks cannot.
+- **Reuse across outcome types — the decisive one.** `after_attempt`/`on_exit`
+  observe the outcome, so a hook closure references `O`. Storing it on the
+  policy pins the policy to one outcome type, destroying the cross-`(T, E)`
+  reuse that SPEC 5.9 and `.boxed`'s classifier-preservation deliberately
+  protect. Timeout is outcome-agnostic; hooks are not. This is the crux: hooks
+  on the policy fight the very property that makes a default-classifier policy
+  worth sharing.
+- **Boxing / `Clone`.** `.boxed()` erases stop and wait but keeps the
+  classifier generic exactly to stay outcome-agnostic. Hook closures have no
+  such erasure path and are not necessarily `Clone`.
+
+So a naive "hooks on the policy" is a net loss. If shared observability ever
+becomes a real, felt need (not a symmetry itch), it warrants its own spike on a
+*different* mechanism — outcome-erased `dyn` hooks that keep the policy
+outcome-agnostic — rather than lifting the current type-state hooks onto the
+policy. Low priority until a concrete use case pushes on it.
 
 ## 2. No shortcut for the most common tweak (attempt count)
 
