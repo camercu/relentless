@@ -16,10 +16,12 @@ mod hooks;
 mod op;
 mod state;
 mod stats;
+mod step;
 
 pub use error::{RetryError, RetryResult};
 
 use op::{RetryOp, StatelessOp};
+use step::{Step, step};
 
 /// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
 type DefaultRetry<F> =
@@ -33,9 +35,7 @@ pub use stats::RetryStats;
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{
-    ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, Verdict, When,
-};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, When};
 use crate::predicate::Predicate;
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
@@ -177,7 +177,8 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// Installs a classifier closure, replacing the classifier slot.
     ///
     /// The closure returns either [`Decision`](crate::decision::Decision) (no
-    /// abort) or [`Verdict`] (abort-capable); [`IntoDecision`] unifies both. The
+    /// abort) or [`Verdict`](crate::decision::Verdict) (abort-capable);
+    /// [`IntoDecision`] unifies both. The
     /// op-anchored `F: RetryOp<Output = O>` bound here (not deferred to
     /// `.call()`) lets the closure's parameter infer from the operation's
     /// output, so inline classifiers need no annotations.
@@ -325,8 +326,10 @@ where
 {
     /// Drives the retry loop to completion.
     ///
-    /// Returns `Ok(value)` on the classifier's first [`Verdict::Return`],
-    /// `Err(RetryError::Aborted { .. })` on a [`Verdict::Abort`], and
+    /// Returns `Ok(value)` on the classifier's first
+    /// [`Verdict::Return`](crate::decision::Verdict::Return),
+    /// `Err(RetryError::Aborted { .. })` on a
+    /// [`Verdict::Abort`](crate::decision::Verdict::Abort), and
     /// `Err(RetryError::Exhausted { .. })` when the stop strategy fires (or the
     /// timeout is exceeded) while the classifier still wants to retry.
     ///
@@ -361,69 +364,29 @@ where
             // and stop/wait see the time the attempt actually took.
             let post_elapsed = elapsed(&self.clock);
 
-            // `after_attempt` fires before the classifier consumes the outcome.
-            {
-                let attempt_state = AttemptState::new(attempt, post_elapsed, &outcome);
-                self.hooks.after_attempt.call(&attempt_state);
-            }
-
-            let state = RetryState::for_attempt(attempt)
-                .with_elapsed(post_elapsed)
-                .with_previous_delay(previous_delay);
-
-            let stats_for = |reason| RetryStats {
-                attempts: attempt,
-                total_elapsed: post_elapsed,
+            match step(
+                attempt,
+                post_elapsed,
+                previous_delay,
                 total_wait,
-                stop_reason: reason,
-            };
-
-            match self.classifier.decide(outcome) {
-                Verdict::Return(value) => {
-                    self.hooks.on_exit.call(&Exit::Returned {
-                        attempt,
-                        elapsed: post_elapsed,
-                        value: &value,
-                    });
-                    return (Ok(value), stats_for(StopReason::Returned));
-                }
-                Verdict::Abort(last) => {
-                    self.hooks.on_exit.call(&Exit::Aborted {
-                        attempt,
-                        elapsed: post_elapsed,
-                        last: &last,
-                    });
-                    return (
-                        Err(RetryError::Aborted { last }),
-                        stats_for(StopReason::Aborted),
-                    );
-                }
-                Verdict::Retry(last) => {
-                    let timeout_exceeded = self.timeout.is_some_and(|t| post_elapsed >= t);
-                    if self.stop.should_stop(&state) || timeout_exceeded {
-                        self.hooks.on_exit.call(&Exit::Exhausted {
-                            attempt,
-                            elapsed: post_elapsed,
-                            last: &last,
-                        });
-                        return (
-                            Err(RetryError::Exhausted { last }),
-                            stats_for(StopReason::Exhausted),
-                        );
-                    }
-
-                    // The wait strategy is consulted only now that a retry is
-                    // certain: no next attempt means no wait to compute. Clamp
-                    // the sleep to the remaining timeout budget.
-                    let next_delay = self.wait.next_wait(&state);
-                    let delay = match self.timeout {
-                        Some(t) => next_delay.min(t.saturating_sub(post_elapsed)),
-                        None => next_delay,
-                    };
+                outcome,
+                &self.classifier,
+                &self.stop,
+                &self.wait,
+                self.timeout,
+                &mut self.hooks,
+            ) {
+                Step::Done { result, stats } => return (result, stats),
+                Step::Continue {
+                    delay,
+                    total_wait: running,
+                } => {
+                    // The blocking sleep is the sync engine's half of the loop;
+                    // the async engine polls a sleep future instead.
                     if !delay.is_zero() {
                         self.clock.wait(delay);
                     }
-                    total_wait = total_wait.saturating_add(delay);
+                    total_wait = running;
                     previous_delay = Some(delay);
                     attempt = attempt.saturating_add(1);
                 }
@@ -464,7 +427,7 @@ where
 mod tests {
     use super::*;
     use crate::clock::VirtualClock;
-    use crate::decision::Outcome;
+    use crate::decision::{Outcome, Verdict};
     use crate::predicate;
     use core::cell::Cell;
 

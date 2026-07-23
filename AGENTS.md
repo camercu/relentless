@@ -21,15 +21,21 @@ changing code.
   [src/policy/mod.rs](/src/policy/mod.rs) for the reusable `RetryPolicy` config.
   The engine is classifier-driven (ADR-6): each outcome is consumed by value by
   a `Decide` classifier, not tested by a boolean predicate.
-- Treat the two retry loops as the semantic center of the crate. They are
-  hand-written twins, not a shared core plus wrappers:
-  [src/engine/mod.rs](/src/engine/mod.rs) `Retry::run` is the sync loop and
-  entry points (`retry`, `RetryExt`);
-  [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll` is
-  the async loop (`retry_async`, `AsyncRetryExt`). Each independently owns the
-  same classify → stop → wait → hook → exit transitions, so keeping them in step
-  is the primary maintenance risk.
-- The loops share only building blocks, not control flow:
+- Treat [src/engine/step.rs](/src/engine/step.rs) `step` as the semantic center
+  of the crate. It is the shared decision core: given a completed attempt's
+  outcome it fires `after_attempt`, classifies, and returns either
+  `Step::Done` (fires `on_exit`, terminates) or `Step::Continue` (next backoff).
+  All classify → stop → wait → hook → exit transitions and stats accounting live
+  here once, so this is where correctness changes belong.
+- Two thin drivers wrap that core and differ only in how they invoke the
+  operation and how they sleep: [src/engine/mod.rs](/src/engine/mod.rs)
+  `Retry::run` (sync, blocks on `clock.wait`; entry points `retry`, `RetryExt`)
+  and [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
+  (async `Phase` state machine, polls a `wait_async` future; `retry_async`,
+  `AsyncRetryExt`). When you touch driver-only concerns — the sleep, the poll
+  machine, `before_attempt` timing — edit both in lockstep; core changes touch
+  `step` alone.
+- The core and drivers share these building blocks:
   [src/engine/state.rs](/src/engine/state.rs) (`AttemptState`, `Exit`,
   `StopReason`), [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain`
   type-state), [src/engine/op.rs](/src/engine/op.rs)
@@ -37,13 +43,13 @@ changing code.
   (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)
   (`RetryStats`); the outcome-agnostic `Stop`/`Wait`/`Clock`/`RetryState`
   infrastructure is reused unchanged.
-- Behavioral drift between the sync and async loops is caught by the
-  differential suite in [tests/parity.rs](/tests/parity.rs) (needs `alloc`, so
-  it runs in any default or `alloc`-enabled run, including bare `just test`).
-  When you change hooks, cancellation, stats, or type-state ergonomics, edit
-  both loops in lockstep, extend a parity scenario for the new behavior, and
-  audit the builder methods in both files for surface/docs drift the suite
-  cannot see.
+- `step` has direct unit tests; behavioral drift between the sync and async
+  drivers is caught by the differential suite in
+  [tests/parity.rs](/tests/parity.rs) (needs `alloc`, so it runs in any default
+  or `alloc`-enabled run, including bare `just test`). When you change hooks,
+  cancellation, stats, or type-state ergonomics, extend a parity scenario for
+  the new behavior and audit the builder methods in both driver files for
+  surface/docs drift the suite cannot see.
 - Verify feature claims explicitly. Prefer the repo's `just` targets over ad hoc
   `cargo` commands. The fastest useful checks are `just test`,
   `just test-no-default`, `just check-no-std`, and `just check-wasm`.

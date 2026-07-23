@@ -11,13 +11,12 @@
 
 use super::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain};
 use super::op::{AsyncRetryOp, StatelessOp};
-use super::state::{AttemptState, Exit, StopReason};
+use super::state::{AttemptState, Exit};
+use super::step::{Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{
-    ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, Verdict, When,
-};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, When};
 use crate::predicate::Predicate;
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
@@ -436,70 +435,31 @@ where
                     };
                     let post_elapsed = elapsed(this.clock);
 
-                    {
-                        let attempt_state =
-                            AttemptState::new(*this.attempt, post_elapsed, &outcome);
-                        this.hooks.after_attempt.call(&attempt_state);
-                    }
-
-                    let state = RetryState::for_attempt(*this.attempt)
-                        .with_elapsed(post_elapsed)
-                        .with_previous_delay(*this.previous_delay);
-
-                    let stats_for = |reason| RetryStats {
-                        attempts: *this.attempt,
-                        total_elapsed: post_elapsed,
-                        total_wait: *this.total_wait,
-                        stop_reason: reason,
-                    };
-
-                    match this.classifier.decide(outcome) {
-                        Verdict::Return(value) => {
-                            this.hooks.on_exit.call(&Exit::Returned {
-                                attempt: *this.attempt,
-                                elapsed: post_elapsed,
-                                value: &value,
-                            });
+                    match step(
+                        *this.attempt,
+                        post_elapsed,
+                        *this.previous_delay,
+                        *this.total_wait,
+                        outcome,
+                        this.classifier,
+                        this.stop,
+                        this.wait,
+                        *this.timeout,
+                        this.hooks,
+                    ) {
+                        Step::Done { result, stats } => {
                             this.phase.set(Phase::Done);
-                            return Poll::Ready((Ok(value), stats_for(StopReason::Returned)));
+                            return Poll::Ready((result, stats));
                         }
-                        Verdict::Abort(last) => {
-                            this.hooks.on_exit.call(&Exit::Aborted {
-                                attempt: *this.attempt,
-                                elapsed: post_elapsed,
-                                last: &last,
-                            });
-                            this.phase.set(Phase::Done);
-                            return Poll::Ready((
-                                Err(RetryError::Aborted { last }),
-                                stats_for(StopReason::Aborted),
-                            ));
-                        }
-                        Verdict::Retry(last) => {
-                            let timeout_exceeded = this.timeout.is_some_and(|t| post_elapsed >= t);
-                            if this.stop.should_stop(&state) || timeout_exceeded {
-                                this.hooks.on_exit.call(&Exit::Exhausted {
-                                    attempt: *this.attempt,
-                                    elapsed: post_elapsed,
-                                    last: &last,
-                                });
-                                this.phase.set(Phase::Done);
-                                return Poll::Ready((
-                                    Err(RetryError::Exhausted { last }),
-                                    stats_for(StopReason::Exhausted),
-                                ));
-                            }
-
-                            // Consult the wait strategy only now that a retry is
-                            // certain (matching the sync engine).
-                            let next_delay = this.wait.next_wait(&state);
-                            let delay = match *this.timeout {
-                                Some(t) => next_delay.min(t.saturating_sub(post_elapsed)),
-                                None => next_delay,
-                            };
-                            *this.total_wait = this.total_wait.saturating_add(delay);
+                        Step::Continue {
+                            delay,
+                            total_wait: running,
+                        } => {
+                            *this.total_wait = running;
                             *this.previous_delay = Some(delay);
 
+                            // The poll-driven sleep is the async engine's half of
+                            // the loop; the sync engine blocks instead.
                             if delay.is_zero() {
                                 // Skip spawning a zero-duration sleep future.
                                 *this.attempt = this.attempt.saturating_add(1);
@@ -552,6 +512,7 @@ where
 // `alloc`. The pure-no-alloc async path is exercised by integration tests.
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
+    use super::super::state::StopReason;
     use super::*;
     use crate::clock::VirtualClock;
     use crate::decision::{Decision, Verdict};
