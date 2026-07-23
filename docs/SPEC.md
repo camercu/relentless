@@ -1464,11 +1464,11 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/ext.rs` | §6.2 |
 | `tests/allocation.rs` | §12.3 |
 | `tests/trait_impls.rs` | §14 |
-| `tests/composition.rs` | §3.1–3.4 (seeded property tests) |
+| `tests/composition.rs` | §3.1–3.3 (seeded property tests) |
 | `tests/async_no_alloc.rs` | §2 (no_std/no_alloc async compilation) |
 
-**Seeded property tests.** `tests/composition.rs` verifies that `Stop`, `Wait`,
-and `Predicate` composition obeys boolean and arithmetic algebra across 1,024
+**Seeded property tests.** `tests/composition.rs` verifies that `Stop` and
+`Wait` composition obeys boolean and arithmetic algebra across 1,024
 random samples per test. The seed is read from `RELENTLESS_PROPTEST_SEED` at
 runtime; if absent, a random seed is generated and printed on failure for
 reproduction.
