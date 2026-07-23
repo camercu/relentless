@@ -21,7 +21,7 @@ mod step;
 pub use error::{RetryError, RetryResult};
 
 use op::{RetryOp, StatelessOp};
-use step::{Step, step};
+use step::{Progress, Step, step};
 
 /// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
 type DefaultRetry<F> =
@@ -365,10 +365,12 @@ where
             let post_elapsed = elapsed(&self.clock);
 
             match step(
-                attempt,
-                post_elapsed,
-                previous_delay,
-                total_wait,
+                Progress {
+                    attempt,
+                    elapsed: post_elapsed,
+                    previous_delay,
+                    total_wait,
+                },
                 outcome,
                 &self.classifier,
                 &self.stop,

@@ -18,6 +18,21 @@ use crate::state::RetryState;
 use crate::stop::Stop;
 use crate::wait::Wait;
 
+/// The loop's running cursor at the moment an attempt completes — the state
+/// each driver tracks across attempts. Bundled so [`step`] names these values at
+/// every call site rather than taking four same-shaped positionals.
+#[derive(Clone, Copy)]
+pub(crate) struct Progress {
+    /// 1-indexed number of the attempt that just completed.
+    pub attempt: u32,
+    /// Wall-clock time elapsed when the attempt completed.
+    pub elapsed: Duration,
+    /// The delay applied before this attempt (`None` on the first).
+    pub previous_delay: Option<Duration>,
+    /// Running total of applied waits, before this attempt's (if any).
+    pub total_wait: Duration,
+}
+
 /// What a completed attempt tells the driving loop to do next.
 pub(crate) enum Step<R, A, O> {
     /// The loop terminates with this result and stats. `on_exit` has fired.
@@ -41,12 +56,8 @@ pub(crate) enum Step<R, A, O> {
 /// computes the next backoff and returns [`Step::Continue`]. The caller supplies
 /// `before_attempt`, the operation call, and the sleep — the only parts that
 /// differ between the sync and async engines.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn step<C, S, W, BA, AA, OX, O>(
-    attempt: u32,
-    post_elapsed: Duration,
-    previous_delay: Option<Duration>,
-    total_wait: Duration,
+    progress: Progress,
     outcome: O,
     classifier: &C,
     stop: &S,
@@ -61,6 +72,13 @@ where
     AA: AttemptHook<O>,
     OX: ExitHook<C::R, C::A, O>,
 {
+    let Progress {
+        attempt,
+        elapsed: post_elapsed,
+        previous_delay,
+        total_wait,
+    } = progress;
+
     // `after_attempt` fires before the classifier consumes the outcome, so the
     // hook sees the raw outcome under a uniform contract.
     {
@@ -159,10 +177,12 @@ mod tests {
     fn return_terminates_with_returned_stats() {
         let mut hooks = no_hooks();
         let step = step(
-            1,
-            Duration::ZERO,
-            None,
-            Duration::ZERO,
+            Progress {
+                attempt: 1,
+                elapsed: Duration::ZERO,
+                previous_delay: None,
+                total_wait: Duration::ZERO,
+            },
             Ok::<i32, &str>(5),
             &DefaultClassifier,
             &stop::attempts(3),
@@ -185,10 +205,12 @@ mod tests {
     fn abort_terminates_with_aborted_stats() {
         let mut hooks = no_hooks();
         let step = step(
-            2,
-            DELAY,
-            Some(DELAY),
-            DELAY,
+            Progress {
+                attempt: 2,
+                elapsed: DELAY,
+                previous_delay: Some(DELAY),
+                total_wait: DELAY,
+            },
             Err::<i32, &str>("fatal"),
             &AlwaysAbort,
             &stop::attempts(5),
@@ -212,10 +234,12 @@ mod tests {
     fn retry_continues_and_adds_delay_to_total_wait() {
         let mut hooks = no_hooks();
         let step = step(
-            2,
-            Duration::ZERO,
-            Some(DELAY),
-            DELAY,
+            Progress {
+                attempt: 2,
+                elapsed: Duration::ZERO,
+                previous_delay: Some(DELAY),
+                total_wait: DELAY,
+            },
             Err::<i32, &str>("again"),
             &DefaultClassifier,
             &stop::attempts(5),
@@ -236,10 +260,12 @@ mod tests {
     fn retry_exhausts_when_stop_fires() {
         let mut hooks = no_hooks();
         let step = step(
-            1,
-            Duration::ZERO,
-            None,
-            Duration::ZERO,
+            Progress {
+                attempt: 1,
+                elapsed: Duration::ZERO,
+                previous_delay: None,
+                total_wait: Duration::ZERO,
+            },
             Err::<i32, &str>("last"),
             &DefaultClassifier,
             &stop::attempts(1),
@@ -265,10 +291,12 @@ mod tests {
         let mut hooks = no_hooks();
         let elapsed = Duration::from_millis(5);
         let step = step(
-            1,
-            elapsed,
-            None,
-            Duration::ZERO,
+            Progress {
+                attempt: 1,
+                elapsed,
+                previous_delay: None,
+                total_wait: Duration::ZERO,
+            },
             Err::<i32, &str>("again"),
             &DefaultClassifier,
             &stop::attempts(5),

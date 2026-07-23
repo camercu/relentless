@@ -12,7 +12,7 @@
 use super::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain};
 use super::op::{AsyncRetryOp, StatelessOp};
 use super::state::{AttemptState, Exit};
-use super::step::{Step, step};
+use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
 use crate::compat::Duration;
@@ -436,10 +436,12 @@ where
                     let post_elapsed = elapsed(this.clock);
 
                     match step(
-                        *this.attempt,
-                        post_elapsed,
-                        *this.previous_delay,
-                        *this.total_wait,
+                        Progress {
+                            attempt: *this.attempt,
+                            elapsed: post_elapsed,
+                            previous_delay: *this.previous_delay,
+                            total_wait: *this.total_wait,
+                        },
                         outcome,
                         this.classifier,
                         this.stop,
