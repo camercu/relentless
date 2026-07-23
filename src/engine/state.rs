@@ -57,7 +57,7 @@ impl<'a, O> AttemptState<'a, O> {
     ///
     /// Panics in debug builds if `attempt` is `0` (attempts are 1-indexed).
     #[must_use]
-    pub const fn new(attempt: u32, elapsed: Duration, outcome: &'a O) -> Self {
+    pub(crate) const fn new(attempt: u32, elapsed: Duration, outcome: &'a O) -> Self {
         debug_assert!(attempt >= 1, "attempt is 1-indexed");
         Self {
             attempt,
@@ -133,5 +133,28 @@ impl<R, A, O> Exit<'_, R, A, O> {
             Exit::Aborted { .. } => StopReason::Aborted,
             Exit::Exhausted { .. } => StopReason::Exhausted,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attempt_state_exposes_attempt_elapsed_and_outcome() {
+        let outcome: Result<(), &str> = Err("network timeout");
+        let state = AttemptState::new(1, Duration::ZERO, &outcome);
+
+        assert_eq!(state.attempt, 1);
+        assert_eq!(state.elapsed, Duration::ZERO);
+        assert_eq!(state.outcome.unwrap_err(), "network timeout");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "attempt is 1-indexed")]
+    fn attempt_state_new_zero_panics_in_debug() {
+        let outcome: Result<i32, &str> = Ok(1);
+        let _ = AttemptState::new(0, Duration::ZERO, &outcome);
     }
 }

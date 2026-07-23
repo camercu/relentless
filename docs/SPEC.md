@@ -409,10 +409,10 @@ The crate exposes read-only state passed to strategies and hooks.
 **3.6.1** `RetryState` (for `Stop`, `Wait`, the operation, and `before_attempt`)
 and `AttemptState` (for `after_attempt`) are `#[non_exhaustive]` structs with
 public fields for read access. `RetryState::for_attempt(attempt)` (plus `with_*`
-setters) and `AttemptState::new(attempt, elapsed, outcome)` construct them for
-tests and custom strategies; both `debug_assert!` `attempt >= 1`. `Exit` (for
-`on_exit`) is a `#[non_exhaustive]` enum consumed by matching, produced by the
-engine rather than constructed externally.
+setters) constructs one for tests and custom strategies, and `debug_assert!`s
+`attempt >= 1`. `AttemptState` and `Exit` (for `on_exit`) are produced only by
+the engine — `AttemptState` read by field access, `Exit` by matching — and are
+not constructed externally.
 
 > Public fields on `#[non_exhaustive]` structs are a deliberate choice for
 > ergonomic read access. `#[non_exhaustive]` prevents construction outside the
@@ -482,10 +482,6 @@ impl RetryState {
     pub fn for_attempt(attempt: u32) -> Self;
     pub fn with_elapsed(self, elapsed: Duration) -> Self;
     pub fn with_previous_delay(self, previous_delay: Option<Duration>) -> Self;
-}
-
-impl<'a, O> AttemptState<'a, O> {
-    pub fn new(attempt: u32, elapsed: Duration, outcome: &'a O) -> Self;
 }
 ```
 

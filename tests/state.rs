@@ -1,7 +1,7 @@
 //! Tests for state types passed to Stop strategies and hooks.
 //!
-//! Verifies the public layout of `RetryState` and `AttemptState`, the 1-indexed
-//! attempt numbers, and the `Exit` view delivered to `on_exit`.
+//! Verifies the public layout of `RetryState`, the 1-indexed attempt numbers,
+//! and the `Exit` view delivered to `on_exit`.
 
 use core::time::Duration;
 use relentless::clock::VirtualClock;
@@ -10,16 +10,6 @@ use relentless::clock::VirtualClock;
 fn retry_state_attempt_is_one_indexed() {
     let state = relentless::RetryState::for_attempt(1);
     assert_eq!(state.attempt, 1, "first attempt should be 1, not 0");
-}
-
-#[test]
-fn attempt_state_exposes_attempt_elapsed_and_outcome() {
-    let outcome: Result<(), String> = Err("network timeout".to_string());
-    let state = relentless::AttemptState::new(1, Duration::ZERO, &outcome);
-
-    assert_eq!(state.attempt, 1);
-    assert_eq!(state.elapsed, Duration::ZERO);
-    assert_eq!(state.outcome.as_ref().unwrap_err(), "network timeout");
 }
 
 #[test]
@@ -223,18 +213,4 @@ fn retry_state_setters_chain_without_clobbering() {
 #[should_panic(expected = "attempt is 1-indexed")]
 fn retry_state_for_attempt_zero_panics_in_debug() {
     let _ = relentless::RetryState::for_attempt(0);
-}
-
-/// 3.6.1
-#[test]
-fn attempt_state_new_zero_panics_in_debug() {
-    // Guarded separately: the panic path only exists in debug builds.
-    #[cfg(debug_assertions)]
-    {
-        let outcome: Result<i32, &str> = Ok(1);
-        let result = std::panic::catch_unwind(|| {
-            let _ = relentless::AttemptState::new(0, Duration::ZERO, &outcome);
-        });
-        assert!(result.is_err(), "attempt 0 should panic in debug");
-    }
 }

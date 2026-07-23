@@ -1010,8 +1010,6 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::panic::unwind_safe::UnwindSafe for relent
 pub relentless::AttemptState::attempt: u32
 pub relentless::AttemptState::elapsed: core::time::Duration
 pub relentless::AttemptState::outcome: &'a O
-impl<'a, O> relentless::AttemptState<'a, O>
-pub const fn relentless::AttemptState<'a, O>::new(attempt: u32, elapsed: core::time::Duration, outcome: &'a O) -> Self
 impl<'a, O: core::clone::Clone> core::clone::Clone for relentless::AttemptState<'a, O>
 pub fn relentless::AttemptState<'a, O>::clone(&self) -> relentless::AttemptState<'a, O>
 impl<'a, O: core::fmt::Debug> core::fmt::Debug for relentless::AttemptState<'a, O>
