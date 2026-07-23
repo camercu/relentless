@@ -1,3 +1,57 @@
+## [0.14.0](https://github.com/camercu/relentless/compare/v0.13.0...v0.14.0) (2026-07-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **engine:** make AttemptState::new crate-private
+* **predicate:** drop the composition algebra, keep the factories (ADR-6 #1b)
+* **api:** trim now-redundant public surface (ADR-6)
+* **engine:** re-found the engine on a paired-decision classifier (ADR-6)
+* **state:** elapsed/total_elapsed are Duration instead of
+Option<Duration>; with_elapsed takes Duration.
+* **policy:** async builders configure time via
+.clock(impl AsyncClock) instead of .sleep(impl Sleeper);
+relentless::sleep, Sleeper, NoSyncSleep, NoAsyncSleep,
+test_util, and the test-util feature are removed; features
+tokio-sleep/embassy-sleep/gloo-timers-sleep/futures-timer-sleep
+are renamed to
+tokio-clock/embassy-clock/gloo-timers-clock/futures-timer-clock.
+* **policy:** sync builders configure time via .clock(impl SyncClock)
+instead of .sleep(...)/.elapsed_clock(...)/.elapsed_clock_fn(...).
+
+* **api:** trim now-redundant public surface (ADR-6) ([b1a1b58](https://github.com/camercu/relentless/commit/b1a1b586e259d7f380c84005e62bf23575208c0e))
+* **engine:** make AttemptState::new crate-private ([61561d1](https://github.com/camercu/relentless/commit/61561d1eb3af4c03619d044aae1bde1c08af31ad))
+* **predicate:** drop the composition algebra, keep the factories (ADR-6 [#1b](https://github.com/camercu/relentless/issues/1b)) ([267d2e5](https://github.com/camercu/relentless/commit/267d2e5ca57ae92641f1074ae18b37901ee5e2d5)), closes [#1](https://github.com/camercu/relentless/issues/1)
+
+
+### Features
+
+* **clock:** accept capturing closures as GlooClock now-source ([a51e59f](https://github.com/camercu/relentless/commit/a51e59f4962d11316769d6f1900cfe11d435ae29))
+* **clock:** add runtime AsyncClock adapters ([68ad00c](https://github.com/camercu/relentless/commit/68ad00c8e062a1c86601777e8fd91ce3dfb3e2a9))
+* **clock:** add unified clock abstraction (ADR-0005) ([dc47719](https://github.com/camercu/relentless/commit/dc47719598ba15641cc02e3f47786125796b4d54))
+* **clock:** blanket-implement AsyncClock for shared references ([73d7033](https://github.com/camercu/relentless/commit/73d7033162ec6d581dd02acc677cad6fd82a85da))
+* **clock:** point missing-clock compile errors at .clock(...) ([96ed282](https://github.com/camercu/relentless/commit/96ed282854c10abd38135ebe697191e42038257c))
+* **engine:** add .decide with paired Decision/Verdict enums (ADR-6 S2) ([917c0d9](https://github.com/camercu/relentless/commit/917c0d9736bcce1cc1a2433faddd6707e1c15404))
+* **engine:** add .when/.until predicate classifiers (ADR-6 S3) ([fe818b7](https://github.com/camercu/relentless/commit/fe818b756095afccc6ea757257e911cf663871ae))
+* **engine:** add before/after/on_exit hooks and Exit view (ADR-6 S5-hooks) ([b265149](https://github.com/camercu/relentless/commit/b26514923bbae53340fe30d3463a8939d43ab310))
+* **engine:** add classifier-driven retry skeleton (ADR-6 S1) ([faa71d1](https://github.com/camercu/relentless/commit/faa71d13b0549e26b4d8c8b7691186f748d306aa))
+* **engine:** add Result-shaped RetryError helpers (ADR-6 S8a) ([8335afa](https://github.com/camercu/relentless/commit/8335afad2df80c378f84239c21e8905549453fc3))
+* **engine:** add RetryExt/AsyncRetryExt closure entry points (ADR-6 S7) ([6a45dbe](https://github.com/camercu/relentless/commit/6a45dbef683ee545eb803b8a2a027516058dc932))
+* **engine:** add the async classifier engine (ADR-6 S6) ([4cdcea2](https://github.com/camercu/relentless/commit/4cdcea225a7d44b1c840b56397ae2dfe1cbfdc74))
+* **engine:** add with_stats and timeout (ADR-6 S5-stats) ([8d908ff](https://github.com/camercu/relentless/commit/8d908fff35aafacd9caaacf6e9b62f8ff06ed756))
+* **engine:** implement Stop/Wait/Decide for shared references (ADR-6 S8b) ([41b80b7](https://github.com/camercu/relentless/commit/41b80b789e2fcb325b4b90fb696324d64fd33bdd))
+* **engine:** re-found the engine on a paired-decision classifier (ADR-6) ([53e80b9](https://github.com/camercu/relentless/commit/53e80b906d6a1ae5e4e56f23b73a68b2d61a22ad))
+* **policy:** replace sync sleep/elapsed-clock seams with .clock() ([088818f](https://github.com/camercu/relentless/commit/088818ff6476187519429219c75345277b82960f))
+* **policy:** unify async engine onto AsyncClock and retire the sleep seams ([20c6a03](https://github.com/camercu/relentless/commit/20c6a03aa710c44c6385a84da7de484498e51d5d))
+* **state:** make elapsed time non-optional ([49883f4](https://github.com/camercu/relentless/commit/49883f4a5425757441d1cfb93593df93c4ea8202))
+
+
+### Bug Fixes
+
+* **clock:** clamp GlooClock waits to the i32 setTimeout ceiling ([7bbb0d4](https://github.com/camercu/relentless/commit/7bbb0d4164de6ae32ecf78275da312af317367d6))
+* **clock:** require futures-timer 3.0.4 so saturated waits cannot panic ([c42301b](https://github.com/camercu/relentless/commit/c42301be7a342f27f28099598237e26ef59ead0c))
+* **clock:** saturate GlooClock waits; align SPEC loop order and stale names ([e919de1](https://github.com/camercu/relentless/commit/e919de13b062c54ace4e50737fb9bcd1c8c93e59))
+
 ## [0.13.0](https://github.com/camercu/relentless/compare/v0.12.0...v0.13.0) (2026-07-16)
 
 
