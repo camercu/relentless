@@ -93,16 +93,23 @@ impl<F> DefaultRetry<F> {
             DefaultClassifier,
             stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait::exponential(DEFAULT_INITIAL_WAIT),
+            None,
         )
     }
 }
 
 impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
     /// Assembles a retry from an operation and pre-chosen classifier/stop/wait,
-    /// with the default clock, no hooks, and no timeout. Used by
+    /// with the default clock and no hooks. Used by
     /// [`RetryPolicy::retry`](crate::RetryPolicy::retry) to borrow a reusable
-    /// policy's parts.
-    pub(crate) fn from_parts(op: F, classifier: C, stop: S, wait: W) -> Self {
+    /// policy's parts and seed its timeout.
+    pub(crate) fn from_parts(
+        op: F,
+        classifier: C,
+        stop: S,
+        wait: W,
+        timeout: Option<Duration>,
+    ) -> Self {
         Retry {
             op,
             classifier,
@@ -110,7 +117,7 @@ impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
             wait,
             clock: SystemClock,
             hooks: ExecutionHooks::new(),
-            timeout: None,
+            timeout,
         }
     }
 }

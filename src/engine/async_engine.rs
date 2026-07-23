@@ -82,16 +82,23 @@ impl<F> DefaultAsyncRetry<F> {
             DefaultClassifier,
             stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait::exponential(DEFAULT_INITIAL_WAIT),
+            None,
         )
     }
 }
 
 impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
     /// Assembles an async retry from an operation and pre-chosen
-    /// classifier/stop/wait, with no hooks or timeout. Used by
+    /// classifier/stop/wait, with no hooks. Used by
     /// [`RetryPolicy::retry_async`](crate::RetryPolicy::retry_async) to borrow a
-    /// reusable policy's parts.
-    pub(crate) fn from_parts(op: F, classifier: C, stop: S, wait: W) -> Self {
+    /// reusable policy's parts and seed its timeout.
+    pub(crate) fn from_parts(
+        op: F,
+        classifier: C,
+        stop: S,
+        wait: W,
+        timeout: Option<Duration>,
+    ) -> Self {
         AsyncRetry {
             op,
             classifier,
@@ -99,7 +106,7 @@ impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
             wait,
             clock: SystemClock,
             hooks: ExecutionHooks::new(),
-            timeout: None,
+            timeout,
         }
     }
 }

@@ -457,6 +457,64 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// A timeout set on the policy seeds the async builder, so it applies without
+/// being repeated at the call site.
+#[test]
+fn async_policy_timeout_seeds_builder() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
+    let clock = RecordingClock::new();
+    let call_count = Cell::new(0_u32);
+
+    let result = block_on(
+        policy
+            .retry_async(|_| {
+                call_count.set(call_count.get().saturating_add(1));
+                async {
+                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
+                    Err::<i32, &str>("fail")
+                }
+            })
+            .clock(clock.clone())
+            .call(),
+    );
+
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// A builder `.timeout()` replaces the policy's timeout for that async call (it
+/// does not take the tighter of the two).
+#[test]
+fn async_policy_timeout_replaced_by_builder() {
+    const LOOSE_BUDGET: Duration = Duration::from_secs(60);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
+    let clock = RecordingClock::new();
+    let call_count = Cell::new(0_u32);
+
+    let result = block_on(
+        policy
+            .retry_async(|_| {
+                call_count.set(call_count.get().saturating_add(1));
+                async {
+                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
+                    Err::<i32, &str>("fail")
+                }
+            })
+            .clock(clock.clone())
+            .timeout(LOOSE_BUDGET)
+            .call(),
+    );
+
+    assert_eq!(call_count.get(), MAX_ATTEMPTS + 10);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
 /// 11.1.1 — the async elapsed baseline is captured at the first poll of the
 /// returned future, not when the builder is configured or `.call()` is
 /// invoked. Idle time before the future is awaited must not consume the

@@ -803,6 +803,84 @@ fn timeout_stops_loop_when_budget_exceeded() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// A timeout set on the policy seeds the builder, so it applies without being
+/// repeated at the call site.
+#[test]
+fn policy_timeout_seeds_builder() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .timeout(CUSTOM_CLOCK_DEADLINE);
+    let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
+
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
+            Err::<i32, _>("fail")
+        })
+        .clock(&clock)
+        .call();
+
+    // The policy timeout is tighter than the stop strategy, so only 1 attempt runs.
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// The policy's timeout survives strategy combinators applied *after* it (SPEC
+/// 5.10): setting `.timeout()` first, then `.stop()`/`.wait()`, must not drop it.
+#[test]
+fn policy_timeout_survives_later_combinators() {
+    let policy = RetryPolicy::new()
+        .timeout(CUSTOM_CLOCK_DEADLINE)
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO));
+    let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
+
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
+            Err::<i32, _>("fail")
+        })
+        .clock(&clock)
+        .call();
+
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// A builder `.timeout()` replaces the policy's timeout for that call (it does
+/// not take the tighter of the two): a loose builder timeout lets the loop run
+/// past the policy's tight budget.
+#[test]
+fn policy_timeout_replaced_by_builder() {
+    const LOOSE_BUDGET: Duration = Duration::from_secs(60);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .timeout(CUSTOM_CLOCK_DEADLINE);
+    let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
+
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
+            Err::<i32, _>("fail")
+        })
+        .clock(&clock)
+        .timeout(LOOSE_BUDGET)
+        .call();
+
+    // The loose builder timeout wins over the policy's tight one, so the stop
+    // strategy bounds the loop instead.
+    assert_eq!(call_count.get(), MAX_ATTEMPTS + 10);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
 /// End-to-end: the engine feeds each attempt's post-clamp delay forward as the
 /// next attempt's `RetryState::previous_delay`. The unit tests construct
 /// `RetryState` by hand; this proves the sync loop actually wires it, without

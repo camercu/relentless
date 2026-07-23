@@ -1099,6 +1099,7 @@ pub fn relentless::RetryPolicy<S, W, C>::decide<NewC>(self, classifier: NewC) ->
 pub fn relentless::RetryPolicy<S, W, C>::retry<F, O>(&self, op: F) -> relentless::Retry<F, &C, &S, &W, relentless::clock::SystemClock, (), (), ()> where F: core::ops::function::FnMut(relentless::RetryState) -> O
 pub fn relentless::RetryPolicy<S, W, C>::retry_async<F, Fut, O>(&self, op: F) -> relentless::AsyncRetry<F, &C, &S, &W, relentless::clock::SystemClock, (), (), ()> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
 pub fn relentless::RetryPolicy<S, W, C>::stop<NewStop>(self, stop: NewStop) -> relentless::RetryPolicy<NewStop, W, C>
+pub fn relentless::RetryPolicy<S, W, C>::timeout(self, dur: core::time::Duration) -> Self
 pub fn relentless::RetryPolicy<S, W, C>::until<P>(self, predicate: P) -> relentless::RetryPolicy<S, W, relentless::Until<P>>
 pub fn relentless::RetryPolicy<S, W, C>::wait<NewWait>(self, wait: NewWait) -> relentless::RetryPolicy<S, NewWait, C>
 pub fn relentless::RetryPolicy<S, W, C>::when<P>(self, predicate: P) -> relentless::RetryPolicy<S, W, relentless::When<P>>

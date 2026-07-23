@@ -658,6 +658,9 @@ Builder methods:
   closure's parameter needs one annotation (no op to anchor inference on)
 - `.wait(w: impl Wait) -> RetryPolicy<S, W2, C>`
 - `.stop(s: impl Stop) -> RetryPolicy<S2, W, C>`
+- `.timeout(dur: Duration) -> RetryPolicy<S, W, C>` — captures a wall-clock
+  deadline (an `Option<Duration>` field, not a type parameter) that seeds every
+  built retry; see 5.10
 - `.boxed() -> RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, C>`
   with `alloc` — erases stop and wait only; the classifier `C` is left intact so
   a default-classifier policy stays reusable across operations with different
@@ -696,6 +699,15 @@ would pin it to one `(T, E)`.
 its stop/wait/classifier to the builder as shared references (`Stop`, `Wait`,
 and `Decide` are implemented for `&T`), so a boxed policy stays reusable without
 being `Clone`.
+
+**5.10** `.timeout(dur)` stores `Some(dur)` in the policy's `Option<Duration>`
+timeout field (default `None`), which `.retry`/`.retry_async` copy into every
+built retry as its initial timeout. A builder `.timeout(dur)` **replaces** the
+seeded value for that call (last-wins, not the tighter of the two): a call site
+may loosen or tighten the policy's deadline, and a loose builder timeout lets the
+loop run past the policy's budget. The timeout is a plain field, not a type
+parameter, so it does not change `RetryPolicy`'s arity or its `.boxed`/`Clone`
+story; it carries through every strategy combinator unchanged.
 
 ## 6. Execution model
 
@@ -1169,7 +1181,9 @@ or in addition to `stop::elapsed(dur)`.
 ### 11.4 Timeout
 
 `.timeout(dur)` on the execution builder sets a wall-clock deadline for the
-entire retry execution. It combines two behaviors:
+entire retry execution. The deadline may also be seeded from the policy
+(`RetryPolicy::timeout`, 5.10); a builder `.timeout(dur)` replaces the seeded
+value for that call. It combines two behaviors:
 
 1. **11.4.1** Implicitly OR's `stop::elapsed(dur)` into the effective stop strategy at
    execution time, so the stop check fires once elapsed time exceeds the

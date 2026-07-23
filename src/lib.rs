@@ -86,7 +86,9 @@
 //! # Policy reuse
 //!
 //! [`RetryPolicy`] captures retry rules once. Compose wait strategies with `+`
-//! and stop strategies with `|` or `&`.
+//! and stop strategies with `|` or `&`. A shared wall-clock deadline can travel
+//! with the policy too via [`.timeout(dur)`](RetryPolicy::timeout); a per-call
+//! [`.timeout()`](Retry::timeout) on the built retry replaces it for that call.
 //!
 //! ```
 //! use core::time::Duration;

@@ -2,9 +2,10 @@
 //!
 //! A policy captures the stop strategy, wait strategy, and classifier once, then
 //! is reused across operations via [`RetryPolicy::retry`] and
-//! [`RetryPolicy::retry_async`], which borrow the policy by `&self`. Per-call
-//! concerns (hooks, clock, stats, timeout) live on the returned builder, not on
-//! the policy.
+//! [`RetryPolicy::retry_async`], which borrow the policy by `&self`. An optional
+//! wall-clock [`timeout`](RetryPolicy::timeout) is also captured and seeds each
+//! built retry. Remaining per-call concerns (hooks, clock, stats) live on the
+//! returned builder, not on the policy.
 
 use crate::clock::SystemClock;
 #[cfg(feature = "alloc")]
@@ -50,6 +51,7 @@ pub struct RetryPolicy<S = StopAfterAttempts, W = WaitExponential, C = DefaultCl
     stop: S,
     wait: W,
     classifier: C,
+    timeout: Option<Duration>,
 }
 
 impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
@@ -61,6 +63,7 @@ impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
             stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
             wait: wait::exponential(DEFAULT_INITIAL_WAIT),
             classifier: DefaultClassifier,
+            timeout: None,
         }
     }
 }
@@ -79,6 +82,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop,
             wait: self.wait,
             classifier: self.classifier,
+            timeout: self.timeout,
         }
     }
 
@@ -89,7 +93,19 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: self.stop,
             wait,
             classifier: self.classifier,
+            timeout: self.timeout,
         }
+    }
+
+    /// Sets a wall-clock deadline for the whole retry execution, seeding every
+    /// [`retry`](Self::retry)/[`retry_async`](Self::retry_async) built from this
+    /// policy. A builder [`.timeout()`](crate::Retry::timeout) replaces it for
+    /// that call (it is not combined). See [`Retry::timeout`](crate::Retry::timeout)
+    /// for the deadline's semantics.
+    #[must_use]
+    pub fn timeout(mut self, dur: Duration) -> Self {
+        self.timeout = Some(dur);
+        self
     }
 
     /// Retries while `predicate` wants to; otherwise accepts (an `Err` aborts
@@ -100,6 +116,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: self.stop,
             wait: self.wait,
             classifier: When::new(predicate),
+            timeout: self.timeout,
         }
     }
 
@@ -111,6 +128,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: self.stop,
             wait: self.wait,
             classifier: Until::new(predicate),
+            timeout: self.timeout,
         }
     }
 
@@ -125,6 +143,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: self.stop,
             wait: self.wait,
             classifier: ClosureClassifier(classifier),
+            timeout: self.timeout,
         }
     }
 
@@ -149,6 +168,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
             classifier: self.classifier,
+            timeout: self.timeout,
         }
     }
 
@@ -165,6 +185,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
             stop: Box::new(self.stop),
             wait: Box::new(self.wait),
             classifier: self.classifier,
+            timeout: self.timeout,
         }
     }
 
@@ -175,7 +196,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     where
         F: FnMut(RetryState) -> O,
     {
-        Retry::from_parts(op, &self.classifier, &self.stop, &self.wait)
+        Retry::from_parts(op, &self.classifier, &self.stop, &self.wait, self.timeout)
     }
 
     /// Creates an asynchronous retry for `op`, borrowing this policy's parts.
@@ -188,6 +209,6 @@ impl<S, W, C> RetryPolicy<S, W, C> {
         F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = O>,
     {
-        AsyncRetry::from_parts(op, &self.classifier, &self.stop, &self.wait)
+        AsyncRetry::from_parts(op, &self.classifier, &self.stop, &self.wait, self.timeout)
     }
 }
