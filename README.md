@@ -152,6 +152,11 @@ let result = RetryPolicy::new()
     .call();
 ```
 
+> **Note:** `predicate::ok` constrains only the success type, so an operation
+> that never returns a concrete `Err` leaves the error type unpinned (`E0282`).
+> Give the op a signature — as `poll_status` does above — or annotate it inline,
+> e.g. `.retry(|_| Ok::<_, std::io::Error>(Status::Done))`.
+
 To also retry selected errors during polling, use `predicate::result`:
 
 ```rust,no_run
