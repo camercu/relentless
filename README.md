@@ -33,7 +33,8 @@ targets.
 
 Inspired by Python's [`tenacity`](https://github.com/jd/tenacity) (composable
 strategy algebra) and Rust's [`backon`](https://crates.io/crates/backon)
-(ergonomic retry builders).
+(ergonomic retry builders and the `.retry()` extension trait — starting a retry
+directly from a function or closure).
 
 ## Install
 
