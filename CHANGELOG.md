@@ -1,3 +1,10 @@
+## [0.15.0](https://github.com/camercu/relentless/compare/v0.14.0...v0.15.0) (2026-07-24)
+
+
+### Features
+
+* **policy:** let RetryPolicy carry a wall-clock timeout ([ebfe9a1](https://github.com/camercu/relentless/commit/ebfe9a1620e0e66c6b7f839bc039faf249c7cb0e))
+
 ## [0.14.0](https://github.com/camercu/relentless/compare/v0.13.0...v0.14.0) (2026-07-23)
 
 
