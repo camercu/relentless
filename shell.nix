@@ -19,6 +19,8 @@ pkgs.mkShell {
     cargo-public-api
     typos
     taplo
+    markdownlint-cli2
+    actionlint
     nodejs
   ];
 }

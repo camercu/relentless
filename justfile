@@ -38,7 +38,7 @@ fmt-check-taplo:
 
 # ── Linting ─────────────────────────────────────────────────
 
-lint: fmt-check lint-clippy lint-typos lint-deny
+lint: fmt-check lint-clippy lint-typos lint-markdown lint-actions lint-deny
 
 lint-clippy:
     {{cargo}} clippy --all-targets --all-features -- -D warnings
@@ -48,6 +48,18 @@ lint-clippy-stable:
 
 lint-typos:
     typos
+
+# Lint Markdown structure (headings, lists, fenced-code languages).
+# Config + globs/ignores live in `.markdownlint-cli2.yaml`; line-length
+# is disabled there because it can't wrap reference tables.
+lint-markdown:
+    markdownlint-cli2
+
+# Lint GitHub Actions workflows (syntax, expression typos, shell issues
+# in `run:` blocks via shellcheck). Catches workflow bugs that otherwise
+# only surface on a pushed CI run.
+lint-actions:
+    actionlint
 
 lint-deny:
     cargo deny check advisories licenses bans sources
@@ -214,6 +226,9 @@ check-tool-versions:
             cargo-mutants) actual=$(cargo mutants --version | awk '{print $2}') ;;
             cargo-llvm-cov) actual=$(cargo llvm-cov --version | awk '{print $2}') ;;
             cargo-public-api) actual=$(cargo public-api --version | awk '{print $2}') ;;
+            markdownlint-cli2) actual=$(markdownlint-cli2 --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//') ;;
+            actionlint) actual=$(actionlint --version | head -1) ;;
+            nodejs)     actual=$(node --version | sed 's/^v//') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then

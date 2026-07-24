@@ -1,0 +1,27 @@
+# Markdown lint config (markdownlint-cli2). MD013/line-length is
+# disabled: it fights reference tables and fenced code, which can't be
+# hard-wrapped at a column. The remaining rules enforce structure —
+# heading increments, single H1, fenced-code languages, no bare URLs.
+config:
+  MD013: false
+  # Tables use `| cell |` spacing; pin the style so the "consistent"
+  # default can't be poisoned by a single compact table elsewhere.
+  MD060:
+    style: "leading_and_trailing"
+  # Repeated subsection names are valid under distinct parents; only
+  # forbid duplicates among direct siblings.
+  MD024:
+    siblings_only: true
+globs:
+  - "**/*.md"
+ignores:
+  - node_modules
+  - target
+  - CHANGELOG.md
+  # Local Claude Code config and installed skills — agent tooling, not
+  # project docs, and often third-party Markdown that won't conform.
+  - .claude
+  # Point-in-time research artifacts (spike findings, scratch workspace),
+  # written once and not maintained — like CHANGELOG, not worth linting.
+  - .spike-workspace
+  - docs/spikes

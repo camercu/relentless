@@ -177,7 +177,7 @@ computes delays independently.
 **Additive jitter** (`.jitter(max_jitter)`): adds a uniformly distributed
 duration in `[0, max_jitter]` to the inner strategy's output.
 
-```
+```text
 output = base + random(0, max_jitter)
 ```
 
@@ -188,7 +188,7 @@ a random value between zero and the computed base. This is the "Full Jitter"
 strategy from the [AWS Architecture Blog][aws-jitter]. It produces the lowest total client
 work under contention.
 
-```
+```text
 output = random(0, base)
 ```
 
@@ -199,7 +199,7 @@ the other half. This is the "Equal Jitter" strategy from the [AWS Architecture
 Blog][aws-jitter]. It guarantees a minimum delay of `base / 2` while still spreading
 requests.
 
-```
+```text
 output = base / 2 + random(0, base / 2)
 ```
 
@@ -221,7 +221,7 @@ is read from `RetryState::previous_delay`, so the strategy carries no
 per-attempt state of its own (only its PRNG) and is freely shareable across
 reused policies.
 
-```
+```text
 output = random(base, previous_delay * 3)
 ```
 
@@ -894,7 +894,7 @@ calling `.with_stats()`.
 
 The sync loop performs these steps:
 
-```
+```text
 attempt = 1
 loop:
     1.  Fire `before_attempt` with RetryState { attempt, elapsed, previous_delay }.

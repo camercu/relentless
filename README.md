@@ -6,7 +6,6 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue.svg)](#msrv)
 [![License](https://img.shields.io/crates/l/relentless.svg)](LICENSE-MIT)
 
-
 Retry and polling for Rust — with composable strategies, policy reuse, and
 first-class support for polling workflows where `Ok(_)` doesn't always mean
 "done."
