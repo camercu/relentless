@@ -22,6 +22,6 @@ repos:
         stages: [pre-push]
       - id: commitlint
         name: commitlint
-        entry: npx commitlint --edit
+        entry: npx --no-install commitlint --edit
         language: system
         stages: [commit-msg]
