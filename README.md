@@ -12,14 +12,18 @@ first-class support for polling workflows where `Ok(_)` doesn't always mean
 "done."
 
 Most retry libraries handle the simple case well: call a function, retry on
-error, back off. `relentless` handles that too, but it also handles the cases
-those libraries make awkward:
+error, back off. `relentless` handles that too, but its core idea goes further:
+**you classify each outcome, rather than just retrying errors.** Every completed
+attempt is sorted into *return it*, *retry it*, or *abort* — so the retry
+decision is independent of `Result` semantics. That unlocks the cases other
+libraries make awkward:
 
-- **Polling**, where `Ok("pending")` means "keep going" and you need
+- **Polling**, where `Ok("pending")` means "keep going" and you reach for
   `.until(predicate::ok(...))` rather than just retrying errors.
 - **Outcome classification**, where `.decide(...)` sorts each outcome into
   return / retry / abort — so a sought-after `Err`, a non-`Result` poll enum, or
-  a search state can drive the loop directly, independent of `Result` semantics.
+  a search state can drive the loop directly, and a probe can deliver the failure
+  it was hunting for as an ordinary `Ok`.
 - **Policy reuse**, where a single `RetryPolicy` captures your retry rules and
   gets shared across multiple call sites — no duplicated builder chains.
 - **Strategy composition**, where `wait::fixed(50ms) + wait::exponential(100ms)`
@@ -42,18 +46,30 @@ directly from a function or closure).
 cargo add relentless
 ```
 
-### Feature flags
+Sync `std` builds default to `clock::SystemClock` (wall time +
+`std::thread::sleep`), so the sync examples below omit `.clock(...)`. Async
+retries and `no_std` builds inject an explicit clock adapter, gated behind a
+feature flag (`tokio-clock`, `embassy-clock`, `gloo-timers-clock`,
+`futures-timer-clock`); see the [feature-flag
+reference](https://docs.rs/relentless/latest/relentless/#feature-flags) for the
+full list. Async retry does not require `alloc`.
 
-| Flag                  | Purpose                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `std` (default)       | `clock::SystemClock` default for sync retries, `std::error::Error` on `RetryError`   |
-| `alloc`               | Boxed policies, `clock::VirtualClock` wait recording                                 |
-| `tokio-clock`         | `clock::TokioClock` async clock adapter                                              |
-| `embassy-clock`       | `clock::EmbassyClock` async clock adapter                                            |
-| `gloo-timers-clock`   | `clock::GlooClock` async clock adapter (wasm32; caller supplies the now-source)      |
-| `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter                                       |
+## The classifier: `when` → `until` → `decide`
 
-Async retry does not require `alloc`.
+The engine's one big idea: every completed outcome is sorted into a **verdict** —
+**return** it to the caller (`Ok`), **retry** it, or **abort** with a payload
+(`Err`). Three builder methods set that policy, at increasing power:
+
+- `.when(pred)` — retry *while* a `Result` predicate matches; otherwise accept an
+  `Ok` and abort an `Err`. The classic "retry these errors" knob.
+- `.until(pred)` — the inverse: retry *until* the predicate matches, then accept.
+  The polling knob.
+- `.decide(closure)` — the general three-way form. You return `Return` / `Retry`
+  / `Abort` yourself, so *any* outcome type — a poll enum, a search state, a
+  sought-after error — drives the loop directly, independent of `Result`.
+
+`.when` and `.until` are conveniences that compile down to the same three-way
+verdict `.decide` produces by hand.
 
 ---
 
@@ -62,10 +78,6 @@ Async retry does not require `alloc`.
 For full docs, see <https://docs.rs/relentless>. Behavior spec:
 [docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
 [`examples/`](./examples).
-
-Sync examples omit `.clock(...)` because `std` builds default to
-`clock::SystemClock` (wall time + `std::thread::sleep`). Without `std`, inject
-an explicit clock before `.call()`.
 
 ### 1) Retry with defaults
 
@@ -85,9 +97,8 @@ let results = fetch_job_output.retry().call();
 ### 2) Customized retry
 
 The `retry` free function is equivalent to the extension trait, with the added
-ability to capture retry loop state. Both the free function and extension trait
-give full control over which errors to retry, how long to wait, and when to
-stop.
+ability to capture retry loop state. Both give full control over which outcomes
+to retry, how long to wait, and when to stop.
 
 ```rust,no_run
 use core::time::Duration;
@@ -108,31 +119,7 @@ let body = retry(|state| {
 .call();
 ```
 
-### 3) Reuse a policy across call sites
-
-`RetryPolicy` captures retry rules once. Compose wait strategies with `+` and
-stop strategies with `|` or `&`.
-
-```rust,no_run
-use core::time::Duration;
-use relentless::{RetryPolicy, stop, wait};
-
-fn check_health() -> Result<String, std::io::Error> { todo!() }
-fn fetch_invoice(id: &str) -> Result<String, std::io::Error> { todo!() }
-
-let policy = RetryPolicy::new()
-    .wait(
-        wait::fixed(Duration::from_millis(50))
-            + wait::exponential(Duration::from_millis(100)),
-    )
-    .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)));
-
-// Same policy, different operations.
-let health = policy.retry(|_| check_health()).call();
-let invoice = policy.retry(|_| fetch_invoice("inv_123")).call();
-```
-
-### 4) Poll for a condition
+### 3) Poll for a condition
 
 Use `.until(predicate)` to keep retrying until a success condition is met.
 Unlike `.when()`, which retries on matching outcomes, `.until()` retries on
@@ -157,28 +144,65 @@ let result = RetryPolicy::new()
 > Give the op a signature — as `poll_status` does above — or annotate it inline,
 > e.g. `.retry(|_| Ok::<_, std::io::Error>(Status::Done))`.
 
-To also retry selected errors during polling, use `predicate::result`:
+### 4) Classify a custom outcome (all three verdicts)
+
+When an outcome has more than two meanings, `.decide(...)` sorts it directly.
+Here a job poll is three-way: `Done` is the success value, `Failed` aborts as
+fatal, and `Pending` retries — no need to encode "still working" as an error.
 
 ```rust,no_run
-use relentless::{RetryPolicy, predicate};
+use relentless::{retry, stop, Verdict};
 
 #[derive(Debug)]
-enum Status { Pending, Done }
-#[derive(Debug)]
-enum Error { Retryable, Fatal }
+enum Job {
+    Pending,
+    Done(String),   // the report we want
+    Failed(String), // a terminal failure
+}
 
-fn poll_job() -> Result<Status, Error> { todo!() }
+fn poll_job() -> Result<Job, std::io::Error> { todo!() }
 
-// Retry until Done or Fatal; keep going on Pending or Retryable.
-let result = RetryPolicy::new()
-    .until(predicate::result(|outcome: &Result<Status, Error>| {
-        matches!(outcome, Ok(Status::Done) | Err(Error::Fatal))
-    }))
-    .retry(|_| poll_job())
+let report = retry(|_| poll_job())
+    .decide(|outcome| match outcome {
+        Ok(Job::Done(report)) => Verdict::Return(report),
+        Ok(Job::Failed(why)) => Verdict::Abort(why),
+        other => Verdict::Retry(other),
+    })
+    .stop(stop::attempts(20))
     .call();
+// `report` is `Result<String, RetryError<String, Result<Job, io::Error>>>`:
+// `Ok(report)` on Done, `Err(Aborted { last: why })` on Failed.
 ```
 
-### 5) Async retry
+The same lever powers an *inverted probe* — retry until an error appears, then
+deliver that error as the `Ok` value — by returning `Verdict::Return(e)` (or the
+two-way `Decision::Return(e)`) for the error you were hunting.
+
+### 5) Reuse a policy across call sites
+
+`RetryPolicy` captures retry rules once. Compose wait strategies with `+` and
+stop strategies with `|` or `&`.
+
+```rust,no_run
+use core::time::Duration;
+use relentless::{RetryPolicy, stop, wait};
+
+fn check_health() -> Result<String, std::io::Error> { todo!() }
+fn fetch_invoice(id: &str) -> Result<String, std::io::Error> { todo!() }
+
+let policy = RetryPolicy::new()
+    .wait(
+        wait::fixed(Duration::from_millis(50))
+            + wait::exponential(Duration::from_millis(100)),
+    )
+    .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)));
+
+// Same policy, different operations.
+let health = policy.retry(|_| check_health()).call();
+let invoice = policy.retry(|_| fetch_invoice("inv_123")).call();
+```
+
+### 6) Async retry
 
 Pass an async clock adapter — here via the `tokio-clock` feature.
 
@@ -200,7 +224,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### More
+## Error handling
+
+The retry loop returns `Ok(R)` — the value the classifier accepted — on success.
+On failure it returns a `RetryError` with two variants:
+
+- `Exhausted { last }` — the stop strategy (or the timeout) fired while the
+  classifier still wanted to retry. `last` is the final *whole* outcome (a
+  `Result<T, E>` on the default / `.when` / `.until` path, since polling can
+  exhaust on an unaccepted `Ok` — e.g. a job stuck at `Pending`).
+- `Aborted { last }` — the classifier rejected an outcome as fatal. `last` is the
+  payload the classifier projected on `Abort` — the bare error `E` on the
+  `.when` / `.until` path.
+
+```rust,no_run
+use relentless::{retry, RetryError};
+
+match retry(|_| Err::<(), _>("boom")).call() {
+    Ok(val) => println!("success: {val:?}"),
+    Err(RetryError::Exhausted { last }) => println!("gave up: {last:?}"),
+    // Aborts only arise on the `.when`/`.until`/`.decide` path, not the default.
+    Err(RetryError::Aborted { last }) => println!("aborted: {last}"),
+    // `RetryError` is `#[non_exhaustive]`; match future variants here.
+    Err(_) => {}
+}
+```
+
+`RetryError` is `Result`-shaped by default, so it implements `Display` and
+`std::error::Error` (with the terminal error as its `source`) on that path.
+
+## More
 
 Full inline code for these lives in the [API docs](https://docs.rs/relentless),
 with runnable versions in [`examples/`](./examples):
@@ -212,12 +265,6 @@ with runnable versions in [`examples/`](./examples):
   enum, a search state) so it sorts itself into return / retry / abort, and the
   default engine drives it with no `.decide` at the call site.
   ([`custom-outcome.rs`](./examples/custom-outcome.rs))
-- **Error handling** — on failure you get a `RetryError`: `Exhausted { last }`
-  when the stop strategy fired (`last` is the final attempt's full
-  `Result<T, E>` — polling can exhaust while the last outcome was still `Ok`),
-  or `Aborted { last }` when the classifier rejected the outcome as fatal
-  (`last` is the bare error). A classifier (`.decide`) can also make any outcome
-  the success value, so a probe can return its found `Err` through `Ok`.
 - **Deterministic testing** — `clock::VirtualClock` asserts the exact backoff
   schedule with zero wall-clock time spent, so timeout and backoff tests stay
   fast and non-flaky; one injected value drives both waits and elapsed time,
@@ -236,19 +283,21 @@ with runnable versions in [`examples/`](./examples):
 The full API surface — every strategy, predicate, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
-Builder chains read best in this order: **when/until** -> **wait** -> **stop**
--> clock -> hooks -> stats -> call. That order is a reading convention, not a
-compiler contract — the types enforce only four rules: strategy overrides
-(`when`/`until`/`wait`/`stop`) exist only on builders that own their policy
-(below), everything is configured before `.with_stats()`, an async chain needs
-`.clock(...)` before `.call()`, and `.clock(...)` can be called at most once
-(it exists only while the builder still carries the default clock).
+**Reading order.** Chains read best as **when/until/decide** -> **wait** ->
+**stop** -> clock -> hooks -> stats -> call. That is a convention, not a compiler
+contract: the types enforce only two structural rules — `.with_stats()` is
+terminal, so configure everything before it, and an async chain must set
+`.clock(...)` before it can be awaited (the default clock is synchronous). Order
+is otherwise free, and repeating a setter simply overrides the previous value —
+including `.clock(...)`, where the last one wins.
 
-Where you start decides what you can override. The free-function and
-extension-trait builders own their policy, so they accept the strategy overrides
-`when`/`until`/`wait`/`stop`. An execution started from a shared `RetryPolicy`
-(`policy.retry(...)`) keeps that policy's strategies fixed and accepts only
-clock, hooks, timing, and stats methods.
+**Where you start sets the defaults, not a ceiling.** The free-function and
+extension-trait builders begin from the default policy; a shared `RetryPolicy`
+(`policy.retry(...)`) begins from that policy's strategies instead. Either way
+you can still override `when`/`until`/`decide`/`wait`/`stop` on the resulting
+builder — an override on a policy-built retry shadows the policy for that one
+call. For reuse, prefer setting the strategies on the `RetryPolicy` itself so
+every call site inherits them.
 
 ## MSRV
 
