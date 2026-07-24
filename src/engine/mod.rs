@@ -237,8 +237,12 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     ///
     /// A boundary check, not a preemptive timeout: it is evaluated between
     /// attempts. The next inter-attempt wait is clamped to the remaining budget,
-    /// and the loop stops (as `Exhausted`) once elapsed time exceeds `dur`. It
-    /// cannot interrupt an operation or wait already in progress.
+    /// and the loop stops (as `Exhausted`) once elapsed time meets or exceeds
+    /// `dur`. It cannot interrupt an operation or wait already in progress.
+    ///
+    /// `Duration::ZERO` therefore permits exactly one attempt: the boundary is
+    /// met (`0 >= 0`) the instant that attempt completes. There is no "disabled"
+    /// or "infinite" value — omit `.timeout` for an unbounded deadline.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);

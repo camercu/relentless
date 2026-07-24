@@ -881,6 +881,32 @@ fn policy_timeout_replaced_by_builder() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
+/// `.timeout(Duration::ZERO)` permits exactly one attempt: the elapsed boundary
+/// (`elapsed >= budget`) is met (`0 >= 0`) the instant the first attempt
+/// completes, even without any virtual time passing. There is no "disabled" or
+/// "infinite" timeout value. Locks the rustdoc note on `Retry::timeout`.
+#[test]
+fn timeout_zero_permits_exactly_one_attempt() {
+    let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
+
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            Err::<i32, _>("fail")
+        })
+        .clock(&clock)
+        .timeout(Duration::ZERO)
+        .call();
+
+    // Zero budget stops after the first attempt without any clock advance, so
+    // the much larger attempt cap never applies.
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
 /// End-to-end: the engine feeds each attempt's post-clamp delay forward as the
 /// next attempt's `RetryState::previous_delay`. The unit tests construct
 /// `RetryState` by hand; this proves the sync loop actually wires it, without
