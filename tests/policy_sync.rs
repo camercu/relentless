@@ -10,7 +10,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, RetryPolicy, RetryState, StopReason};
+use relentless::{RetryError, RetryPolicy, RetryState, StopReason, Verdict};
 use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
 
@@ -828,14 +828,51 @@ fn policy_timeout_seeds_builder() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// The policy's timeout survives strategy combinators applied *after* it (SPEC
-/// 5.10): setting `.timeout()` first, then `.stop()`/`.wait()`, must not drop it.
+/// The policy's timeout survives *every* strategy combinator applied after it
+/// (SPEC 5.10). Set `.timeout()` first, then run it through a classifier
+/// combinator (`.decide()`) as well as `.stop()`/`.wait()`; each rebuilds the
+/// policy and must copy the seeded budget forward. The `.decide()` link covers
+/// the classifier field-copy path (`RetryPolicy::decide`), not just stop/wait.
 #[test]
 fn policy_timeout_survives_later_combinators() {
     let policy = RetryPolicy::new()
         .timeout(CUSTOM_CLOCK_DEADLINE)
+        .decide(|o: Result<i32, &'static str>| match o {
+            Ok(v) => Verdict::Return(v),
+            // Inert here (the op only yields "fail"); the arm pins the abort
+            // type so the classifier's `Verdict` is fully inferred.
+            Err("fatal") => Verdict::Abort("boom"),
+            Err(_) => Verdict::Retry(o),
+        })
         .stop(stop::attempts(MAX_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
+    let call_count = Cell::new(0_u32);
+    let clock = VirtualClock::new();
+
+    let result = policy
+        .retry(|_| {
+            call_count.set(call_count.get().saturating_add(1));
+            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
+            Err::<i32, _>("fail")
+        })
+        .clock(&clock)
+        .call();
+
+    assert_eq!(call_count.get(), 1);
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+}
+
+/// A policy's seeded timeout survives `.boxed()` type-erasure (SPEC 5.10): the
+/// timeout is a plain field, not an erased strategy, so boxing stop and wait
+/// keeps it. `boxed_local` shares the identical field-copy path.
+#[cfg(feature = "alloc")]
+#[test]
+fn policy_timeout_survives_boxed() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .wait(wait::fixed(Duration::ZERO))
+        .timeout(CUSTOM_CLOCK_DEADLINE)
+        .boxed();
     let call_count = Cell::new(0_u32);
     let clock = VirtualClock::new();
 
