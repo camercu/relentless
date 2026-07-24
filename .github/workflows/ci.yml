@@ -43,7 +43,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }}
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
+      # `just lint` runs markdownlint-cli2 (npm) and actionlint (a Go binary),
+      # which the cargo-centric install-action above can't provide. Locally
+      # they come from nix-shell; here from npm and the pinned release tarball.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+      - name: Install markdownlint-cli2
+        env:
+          # Via the environment, not `${{ }}` inlined into the shell, so a
+          # crafted .tool-versions cannot inject into the install command.
+          MDL_VERSION: ${{ steps.tools.outputs.markdownlint_cli2 }}
+        run: npm install -g "markdownlint-cli2@${MDL_VERSION}"
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: ${{ steps.tools.outputs.actionlint }}
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" actionlint
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: just ci
         run: just ci
 
@@ -86,17 +106,57 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just@${{ steps.tools.outputs.just }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},cargo-mutants@${{ steps.tools.outputs.cargo_mutants }}
-      - name: Determine diff base
-        id: base
+      - name: just mutants-diff
+        env:
+          # Pass repository-controlled context through the environment
+          # instead of interpolating `${{ }}` straight into the shell,
+          # which would let a crafted branch/ref name inject commands.
+          # `github.event.before` is all-zeroes on the first push to a new
+          # branch and orphaned after a force-push; fall back to the parent.
+          PR_BASE: origin/${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "base=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] \
-              && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
-            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+            base="$PR_BASE"
+          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
+              || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base=HEAD~1
           else
-            # New branch or unknown before-commit: fall back to the parent.
-            echo "base=HEAD~1" >> "$GITHUB_OUTPUT"
+            base="$PUSH_BEFORE"
           fi
-      - name: just mutants-diff
-        run: just mutants-diff "${{ steps.base.outputs.base }}"
+          just mutants-diff "$base"
+
+  commitlint:
+    # Enforce Conventional Commits in CI, not only via the local commit-msg
+    # hook (which a --no-verify bypass or a non-nix contributor can skip).
+    # Runs on push too, so direct-to-main commits are linted regardless of
+    # merge path.
+    name: Commitlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Lint commits against Conventional Commits
+        env:
+          # Repository-controlled context via the environment, never inlined
+          # into the shell. `github.event.before` is all-zeroes on the first
+          # push to a new branch and orphaned after a force-push; fall back to
+          # linting just the most-recent commit.
+          PR_BASE: origin/${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            npx --no-install commitlint --from "$PR_BASE" --to HEAD --verbose
+          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
+              || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            npx --no-install commitlint --last --verbose
+          else
+            npx --no-install commitlint --from "$PUSH_BEFORE" --to "$PUSH_AFTER" --verbose
+          fi
