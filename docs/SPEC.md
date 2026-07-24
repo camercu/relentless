@@ -1169,8 +1169,8 @@ uphold it structurally (`VirtualClock`) or via the OS/runtime scheduler.
 
 ### 11.3 Hazard: elapsed-based stop does not account for upcoming sleep
 
-`stop::elapsed(dur)` fires when elapsed time at attempt completion exceeds
-`dur`. The retry loop may schedule a sleep that pushes total wall-clock time
+`stop::elapsed(dur)` fires when elapsed time at attempt completion meets or
+exceeds `dur`. The retry loop may schedule a sleep that pushes total wall-clock time
 well beyond the threshold. For example, `stop::elapsed(Duration::from_secs(30))`
 will not prevent a retry sequence from running for 45 seconds total if the
 elapsed check passes at 28 seconds and the next sleep is 17 seconds.
@@ -1186,8 +1186,8 @@ entire retry execution. The deadline may also be seeded from the policy
 value for that call. It combines two behaviors:
 
 1. **11.4.1** Implicitly OR's `stop::elapsed(dur)` into the effective stop strategy at
-   execution time, so the stop check fires once elapsed time exceeds the
-   deadline. The OR is applied to whatever stop strategy is in effect at
+   execution time, so the stop check fires once elapsed time meets or exceeds
+   the deadline. The OR is applied to whatever stop strategy is in effect at
    execution time — whether set on the policy, overridden on the builder via
    `.stop()`, or the default. For example,
    `.stop(stop::attempts(5)).timeout(Duration::from_secs(30))` produces an
@@ -1217,6 +1217,12 @@ that is already running.
 **11.4.6** (retired — the debug assertion for a timeout without a clock was
 deleted along with the state it guarded; a clockless timeout is no longer
 representable. Number retained as a tombstone so later numbering is stable.)
+
+**11.4.7** `Duration::ZERO` is a valid budget, not a "disabled" sentinel.
+Because the boundary is `>=` and elapsed is measured from the first attempt, a
+zero deadline permits exactly one attempt and then terminates `Exhausted`.
+There is no infinite/disabled value — omit `.timeout` for an unbounded
+deadline.
 
 ## 12. Feature-gated APIs
 
