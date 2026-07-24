@@ -3,9 +3,11 @@
 **Status:** living catalog. Records UX warts surfaced by a dogfooding pass over
 the public surface (2026-07-23), ranked as candidates for future polish. Item 1a
 (timeout on the policy) has since shipped; item 1b (hooks on the policy) and item
-2 (an attempt-count shortcut) were worked through and declined; item 3 (closure
-arity across entry points) was resolved with docs after a diagnostic fix was
-prototyped and rejected. The rest remain
+2 (an attempt-count shortcut) were worked through and declined; items 3 (closure
+arity across entry points) and 4 (the async `&VirtualClock` asymmetry) were each
+resolved with docs after a diagnostic fix was prototyped and rejected — in both
+cases because the bound failure surfaces as E0599, which
+`#[diagnostic::on_unimplemented]` cannot reach. The rest remain
 open — each names the friction, the
 evidence, and the open design question a spike would resolve; none is scheduled;
 none is a defect in current behavior. Two prior UX spikes already concluded
@@ -22,7 +24,7 @@ next tier down.
 | 1b | `RetryPolicy` cannot carry hooks | Low | Declined (see below) |
 | 2 | No shortcut for the most common tweak (attempt count) | ~~Medium~~ | Declined (see below) |
 | 3 | Closure arity differs across entry points | ~~Medium~~ | Resolved (docs) |
-| 4 | Async `VirtualClock` needs `&`, sync does not | Low | Test ergonomics |
+| 4 | Async `VirtualClock` needs `&`, sync does not | Low | Resolved (docs) |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
 
 ## 1. `RetryPolicy` and cross-cutting concerns
@@ -193,15 +195,48 @@ to do things) and it needs no bound change, but it forfeits the fluent
 `op.retry()` style and the `|_|`-free ergonomics for a wart the compiler already
 catches — not worth scheduling on its own.
 
-## 4. Async `VirtualClock` needs `&`, sync does not
+## 4. Async `VirtualClock` needs `&`, sync does not — resolved as docs (2026-07-23)
 
-`src/clock.rs:105` — `AsyncClock` is implemented for `&VirtualClock`, not
-`VirtualClock`. So a sync test writes `.clock(VirtualClock::new())` while an
+`AsyncClock` is implemented for `&VirtualClock`, not `VirtualClock`
+(`src/clock.rs`). So a sync test writes `.clock(VirtualClock::new())` while an
 async test writes `.clock(&clock)`. A user who forgets the `&` hits a
-`SystemClock: AsyncClock` / `VirtualClock: AsyncClock` bound error and may not
-realize the fix is a single reference. The `on_unimplemented` note
-(`src/clock.rs:89-95`) points at `.clock(...)` but does not mention the `&`.
-Cheap fix: extend the note, or add worked async-test examples.
+`VirtualClock: AsyncClock` bound error.
+
+**The `&` is type-system-forced, not a wart to erase — do not re-propose GAT.**
+The async engine `AsyncRun` co-stores the clock (`clock: Cl`) and the wait
+future built from it (`phase: Phase<Fut, Cl::Wait>`) in one pinned struct
+(`src/engine/async_engine.rs`). Today that compiles only because
+`Cl = &'clock VirtualClock` makes `Cl::Wait = VirtualWait<'clock>` borrow the
+*external* `'clock`, not the co-stored field. GAT-ing `AsyncClock`
+(`type Wait<'a>; wait_async(&self) -> Wait<'_>`) so owned `VirtualClock`
+qualifies does **not** help: the wait future would then borrow the co-stored
+`clock` field → self-referential struct → rejected. The only alternatives —
+an `Rc<Cell>` handle (forces `alloc`, breaks the no-alloc async path embassy
+relies on) or an external-`Cell` `VirtualClock<'a>` (more caller ceremony than
+`&clock`) — are strictly worse. Restated positively: a wait future that
+observes shared clock state must borrow it from a scope outliving the retry
+future, so *stateful* clocks pass by `&` and *stateless* ones (SystemClock,
+TokioClock) pass by value. That is honest, not accidental. Willingness to take
+a breaking change does not unlock a better shape here.
+
+**The `on_unimplemented` "extend the note" fix is a dead end (verified).** At
+the only bound site — `.call()` — an unsatisfied clock capability surfaces as
+**E0599** ("method `call` exists … but its trait bounds were not satisfied"),
+which routes through method resolution and does *not* render the trait's
+`#[diagnostic::on_unimplemented]` note. Confirmed on rustc 1.94.1 for both the
+owned-`VirtualClock` async case and the default-`SystemClock` async case, and
+for a non-`SyncClock` on the sync engine: none show the note; rustc emits its
+own generic "the trait `AsyncClock` must be implemented". Same E0599 blind spot
+as item 3. So editing the note buys nothing a user actually sees.
+
+Resolution: **docs, shipped 2026-07-23.** `VirtualClock`'s rustdoc now carries
+(a) a runnable async example driving `retry_async(...).clock(&clock).call()`
+under a no-op-waker `block_on`, teaching the borrow form and the "keep the
+handle for `.waits()`" idiom, and (b) a `compile_fail` example locking that an
+*owned* `VirtualClock` is rejected by the async engine — so if a future change
+ever makes owned `VirtualClock: AsyncClock`, that guard fails and forces the
+docs to be revisited. Both render on docs.rs and run under `just test-doc`,
+unlike the note.
 
 ## 5. Builder type-name sprawl
 
@@ -216,9 +251,15 @@ These were checked and found already polished, confirming the quality bar this
 list sits beneath:
 
 - The async engine has no ambient default clock, and the default type parameter
-  `SystemClock` cannot drive it — but `AsyncClock`'s `diagnostic::on_unimplemented`
-  (`src/clock.rs:89-95`) explains exactly how to supply one, so the deferred
-  bound error reads well.
+  `SystemClock` cannot drive it. A `diagnostic::on_unimplemented` note sits on
+  `AsyncClock` (`src/clock.rs`) intending to explain how to supply one —
+  **but it does not render at the `.call()` bound site** (E0599 routes around
+  it; see item 4). The deferred bound error is only rustc's own generic "the
+  trait `AsyncClock` must be implemented", which still names the missing bound
+  but gives no remedy. Not a handled item; tracked under item 4. (The note is
+  left in place, not deleted: it is the intended mechanism and may render on a
+  future rustc or a non-method bound site. Whether to remove both dead clock
+  notes is a separate call, deliberately deferred.)
 - `.timeout`'s overshoot semantics (one final attempt can push total time past
   the deadline) are documented at `src/lib.rs:76-82` and SPEC 11.4.
 - `stop::elapsed` vs `.timeout` overlap is disambiguated in SPEC 11.3–11.4.

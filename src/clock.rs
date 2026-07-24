@@ -183,6 +183,53 @@ impl SyncClock for SystemClock {
 /// clock.wait(Duration::from_millis(50));
 /// assert_eq!(clock.now(), Duration::from_millis(50));
 /// ```
+///
+/// The async engine takes the clock the same way — **by shared reference**, so
+/// its wait future can borrow the clock's virtual time from a scope outliving
+/// the retry future. Pass `.clock(&clock)` and keep `clock` for assertions:
+///
+/// ```
+/// use core::time::Duration;
+/// use relentless::clock::{Clock, VirtualClock};
+/// use relentless::{retry_async, stop, wait};
+/// # // Minimal executor: `VirtualClock`'s async waits resolve on first poll,
+/// # // so a no-op waker suffices — no runtime needed.
+/// # fn block_on<F: core::future::Future>(future: F) -> F::Output {
+/// #     use core::task::{Context, Poll};
+/// #     let mut future = core::pin::pin!(future);
+/// #     let mut cx = Context::from_waker(core::task::Waker::noop());
+/// #     loop {
+/// #         if let Poll::Ready(out) = future.as_mut().poll(&mut cx) {
+/// #             return out;
+/// #         }
+/// #     }
+/// # }
+/// let clock = VirtualClock::new();
+/// let result = block_on(
+///     retry_async(|_| async { Err::<(), &str>("busy") })
+///         .stop(stop::attempts(3))
+///         .wait(wait::fixed(Duration::from_millis(10)))
+///         .clock(&clock) // shared borrow, not `VirtualClock::new()`
+///         .call(),
+/// );
+/// assert!(result.is_err());
+/// // Keep `clock` to assert after the run: two 10ms inter-attempt waits
+/// // between three attempts advanced virtual time by 20ms (no real sleeping).
+/// assert_eq!(clock.now(), Duration::from_millis(20));
+/// ```
+///
+/// Passing an *owned* `VirtualClock` to the async engine is rejected at compile
+/// time — it is not an [`AsyncClock`], only `&VirtualClock` is:
+///
+/// ```compile_fail
+/// use relentless::clock::VirtualClock;
+/// use relentless::{retry_async, stop};
+///
+/// let _ = retry_async(|_| async { Ok::<(), &str>(()) })
+///     .stop(stop::attempts(1))
+///     .clock(VirtualClock::new()) // owned: not an `AsyncClock`
+///     .call();
+/// ```
 #[derive(Debug, Default)]
 pub struct VirtualClock {
     /// Single source of truth for virtual "now". Written only by
