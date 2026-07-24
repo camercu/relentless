@@ -63,11 +63,11 @@ pin-project-lite = "0.2"
 tokio = { version = "1", default-features = false, features = [
   "time",
 ], optional = true }
-embassy-time = { version = "0.3", default-features = false, optional = true }
+embassy-time = { version = "0.5", default-features = false, optional = true }
 futures-timer = { version = "3.0.4", optional = true }
 [dev-dependencies]
 proptest = "1"
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.13", features = ["blocking"] }
 stats_alloc = "0.1"
 tokio = { version = "1", features = [
   "macros",
@@ -111,6 +111,6 @@ cast_sign_loss = "allow"
 items_after_statements = "allow"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gloo-timers = { version = "0.3", default-features = false, features = [
+gloo-timers = { version = "0.4", default-features = false, features = [
   "futures",
 ], optional = true }
