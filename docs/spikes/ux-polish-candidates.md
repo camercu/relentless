@@ -26,6 +26,7 @@ next tier down.
 | 3 | Closure arity differs across entry points | ~~Medium~~ | Resolved (docs) |
 | 4 | Async `VirtualClock` needs `&`, sync does not | Low | Resolved (docs) |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
+| 6 | Clock-capability `on_unimplemented` notes never render (E0599) | Low | Open (parked) |
 
 ## 1. `RetryPolicy` and cross-cutting concerns
 
@@ -245,6 +246,42 @@ improvement). Listed here only so a future reader does not re-discover it as
 novel. No action pending a rustdoc capability change or a broader breaking
 release.
 
+## 6. Clock-capability `on_unimplemented` notes never render — parked (2026-07-23)
+
+Surfaced while resolving item 4. Both clock capability traits carry a
+`#[diagnostic::on_unimplemented]` note meant to guide a user who reaches
+`.call()` without a usable clock: `SyncClock` ("supply a clock with
+`.clock(...)`…") and `AsyncClock` ("supply an async clock… `&VirtualClock` in
+tests…"), `src/clock.rs`. **Neither renders**, because the only bound site is
+the `.call()` method: an unsatisfied capability surfaces as **E0599** ("method
+`call` exists… but its trait bounds were not satisfied"), which routes through
+method resolution and never consults the trait's `on_unimplemented`. rustc
+emits its own generic "the trait `SyncClock`/`AsyncClock` must be implemented"
+instead. Verified on rustc 1.94.1 across three cases: owned `VirtualClock` on
+async, default `SystemClock` on async, and a `Clock`-but-not-`SyncClock` type
+on sync. This is the same E0599 blind spot that sank item 3's diagnostic
+prototype.
+
+So the two notes are dead weight today: maintenance obligation (they read as
+if they help; a future edit might "improve" text nobody sees) for zero user
+benefit. The decision — **keep or delete both** — is deliberately parked, not
+silently resolved:
+
+- **Keep (current state).** `on_unimplemented` is the *intended* mechanism.
+  A future rustc may surface it in E0599 (there has been rustc work in that
+  direction), or a non-method bound site might render it, at which point the
+  notes pay off with no further work. Cost: two stale-looking attributes.
+- **Delete both.** Honest to today's reality (remove more than add); the E0599
+  message still names the missing bound, just without a remedy. Cost: forfeits
+  any future free win if rustc starts honoring it, and re-adding is cheap but
+  needs re-deriving the wording.
+
+No trigger to act: the messages are not *wrong*, only absent, and the docs
+fixes for items 3 and 4 already carry the remedies the notes would have. Revisit
+if the pinned rustc changes E0599 behavior, or if a new non-`.call()` bound site
+is added where the note would render. If reopened, the choice is purely
+keep-vs-delete on the evidence above — not a fresh investigation.
+
 ## Already handled (bar reference)
 
 These were checked and found already polished, confirming the quality bar this
@@ -256,10 +293,8 @@ list sits beneath:
   **but it does not render at the `.call()` bound site** (E0599 routes around
   it; see item 4). The deferred bound error is only rustc's own generic "the
   trait `AsyncClock` must be implemented", which still names the missing bound
-  but gives no remedy. Not a handled item; tracked under item 4. (The note is
-  left in place, not deleted: it is the intended mechanism and may render on a
-  future rustc or a non-method bound site. Whether to remove both dead clock
-  notes is a separate call, deliberately deferred.)
+  but gives no remedy. Not a handled item; the remedy shipped as docs (item 4),
+  and the dead-note keep-vs-delete call is tracked as item 6.
 - `.timeout`'s overshoot semantics (one final attempt can push total time past
   the deadline) are documented at `src/lib.rs:76-82` and SPEC 11.4.
 - `stop::elapsed` vs `.timeout` overlap is disambiguated in SPEC 11.3–11.4.
