@@ -95,14 +95,23 @@ test-doc-no-default:
 test-readme:
     {{cargo}} test --features tokio-clock --doc -- readme_doctests
 
+# Run every shipped example, with whatever features each one declares.
+# The list is derived from `cargo metadata`, so an example is exercised here
+# from the moment it exists: adding one to `examples/` is enough, and there is
+# no second list to keep in sync. Plain cargo — the JSON is parsed, not read.
 test-examples:
-    cargo run --example basic-retry
-    cargo run --example hooks-and-stats
-    cargo run --example custom-outcome
-    cargo run --example sync-cancel
-    cargo run --example testing-with-virtual-clock
-    cargo run --example async-polling --features tokio-clock
-    cargo run --example async-cancel --features tokio-clock
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo metadata --format-version 1 --no-deps \
+        | python3 -c 'import json,sys; ts=json.load(sys.stdin)["packages"][0]["targets"]; print("\n".join(t["name"]+"\t"+",".join(t.get("required-features",[])) for t in ts if "example" in t["kind"]))' \
+        | while IFS=$'\t' read -r name feats; do
+            echo "--- example: ${name}"
+            if [ -n "${feats}" ]; then
+                cargo run --example "${name}" --features "${feats}"
+            else
+                cargo run --example "${name}"
+            fi
+        done
 
 test-tokio-clock:
     {{cargo}} nextest run --test policy_async --test clock_adapters --features tokio-clock
