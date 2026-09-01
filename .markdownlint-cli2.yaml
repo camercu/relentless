@@ -25,3 +25,7 @@ ignores:
   # written once and not maintained — like CHANGELOG, not worth linting.
   - .spike-workspace
   - docs/spikes
+  # Working state for an in-progress `harden` run (ledger, findings, agent
+  # reports). Git-ignored and transient; linting it makes `just lint` fail for
+  # the duration of a run. Same rationale as `.claude` above.
+  - .harden
