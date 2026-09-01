@@ -1458,16 +1458,23 @@ meaningful default `StopReason`.
 
 ## 15. Panic inventory
 
-The following conditions cause a panic. No other public constructor or method
-panics. Saturating arithmetic is used throughout wait computation — overflow
-produces `Duration::MAX`, not a panic.
+The following conditions cause a panic. Saturating arithmetic is used throughout
+wait computation — overflow produces `Duration::MAX`, not a panic.
 
 - **15.1** `stop::attempts(0)` panics unconditionally
 - **15.2** Polling the async retry future after it has returned `Poll::Ready` panics
+- **15.3** `RetryState::for_attempt(0)` panics in debug builds only, via
+  `debug_assert!`; release builds construct an attempt-0 state
 
-**15.3** No other public constructor or method panics; saturating arithmetic is used throughout.
+**15.4** No other public constructor or method panics; saturating arithmetic is
+used throughout.
 
-All panic conditions are documented with `# Panics` sections in rustdoc.
+**15.5** Every panic above carries a `# Panics` section in rustdoc. For 15.1 and
+15.3 this is enforced by `clippy::missing_panics_doc` (the crate runs clippy
+pedantic under `-D warnings`). 15.2 is out of that lint's reach — the panic sits
+in a `Future::poll` impl, not in the public function that returns the future — so
+its `# Panics` sections on `AsyncRetry::call`, `AsyncRetryWithStats::call` and
+`AsyncRun` are maintained by hand.
 
 ## 16. Compatibility guarantees
 

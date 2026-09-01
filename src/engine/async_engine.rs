@@ -326,6 +326,17 @@ where
     ///
     /// The returned future is cancel-safe: dropping it stops the loop at the
     /// next `.await` (`on_exit` does not fire on drop).
+    ///
+    /// # Panics
+    ///
+    /// The returned future panics if it is polled again after it has returned
+    /// [`Poll::Ready`](core::task::Poll::Ready). It is not a
+    /// [`FusedFuture`], so combinators that may re-poll a completed
+    /// future — notably `tokio::select!` over a `&mut` future in a loop — must
+    /// not be allowed to do so; wrap it in `futures::FutureExt::fuse` or break
+    /// out of the loop once it completes.
+    ///
+    /// [`FusedFuture`]: https://docs.rs/futures/latest/futures/future/trait.FusedFuture.html
     #[allow(clippy::type_complexity)]
     pub fn call(self) -> DropStats<AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>> {
         DropStats {
@@ -370,6 +381,12 @@ where
     OX: ExitHook<C::R, C::A, O>,
 {
     /// Drives the async retry loop, yielding both the result and the stats.
+    ///
+    /// # Panics
+    ///
+    /// The returned future panics if it is polled again after it has returned
+    /// [`Poll::Ready`](core::task::Poll::Ready); see
+    /// [`AsyncRetry::call`](AsyncRetry::call).
     pub fn call(self) -> AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O> {
         self.inner.into_run()
     }
@@ -388,6 +405,11 @@ pin_project! {
 pin_project! {
     /// The async retry state machine. Yields `(result, stats)`; the public
     /// `.call()` drops the stats via [`DropStats`].
+    ///
+    /// # Panics
+    ///
+    /// Polling this future after it has returned
+    /// [`Poll::Ready`](core::task::Poll::Ready) panics.
     pub struct AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>
     where
         Cl: AsyncClock,
