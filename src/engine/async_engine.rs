@@ -196,8 +196,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
         self.with_classifier(ClosureClassifier(classifier))
     }
 
-    /// Retries while `predicate` wants to; otherwise accepts. `Result`-only
-    /// sugar over [`decide`](Self::decide).
+    /// Retries while `predicate` wants to; otherwise accepts the outcome
+    /// (`Ok` returns, a rejected `Err` aborts with the bare error).
+    /// `Result`-only sugar over [`decide`](Self::decide).
     #[must_use]
     pub fn when<T, E, P>(self, predicate: P) -> AsyncRetry<F, When<P>, S, W, Cl, BA, AA, OX>
     where
@@ -207,7 +208,10 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
         self.with_classifier(When(predicate))
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts.
+    /// Retries *until* `predicate` is satisfied, then accepts the outcome
+    /// (`Ok` returns, a matched `Err` aborts with the bare error). The inverse
+    /// of [`when`](Self::when); see [`Retry::until`](super::Retry::until) for
+    /// the fatal-error recipe.
     #[must_use]
     pub fn until<T, E, P>(self, predicate: P) -> AsyncRetry<F, Until<P>, S, W, Cl, BA, AA, OX>
     where

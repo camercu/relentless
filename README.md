@@ -67,8 +67,8 @@ The engine's one big idea: every completed outcome is sorted into a **verdict** 
 
 - `.when(pred)` — retry *while* a `Result` predicate matches; otherwise accept an
   `Ok` and abort an `Err`. The classic "retry these errors" knob.
-- `.until(pred)` — the inverse: retry *until* the predicate matches, then accept.
-  The polling knob.
+- `.until(pred)` — the inverse: retry *until* the predicate matches, then accept
+  an `Ok` and abort an `Err`, same as `.when`. The polling knob.
 - `.decide(closure)` — the general three-way form. You return `Return` / `Retry`
   / `Abort` yourself, so *any* outcome type — a poll enum, a search state, a
   sought-after error — drives the loop directly, independent of `Result`.
@@ -198,9 +198,35 @@ let report = retry(|_| poll_job())
 // attempts as `Err(Exhausted { last: Ok(Job::Pending) })`.
 ```
 
-The same lever powers an *inverted probe* — retry until an error appears, then
-deliver that error as the `Ok` value — by returning `Verdict::Return(e)` (or the
-two-way `Decision::Return(e)`) for the error you were hunting.
+With `.until(ok(f))` errors keep the loop going, because `ok(f)` is `false` for
+any `Err` and `.until` inverts that. To give up on a fatal error instead, match
+the whole outcome with `predicate::result`:
+
+```rust,no_run
+use relentless::{predicate, retry, stop};
+
+#[derive(Debug)]
+enum Job {
+    Pending,
+    Done(String),
+}
+
+fn poll_job() -> Result<Job, std::io::Error> { todo!() }
+
+let report = retry(|_| poll_job())
+    .until(predicate::result(|o: &Result<Job, std::io::Error>| {
+        // Stop on either: the job finished, or the API failed for good.
+        matches!(o, Ok(Job::Done(_))) || matches!(o, Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+    }))
+    .stop(stop::attempts(20))
+    .call();
+```
+
+That stops on either, and — because a matched `Err` aborts — the fatal error
+arrives as `Err(RetryError::Aborted { .. })`. To deliver a sought-after error as
+the `Ok` value instead, you need the *inverted probe*: return
+`Verdict::Return(e)` (or the two-way `Decision::Return(e)`) from `.decide` for
+the error you were hunting. `.until` alone cannot do it.
 
 ### 5) Reuse a policy across call sites
 

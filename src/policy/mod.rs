@@ -120,8 +120,10 @@ impl<S, W, C> RetryPolicy<S, W, C> {
         }
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts. Replaces the
-    /// classifier slot; natural for polling (`.until(ok(is_ready))`).
+    /// Retries *until* `predicate` is satisfied, then accepts the outcome
+    /// (`Ok` returns, a matched `Err` aborts with the bare error). Replaces the
+    /// classifier slot; natural for polling (`.until(ok(is_ready))`). See
+    /// [`Retry::until`](crate::Retry::until) for the fatal-error recipe.
     #[must_use]
     pub fn until<P>(self, predicate: P) -> RetryPolicy<S, W, Until<P>> {
         RetryPolicy {

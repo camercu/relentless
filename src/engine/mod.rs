@@ -222,8 +222,32 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         self.with_classifier(When(predicate))
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts. The inverse of
-    /// [`when`](Self::when); natural for polling (`.until(ok(is_ready))`).
+    /// Retries *until* `predicate` is satisfied, then accepts the outcome
+    /// (`Ok` returns, a matched `Err` aborts with the bare error). The inverse
+    /// of [`when`](Self::when); natural for polling (`.until(ok(is_ready))`).
+    ///
+    /// With `.until(ok(f))` errors are retried, because `ok(f)` is `false` for
+    /// any `Err` and `until` inverts that. To make a fatal error terminate the
+    /// loop instead, match on the whole outcome with
+    /// [`result`](crate::predicate::result):
+    ///
+    /// ```
+    /// use relentless::clock::VirtualClock;
+    /// use relentless::{predicate, retry, stop, RetryError};
+    ///
+    /// // Poll until ready, but give up immediately on a fatal error.
+    /// let outcome = retry(|_| Err::<&str, &str>("fatal"))
+    ///     .until(predicate::result(|o: &Result<&str, &str>| {
+    ///         matches!(o, Ok("ready") | Err("fatal"))
+    ///     }))
+    ///     .stop(stop::attempts(5))
+    ///     .clock(VirtualClock::new())
+    ///     .call();
+    ///
+    /// // The predicate matched an `Err`, so the loop aborts with the bare error
+    /// // rather than returning it as `Ok`.
+    /// assert_eq!(outcome, Err(RetryError::Aborted { last: "fatal" }));
+    /// ```
     #[must_use]
     pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl, BA, AA, OX>
     where
