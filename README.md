@@ -53,11 +53,19 @@ directly from a function or closure).
 cargo add relentless
 ```
 
-Async retries and `no_std` builds inject an explicit clock adapter, gated behind a
-feature flag (`tokio-clock`, `embassy-clock`, `gloo-timers-clock`,
-`futures-timer-clock`); see the [feature-flag
+Async retries inject an explicit clock adapter, gated behind a feature flag
+(`tokio-clock`, `embassy-clock`, `gloo-timers-clock`, `futures-timer-clock`); see
+the [feature-flag
 reference](https://docs.rs/relentless/latest/relentless/#feature-flags) for the
 full list. Async retry does not require `alloc`.
+
+A `no_std` **sync** retry supplies its own clock instead: none of those four
+adapters implements `SyncClock`, and `SystemClock` is `std`-gated, so an
+embedded caller implements `Clock + SyncClock` over its own tick source — a
+delay source is board-specific and the crate does not guess. See [*Implementing
+your own
+clock*](https://docs.rs/relentless/latest/relentless/clock/index.html) for the
+two methods involved.
 
 ## The classifier: `when` → `until` → `decide`
 

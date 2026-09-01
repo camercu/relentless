@@ -271,6 +271,12 @@
 //!
 //! Async retry does not require `alloc`. Sync `std` builds default to
 //! [`clock::SystemClock`], so `.clock(...)` is optional there.
+//!
+//! Every adapter above is an [`clock::AsyncClock`]. The only [`clock::SyncClock`]
+//! implementors are [`clock::SystemClock`] (`std` only) and
+//! [`clock::VirtualClock`] (for tests), so a `no_std` *sync* retry implements
+//! [`clock::Clock`] + [`clock::SyncClock`] over its own tick source — see the
+//! [`clock`] module docs.
 
 #![no_std]
 #![forbid(unsafe_code)]
