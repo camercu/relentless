@@ -10,27 +10,22 @@ readme = "README.md"
 homepage = "https://docs.rs/relentless"
 repository = "https://github.com/camercu/relentless"
 keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
-exclude = [
-  ".envrc",
-  ".github/",
-  ".pre-commit-config.yaml",
-  ".prettierrc.yaml",
-  ".releaserc.json",
-  ".tool-versions",
-  ".typos.toml",
-  "AGENTS.md",
-  "CLAUDE.md",
-  "CONTRIBUTING.md",
-  "commitlint.config.js",
-  "deny.toml",
-  "docs/",
-  "justfile",
-  "node_modules/",
-  "package-lock.json",
-  "package.json",
-  "public-api.txt",
-  "scripts/",
-  "shell.nix",
+# Allowlist, not a denylist: only what a consumer of the published crate needs.
+# An `exclude` list has to be extended every time a dev-only file appears at a
+# new path, and the misses ship silently; this inverts that, so a new tool
+# config or dotfile stays out of the package by default.
+# Patterns are gitignore-style, so every entry is anchored with a leading `/`:
+# an unanchored "README.md" matches that name at any depth and would sweep in
+# every vendored README under node_modules.
+include = [
+  "/src/**/*.rs",
+  "/examples/**/*.rs",
+  "/tests/**/*.rs",
+  "/benches/**/*.rs",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE-APACHE",
+  "/LICENSE-MIT",
 ]
 categories = ["asynchronous", "no-std", "rust-patterns"]
 
