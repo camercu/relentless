@@ -89,7 +89,7 @@ verdict `.decide` produces by hand.
 ## Examples
 
 For full docs, see <https://docs.rs/relentless>. Behavior spec:
-[docs/SPEC.md](./docs/SPEC.md). Runnable examples live in
+[docs/SPEC.md](https://github.com/camercu/relentless/blob/main/docs/SPEC.md). Runnable examples live in
 [`examples/`](./examples).
 
 Sync `std` builds default to `clock::SystemClock` (wall time +
@@ -168,7 +168,7 @@ let pid = retry(|_| read_pidfile()).call(); // Result<u32, RetryError<Infallible
 
 `ControlFlow<B, C>` classifies itself the same way when you prefer its naming —
 `Continue(_)` retries, `Break(b)` returns `b`. (Which standard types get this
-treatment, and why others don't, is [ADR-0007](docs/adr/0007-blanket-outcome-impls-for-std-types.md).)
+treatment, and why others don't, is [ADR-0007](https://github.com/camercu/relentless/blob/main/docs/adr/0007-blanket-outcome-impls-for-std-types.md).)
 
 > **Note:** give a self-classifying op a concrete signature, as the examples
 > above do. An op that only ever produces one variant can leave a sibling type
@@ -367,7 +367,7 @@ Minimum supported Rust version: **1.85**.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](https://github.com/camercu/relentless/blob/main/CONTRIBUTING.md).
 
 ## Release notes
 
