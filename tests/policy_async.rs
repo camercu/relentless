@@ -616,6 +616,71 @@ fn async_hooks_fire_in_expected_places() {
     assert_eq!(exit_reason.get(), Some(relentless::StopReason::Exhausted));
 }
 
+/// GIVEN a retry future parked in an inter-attempt wait
+/// WHEN it is dropped instead of polled to completion (`select!`, `timeout`,
+///      an aborted task — the normal lifecycle of an async future)
+/// THEN `on_exit` never runs, so a hook that releases a permit or decrements
+///      an in-flight gauge leaks. SPEC 9.1 says so; this pins it, because the
+///      `on_exit` rustdoc now promises it and nothing else would catch a
+///      change.
+#[test]
+fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
+    /// A clock whose wait never resolves, so the retry future parks in the
+    /// first inter-attempt wait and can be dropped there.
+    #[derive(Clone, Default)]
+    struct StalledClock;
+
+    struct NeverReady;
+
+    impl Future for NeverReady {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+            Poll::Pending
+        }
+    }
+
+    impl relentless::Clock for StalledClock {
+        fn now(&self) -> Duration {
+            Duration::ZERO
+        }
+    }
+
+    impl relentless::AsyncClock for StalledClock {
+        type Wait = NeverReady;
+        fn wait_async(&self, _dur: Duration) -> Self::Wait {
+            NeverReady
+        }
+    }
+
+    let exit_ran = Rc::new(Cell::new(false));
+    let exit_ran_ref = Rc::clone(&exit_ran);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut future = Box::pin(
+        policy
+            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .on_exit(
+                move |_: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
+                    exit_ran_ref.set(true);
+                },
+            )
+            .clock(StalledClock)
+            .call(),
+    );
+
+    assert!(
+        future.as_mut().poll(&mut cx).is_pending(),
+        "the first attempt must fail and park in the wait"
+    );
+    drop(future);
+
+    assert!(!exit_ran.get(), "on_exit must not run on drop-cancellation");
+}
+
 #[test]
 fn async_on_exit_reports_success_reason() {
     let exit_reason = Rc::new(Cell::new(None));

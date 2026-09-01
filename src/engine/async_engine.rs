@@ -288,7 +288,20 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
         }
     }
 
-    /// Registers a hook that runs once when the retry loop exits.
+    /// Registers a hook that runs once when the retry loop exits normally.
+    ///
+    /// It does **not** run on either abnormal exit:
+    ///
+    /// - **Cancellation.** Dropping the retry future — `tokio::select!`, a
+    ///   `timeout` that fires, an aborted task — skips the hook entirely, and
+    ///   that is the ordinary lifecycle of an async future, not an edge case.
+    /// - **Panic.** Once a panic starts unwinding, the remaining hooks for
+    ///   that execution do not run.
+    ///
+    /// So an `on_exit` that releases a semaphore permit, decrements an
+    /// in-flight gauge, or closes a span leaks on every cancelled retry. Put
+    /// cleanup that must happen in a `Drop` impl on your own type, which both
+    /// paths honour, and keep `on_exit` for reporting the outcome.
     #[must_use]
     pub fn on_exit<O, Hook>(
         self,

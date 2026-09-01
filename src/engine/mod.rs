@@ -334,7 +334,12 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         }
     }
 
-    /// Registers a hook that runs once when the retry loop exits.
+    /// Registers a hook that runs once when the retry loop exits normally.
+    ///
+    /// It does not run if the operation or a hook panics: once a panic starts
+    /// unwinding, the remaining hooks for that execution are skipped. Cleanup
+    /// that must happen belongs in a `Drop` impl on your own type; keep
+    /// `on_exit` for reporting the outcome.
     #[must_use]
     pub fn on_exit<O, Hook>(self, hook: Hook) -> Retry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
     where
