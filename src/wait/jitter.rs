@@ -126,15 +126,25 @@ enum JitterKind {
 /// cryptographic use. Cloning a `Jittered` strategy produces a decorrelated
 /// copy — the clone will generate a different jitter sequence.
 ///
-/// The default PRNG seed is fixed (there is no entropy source in `no_std`), so
-/// without [`with_seed`](Self::with_seed) the jitter sequence is **deterministic
-/// across process restarts** (instances within a run are still decorrelated by a
-/// per-instance nonce). Call `with_seed` with a runtime-sourced value if you
-/// need run-to-run variation. On targets without pointer-width atomic
-/// read-modify-write ops the nonce counter is unavailable, so every
-/// default-seeded instance produces the same (correlated) sequence rather than
-/// being decorrelated; call [`with_nonce`](Self::with_nonce) to decorrelate
-/// them manually.
+/// The default PRNG seed is fixed, and each instance mixes in a per-instance
+/// nonce so that instances within a run are decorrelated. What that nonce is
+/// made of — and therefore whether the sequence repeats across process
+/// restarts — depends on the `std` feature:
+///
+/// - **without `std`** (no entropy source available) the nonce is a plain
+///   counter, so a default-seeded sequence is **deterministic across process
+///   restarts**. Call [`with_seed`](Self::with_seed) with a runtime-sourced
+///   value if you need run-to-run variation.
+/// - **with `std`** the counter is mixed with the wall clock, so a
+///   default-seeded sequence **varies between runs**. A test that needs a
+///   reproducible sequence must call [`with_seed`](Self::with_seed), which
+///   pins it fully on every target — asserting an exact default-jitter value
+///   is flaky under `std`.
+///
+/// On targets without pointer-width atomic read-modify-write ops the nonce
+/// counter is unavailable, so every default-seeded instance produces the same
+/// (correlated) sequence rather than being decorrelated; call
+/// [`with_nonce`](Self::with_nonce) to decorrelate them manually.
 ///
 /// The PRNG state is a single atomic on targets with 64-bit atomics, so a
 /// jittered strategy — and any policy containing one — is `Send + Sync` and
