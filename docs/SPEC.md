@@ -396,7 +396,8 @@ monotonically non-decreasing, and a completed wait is reflected in subsequent
 `now()` readings. The type system cannot force the advance for arbitrary
 implementations; it is a per-impl contract (structural for the shipped
 `VirtualClock`, whose reads and waits share one cell; guaranteed by the OS for
-real clocks).
+real clocks). The engines defend against a broken `now()` anyway — see
+**11.1.1.1**.
 
 **3.5.4** All three traits are blanket-implemented for `&C` where `C`
 implements them, so a caller can inject `&clock` and keep the handle for
@@ -1157,6 +1158,16 @@ executions, execution starts when `.call()` is invoked; for async executions,
 at the first poll of the future `.call()` returns. Idle time between
 configuring a builder and starting execution never consumes the elapsed
 budget.
+
+**11.1.1.1** Monotonicity is a precondition the type system cannot enforce, so
+the engines do not depend on it for boundedness: each retains the highest
+elapsed reading seen and never reports less. A clock that moves backwards
+therefore cannot refund a spent `.timeout()` or `stop::elapsed` budget, which
+would otherwise turn a bounded retry into an unbounded one. Debug builds
+additionally `debug_assert!` the non-decrease, so a violating clock surfaces
+in the implementor's own tests. A clock that never advances is a different
+case and remains unbounded by construction — nothing observable distinguishes
+it from a genuinely fast execution.
 
 **11.1.2** With `std`, the sync default is `clock::SystemClock`, which anchors
 a process-global `std::time::Instant` and reports `now()` relative to it.

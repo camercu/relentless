@@ -9,6 +9,7 @@
 //! [`AsyncRun`] owns the same transition order as the sync `run` loop; the
 //! phases exist only because an async attempt or sleep can span multiple polls.
 
+use super::elapsed::Elapsed;
 use super::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain};
 use super::op::{AsyncRetryOp, StatelessOp};
 use super::state::{AttemptState, Exit};
@@ -370,7 +371,7 @@ where
             attempt: 1,
             previous_delay: None,
             total_wait: Duration::ZERO,
-            origin: None,
+            elapsed: None,
             _marker: PhantomData,
         }
     }
@@ -439,7 +440,7 @@ pin_project! {
         attempt: u32,
         previous_delay: Option<Duration>,
         total_wait: Duration,
-        origin: Option<Duration>,
+        elapsed: Option<Elapsed>,
         _marker: PhantomData<fn() -> O>,
     }
 }
@@ -463,14 +464,15 @@ where
         let mut this = self.project();
 
         // Execution starts at the first poll: capture the elapsed baseline.
-        let origin = *this.origin.get_or_insert_with(|| this.clock.now());
-        let elapsed = |clock: &Cl| clock.now().saturating_sub(origin);
+        let elapsed = this
+            .elapsed
+            .get_or_insert_with(|| Elapsed::start(this.clock));
 
         loop {
             match this.phase.as_mut().project() {
                 PhaseProj::ReadyToStart => {
                     let before_state = RetryState::for_attempt(*this.attempt)
-                        .with_elapsed(elapsed(this.clock))
+                        .with_elapsed(elapsed.read(this.clock))
                         .with_previous_delay(*this.previous_delay);
                     this.hooks.before_attempt.call(&before_state);
                     let op_future = this.op.call_op(before_state);
@@ -481,7 +483,7 @@ where
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(outcome) => outcome,
                     };
-                    let post_elapsed = elapsed(this.clock);
+                    let post_elapsed = elapsed.read(this.clock);
 
                     match step(
                         Progress {

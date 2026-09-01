@@ -11,6 +11,7 @@
 //! classifier surface — `.decide`/`.when`/`.until`, hooks, stats, and timeout.
 
 mod async_engine;
+mod elapsed;
 mod error;
 mod hooks;
 mod op;
@@ -20,6 +21,7 @@ mod step;
 
 pub use error::{RetryError, RetryResult};
 
+use elapsed::Elapsed;
 use op::{RetryOp, StatelessOp};
 use step::{Progress, Step, step};
 
@@ -267,6 +269,14 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// `Duration::ZERO` therefore permits exactly one attempt: the boundary is
     /// met (`0 >= 0`) the instant that attempt completes. There is no "disabled"
     /// or "infinite" value — omit `.timeout` for an unbounded deadline.
+    ///
+    /// The budget is spent in whatever units the injected [`Clock`](crate::clock::Clock) reports, so
+    /// it is only as good as that clock: a non-advancing clock pins elapsed at
+    /// zero and this deadline never fires. Pair it with
+    /// [`stop::attempts`](crate::stop::attempts) to stay bounded regardless —
+    /// the same caveat [`stop::elapsed`](crate::stop::elapsed) carries. A clock
+    /// that moves *backwards* is handled: the engine retains the highest
+    /// elapsed reading, so a budget once spent cannot be refunded.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);
@@ -391,8 +401,7 @@ where
     /// them unconditionally is free and keeps the loop allocation-free).
     #[allow(clippy::type_complexity)]
     fn run(mut self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
-        let origin = self.clock.now();
-        let elapsed = |clock: &Cl| clock.now().saturating_sub(origin);
+        let mut elapsed = Elapsed::start(&self.clock);
 
         let mut attempt: u32 = 1;
         let mut previous_delay: Option<Duration> = None;
@@ -401,14 +410,14 @@ where
         loop {
             // One clock read for the before-attempt state and the operation.
             let before_state = RetryState::for_attempt(attempt)
-                .with_elapsed(elapsed(&self.clock))
+                .with_elapsed(elapsed.read(&self.clock))
                 .with_previous_delay(previous_delay);
             self.hooks.before_attempt.call(&before_state);
             let outcome = self.op.call_op(before_state);
 
             // Elapsed is re-read after the operation so the post-attempt hooks
             // and stop/wait see the time the attempt actually took.
-            let post_elapsed = elapsed(&self.clock);
+            let post_elapsed = elapsed.read(&self.clock);
 
             match step(
                 Progress {

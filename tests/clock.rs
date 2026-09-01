@@ -4,6 +4,7 @@
 //! (`SyncClock::wait` / `AsyncClock::wait_async`), so elapsed time and waits
 //! can never desync.
 
+use core::cell::Cell;
 use core::future::Future;
 use core::pin::pin;
 use core::task::{Context, Poll, Waker};
@@ -140,6 +141,135 @@ mod system_clock {
         clock.wait(ARBITRARY_DURATION);
         assert!(clock.now().saturating_sub(before) >= ARBITRARY_DURATION);
     }
+}
+
+/// A `Clock` that violates the documented monotonicity precondition: `now()`
+/// alternates between zero and [`SAWTOOTH_PEAK`] on successive reads.
+///
+/// Not contrived — the most obvious hand-written clock reads wall time
+/// (`SystemTime::now()`), which an NTP step or a VM resume moves backwards.
+/// Each engine reads the clock twice per attempt, so an alternating clock puts
+/// every stop/timeout check on the low phase.
+struct SawtoothClock {
+    high: Cell<bool>,
+}
+
+const SAWTOOTH_PEAK: Duration = Duration::from_secs(10);
+/// Well under `SAWTOOTH_PEAK`, so a single honest reading exceeds it.
+const SAWTOOTH_TIMEOUT: Duration = Duration::from_secs(1);
+/// Escape hatch so a regression fails the test instead of hanging it.
+const RUNAWAY_ATTEMPTS: u32 = 1_000;
+
+impl SawtoothClock {
+    /// Starts on the peak so the *next* read — the engine's baseline — is
+    /// zero. A baseline taken at the peak would leave every later reading
+    /// below it, which no amount of engine bookkeeping can recover from.
+    fn new() -> Self {
+        Self {
+            high: Cell::new(true),
+        }
+    }
+}
+
+impl Clock for SawtoothClock {
+    fn now(&self) -> Duration {
+        let high = !self.high.get();
+        self.high.set(high);
+        if high { SAWTOOTH_PEAK } else { Duration::ZERO }
+    }
+}
+
+impl SyncClock for SawtoothClock {
+    fn wait(&self, _dur: Duration) {}
+}
+
+/// GIVEN a `Clock` whose `now()` moves backwards between reads
+/// WHEN a retry loop bounded only by `.timeout()` runs against it
+/// THEN the timeout still fires: the engine remembers the highest elapsed
+///      reading, so a backwards jump cannot un-spend the budget and turn a
+///      bounded retry into an unbounded one.
+///
+/// In a debug build the engine's `debug_assert!` catches the broken clock
+/// first and panics, which is the diagnostic half of the same fix; the
+/// clamping half is what keeps a release build bounded. One test covers both
+/// because only the profile decides which one is reached.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "monotonically non-decreasing")
+)]
+fn a_backwards_clock_cannot_un_spend_the_timeout_budget() {
+    let clock = SawtoothClock::new();
+    let attempts = Cell::new(0_u32);
+
+    let result = relentless::retry(|_| {
+        attempts.set(attempts.get() + 1);
+        if attempts.get() >= RUNAWAY_ATTEMPTS {
+            return Ok(());
+        }
+        Err::<(), &str>("boom")
+    })
+    .stop(relentless::stop::never())
+    .timeout(SAWTOOTH_TIMEOUT)
+    .clock(&clock)
+    .call();
+
+    assert!(
+        matches!(result, Err(relentless::RetryError::Exhausted { .. })),
+        "the timeout must fire; got {result:?} after {} attempts",
+        attempts.get()
+    );
+}
+
+impl AsyncClock for SawtoothClock {
+    type Wait = core::future::Ready<()>;
+
+    fn wait_async(&self, _dur: Duration) -> Self::Wait {
+        core::future::ready(())
+    }
+}
+
+/// The async driver keeps its elapsed baseline in a pinned field rather than a
+/// local, so it is separate code from the sync driver's and needs its own
+/// proof. Same clock, same guarantee, same debug/release split.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "monotonically non-decreasing")
+)]
+fn a_backwards_clock_cannot_un_spend_the_async_timeout_budget() {
+    let clock = SawtoothClock::new();
+    let attempts = Cell::new(0_u32);
+
+    let mut future = pin!(
+        relentless::retry_async(|_| {
+            attempts.set(attempts.get() + 1);
+            let bail = attempts.get() >= RUNAWAY_ATTEMPTS;
+            async move {
+                if bail {
+                    Ok(())
+                } else {
+                    Err::<(), &str>("boom")
+                }
+            }
+        })
+        .stop(relentless::stop::never())
+        .timeout(SAWTOOTH_TIMEOUT)
+        .clock(&clock)
+        .call()
+    );
+
+    let result = loop {
+        if let Poll::Ready(result) = poll_once(&mut future) {
+            break result;
+        }
+    };
+
+    assert!(
+        matches!(result, Err(relentless::RetryError::Exhausted { .. })),
+        "the timeout must fire; got {result:?} after {} attempts",
+        attempts.get()
+    );
 }
 
 /// Engine-level acceptance: the retry engines driven end-to-end by a
