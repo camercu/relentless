@@ -9,6 +9,7 @@ mod tokio_clock {
     use relentless::clock::{AsyncClock, Clock, TokioClock};
 
     const WAIT: Duration = Duration::from_millis(50);
+    const YEAR: Duration = Duration::from_secs(86_400 * 365);
 
     /// The headline coherence win: under `tokio::time::pause`, one value
     /// supplies both `now` and the wait, so awaited waits are visible to the
@@ -25,6 +26,31 @@ mod tokio_clock {
             advanced >= WAIT,
             "paused-time wait must advance the same clock the read seam uses \
              (advanced {advanced:?})"
+        );
+    }
+
+    /// GIVEN a wait longer than `tokio::time::Instant` can represent
+    /// WHEN it is awaited under paused time
+    /// THEN it completes early at Tokio's far-future ceiling instead of
+    ///      advancing `now()` by the requested duration — the one place the
+    ///      `Clock` contract's "advance by at least the waited duration"
+    ///      cannot hold. Characterized here so the rustdoc ceiling and the
+    ///      runtime cannot drift apart silently.
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_past_the_representable_ceiling_completes_early() {
+        let clock = TokioClock::new();
+        let before = clock.now();
+
+        clock.wait_async(Duration::MAX).await;
+
+        let advanced = clock.now().saturating_sub(before);
+        assert!(
+            advanced < Duration::MAX,
+            "expected saturation below the requested duration"
+        );
+        assert!(
+            advanced > YEAR * 20,
+            "expected Tokio's multi-decade ceiling, advanced {advanced:?}"
         );
     }
 

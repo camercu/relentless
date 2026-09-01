@@ -58,6 +58,10 @@ use crate::compat::Vec;
 /// completes — that coherence is the point of the unified clock. A real OS
 /// clock gets this from the scheduler; a virtual clock must couple the two
 /// through shared state, as [`VirtualClock`] does.
+///
+/// Every real timer has a longest wait it can express, so that guarantee is
+/// bounded by the platform ceiling each adapter documents; beyond it a wait
+/// completes early rather than panicking or firing immediately.
 pub trait Clock {
     /// Returns the current time since the clock's origin.
     fn now(&self) -> Duration;
@@ -339,6 +343,18 @@ impl Future for VirtualWait<'_> {
 /// [`tokio::time::sleep`], so both seams follow Tokio's virtual time: under
 /// `tokio::time::pause` (a `test-util` API of Tokio) the waits and the
 /// elapsed reads stay coherent by construction, with no separate wiring.
+///
+/// # Ceiling on very long waits
+///
+/// A wait whose deadline overflows [`tokio::time::Instant`] completes at
+/// Tokio's far-future instant (multiple decades out) instead of the requested
+/// duration, so the [`Clock`] contract's "advance `now()` by at least the
+/// waited duration" does not hold above that ceiling. Nothing panics and
+/// nothing fires immediately; the wait is merely shorter than asked. This is
+/// reachable without absurd input — [`wait::exponential`](crate::wait::exponential)
+/// saturates to [`Duration::MAX`] under [`stop::never`](crate::stop::never).
+/// Bound the strategy with `.cap(...)` if a run must not depend on where that
+/// ceiling sits.
 #[cfg(feature = "tokio-clock")]
 #[derive(Debug, Clone, Copy)]
 pub struct TokioClock {
