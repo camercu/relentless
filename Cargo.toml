@@ -48,7 +48,9 @@ std = ["alloc", "embassy-time?/std"]
 
 # alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
 #        Box<dyn Predicate>, type-erased policy storage, Arc-based cancelers,
-#        and multiple hooks per hook point. Async retry itself does not require it.
+#        and VirtualClock wait recording. Async retry itself does not require it,
+#        and neither does registering multiple hooks per hook point (ADR-0003;
+#        SPEC 8.5) — the hook chain is a compile-time type, not a heap list.
 alloc = []
 
 # Runtime-specific AsyncClock adapters. Multiple adapters can be enabled
