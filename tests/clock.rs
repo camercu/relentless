@@ -227,6 +227,24 @@ mod engine_integration {
         );
     }
 
+    /// GIVEN a zero-delay strategy over a multi-attempt budget
+    /// WHEN an always-failing operation runs against a `VirtualClock`
+    /// THEN no waits are recorded, because SPEC 3.2.8 skips the clock call
+    ///      entirely for a zero delay — `waits().len()` is not `attempts - 1`
+    #[test]
+    fn zero_delay_records_no_waits() {
+        let clock = VirtualClock::new();
+
+        let result = retry(|_| Err::<(), &str>("boom"))
+            .wait(wait::fixed(Duration::ZERO))
+            .stop(stop::attempts(4))
+            .clock(&clock)
+            .call();
+
+        assert!(result.is_err());
+        assert_eq!((clock.waits(), clock.now()), (vec![], Duration::ZERO));
+    }
+
     /// GIVEN an operation that succeeds on the first attempt
     /// WHEN it runs against a `VirtualClock`
     /// THEN no waits are recorded and virtual time stays at zero

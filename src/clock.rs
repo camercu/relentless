@@ -257,7 +257,13 @@ impl VirtualClock {
         self.now.set(self.now.get().saturating_add(dur));
     }
 
-    /// Returns every wait requested so far, in request order.
+    /// Returns every wait the engine actually performed, in request order.
+    ///
+    /// Zero-delay waits are absent: both engines skip the clock entirely when
+    /// a strategy yields [`Duration::ZERO`], so the clock is never told about
+    /// them. A run under `wait::fixed(Duration::ZERO)` records nothing, and
+    /// `waits().len()` is therefore a count of performed sleeps, not of
+    /// inter-attempt gaps — assert on the schedule, not on `attempts - 1`.
     ///
     /// A point-in-time snapshot: the returned `Vec` is unaffected by waits
     /// recorded after the call. Only available with the `alloc` feature
