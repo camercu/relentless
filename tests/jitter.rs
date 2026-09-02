@@ -142,6 +142,44 @@ fn jitter_respects_cap_through_a_boxed_strategy() {
     assert_jitter_then_cap_distribution(&boxed.jitter(MAX_JITTER));
 }
 
+/// A cap does not stop being a cap because a composite sits between it and the
+/// jitter. `WaitChain` and `WaitCombine` must report a ceiling too, or the
+/// guarantee holds only for the shapes someone remembered to cover.
+#[test]
+fn jitter_respects_a_cap_beneath_a_chain() {
+    let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
+    let strategy = capped
+        .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1)
+        .jitter(MAX_JITTER);
+
+    assert_jitter_then_cap_distribution(&strategy);
+}
+
+#[test]
+fn jitter_respects_a_cap_beneath_a_sum() {
+    // Two capped halves: the sum's honest ceiling is the sum of the caps. The
+    // jitter has to be able to overshoot that ceiling, or the clamp would pass
+    // this test by never being exercised — hence a jitter wider than the
+    // headroom between the summed bases (40ms) and the summed caps (50ms).
+    const WIDE_JITTER: Duration = Duration::from_millis(40);
+    let ceiling = WAIT_CAP + WAIT_CAP;
+    let strategy = (wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP))
+        .jitter(WIDE_JITTER);
+
+    let delays: Vec<Duration> = (1..=ATTEMPTS)
+        .map(|attempt| strategy.next_wait(&state(attempt)))
+        .collect();
+
+    assert!(
+        delays.iter().all(|&d| d <= ceiling),
+        "no delay may exceed the summed caps: {delays:?}"
+    );
+    assert!(
+        delays.contains(&ceiling),
+        "jitter must reach past the summed caps and be clamped: {delays:?}"
+    );
+}
+
 #[test]
 fn jitter_sequence_changes_between_policy_invocations() {
     let policy = RetryPolicy::new()

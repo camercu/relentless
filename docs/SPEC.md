@@ -273,10 +273,13 @@ per decorator, because only additive jitter can breach the cap:
   The guarantee holds for every way the two can be composed — method-call
   syntax, a generic `W: Wait` bound, `Box<dyn Wait>`, UFCS — because it is
   carried by the trait, not by name resolution. `Wait::max_delay` reports a
-  strategy's ceiling (`None` = none known, the default), `.cap(max)` reports
-  `max`, and every jitter decorator clamps its draw to whatever ceiling its
-  inner strategy reports. A hand-written strategy that overrides `max_delay`
-  gets the same protection.
+  strategy's ceiling, `.cap(max)` reports `max`, and every jitter decorator
+  clamps its draw to whatever ceiling its inner strategy reports. The shipped
+  composites propagate it: `.chain(a, b)` reports the higher of the two
+  branches and `+` reports the saturating sum, each only when both sides have a
+  ceiling. A hand-written strategy reports `None` — "no ceiling known" — unless
+  it overrides `max_delay`, and a cap beneath such a strategy is invisible to a
+  jitter above it.
 - **Full** `.full_jitter()` and **equal** `.equal_jitter()` never exceed the
   base (their outputs are `random(0, base)` and `base/2 + random(0, base/2)`),
   so applying them after a cap can never breach it. They apply in the written
