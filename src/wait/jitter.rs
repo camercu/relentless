@@ -283,8 +283,10 @@ impl<W: Wait> Wait for Jittered<W> {
         }
     }
 
-    /// Jitter cannot lift a delay past a ceiling it did not already exceed, so
-    /// the inner ceiling carries through unchanged.
+    /// Forwards the inner ceiling, which holds only because `next_wait`
+    /// clamps to it above — additive and decorrelated jitter can both exceed
+    /// their base, so without that clamp this would report a bound the
+    /// strategy does not honour.
     fn max_delay(&self) -> Option<Duration> {
         self.inner.max_delay()
     }
