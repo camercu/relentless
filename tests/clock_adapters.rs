@@ -109,7 +109,7 @@ mod futures_timer_clock {
         assert!(clock.now().saturating_sub(before) >= WAIT);
     }
 
-    /// Regression (SPEC 15.3): building a wait for a saturated duration must
+    /// Regression (SPEC 15.5): building a wait for a saturated duration must
     /// not panic. `futures-timer` < 3.0.4 overflowed `Instant + Duration`
     /// inside `Delay::new` for durations near `Duration::MAX`.
     #[test]

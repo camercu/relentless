@@ -546,7 +546,7 @@ impl<F: Fn() -> Duration> AsyncClock for GlooClock<F> {
         // anything above i32::MAX milliseconds (~24.8 days) reaches JS
         // `setTimeout` as a negative number, which the platform clamps to an
         // *immediate* fire. Saturate to the largest wait the platform can
-        // actually perform — SPEC 15.3 forbids panicking waits, and an
+        // actually perform — SPEC 15.5 rules out panicking waits, and an
         // immediately-completing "wait" would violate the Clock contract.
         const MAX_TIMEOUT_MILLIS: u128 = i32::MAX as u128;
         let millis = u32::try_from(dur.as_millis().min(MAX_TIMEOUT_MILLIS))
