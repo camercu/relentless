@@ -99,7 +99,9 @@ fn assert_jitter_then_cap_distribution(strategy: &impl Wait) {
 
 #[test]
 fn jitter_respects_cap_when_cap_called_before_jitter() {
-    // The inherent WaitCapped::jitter normalizes this to jitter-then-cap.
+    // Cap first, jitter second: the cap survives because `WaitCapped` reports
+    // its ceiling through `Wait::max_delay` and the jitter decorator clamps to
+    // it. Nothing here depends on which method name resolution picked.
     assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER));
 }
 
