@@ -71,29 +71,34 @@ fn jitter_additive_stays_within_base_plus_max() {
 }
 
 // BASE_WAIT (20) < WAIT_CAP (25) < BASE_WAIT + MAX_JITTER (30): jitter applied
-// to the base can push the value above the cap, so a jitter-then-cap pipeline
-// both stays within [BASE_WAIT, WAIT_CAP] and reaches WAIT_CAP whenever the
-// draw exceeds the 5ms headroom. Asserting the value *hits* the cap proves
-// jitter is genuinely applied to the pre-cap base and clamped — a jitter stuck
-// at zero, or a cap-then-jitter ordering, would fail these.
+// to the base can push the value above the cap, so a capped pipeline both
+// stays within [BASE_WAIT, WAIT_CAP] and reaches WAIT_CAP whenever the draw
+// exceeds the 5ms headroom. Asserting the value *hits* the cap proves jitter is
+// genuinely applied to the pre-cap base and clamped — a jitter stuck at zero,
+// or jitter applied on top of an already-capped value, would fail these.
 const ATTEMPTS: u32 = 64;
 
-fn assert_jitter_then_cap_distribution(strategy: &impl Wait) {
+/// Asserts a jitter-then-cap distribution: every delay inside
+/// `[floor, ceiling]`, the ceiling actually reached (so the clamp is
+/// exercised, not merely satisfied), and not every delay pinned there (so
+/// jitter genuinely varies).
+#[track_caller]
+fn assert_jitter_then_cap_distribution(strategy: &impl Wait, floor: Duration, ceiling: Duration) {
     let delays: Vec<Duration> = (1..=ATTEMPTS)
         .map(|attempt| strategy.next_wait(&state(attempt)))
         .collect();
 
     assert!(
-        delays.iter().all(|&d| (BASE_WAIT..=WAIT_CAP).contains(&d)),
-        "every delay must land in [BASE_WAIT, WAIT_CAP]: {delays:?}"
+        delays.iter().all(|&d| (floor..=ceiling).contains(&d)),
+        "every delay must land in [{floor:?}, {ceiling:?}]: {delays:?}"
     );
     assert!(
-        delays.contains(&WAIT_CAP),
-        "jitter must reach past the cap and be clamped to it: {delays:?}"
+        delays.contains(&ceiling),
+        "jitter must reach past {ceiling:?} and be clamped to it: {delays:?}"
     );
     assert!(
-        delays.iter().any(|&d| d < WAIT_CAP),
-        "not every delay should be pinned at the cap — jitter must vary: {delays:?}"
+        delays.iter().any(|&d| d < ceiling),
+        "not every delay should be pinned at {ceiling:?} — jitter must vary: {delays:?}"
     );
 }
 
@@ -102,37 +107,46 @@ fn jitter_respects_cap_when_cap_called_before_jitter() {
     // Cap first, jitter second: the cap survives because `WaitCapped` reports
     // its ceiling through `Wait::max_delay` and the jitter decorator clamps to
     // it. Nothing here depends on which method name resolution picked.
-    assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER));
+    assert_jitter_then_cap_distribution(
+        &wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER),
+        BASE_WAIT,
+        WAIT_CAP,
+    );
 }
 
 #[test]
 fn jitter_respects_cap_when_cap_called_after_jitter() {
-    assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP));
+    assert_jitter_then_cap_distribution(
+        &wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP),
+        BASE_WAIT,
+        WAIT_CAP,
+    );
 }
 
-/// The three spellings that do not see the concrete type. Each is a
-/// refactoring a consumer performs on working code — extracting a helper,
-/// boxing for storage, or writing the call out in full — and each used to
-/// select the trait method instead of the normalization, breaching the cap by
-/// up to 67x with no diagnostic. The cap must survive all of them.
+/// Three spellings that do not see the concrete type: extracting a generic
+/// helper, boxing for storage, or writing the call out in full. Each is a
+/// refactoring a consumer performs on working code, and the cap must survive
+/// all of them — nothing about the guarantee may depend on the caller's syntax.
 #[test]
 fn jitter_respects_cap_through_a_generic_bound() {
     fn add_jitter<W: Wait>(inner: W, max_jitter: Duration) -> impl Wait {
         inner.jitter(max_jitter)
     }
 
-    assert_jitter_then_cap_distribution(&add_jitter(
-        wait::fixed(BASE_WAIT).cap(WAIT_CAP),
-        MAX_JITTER,
-    ));
+    assert_jitter_then_cap_distribution(
+        &add_jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER),
+        BASE_WAIT,
+        WAIT_CAP,
+    );
 }
 
 #[test]
 fn jitter_respects_cap_through_universal_function_call_syntax() {
-    assert_jitter_then_cap_distribution(&Wait::jitter(
-        wait::fixed(BASE_WAIT).cap(WAIT_CAP),
-        MAX_JITTER,
-    ));
+    assert_jitter_then_cap_distribution(
+        &Wait::jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER),
+        BASE_WAIT,
+        WAIT_CAP,
+    );
 }
 
 /// `Box<dyn Wait>` needs the `alloc` feature for the blanket `Wait` impl that
@@ -141,7 +155,7 @@ fn jitter_respects_cap_through_universal_function_call_syntax() {
 #[test]
 fn jitter_respects_cap_through_a_boxed_strategy() {
     let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE_WAIT).cap(WAIT_CAP));
-    assert_jitter_then_cap_distribution(&boxed.jitter(MAX_JITTER));
+    assert_jitter_then_cap_distribution(&boxed.jitter(MAX_JITTER), BASE_WAIT, WAIT_CAP);
 }
 
 /// A cap does not stop being a cap because a composite sits between it and the
@@ -154,32 +168,23 @@ fn jitter_respects_a_cap_beneath_a_chain() {
         .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1)
         .jitter(MAX_JITTER);
 
-    assert_jitter_then_cap_distribution(&strategy);
+    assert_jitter_then_cap_distribution(&strategy, BASE_WAIT, WAIT_CAP);
 }
 
 #[test]
 fn jitter_respects_a_cap_beneath_a_sum() {
-    // Two capped halves: the sum's honest ceiling is the sum of the caps. The
-    // jitter has to be able to overshoot that ceiling, or the clamp would pass
-    // this test by never being exercised — hence a jitter wider than the
-    // headroom between the summed bases (40ms) and the summed caps (50ms).
-    const WIDE_JITTER: Duration = Duration::from_millis(40);
-    let ceiling = WAIT_CAP + WAIT_CAP;
+    // Both halves are capped, so the sum's floor and ceiling are the doubled
+    // ones. The jitter must be able to overshoot that ceiling, or the clamp
+    // would pass by never being exercised — the headroom is `WAIT_CAP * 2 -
+    // BASE_WAIT * 2`, so a jitter wider than that is what makes the assertion
+    // bite.
+    let floor = BASE_WAIT * 2;
+    let ceiling = WAIT_CAP * 2;
+    let wide_jitter = ceiling.saturating_sub(floor) * 4;
     let strategy = (wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP))
-        .jitter(WIDE_JITTER);
+        .jitter(wide_jitter);
 
-    let delays: Vec<Duration> = (1..=ATTEMPTS)
-        .map(|attempt| strategy.next_wait(&state(attempt)))
-        .collect();
-
-    assert!(
-        delays.iter().all(|&d| d <= ceiling),
-        "no delay may exceed the summed caps: {delays:?}"
-    );
-    assert!(
-        delays.contains(&ceiling),
-        "jitter must reach past the summed caps and be clamped: {delays:?}"
-    );
+    assert_jitter_then_cap_distribution(&strategy, floor, ceiling);
 }
 
 #[test]
