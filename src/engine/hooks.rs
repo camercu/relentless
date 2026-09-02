@@ -1,15 +1,21 @@
 //! Hook dispatch for the classifier engine.
 //!
-//! Three sealed dispatch traits, each with a zero-cost `()` no-op impl, an
-//! `FnMut` impl for user closures, and a [`HookChain`] impl so several hooks can
-//! be registered at one point. Users never name these traits; they pass
-//! closures to `before_attempt`/`after_attempt`/`on_exit`.
+//! Three dispatch traits, each with a zero-cost `()` no-op impl, an `FnMut`
+//! impl for user closures, and a [`HookChain`] impl so several hooks can be
+//! registered at one point. Registering a hook means passing a closure to
+//! `before_attempt`/`after_attempt`/`on_exit`; the traits are named only in
+//! the `where` bounds of code generic over a configured builder.
 
 use super::state::{AttemptState, Exit};
 use crate::state::RetryState;
 
 /// Dispatch trait for before-attempt hooks (outcome-free context).
+///
+/// Satisfied by `()` (no hook registered), by any `FnMut(&RetryState)`, and by
+/// [`HookChain`] (several hooks at one point). Name it only to bound a
+/// builder's hook type parameter — see [`Retry`](crate::Retry).
 pub trait BeforeAttemptHook {
+    /// Invokes the hook with the state of the attempt about to run.
     fn call(&mut self, state: &RetryState);
 }
 
@@ -24,7 +30,11 @@ impl<F: FnMut(&RetryState)> BeforeAttemptHook for F {
 }
 
 /// Dispatch trait for after-attempt hooks, over the outcome type `O`.
+///
+/// The counterpart of [`BeforeAttemptHook`] for hooks that see the completed
+/// attempt's outcome.
 pub trait AttemptHook<O> {
+    /// Invokes the hook with the state of the attempt that just completed.
     fn call(&mut self, state: &AttemptState<'_, O>);
 }
 
@@ -39,7 +49,10 @@ impl<O, F: for<'a> FnMut(&AttemptState<'a, O>)> AttemptHook<O> for F {
 }
 
 /// Dispatch trait for on-exit hooks, over the return/abort/outcome types.
+///
+/// The counterpart of [`BeforeAttemptHook`] for the loop's terminal hook.
 pub trait ExitHook<R, A, O> {
+    /// Invokes the hook with the loop's terminal outcome.
     fn call(&mut self, exit: &Exit<'_, R, A, O>);
 }
 
@@ -54,6 +67,11 @@ impl<R, A, O, F: for<'a> FnMut(&Exit<'a, R, A, O>)> ExitHook<R, A, O> for F {
 }
 
 /// Links two hooks of the same kind so both fire in registration order.
+///
+/// Registering a second hook at the same point wraps the pair in this type, so
+/// it appears in a builder's type after two `before_attempt` calls. Name it
+/// only to write that type out — when a helper returns a builder that already
+/// has hooks attached.
 #[derive(Clone)]
 pub struct HookChain<First, Second> {
     first: First,
@@ -93,14 +111,14 @@ impl<R, A, O, First: ExitHook<R, A, O>, Second: ExitHook<R, A, O>> ExitHook<R, A
 
 /// The three hook slots carried by the builder and driven by the loop.
 #[derive(Clone)]
-pub struct ExecutionHooks<BA, AA, OX> {
+pub(crate) struct ExecutionHooks<BA, AA, OX> {
     pub before_attempt: BA,
     pub after_attempt: AA,
     pub on_exit: OX,
 }
 
 impl ExecutionHooks<(), (), ()> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             before_attempt: (),
             after_attempt: (),
@@ -110,7 +128,7 @@ impl ExecutionHooks<(), (), ()> {
 }
 
 impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
-    pub fn chain_before_attempt<Hook>(
+    pub(crate) fn chain_before_attempt<Hook>(
         self,
         hook: Hook,
     ) -> ExecutionHooks<HookChain<BA, Hook>, AA, OX> {
@@ -121,7 +139,7 @@ impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
         }
     }
 
-    pub fn chain_after_attempt<Hook>(
+    pub(crate) fn chain_after_attempt<Hook>(
         self,
         hook: Hook,
     ) -> ExecutionHooks<BA, HookChain<AA, Hook>, OX> {
@@ -132,7 +150,10 @@ impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
         }
     }
 
-    pub fn chain_on_exit<Hook>(self, hook: Hook) -> ExecutionHooks<BA, AA, HookChain<OX, Hook>> {
+    pub(crate) fn chain_on_exit<Hook>(
+        self,
+        hook: Hook,
+    ) -> ExecutionHooks<BA, AA, HookChain<OX, Hook>> {
         ExecutionHooks {
             before_attempt: self.before_attempt,
             after_attempt: self.after_attempt,

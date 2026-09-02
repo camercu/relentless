@@ -22,7 +22,8 @@ mod step;
 pub use error::{RetryError, RetryResult};
 
 use elapsed::Elapsed;
-use op::{RetryOp, StatelessOp};
+pub use hooks::{AttemptHook, BeforeAttemptHook, ExitHook, HookChain};
+pub use op::{AsyncRetryOp, RetryOp, StatelessOp};
 use step::{Progress, Step, step};
 
 /// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
@@ -42,7 +43,7 @@ use crate::predicate::Predicate;
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
 use crate::wait::{self, Wait, WaitExponential};
-use hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain};
+use hooks::ExecutionHooks;
 
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);

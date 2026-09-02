@@ -281,6 +281,11 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// A `pub` item inside a private module compiles clean and still shows up in
+// public signatures and `where` bounds — where a consumer cannot name it and
+// rustdoc renders it as a dead token. This lint is what turns that from a
+// review question into a build failure.
+#![warn(unreachable_pub)]
 
 // Compile-test README code examples as doctests.
 // Gated on `tokio-clock` because the async example uses `clock::TokioClock`.
@@ -316,6 +321,15 @@ pub use decision::{Decide, IntoDecision};
 pub use engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AttemptState, Exit, Retry, RetryError,
     RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
+};
+// The builder's type-state plumbing. You never write these to *use* the
+// crate — you pass closures and `.await` or `.call()` the result — but they
+// stand in the `where` bounds and return types of `Retry`/`AsyncRetry`, so
+// storing a configured builder in a struct field, or returning one from a
+// helper, means writing them out. Unreachable names there would be a dead end,
+// and dead tokens on the crate's own entry-point pages.
+pub use engine::{
+    AsyncRetryOp, AttemptHook, BeforeAttemptHook, ExitHook, HookChain, RetryOp, StatelessOp,
 };
 // The async builder future types: you `.await` `.call()` rather than naming
 // them, so they are reachable (as the return type) but not featured.

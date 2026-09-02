@@ -31,8 +31,13 @@ impl<O, F: FnMut(RetryState) -> O> RetryOp for F {
 }
 
 /// Adapts a no-argument `FnMut() -> O` operation to [`RetryOp`] by discarding the
-/// [`RetryState`]. Produced by the `retry()` extension method.
-#[doc(hidden)]
+/// [`RetryState`].
+///
+/// Produced by [`RetryExt::retry`](crate::RetryExt::retry) and
+/// [`AsyncRetryExt::retry_async`](crate::AsyncRetryExt::retry_async), so it is
+/// the operation slot of every builder those two entry points return. Name it
+/// to write that builder's type out — in a helper's return type, or a struct
+/// field holding a preconfigured builder.
 pub struct StatelessOp<F>(pub F);
 
 impl<O, F: FnMut() -> O> RetryOp for StatelessOp<F> {
