@@ -1,5 +1,5 @@
 use core::time::Duration;
-use relentless::{RetryPolicy, stop, wait};
+use relentless::{RetryPolicy, Wait, stop, wait};
 use std::env;
 use std::hint::black_box;
 use std::time::Instant;
@@ -92,6 +92,24 @@ fn sync_retry_exhausted_with_wait() {
     let _ = black_box(result);
 }
 
+/// The jittered path: `.cap()` and a jitter decorator add a PRNG draw and a
+/// ceiling walk to every attempt, neither of which the fixed-wait cases touch.
+fn sync_retry_jittered_and_capped() {
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(black_box(MAX_ATTEMPTS)))
+        .wait(
+            wait::exponential(black_box(FIXED_WAIT))
+                .cap(black_box(FIXED_WAIT))
+                .jitter(black_box(FIXED_WAIT)),
+        );
+
+    let result = policy
+        .retry(|_| Err::<i32, &str>(black_box(ERROR_VALUE)))
+        .clock(InstantClock::new())
+        .call();
+    let _ = black_box(result);
+}
+
 type BenchCase = fn();
 
 const BENCH_CASES: &[(&str, BenchCase)] = &[
@@ -100,6 +118,10 @@ const BENCH_CASES: &[(&str, BenchCase)] = &[
     (
         "sync_retry_exhausted_with_wait",
         sync_retry_exhausted_with_wait,
+    ),
+    (
+        "sync_retry_jittered_and_capped",
+        sync_retry_jittered_and_capped,
     ),
 ];
 
