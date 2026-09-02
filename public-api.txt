@@ -332,6 +332,7 @@ pub fn relentless::prelude::Wait::chain<W2: relentless::wait::Wait>(self, other:
 pub fn relentless::prelude::Wait::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::prelude::Wait::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::prelude::Wait::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::prelude::Wait::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::prelude::Wait::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitExponential
 pub fn relentless::wait::WaitExponential::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -340,6 +341,7 @@ pub fn relentless::wait::WaitExponential::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitExponential::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitExponential::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitExponential::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitFixed
 pub fn relentless::wait::WaitFixed::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -348,6 +350,7 @@ pub fn relentless::wait::WaitFixed::chain<W2: relentless::wait::Wait>(self, othe
 pub fn relentless::wait::WaitFixed::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitFixed::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitFixed::next_wait(&self, _state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitLinear
 pub fn relentless::wait::WaitLinear::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -356,6 +359,7 @@ pub fn relentless::wait::WaitLinear::chain<W2: relentless::wait::Wait>(self, oth
 pub fn relentless::wait::WaitLinear::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitLinear::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitLinear::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitChain<A, B>
 pub fn relentless::wait::WaitChain<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -364,6 +368,7 @@ pub fn relentless::wait::WaitChain<A, B>::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitChain<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitChain<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitChain<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCombine<A, B>
 pub fn relentless::wait::WaitCombine<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -372,6 +377,7 @@ pub fn relentless::wait::WaitCombine<A, B>::chain<W2: relentless::wait::Wait>(se
 pub fn relentless::wait::WaitCombine<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCombine<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCombine<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait + ?core::marker::Sized> relentless::wait::Wait for &W
 pub fn &W::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -380,6 +386,7 @@ pub fn &W::chain<W2: relentless::wait::Wait>(self, other: W2, after: u32) -> rel
 pub fn &W::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn &W::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn &W::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::Jittered<W>
 pub fn relentless::wait::Jittered<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -388,6 +395,7 @@ pub fn relentless::wait::Jittered<W>::chain<W2: relentless::wait::Wait>(self, ot
 pub fn relentless::wait::Jittered<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::Jittered<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::Jittered<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCapped<W>
 pub fn relentless::wait::WaitCapped<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -396,6 +404,7 @@ pub fn relentless::wait::WaitCapped<W>::chain<W2: relentless::wait::Wait>(self, 
 pub fn relentless::wait::WaitCapped<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCapped<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCapped<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> relentless::wait::Wait for alloc::boxed::Box<W> where W: relentless::wait::Wait + ?core::marker::Sized
 pub fn alloc::boxed::Box<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -404,6 +413,7 @@ pub fn alloc::boxed::Box<W>::chain<W2: relentless::wait::Wait>(self, other: W2, 
 pub fn alloc::boxed::Box<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn alloc::boxed::Box<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 pub mod relentless::stop
 pub struct relentless::stop::StopAfterAttempts
@@ -589,6 +599,7 @@ pub fn relentless::wait::Jittered<W>::chain<W2: relentless::wait::Wait>(self, ot
 pub fn relentless::wait::Jittered<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::Jittered<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::Jittered<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> !core::marker::Freeze for relentless::wait::Jittered<W>
 impl<W> core::marker::Send for relentless::wait::Jittered<W> where W: core::marker::Send
@@ -598,8 +609,6 @@ impl<W> core::marker::UnsafeUnpin for relentless::wait::Jittered<W> where W: cor
 impl<W> core::panic::unwind_safe::RefUnwindSafe for relentless::wait::Jittered<W> where W: core::panic::unwind_safe::RefUnwindSafe
 impl<W> core::panic::unwind_safe::UnwindSafe for relentless::wait::Jittered<W> where W: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::wait::WaitCapped<W>
-impl<W> relentless::wait::WaitCapped<W>
-pub fn relentless::wait::WaitCapped<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::WaitCapped<relentless::wait::Jittered<W>>
 impl<W, Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitCapped<W>
 pub type relentless::wait::WaitCapped<W>::Output = relentless::wait::WaitCombine<relentless::wait::WaitCapped<W>, Rhs>
 pub fn relentless::wait::WaitCapped<W>::add(self, rhs: Rhs) -> Self::Output
@@ -614,6 +623,7 @@ pub fn relentless::wait::WaitCapped<W>::chain<W2: relentless::wait::Wait>(self, 
 pub fn relentless::wait::WaitCapped<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCapped<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCapped<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> core::marker::Freeze for relentless::wait::WaitCapped<W> where W: core::marker::Freeze
 impl<W> core::marker::Send for relentless::wait::WaitCapped<W> where W: core::marker::Send
@@ -639,6 +649,7 @@ pub fn relentless::wait::WaitChain<A, B>::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitChain<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitChain<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitChain<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A, B> core::marker::Freeze for relentless::wait::WaitChain<A, B> where A: core::marker::Freeze, B: core::marker::Freeze
 impl<A, B> core::marker::Send for relentless::wait::WaitChain<A, B> where A: core::marker::Send, B: core::marker::Send
@@ -664,6 +675,7 @@ pub fn relentless::wait::WaitCombine<A, B>::chain<W2: relentless::wait::Wait>(se
 pub fn relentless::wait::WaitCombine<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCombine<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCombine<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A, B> core::marker::Freeze for relentless::wait::WaitCombine<A, B> where A: core::marker::Freeze, B: core::marker::Freeze
 impl<A, B> core::marker::Send for relentless::wait::WaitCombine<A, B> where A: core::marker::Send, B: core::marker::Send
@@ -690,6 +702,7 @@ pub fn relentless::wait::WaitExponential::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitExponential::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitExponential::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitExponential::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitExponential
 pub type relentless::wait::WaitExponential::Output = relentless::wait::WaitCombine<relentless::wait::WaitExponential, Rhs>
@@ -718,6 +731,7 @@ pub fn relentless::wait::WaitFixed::chain<W2: relentless::wait::Wait>(self, othe
 pub fn relentless::wait::WaitFixed::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitFixed::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitFixed::next_wait(&self, _state: &relentless::RetryState) -> core::time::Duration
 impl<Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitFixed
 pub type relentless::wait::WaitFixed::Output = relentless::wait::WaitCombine<relentless::wait::WaitFixed, Rhs>
@@ -746,6 +760,7 @@ pub fn relentless::wait::WaitLinear::chain<W2: relentless::wait::Wait>(self, oth
 pub fn relentless::wait::WaitLinear::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitLinear::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitLinear::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitLinear
 pub type relentless::wait::WaitLinear::Output = relentless::wait::WaitCombine<relentless::wait::WaitLinear, Rhs>
@@ -764,6 +779,7 @@ pub fn relentless::wait::Wait::chain<W2: relentless::wait::Wait>(self, other: W2
 pub fn relentless::wait::Wait::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Wait::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Wait::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::Wait::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::Wait::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitExponential
 pub fn relentless::wait::WaitExponential::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -772,6 +788,7 @@ pub fn relentless::wait::WaitExponential::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitExponential::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitExponential::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitExponential::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitFixed
 pub fn relentless::wait::WaitFixed::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -780,6 +797,7 @@ pub fn relentless::wait::WaitFixed::chain<W2: relentless::wait::Wait>(self, othe
 pub fn relentless::wait::WaitFixed::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitFixed::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitFixed::next_wait(&self, _state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitLinear
 pub fn relentless::wait::WaitLinear::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -788,6 +806,7 @@ pub fn relentless::wait::WaitLinear::chain<W2: relentless::wait::Wait>(self, oth
 pub fn relentless::wait::WaitLinear::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitLinear::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitLinear::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitChain<A, B>
 pub fn relentless::wait::WaitChain<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -796,6 +815,7 @@ pub fn relentless::wait::WaitChain<A, B>::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitChain<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitChain<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitChain<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCombine<A, B>
 pub fn relentless::wait::WaitCombine<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -804,6 +824,7 @@ pub fn relentless::wait::WaitCombine<A, B>::chain<W2: relentless::wait::Wait>(se
 pub fn relentless::wait::WaitCombine<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCombine<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCombine<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait + ?core::marker::Sized> relentless::wait::Wait for &W
 pub fn &W::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -812,6 +833,7 @@ pub fn &W::chain<W2: relentless::wait::Wait>(self, other: W2, after: u32) -> rel
 pub fn &W::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn &W::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn &W::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::Jittered<W>
 pub fn relentless::wait::Jittered<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -820,6 +842,7 @@ pub fn relentless::wait::Jittered<W>::chain<W2: relentless::wait::Wait>(self, ot
 pub fn relentless::wait::Jittered<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::Jittered<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::Jittered<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCapped<W>
 pub fn relentless::wait::WaitCapped<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -828,6 +851,7 @@ pub fn relentless::wait::WaitCapped<W>::chain<W2: relentless::wait::Wait>(self, 
 pub fn relentless::wait::WaitCapped<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCapped<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCapped<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> relentless::wait::Wait for alloc::boxed::Box<W> where W: relentless::wait::Wait + ?core::marker::Sized
 pub fn alloc::boxed::Box<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -836,6 +860,7 @@ pub fn alloc::boxed::Box<W>::chain<W2: relentless::wait::Wait>(self, other: W2, 
 pub fn alloc::boxed::Box<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn alloc::boxed::Box<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 pub fn relentless::wait::decorrelated_jitter(base: core::time::Duration) -> relentless::wait::Jittered<relentless::wait::WaitFixed>
 pub fn relentless::wait::exponential(initial: core::time::Duration) -> relentless::wait::WaitExponential
@@ -1343,6 +1368,7 @@ pub fn relentless::Wait::chain<W2: relentless::wait::Wait>(self, other: W2, afte
 pub fn relentless::Wait::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::Wait::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::Wait::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::Wait::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::Wait::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitExponential
 pub fn relentless::wait::WaitExponential::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1351,6 +1377,7 @@ pub fn relentless::wait::WaitExponential::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitExponential::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitExponential::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitExponential::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitExponential::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitFixed
 pub fn relentless::wait::WaitFixed::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1359,6 +1386,7 @@ pub fn relentless::wait::WaitFixed::chain<W2: relentless::wait::Wait>(self, othe
 pub fn relentless::wait::WaitFixed::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitFixed::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitFixed::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitFixed::next_wait(&self, _state: &relentless::RetryState) -> core::time::Duration
 impl relentless::wait::Wait for relentless::wait::WaitLinear
 pub fn relentless::wait::WaitLinear::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1367,6 +1395,7 @@ pub fn relentless::wait::WaitLinear::chain<W2: relentless::wait::Wait>(self, oth
 pub fn relentless::wait::WaitLinear::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitLinear::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitLinear::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitLinear::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitChain<A, B>
 pub fn relentless::wait::WaitChain<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1375,6 +1404,7 @@ pub fn relentless::wait::WaitChain<A, B>::chain<W2: relentless::wait::Wait>(self
 pub fn relentless::wait::WaitChain<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitChain<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitChain<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitChain<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<A: relentless::wait::Wait, B: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCombine<A, B>
 pub fn relentless::wait::WaitCombine<A, B>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1383,6 +1413,7 @@ pub fn relentless::wait::WaitCombine<A, B>::chain<W2: relentless::wait::Wait>(se
 pub fn relentless::wait::WaitCombine<A, B>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCombine<A, B>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCombine<A, B>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCombine<A, B>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait + ?core::marker::Sized> relentless::wait::Wait for &W
 pub fn &W::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1391,6 +1422,7 @@ pub fn &W::chain<W2: relentless::wait::Wait>(self, other: W2, after: u32) -> rel
 pub fn &W::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn &W::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn &W::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn &W::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::Jittered<W>
 pub fn relentless::wait::Jittered<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1399,6 +1431,7 @@ pub fn relentless::wait::Jittered<W>::chain<W2: relentless::wait::Wait>(self, ot
 pub fn relentless::wait::Jittered<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::Jittered<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::Jittered<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::Jittered<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W: relentless::wait::Wait> relentless::wait::Wait for relentless::wait::WaitCapped<W>
 pub fn relentless::wait::WaitCapped<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1407,6 +1440,7 @@ pub fn relentless::wait::WaitCapped<W>::chain<W2: relentless::wait::Wait>(self, 
 pub fn relentless::wait::WaitCapped<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn relentless::wait::WaitCapped<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn relentless::wait::WaitCapped<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn relentless::wait::WaitCapped<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 impl<W> relentless::wait::Wait for alloc::boxed::Box<W> where W: relentless::wait::Wait + ?core::marker::Sized
 pub fn alloc::boxed::Box<W>::add<W2: relentless::wait::Wait>(self, other: W2) -> relentless::wait::WaitCombine<Self, W2> where Self: core::marker::Sized
@@ -1415,6 +1449,7 @@ pub fn alloc::boxed::Box<W>::chain<W2: relentless::wait::Wait>(self, other: W2, 
 pub fn alloc::boxed::Box<W>::equal_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
+pub fn alloc::boxed::Box<W>::max_delay(&self) -> core::option::Option<core::time::Duration>
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 pub fn relentless::retry<F, O>(op: F) -> relentless::Retry<F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock, (), (), ()> where F: core::ops::function::FnMut(relentless::RetryState) -> O
 pub fn relentless::retry_async<F, Fut, O>(op: F) -> relentless::AsyncRetry<F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock, (), (), ()> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>

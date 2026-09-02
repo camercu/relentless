@@ -254,10 +254,18 @@ wait::exponential(Duration::from_millis(100))
 The reversed order — `.cap(...)` followed by a jitter decorator — is treated
 per decorator, because only additive jitter can breach the cap:
 
-- **Additive** `.jitter(max_jitter)` is normalized so the cap stays the final
-  operation: `.cap(max).jitter(j)` behaves as `.jitter(j).cap(max)`. Applying
-  additive jitter *after* the cap would add `random(0, max_jitter)` on top of a
-  value already at `max` and exceed the cap; normalization prevents that.
+- **Additive** `.jitter(max_jitter)` cannot breach the cap: `.cap(max).jitter(j)`
+  yields the same distribution as `.jitter(j).cap(max)`. Applying additive
+  jitter *after* the cap would otherwise add `random(0, max_jitter)` on top of a
+  value already at `max`.
+
+  The guarantee holds for every way the two can be composed — method-call
+  syntax, a generic `W: Wait` bound, `Box<dyn Wait>`, UFCS — because it is
+  carried by the trait, not by name resolution. `Wait::max_delay` reports a
+  strategy's ceiling (`None` = none known, the default), `.cap(max)` reports
+  `max`, and every jitter decorator clamps its draw to whatever ceiling its
+  inner strategy reports. A hand-written strategy that overrides `max_delay`
+  gets the same protection.
 - **Full** `.full_jitter()` and **equal** `.equal_jitter()` never exceed the
   base (their outputs are `random(0, base)` and `base/2 + random(0, base/2)`),
   so applying them after a cap can never breach it. They apply in the written

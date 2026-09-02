@@ -33,6 +33,10 @@ impl<W: Wait> Wait for WaitCapped<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         self.inner.next_wait(state).min(self.max)
     }
+
+    fn max_delay(&self) -> Option<Duration> {
+        Some(self.inner.max_delay().unwrap_or(self.max).min(self.max))
+    }
 }
 
 /// Composite strategy that returns the **sum** of two strategies' outputs.
@@ -130,26 +134,6 @@ impl<A: Wait, B: Wait> Wait for WaitChain<A, B> {
             self.first.next_wait(state)
         } else {
             self.second.next_wait(state)
-        }
-    }
-}
-
-impl<W> WaitCapped<W> {
-    /// Adds jitter while keeping the cap as the final operation.
-    ///
-    /// Additive jitter (`base + random(0, max_jitter)`) can exceed the base, so
-    /// applying it *after* a cap would push the delay past `max`. This method
-    /// normalizes `.cap(max).jitter(j)` to behave as `.jitter(j).cap(max)`,
-    /// preserving the cap. [`full_jitter`](crate::Wait::full_jitter) and
-    /// [`equal_jitter`](crate::Wait::equal_jitter) need no such normalization —
-    /// their outputs never exceed the base, so they cannot breach a preceding
-    /// cap and apply in the written order (see SPEC 3.3.8).
-    #[must_use]
-    pub fn jitter(self, max_jitter: Duration) -> WaitCapped<Jittered<W>> {
-        let WaitCapped { inner, max } = self;
-        WaitCapped {
-            inner: Jittered::additive(inner, max_jitter),
-            max,
         }
     }
 }

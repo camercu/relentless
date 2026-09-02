@@ -273,6 +273,26 @@ impl<W: Clone> Clone for Jittered<W> {
 impl<W: Wait> Wait for Jittered<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         let base = self.inner.next_wait(state);
+        let jittered = self.jitter_from(base, state);
+        // A cap anywhere beneath this decorator stays the final word, whatever
+        // syntax composed the two (SPEC 3.3.8). Only additive and decorrelated
+        // jitter can exceed the base; for the others this is a no-op.
+        match self.inner.max_delay() {
+            Some(ceiling) => jittered.min(ceiling),
+            None => jittered,
+        }
+    }
+
+    /// Jitter cannot lift a delay past a ceiling it did not already exceed, so
+    /// the inner ceiling carries through unchanged.
+    fn max_delay(&self) -> Option<Duration> {
+        self.inner.max_delay()
+    }
+}
+
+impl<W: Wait> Jittered<W> {
+    /// The jitter draw itself, before any ceiling is applied.
+    fn jitter_from(&self, base: Duration, state: &RetryState) -> Duration {
         match self.kind {
             JitterKind::Additive(max_jitter) => {
                 let jitter = random_jitter_duration(max_jitter, &self.rng);

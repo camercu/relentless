@@ -49,6 +49,24 @@ pub trait Wait {
     /// Returns the duration to sleep before the next retry attempt.
     fn next_wait(&self, state: &RetryState) -> Duration;
 
+    /// Returns the ceiling this strategy's output can never exceed, if it has
+    /// one.
+    ///
+    /// `None` means "no ceiling known", which is the safe default and what a
+    /// hand-written strategy gets for free. Decorators that can inflate their
+    /// inner strategy's output — [`jitter`](Self::jitter) above all — consult
+    /// it so a [`cap`](Self::cap) placed anywhere beneath them stays binding.
+    /// That is what keeps `.cap(max).jitter(j)` capped in a generic function,
+    /// behind `Box<dyn Wait>`, or under UFCS, where the concrete type is not
+    /// visible and no inherent method can intervene (SPEC 3.3.8).
+    ///
+    /// Override it only for a strategy that truly cannot exceed the value
+    /// returned; reporting a ceiling higher than reality is harmless, but
+    /// reporting one lower than reality silently shortens delays.
+    fn max_delay(&self) -> Option<Duration> {
+        None
+    }
+
     /// Clamps the returned duration to at most `max`.
     #[must_use]
     fn cap(self, max: Duration) -> WaitCapped<Self>
@@ -135,6 +153,10 @@ where
     fn next_wait(&self, state: &RetryState) -> Duration {
         (**self).next_wait(state)
     }
+
+    fn max_delay(&self) -> Option<Duration> {
+        (**self).max_delay()
+    }
 }
 
 /// A shared reference to a wait strategy is itself one, so a builder can borrow
@@ -142,5 +164,9 @@ where
 impl<W: Wait + ?Sized> Wait for &W {
     fn next_wait(&self, state: &RetryState) -> Duration {
         (**self).next_wait(state)
+    }
+
+    fn max_delay(&self) -> Option<Duration> {
+        (**self).max_delay()
     }
 }

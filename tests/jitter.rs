@@ -108,6 +108,40 @@ fn jitter_respects_cap_when_cap_called_after_jitter() {
     assert_jitter_then_cap_distribution(&wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP));
 }
 
+/// The three spellings that do not see the concrete type. Each is a
+/// refactoring a consumer performs on working code — extracting a helper,
+/// boxing for storage, or writing the call out in full — and each used to
+/// select the trait method instead of the normalization, breaching the cap by
+/// up to 67x with no diagnostic. The cap must survive all of them.
+#[test]
+fn jitter_respects_cap_through_a_generic_bound() {
+    fn add_jitter<W: Wait>(inner: W, max_jitter: Duration) -> impl Wait {
+        inner.jitter(max_jitter)
+    }
+
+    assert_jitter_then_cap_distribution(&add_jitter(
+        wait::fixed(BASE_WAIT).cap(WAIT_CAP),
+        MAX_JITTER,
+    ));
+}
+
+#[test]
+fn jitter_respects_cap_through_universal_function_call_syntax() {
+    assert_jitter_then_cap_distribution(&Wait::jitter(
+        wait::fixed(BASE_WAIT).cap(WAIT_CAP),
+        MAX_JITTER,
+    ));
+}
+
+/// `Box<dyn Wait>` needs the `alloc` feature for the blanket `Wait` impl that
+/// makes the box itself a strategy.
+#[cfg(feature = "alloc")]
+#[test]
+fn jitter_respects_cap_through_a_boxed_strategy() {
+    let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE_WAIT).cap(WAIT_CAP));
+    assert_jitter_then_cap_distribution(&boxed.jitter(MAX_JITTER));
+}
+
 #[test]
 fn jitter_sequence_changes_between_policy_invocations() {
     let policy = RetryPolicy::new()
