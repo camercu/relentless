@@ -1099,6 +1099,8 @@ impl core::panic::unwind_safe::UnwindSafe for relentless::DefaultClassifier
 pub struct relentless::HookChain<First, Second>
 impl<First: core::clone::Clone, Second: core::clone::Clone> core::clone::Clone for relentless::HookChain<First, Second>
 pub fn relentless::HookChain<First, Second>::clone(&self) -> relentless::HookChain<First, Second>
+impl<First: core::fmt::Debug, Second: core::fmt::Debug> core::fmt::Debug for relentless::HookChain<First, Second>
+pub fn relentless::HookChain<First, Second>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<First: relentless::BeforeAttemptHook, Second: relentless::BeforeAttemptHook> relentless::BeforeAttemptHook for relentless::HookChain<First, Second>
 pub fn relentless::HookChain<First, Second>::call(&mut self, state: &relentless::RetryState)
 impl<O, First: relentless::AttemptHook<O>, Second: relentless::AttemptHook<O>> relentless::AttemptHook<O> for relentless::HookChain<First, Second>
@@ -1223,7 +1225,11 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::marker::Unpin for relentless::RetryWithSt
 impl<F, C, S, W, Cl, BA, AA, OX> core::marker::UnsafeUnpin for relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin, S: core::marker::UnsafeUnpin, W: core::marker::UnsafeUnpin, Cl: core::marker::UnsafeUnpin, BA: core::marker::UnsafeUnpin, AA: core::marker::UnsafeUnpin, OX: core::marker::UnsafeUnpin
 impl<F, C, S, W, Cl, BA, AA, OX> core::panic::unwind_safe::RefUnwindSafe for relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, BA: core::panic::unwind_safe::RefUnwindSafe, AA: core::panic::unwind_safe::RefUnwindSafe, OX: core::panic::unwind_safe::RefUnwindSafe
 impl<F, C, S, W, Cl, BA, AA, OX> core::panic::unwind_safe::UnwindSafe for relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, BA: core::panic::unwind_safe::UnwindSafe, AA: core::panic::unwind_safe::UnwindSafe, OX: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::StatelessOp<F>(pub F)
+pub struct relentless::StatelessOp<F>(_)
+impl<F: core::clone::Clone> core::clone::Clone for relentless::StatelessOp<F>
+pub fn relentless::StatelessOp<F>::clone(&self) -> relentless::StatelessOp<F>
+impl<F: core::fmt::Debug> core::fmt::Debug for relentless::StatelessOp<F>
+pub fn relentless::StatelessOp<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<Fut, O, F> relentless::AsyncRetryOp for relentless::StatelessOp<F> where F: core::ops::function::FnMut() -> Fut, Fut: core::future::future::Future<Output = O>
 pub type relentless::StatelessOp<F>::Future = Fut
 pub type relentless::StatelessOp<F>::Output = O

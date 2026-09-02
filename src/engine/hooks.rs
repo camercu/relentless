@@ -72,7 +72,7 @@ impl<R, A, O, F: for<'a> FnMut(&Exit<'a, R, A, O>)> ExitHook<R, A, O> for F {
 /// it appears in a builder's type after two `before_attempt` calls. Name it
 /// only to write that type out — when a helper returns a builder that already
 /// has hooks attached.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HookChain<First, Second> {
     first: First,
     second: Second,

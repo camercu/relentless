@@ -38,7 +38,11 @@ impl<O, F: FnMut(RetryState) -> O> RetryOp for F {
 /// the operation slot of every builder those two entry points return. Name it
 /// to write that builder's type out — in a helper's return type, or a struct
 /// field holding a preconfigured builder.
-pub struct StatelessOp<F>(pub F);
+/// The field is crate-private: you receive this type from `.retry()`, never
+/// build one. Exposing it would make the wrapped closure part of the
+/// committed API for no gain.
+#[derive(Debug, Clone)]
+pub struct StatelessOp<F>(pub(crate) F);
 
 impl<O, F: FnMut() -> O> RetryOp for StatelessOp<F> {
     type Output = O;
