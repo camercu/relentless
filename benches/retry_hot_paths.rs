@@ -58,18 +58,22 @@ fn sync_success_first_attempt() {
 }
 
 fn sync_retry_until_success() {
+    // The inputs are black-boxed, not just the output. Every value here is a
+    // compile-time constant, so without this the optimiser folds the whole
+    // three-attempt loop to `Ok(SUCCESS_VALUE)` and the one case that actually
+    // exercises retrying reports the cost of returning a literal.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(Duration::ZERO));
+        .stop(stop::attempts(black_box(MAX_ATTEMPTS)))
+        .wait(wait::fixed(black_box(Duration::ZERO)));
     let mut attempts = 0_u32;
 
     let result = policy
         .retry(|_| {
             attempts = attempts.saturating_add(1);
-            if attempts < MAX_ATTEMPTS {
-                Err::<i32, &str>(ERROR_VALUE)
+            if attempts < black_box(MAX_ATTEMPTS) {
+                Err::<i32, &str>(black_box(ERROR_VALUE))
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(black_box(SUCCESS_VALUE))
             }
         })
         .clock(InstantClock::new())
