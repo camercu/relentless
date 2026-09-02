@@ -4,7 +4,6 @@ use core::cell::{Cell, RefCell};
 use core::future::{Future, ready};
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
-use std::sync::Arc;
 
 use relentless::clock::VirtualClock;
 use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
@@ -13,18 +12,9 @@ const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 const MAX_ATTEMPTS: u32 = 3;
 
-fn noop_waker() -> Waker {
-    struct NoopWake;
-    impl std::task::Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-    Waker::from(Arc::new(NoopWake))
-}
-
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     loop {
         match Future::poll(Pin::as_mut(&mut future), &mut cx) {

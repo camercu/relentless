@@ -409,22 +409,12 @@ mod async_tests {
     use core::future::{Future, ready};
     use core::pin::Pin;
     use core::task::{Context, Poll, Waker};
-    use std::sync::Arc;
 
     use super::*;
 
-    fn noop_waker() -> Waker {
-        struct NoopWake;
-        impl std::task::Wake for NoopWake {
-            fn wake(self: Arc<Self>) {}
-        }
-        Waker::from(Arc::new(NoopWake))
-    }
-
     fn block_on<F: Future>(future: F) -> F::Output {
         let mut future = Box::pin(future);
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
+        let mut cx = Context::from_waker(Waker::noop());
 
         loop {
             match Future::poll(Pin::as_mut(&mut future), &mut cx) {
@@ -614,8 +604,7 @@ mod async_tests {
                 .clock(ReadyClock)
                 .call(),
         );
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
+        let mut cx = Context::from_waker(Waker::noop());
 
         let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
         assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));

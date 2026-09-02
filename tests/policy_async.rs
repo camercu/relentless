@@ -29,21 +29,11 @@ const ERROR_VALUE: &str = "fail";
 
 // Helpers
 
-/// Creates a no-op waker for polling futures without an executor.
-fn noop_waker() -> Waker {
-    struct NoopWake;
-    impl std::task::Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-    Waker::from(Arc::new(NoopWake))
-}
-
 /// Polls a future to completion. Only correct for futures that never return `Pending`
 /// permanently; yields the thread on each `Pending` to let cooperative tasks make progress.
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     loop {
         match Future::poll(Pin::as_mut(&mut future), &mut cx) {
@@ -233,8 +223,7 @@ fn async_retry_repoll_after_completion_panics() {
             .clock(RecordingClock::new())
             .call(),
     );
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
     assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
@@ -704,15 +693,6 @@ fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
     #[derive(Clone, Default)]
     struct StalledClock;
 
-    struct NeverReady;
-
-    impl Future for NeverReady {
-        type Output = ();
-        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
-            Poll::Pending
-        }
-    }
-
     impl relentless::Clock for StalledClock {
         fn now(&self) -> Duration {
             Duration::ZERO
@@ -720,9 +700,9 @@ fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
     }
 
     impl relentless::AsyncClock for StalledClock {
-        type Wait = NeverReady;
+        type Wait = core::future::Pending<()>;
         fn wait_async(&self, _dur: Duration) -> Self::Wait {
-            NeverReady
+            core::future::pending()
         }
     }
 
@@ -732,8 +712,7 @@ fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
         .stop(stop::attempts(MAX_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION));
 
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
     let mut future = Box::pin(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })

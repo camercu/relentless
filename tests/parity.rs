@@ -24,18 +24,9 @@ use relentless::{RetryStats, predicate, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
 
-fn noop_waker() -> Waker {
-    struct NoopWake;
-    impl std::task::Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-    Waker::from(Arc::new(NoopWake))
-}
-
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     loop {
         match Future::poll(Pin::as_mut(&mut future), &mut cx) {

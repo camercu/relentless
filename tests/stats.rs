@@ -19,8 +19,6 @@ use relentless::{RetryError, RetryPolicy};
 use relentless::{RetryStats, StopReason, predicate, stop, wait};
 #[cfg(all(feature = "alloc", feature = "std"))]
 use std::rc::Rc;
-#[cfg(all(feature = "alloc", feature = "std"))]
-use std::sync::Arc;
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(5);
@@ -28,19 +26,10 @@ const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn noop_waker() -> Waker {
-    struct NoopWake;
-    impl std::task::Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-    Waker::from(Arc::new(NoopWake))
-}
-
 #[cfg(all(feature = "alloc", feature = "std"))]
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = Box::pin(future);
-    let waker = noop_waker();
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     loop {
         match Future::poll(Pin::as_mut(&mut future), &mut cx) {
