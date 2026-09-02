@@ -1499,16 +1499,23 @@ wait computation — overflow produces `Duration::MAX`, not a panic.
 - **15.2** Polling the async retry future after it has returned `Poll::Ready` panics
 - **15.3** `RetryState::for_attempt(0)` panics in debug builds only, via
   `debug_assert!`; release builds construct an attempt-0 state
+- **15.4** A `Clock` whose `now()` reports an elapsed reading below one it
+  already reported panics in debug builds only, via `debug_assert!`, from
+  inside `.call()` on either driver; release builds clamp instead (11.1.1.1).
+  The condition is a violation of the `Clock::now` precondition, so it is
+  reachable only through a consumer-supplied clock — no shipped clock can
+  trigger it
 
-**15.4** No other public constructor or method panics; saturating arithmetic is
+**15.5** No other public constructor or method panics; saturating arithmetic is
 used throughout.
 
-**15.5** Every panic above carries a `# Panics` section in rustdoc. For 15.1 and
+**15.6** Every panic above carries a `# Panics` section in rustdoc. For 15.1 and
 15.3 this is enforced by `clippy::missing_panics_doc` (the crate runs clippy
-pedantic under `-D warnings`). 15.2 is out of that lint's reach — the panic sits
-in a `Future::poll` impl, not in the public function that returns the future — so
-its `# Panics` sections on `AsyncRetry::call`, `AsyncRetryWithStats::call` and
-`AsyncRun` are maintained by hand.
+pedantic under `-D warnings`). 15.2 and 15.4 are out of that lint's reach — both
+panic below the public function, in a `Future::poll` impl and in a private
+helper respectively — so their `# Panics` sections (on `AsyncRetry::call`,
+`AsyncRetryWithStats::call` and `AsyncRun` for 15.2; on `Retry::call`,
+`RetryWithStats::call` and `AsyncRun` for 15.4) are maintained by hand.
 
 ## 16. Compatibility guarantees
 

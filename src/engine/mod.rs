@@ -393,6 +393,16 @@ where
     /// # Errors
     ///
     /// Returns [`RetryError`] on abort or exhaustion.
+    ///
+    /// # Panics
+    ///
+    /// Panics, in debug builds only, if the injected [`Clock`](crate::clock::Clock) reports an
+    /// elapsed reading below one it already reported — a violation of
+    /// [`Clock::now`](crate::clock::Clock::now)'s monotonicity precondition. Release builds clamp
+    /// instead, so a broken clock cannot un-spend the timeout budget either
+    /// way; the assertion exists to surface the broken clock in its
+    /// implementor's own tests. No clock shipped with this crate can trigger
+    /// it.
     pub fn call(self) -> Result<C::R, RetryError<C::A, O>> {
         self.run().0
     }
@@ -475,6 +485,12 @@ where
     /// # Errors
     ///
     /// Returns [`RetryError`] on abort or exhaustion.
+    ///
+    /// # Panics
+    ///
+    /// Panics, in debug builds only, if the injected [`Clock`](crate::clock::Clock) reports an
+    /// elapsed reading below one it already reported — see
+    /// [`Retry::call`](Retry::call).
     #[allow(clippy::type_complexity)]
     pub fn call(self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
         self.inner.run()

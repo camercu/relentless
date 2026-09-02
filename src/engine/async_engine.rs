@@ -424,6 +424,15 @@ pin_project! {
     ///
     /// Polling this future after it has returned
     /// [`Poll::Ready`](core::task::Poll::Ready) panics.
+    ///
+    /// Polling also panics, in debug builds only, if the injected
+    /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it
+    /// already reported — a violation of
+    /// [`Clock::now`](crate::clock::Clock::now)'s monotonicity precondition.
+    /// Release builds clamp instead, so a broken clock cannot un-spend the
+    /// timeout budget either way; the assertion exists to surface the broken
+    /// clock in its implementor's own tests. No clock shipped with this crate
+    /// can trigger it.
     pub struct AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>
     where
         Cl: AsyncClock,
