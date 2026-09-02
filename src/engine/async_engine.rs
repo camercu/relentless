@@ -513,13 +513,21 @@ where
                             // The poll-driven sleep is the async engine's half of
                             // the loop; the sync engine blocks instead.
                             if delay.is_zero() {
-                                // Skip spawning a zero-duration sleep future.
+                                // No sleep future for a zero delay, but still a
+                                // yield: a loop that never returns `Pending`
+                                // owns its executor thread until it finishes,
+                                // so timers cannot fire and `select!`,
+                                // `timeout` and cancellation are all defeated.
+                                // Waking first is what keeps this a yield
+                                // rather than a stall.
                                 *this.attempt = this.attempt.saturating_add(1);
                                 this.phase.set(Phase::ReadyToStart);
-                            } else {
-                                let sleep_future = this.clock.wait_async(delay);
-                                this.phase.set(Phase::Sleeping { sleep_future });
+                                cx.waker().wake_by_ref();
+                                return Poll::Pending;
                             }
+
+                            let sleep_future = this.clock.wait_async(delay);
+                            this.phase.set(Phase::Sleeping { sleep_future });
                         }
                     }
                 }

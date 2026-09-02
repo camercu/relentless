@@ -17,6 +17,7 @@ use relentless::{predicate, stop, wait};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
@@ -614,6 +615,79 @@ fn async_hooks_fire_in_expected_places() {
     assert_eq!(*before_attempt, vec![1, 2, 3]);
     assert_eq!(*after_attempt, vec![1, 2, 3]);
     assert_eq!(exit_reason.get(), Some(relentless::StopReason::Exhausted));
+}
+
+/// A waker that counts wake-ups, so a cooperative yield can be checked for the
+/// thing that makes it safe: the task is rescheduled, not stalled.
+fn counting_waker() -> (Waker, Arc<AtomicUsize>) {
+    struct CountingWake(Arc<AtomicUsize>);
+    impl std::task::Wake for CountingWake {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let count = Arc::new(AtomicUsize::new(0));
+    (
+        Waker::from(Arc::new(CountingWake(Arc::clone(&count)))),
+        count,
+    )
+}
+
+/// GIVEN an async retry whose strategy returns a zero delay
+/// WHEN the future is polled
+/// THEN it yields after each attempt — `Poll::Pending` plus a wake-up —
+///      rather than running the whole loop inside one `poll`.
+///
+/// Skipping the sleep must not mean skipping the *yield*: a loop that never
+/// returns `Pending` owns its executor thread until it finishes, so timers
+/// cannot fire and `select!`, `timeout` and cancellation are all defeated —
+/// on a current-thread runtime a co-tenant task never runs again. The wake-up
+/// is what makes the yield cooperative rather than a stall.
+#[test]
+fn async_zero_delay_yields_between_attempts() {
+    let (waker, wake_count) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let mut future = Box::pin(
+        policy
+            .retry_async(move |_| {
+                attempts_ref.set(attempts_ref.get() + 1);
+                async { Err::<i32, &str>(ERROR_VALUE) }
+            })
+            .clock(RecordingClock::new())
+            .call(),
+    );
+
+    assert!(
+        future.as_mut().poll(&mut cx).is_pending(),
+        "a zero delay must yield, not run the next attempt in the same poll"
+    );
+    assert_eq!(attempts.get(), 1, "exactly one attempt per poll");
+    assert_eq!(
+        wake_count.load(Ordering::Relaxed),
+        1,
+        "the yield must reschedule the task, or it stalls forever"
+    );
+
+    // Driven to completion, the outcome is unchanged: still one attempt per
+    // poll, still exhausted after the budget.
+    let result = loop {
+        if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {
+            break result;
+        }
+    };
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(attempts.get(), MAX_ATTEMPTS);
 }
 
 /// GIVEN a retry future parked in an inter-attempt wait

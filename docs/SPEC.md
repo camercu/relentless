@@ -162,11 +162,22 @@ Built-in wait semantics:
 **3.2.1** Wait strategies only compute `Duration`. They do not sleep directly.
 
 **3.2.8** **Zero-duration sleep rule.** When a wait strategy returns `Duration::ZERO`
-(or any other mechanism reduces the delay to zero), sleep is skipped entirely
-— no sleep call is made and no async yield occurs. This makes
+(or any other mechanism reduces the delay to zero), sleep is skipped entirely —
+no sleep call is made, and no clock wait is recorded. This makes
 `wait::fixed(Duration::ZERO)` a valid "no delay" strategy for tight polling
 loops. All other loop behavior (hooks, stop checks) proceeds normally. This
-rule is referenced by the Timeout section and the loop pseudocode (step 10).
+rule is referenced by the Timeout section and the loop pseudocode (step 8).
+
+**3.2.8.1** The sync engine simply proceeds to the next attempt. The async
+engine additionally performs a **cooperative yield**: it wakes its own waker
+and returns `Poll::Pending`, so the next attempt runs on a later poll. Skipping
+the sleep must not mean skipping the yield — a future that never returns
+`Pending` owns its executor thread until the whole retry loop finishes, so
+timers cannot fire and `select!`, `tokio::time::timeout` and task cancellation
+are all defeated; on a current-thread runtime, co-tenant tasks never run again.
+The cost is one extra poll per attempt, which is what a "tight polling loop"
+must pay to remain a cooperative one. `.timeout()` is checked from inside the
+loop and so escapes either way, but only after burning a full core.
 
 ### 3.3 Jitter strategies
 
@@ -941,8 +952,9 @@ loop:
     6.  Compute the next wait via Wait::next_wait — only now that a retry is
         certain (never on the terminal attempt).
     7.  If a timeout is configured, clamp delay to max(0, timeout - elapsed).
-    8.  If delay > zero, wait for it via the clock; feed the applied delay
-        forward as the next attempt's `previous_delay`.
+    8.  If delay > zero, wait for it via the clock; if it is zero, skip the
+        clock (and, on the async path, yield cooperatively) per 3.2.8. Feed
+        the applied delay forward as the next attempt's `previous_delay`.
     9.  attempt += 1, continue to step 1.
 ```
 
