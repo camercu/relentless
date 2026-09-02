@@ -15,7 +15,11 @@ use crate::compat::Duration;
 /// Retaining the highest reading makes that a no-op instead: the budget can
 /// only ever be spent. Both drivers read through this type, so neither can
 /// hold a different opinion about what "elapsed" means.
-#[derive(Debug, Clone, Copy)]
+// Deliberately not `Copy`/`Clone`: the whole guarantee is that one execution
+// has one watermark. A copy would fork it — the duplicate's budget resets and
+// the original never learns — and the wrong call would look exactly like the
+// right one. Neither driver needs either trait.
+#[derive(Debug)]
 pub(crate) struct Elapsed {
     origin: Duration,
     highest: Duration,
