@@ -1,7 +1,8 @@
 # UX polish candidates — findings
 
-**Status:** living catalog. Records UX warts surfaced by a dogfooding pass over
-the public surface (2026-07-23), ranked as candidates for future polish. Item 1a
+**Status:** living catalog. Records UX warts surfaced by dogfooding passes over
+the public surface (2026-07-23, and a second adversarial pass 2026-08-31),
+ranked as candidates for future polish. Item 1a
 (timeout on the policy) has since shipped; item 1b (hooks on the policy) and item
 2 (an attempt-count shortcut) were worked through and declined; items 3 (closure
 arity across entry points) and 4 (the async `&VirtualClock` asymmetry) were each
@@ -9,8 +10,10 @@ resolved with docs after a diagnostic fix was prototyped and rejected — in bot
 cases because the bound failure surfaces as E0599, which
 `#[diagnostic::on_unimplemented]` cannot reach. The rest remain
 open — each names the friction, the
-evidence, and the open design question a spike would resolve; none is scheduled;
-none is a defect in current behavior. Two prior UX spikes already concluded
+evidence, and the open design question a spike would resolve; none is a defect
+in current behavior. Items 7 and 8 came out of the second pass and are the only
+ones scheduled: they are queued together for an `evolutionary-spike`
+tournament. Two prior UX spikes already concluded
 (ADR-0005 unified clock,
 ADR-0006 paired-decision classifier), and the obvious footguns are already
 polished to a high bar — see "Already handled" below — so this list is the
@@ -27,6 +30,8 @@ next tier down.
 | 4 | Async `VirtualClock` needs `&`, sync does not | Low | Resolved (docs) |
 | 5 | Builder type-name sprawl | None (triaged) | Known, deferred |
 | 6 | Clock-capability `on_unimplemented` notes never render (E0599) | Low | Open (parked) |
+| 7 | Async retry futures are not `FusedFuture` | Medium | Open (spike queued) |
+| 8 | `on_exit` does not fire on drop-cancellation | Medium | Open (spike queued) |
 
 ## 1. `RetryPolicy` and cross-cutting concerns
 
@@ -281,6 +286,53 @@ fixes for items 3 and 4 already carry the remedies the notes would have. Revisit
 if the pinned rustc changes E0599 behavior, or if a new non-`.call()` bound site
 is added where the note would render. If reopened, the choice is purely
 keep-vs-delete on the evidence above — not a fresh investigation.
+
+## 7. Async retry futures are not `FusedFuture` — spike queued (2026-09-01)
+
+Surfaced by the 2026-08-31 adversarial dogfood pass (finding F-6), and queued
+for an `evolutionary-spike` tournament together with item 8.
+
+`AsyncRun` panics when polled after it has returned `Poll::Ready`. That is a
+documented, deliberate contract — the state machine has no valid state left —
+and the rustdoc on `AsyncRetry::call` now says so. The friction is that
+`tokio::select!` in a loop is the single most idiomatic way to drive a future
+alongside a cancellation signal, and it re-polls whichever branch did not
+complete; a consumer reaches the panic from ordinary code and the only remedy
+is knowing to wrap the call in `.fuse()`.
+
+Implementing `FusedFuture` would let `select!` skip a completed branch on its
+own. The open design questions a spike would resolve:
+
+- `FusedFuture` lives in `futures-core`, so it costs a dependency (optional
+  feature?) on a crate whose whole point is having none in the default build.
+- Whether `is_terminated` can be answered from the existing `Phase` state
+  machine without widening it.
+- Whether fusing should also make a re-poll return `Pending` forever instead of
+  panicking, which changes a documented panic into silence — a Postel-style
+  accept-liberally call that needs deciding on its own merits, not by default.
+
+## 8. `on_exit` does not fire on drop-cancellation — spike queued (2026-09-01)
+
+Surfaced by the same pass (finding F-7), queued alongside item 7.
+
+Dropping an async retry future skips `on_exit` entirely: in a 32-task
+reproducer, every cancelled retry leaked the in-flight gauge its `on_exit`
+decremented. SPEC 9.1 states this, and the `on_exit` rustdoc now does too, so
+the behavior is no longer undocumented — but it remains the wrong default for
+the hook's most natural use, since cancellation is the ordinary lifecycle of an
+async future rather than an edge case.
+
+The open design questions a spike would resolve:
+
+- Firing hooks from a `Drop` impl means running user code during unwinding,
+  where a panic aborts. What `Exit` variant would a cancelled run even carry —
+  there is no outcome and no verdict.
+- Whether a distinct `on_cancel` hook is the honest shape instead of
+  overloading `on_exit`, keeping "exited with a verdict" and "went away"
+  separable.
+- Whether the crate should keep pointing at `Drop` impls on the consumer's own
+  types, which already work on both paths, and treat the current behavior as
+  correct rather than as a gap.
 
 ## Already handled (bar reference)
 
