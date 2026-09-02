@@ -351,6 +351,10 @@ where
     /// out of the loop once it completes.
     ///
     /// [`FusedFuture`]: https://docs.rs/futures/latest/futures/future/trait.FusedFuture.html
+    ///
+    /// It also panics, in debug builds only, if the injected
+    /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it
+    /// already reported — see [`Retry::call`](super::Retry::call).
     #[allow(clippy::type_complexity)]
     pub fn call(self) -> DropStats<AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>> {
         DropStats {
@@ -399,7 +403,9 @@ where
     /// # Panics
     ///
     /// The returned future panics if it is polled again after it has returned
-    /// [`Poll::Ready`](core::task::Poll::Ready); see
+    /// [`Poll::Ready`](core::task::Poll::Ready), and — in debug builds only —
+    /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
+    /// reading below one it already reported. See
     /// [`AsyncRetry::call`](AsyncRetry::call).
     pub fn call(self) -> AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O> {
         self.inner.into_run()
