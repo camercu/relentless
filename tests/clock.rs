@@ -359,8 +359,15 @@ mod engine_integration {
 
     /// GIVEN a zero-delay strategy over a multi-attempt budget
     /// WHEN an always-failing operation runs against a `VirtualClock`
-    /// THEN no waits are recorded, because SPEC 3.2.8 skips the clock call
-    ///      entirely for a zero delay — `waits().len()` is not `attempts - 1`
+    /// THEN `waits()` stays empty — it counts performed sleeps, not
+    ///      inter-attempt gaps, so the natural
+    ///      `waits().len() == attempts - 1` does not hold
+    ///
+    /// The engine behaviour underneath (SPEC 3.2.8 skips the clock entirely
+    /// for a zero delay) is pinned by `wait.rs::zero_duration_sleep_is_skipped`
+    /// on more feature configurations than this test runs on. What is pinned
+    /// *here* is the recorder's side of it, which is what
+    /// `VirtualClock::waits`'s rustdoc promises.
     #[test]
     fn zero_delay_records_no_waits() {
         let clock = VirtualClock::new();
