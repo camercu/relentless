@@ -344,13 +344,18 @@ where
     /// # Panics
     ///
     /// The returned future panics if it is polled again after it has returned
-    /// [`Poll::Ready`](core::task::Poll::Ready). It is not a
-    /// [`FusedFuture`], so combinators that may re-poll a completed
-    /// future — notably `tokio::select!` over a `&mut` future in a loop — must
-    /// not be allowed to do so; wrap it in `futures::FutureExt::fuse` or break
-    /// out of the loop once it completes.
+    /// [`Poll::Ready`](core::task::Poll::Ready). The reachable case is
+    /// `tokio::select!` over a `&mut` future in a loop, which re-polls
+    /// whichever branch did not complete.
     ///
-    /// [`FusedFuture`]: https://docs.rs/futures/latest/futures/future/trait.FusedFuture.html
+    /// Stop polling it once it completes — `break` out of the loop, or drop
+    /// the future. Do **not** reach for `futures::FutureExt::fuse` here:
+    /// `tokio::select!` never consults
+    /// [`FusedFuture`](https://docs.rs/futures/latest/futures/future/trait.FusedFuture.html),
+    /// and a fused future returns `Poll::Pending` forever once resolved, so
+    /// fusing trades a panic that names the offending line for a task that
+    /// hangs silently. (Under `futures::select!`, which does consult it,
+    /// fusing is correct.)
     ///
     /// It also panics, in debug builds only, if the injected
     /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it

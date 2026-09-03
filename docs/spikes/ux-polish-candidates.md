@@ -297,19 +297,28 @@ documented, deliberate contract — the state machine has no valid state left �
 and the rustdoc on `AsyncRetry::call` now says so. The friction is that
 `tokio::select!` in a loop is the single most idiomatic way to drive a future
 alongside a cancellation signal, and it re-polls whichever branch did not
-complete; a consumer reaches the panic from ordinary code and the only remedy
-is knowing to wrap the call in `.fuse()`.
+complete; a consumer reaches the panic from ordinary code.
 
-Implementing `FusedFuture` would let `select!` skip a completed branch on its
-own. The open design questions a spike would resolve:
+**Correction (2026-09-03, from the `a-cleanroom` spike):** this item, and the
+rustdoc it describes, both used to name `.fuse()` as the remedy. That advice was
+wrong. `tokio::select!` never consults `FusedFuture` — zero occurrences of
+`Fused` in its macro source — and a fused future returns `Poll::Pending` forever
+once resolved, so fusing this future trades a panic that names the offending
+line for a task that hangs silently. The remedy is to stop polling once it
+completes. Fusing is correct only under `futures::select!`, which does consult
+the trait.
 
-- `FusedFuture` lives in `futures-core`, so it costs a dependency (optional
-  feature?) on a crate whose whole point is having none in the default build.
-- Whether `is_terminated` can be answered from the existing `Phase` state
-  machine without widening it.
-- Whether fusing should also make a re-poll return `Pending` forever instead of
-  panicking, which changes a documented panic into silence — a Postel-style
-  accept-liberally call that needs deciding on its own merits, not by default.
+That correction reframes what a spike is for here. The open questions:
+
+- Whether the crate should expose termination state at all — an inherent
+  `is_terminated()` reading the existing `Phase::Done` needs no dependency, and
+  is name- and semantics-compatible with a later `FusedFuture` impl.
+- Whether a `FusedFuture` impl behind an optional `futures-core` feature earns
+  its keep, given it does nothing for the `tokio::select!` case that motivated
+  the item.
+- Whether a re-poll should return `Pending` instead of panicking — which is
+  precisely what the bad `.fuse()` advice caused by accident, and so has already
+  been observed to be a downgrade rather than a Postel-style improvement.
 
 ## 8. `on_exit` does not fire on drop-cancellation — spike queued (2026-09-01)
 
