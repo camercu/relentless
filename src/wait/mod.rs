@@ -49,20 +49,26 @@ pub trait Wait {
     /// Returns the duration to sleep before the next retry attempt.
     fn next_wait(&self, state: &RetryState) -> Duration;
 
-    /// Returns the ceiling this strategy's output can never exceed, if it has
-    /// one.
+    /// Returns a ceiling **imposed** on this strategy, if one has been.
     ///
-    /// `None` means "no ceiling known", which is the safe default and what a
-    /// hand-written strategy gets for free. Decorators that can inflate their
-    /// inner strategy's output — [`jitter`](Self::jitter) above all — consult
-    /// it so a [`cap`](Self::cap) placed anywhere beneath them stays binding.
-    /// That is what keeps `.cap(max).jitter(j)` capped in a generic function,
-    /// behind `Box<dyn Wait>`, or under UFCS, where the concrete type is not
-    /// visible and no inherent method can intervene (SPEC 3.3.8).
+    /// This reports a deliberate bound — what [`cap`](Self::cap) creates — and
+    /// not merely the largest value the strategy happens to produce. The
+    /// distinction is the whole contract: decorators that can inflate their
+    /// inner strategy's output, [`jitter`](Self::jitter) above all, clamp
+    /// themselves to whatever this returns, so a `.cap(max)` stays binding in
+    /// a generic function, behind `Box<dyn Wait>`, or under UFCS, where the
+    /// concrete type is not visible and no inherent method can intervene
+    /// (SPEC 3.3.8).
     ///
-    /// Override it only for a strategy that truly cannot exceed the value
-    /// returned; reporting a ceiling higher than reality is harmless, but
-    /// reporting one lower than reality silently shortens delays.
+    /// `None` means "no ceiling imposed" and is the correct answer for every
+    /// undecorated strategy, including a deterministic one. Do **not** report
+    /// a strategy's own output here: making [`fixed`]
+    /// return `Some(d)` looks like free precision and instead clamps
+    /// `wait::fixed(d).jitter(j)` to `d`, silently deleting the jitter. The
+    /// suite fails loudly if you try it.
+    ///
+    /// Reporting a ceiling above a genuinely imposed one is harmless;
+    /// reporting one below it silently shortens delays.
     fn max_delay(&self) -> Option<Duration> {
         None
     }
