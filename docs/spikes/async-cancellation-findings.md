@@ -78,11 +78,58 @@ enumeration missed.
 | `b-on-cancel` | B | directed | a separate `on_cancel` hook, distinct from `on_exit` |
 | `b-cleanroom` | B | clean-room | unanchored |
 
-Status: **dispatched**.
+Status: **1 of 6 reported** (`b-cleanroom`). Five still building.
 
 ## 3. Lessons captured
 
-_(filled as rounds complete — why-lost, what-didn't-work, carry-forward leads)_
+### `b-cleanroom` — landed a design AND a kill. Not yet eliminated or accepted.
+
+Two findings that reframe Q-B, both of which the directed spikes were not
+looking for:
+
+1. **This was never a documentation gap.** The rule is already stated in four
+   places — `on_exit`'s rustdoc, `lib.rs`'s cancellation section, SPEC 9.1, and
+   `examples/async-cancel.rs` — one of which names the gauge/permit/span leak by
+   example. Correct, prominent, four-times-repeated prose still failed 32 of 32.
+   Any verdict of "document it better" is now disproven, not merely unattractive.
+
+2. **Cancellation-safe cleanup is already expressible today**, and that is the
+   actual defect. A closure that *owns* the guard survives drop
+   (`.on_exit(move |_| { slot.take(); })`); one that *calls* a method leaks
+   (`.on_exit(move |_| gauge.dec())`). Same slot, same single line, opposite
+   behavior — verbatim the repo's own "correct call and wrong call look
+   identical" smell. That names the lever: make the two spellings *look*
+   different rather than adding capability.
+
+Its design: `.holding(resource)` — a `Holding<G>` occupying an exit-hook
+position, released exactly once (taken on the verdict path, dropped with the
+future on cancellation). No new type parameter: the exit-hook chain is already
+a compile-time heterogeneous list of things that happen at exit.
+`demo_cancel` goes `fired=0 gauge=8` → `fired=8 gauge=0`, `demo_repoll`
+unchanged, 0 existing tests changed, 9 added.
+
+**CARRY-FORWARD KILL — bears directly on `b-drop-hook` and `b-on-cancel`.**
+It built the rejected alternative to disprove it: a cancellation hook fired
+from `Drop`. Operation panics → future dropped mid-unwind → hook panics →
+"panic in a destructor during cleanup" → **`exit=134`**, uncatchable by
+`catch_unwind`. A crate that maintains a panic inventory (SPEC 15) cannot add
+an unconditional SIGABRT. The asymmetry it names is the load-bearing one:
+*dropping* a caller-owned value adds no failure mode; *calling* user code from
+a destructor does.
+
+Both directed B spikes were independently told to confront this hazard with a
+demonstrating test. Their answers are worth having before this is treated as
+settled — an independent reproduction, or a design that dodges it, is exactly
+what the tournament is for.
+
+Also rejected there, with reasons: docs-only (measured 0/8); a ninth type
+parameter (same semantics, far more churn); a free future combinator (invisible
+at the point of confusion); renaming `on_exit` (breaking, removes the wrong
+slot). Tier 1 judged unreachable — the crate cannot inspect a closure body.
+
+Self-declared limits: sugar, not new power; cannot fix already-written call
+sites; cannot tell the guard *why* the run ended; `RetryPolicy` still cannot
+carry a resource; a builder with `.holding()` is not `Clone`; async-only.
 
 ## 4. Verdict
 
