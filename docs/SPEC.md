@@ -1515,13 +1515,14 @@ wait computation — overflow produces `Duration::MAX`, not a panic.
 **15.5** No other public constructor or method panics; saturating arithmetic is
 used throughout.
 
-**15.6** Every panic above carries a `# Panics` section in rustdoc. For 15.1 and
-15.3 this is enforced by `clippy::missing_panics_doc` (the crate runs clippy
-pedantic under `-D warnings`). 15.2 and 15.4 are out of that lint's reach — both
-panic below the public function, in a `Future::poll` impl and in a private
-helper respectively — so their `# Panics` sections (on `AsyncRetry::call`,
-`AsyncRetryWithStats::call` and `AsyncRun` for 15.2; on `Retry::call`,
-`RetryWithStats::call` and `AsyncRun` for 15.4) are maintained by hand.
+**15.6** Every panic above carries a `# Panics` section in rustdoc. Only 15.1 is
+enforced by `clippy::missing_panics_doc` (the crate runs clippy pedantic under
+`-D warnings`); the lint ignores `debug_assert!` and does not look below the
+public function, so 15.2, 15.3 and 15.4 are all maintained by hand — verified by
+deleting each section and confirming the lint stays silent. Their sections live
+on `RetryState::for_attempt` (15.3); on `AsyncRetry::call`,
+`AsyncRetryWithStats::call` and `AsyncRun` (15.2); and on `Retry::call`,
+`RetryWithStats::call`, both async `call`s and `AsyncRun` (15.4).
 
 ## 16. Compatibility guarantees
 
