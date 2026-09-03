@@ -102,6 +102,14 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// policy. A builder [`.timeout()`](crate::Retry::timeout) replaces it for
     /// that call (it is not combined). See [`Retry::timeout`](crate::Retry::timeout)
     /// for the deadline's semantics.
+    ///
+    /// Replacing is the only per-call move: unlike `.stop()` and `.wait()`,
+    /// which a call can override *away* with `stop::never()` or a zero wait,
+    /// there is no value meaning "no deadline". A call that must run unbounded
+    /// under a policy that carries one passes `Duration::MAX`. That asymmetry
+    /// is deliberate — a shared budget a single call could silently drop is
+    /// its own hazard — but it is worth knowing before you go looking for the
+    /// off switch.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
         self.timeout = Some(dur);
