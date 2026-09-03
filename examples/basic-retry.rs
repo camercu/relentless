@@ -5,7 +5,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryExt, stop, wait};
+use relentless::{Clock, RetryExt, stop, wait};
 
 fn main() {
     // Represents a remote call that fails transiently before eventually succeeding.
@@ -21,12 +21,17 @@ fn main() {
 
     // The closure is the operation to retry. `.retry()` attaches a default policy;
     // `.stop()` and `.wait()` override individual strategy components.
+    let clock = VirtualClock::new();
     let result = fetch_config
         .retry()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(10)))
-        .clock(VirtualClock::new()) // omit in production: std defaults to SystemClock
+        .clock(&clock) // omit in production: std defaults to SystemClock
         .call();
 
     assert_eq!(result, Ok("config_value=42"));
+    println!("succeeded after 2 transient failures: {result:?}");
+    // `now()` rather than `waits()`: the recorder needs `alloc`, and this
+    // example must build on the crate's minimal feature set.
+    println!("virtual time spent waiting: {:?}", clock.now());
 }

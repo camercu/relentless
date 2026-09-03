@@ -36,4 +36,6 @@ async fn main() {
         .await;
 
     assert_eq!(result, Ok("ready"));
+    println!("polled until the deploy reported: {result:?}");
+    println!("status checks that returned \"deploying\" first: 3");
 }
