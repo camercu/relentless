@@ -9,6 +9,7 @@ use core::time::Duration;
 use relentless::RetryPolicy;
 use relentless::Wait;
 use relentless::clock::VirtualClock;
+use relentless::wait::Jittered;
 use relentless::{stop, wait};
 
 const BASE_WAIT: Duration = Duration::from_millis(20);
@@ -81,27 +82,41 @@ fn jitter_additive_stays_within_base_plus_max() {
 // or jitter applied on top of an already-capped value, would fail these.
 const ATTEMPTS: u32 = 64;
 
+/// Seed for the cap-forwarding draws below.
+///
+/// These assert over a distribution, so they need a fixed stream: the default
+/// jitter nonce mixes wall-clock entropy under `std`, which would make them
+/// answer a slightly different question every run. Override with
+/// `RELENTLESS_TEST_SEED` to re-roll; every failure prints the seed in use.
+fn jitter_seed() -> u64 {
+    std::env::var("RELENTLESS_TEST_SEED")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(SEEDED_JITTER_SEED)
+}
+
 /// Asserts a jitter-then-cap distribution: every delay inside
 /// `[floor, ceiling]`, the ceiling actually reached (so the clamp is
 /// exercised, not merely satisfied), and not every delay pinned there (so
 /// jitter genuinely varies).
 #[track_caller]
 fn assert_jitter_then_cap_distribution(strategy: &impl Wait, floor: Duration, ceiling: Duration) {
+    let seed = jitter_seed();
     let delays: Vec<Duration> = (1..=ATTEMPTS)
         .map(|attempt| strategy.next_wait(&state(attempt)))
         .collect();
 
     assert!(
         delays.iter().all(|&d| (floor..=ceiling).contains(&d)),
-        "every delay must land in [{floor:?}, {ceiling:?}]: {delays:?}"
+        "every delay must land in [{floor:?}, {ceiling:?}] (seed {seed}): {delays:?}"
     );
     assert!(
         delays.contains(&ceiling),
-        "jitter must reach past {ceiling:?} and be clamped to it: {delays:?}"
+        "jitter must reach past {ceiling:?} and be clamped to it (seed {seed}): {delays:?}"
     );
     assert!(
         delays.iter().any(|&d| d < ceiling),
-        "not every delay should be pinned at {ceiling:?} — jitter must vary: {delays:?}"
+        "not every delay should be pinned at {ceiling:?} — jitter must vary (seed {seed}): {delays:?}"
     );
 }
 
@@ -111,7 +126,10 @@ fn jitter_respects_cap_when_cap_called_before_jitter() {
     // its ceiling through `Wait::max_delay` and the jitter decorator clamps to
     // it. Nothing here depends on which method name resolution picked.
     assert_jitter_then_cap_distribution(
-        &wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER),
+        &wait::fixed(BASE_WAIT)
+            .cap(WAIT_CAP)
+            .jitter(MAX_JITTER)
+            .with_seed(jitter_seed()),
         BASE_WAIT,
         WAIT_CAP,
     );
@@ -120,7 +138,10 @@ fn jitter_respects_cap_when_cap_called_before_jitter() {
 #[test]
 fn jitter_respects_cap_when_cap_called_after_jitter() {
     assert_jitter_then_cap_distribution(
-        &wait::fixed(BASE_WAIT).jitter(MAX_JITTER).cap(WAIT_CAP),
+        &wait::fixed(BASE_WAIT)
+            .jitter(MAX_JITTER)
+            .with_seed(jitter_seed())
+            .cap(WAIT_CAP),
         BASE_WAIT,
         WAIT_CAP,
     );
@@ -132,12 +153,12 @@ fn jitter_respects_cap_when_cap_called_after_jitter() {
 /// all of them — nothing about the guarantee may depend on the caller's syntax.
 #[test]
 fn jitter_respects_cap_through_a_generic_bound() {
-    fn add_jitter<W: Wait>(inner: W, max_jitter: Duration) -> impl Wait {
+    fn add_jitter<W: Wait>(inner: W, max_jitter: Duration) -> Jittered<W> {
         inner.jitter(max_jitter)
     }
 
     assert_jitter_then_cap_distribution(
-        &add_jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER),
+        &add_jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
         BASE_WAIT,
         WAIT_CAP,
     );
@@ -146,7 +167,7 @@ fn jitter_respects_cap_through_a_generic_bound() {
 #[test]
 fn jitter_respects_cap_through_universal_function_call_syntax() {
     assert_jitter_then_cap_distribution(
-        &Wait::jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER),
+        &Wait::jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
         BASE_WAIT,
         WAIT_CAP,
     );
@@ -158,7 +179,8 @@ fn jitter_respects_cap_through_universal_function_call_syntax() {
 #[test]
 fn jitter_respects_cap_through_a_boxed_strategy() {
     let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE_WAIT).cap(WAIT_CAP));
-    assert_jitter_then_cap_distribution(&boxed.jitter(MAX_JITTER), BASE_WAIT, WAIT_CAP);
+    let jittered = boxed.jitter(MAX_JITTER).with_seed(jitter_seed());
+    assert_jitter_then_cap_distribution(&jittered, BASE_WAIT, WAIT_CAP);
 }
 
 /// A cap does not stop being a cap because a composite sits between it and the
@@ -169,7 +191,8 @@ fn jitter_respects_a_cap_beneath_a_chain() {
     let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
     let strategy = capped
         .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1)
-        .jitter(MAX_JITTER);
+        .jitter(MAX_JITTER)
+        .with_seed(jitter_seed());
 
     assert_jitter_then_cap_distribution(&strategy, BASE_WAIT, WAIT_CAP);
 }
@@ -185,7 +208,8 @@ fn jitter_respects_a_cap_beneath_a_sum() {
     let ceiling = WAIT_CAP * 2;
     let wide_jitter = ceiling.saturating_sub(floor) * 4;
     let strategy = (wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP))
-        .jitter(wide_jitter);
+        .jitter(wide_jitter)
+        .with_seed(jitter_seed());
 
     assert_jitter_then_cap_distribution(&strategy, floor, ceiling);
 }
@@ -259,7 +283,7 @@ fn max_delay_survives_borrowing_and_nesting() {
     // ceiling, or the cap stops binding as decorators stack up. Seeded,
     // because a wide outer draw saturates at the ceiling often enough that an
     // unseeded distributional assertion would be answering a coin toss.
-    let nested = jittered.jitter(WIDE_JITTER).with_seed(SEEDED_JITTER_SEED);
+    let nested = jittered.jitter(WIDE_JITTER).with_seed(jitter_seed());
     let delays: Vec<Duration> = (1..=ATTEMPTS)
         .map(|attempt| nested.next_wait(&state(attempt)))
         .collect();

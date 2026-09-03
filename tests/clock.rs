@@ -219,6 +219,15 @@ fn a_backwards_clock_cannot_un_spend_the_timeout_budget() {
         "the timeout must fire; got {result:?} after {} attempts",
         attempts.get()
     );
+    // The sawtooth sequence is deterministic, so the exhaustion point is too:
+    // the first post-attempt reading is already the peak, well past the
+    // budget. Pinning it catches an off-by-one in the timeout comparison that
+    // the variant check alone would let through.
+    assert_eq!(
+        attempts.get(),
+        1,
+        "the budget is spent by the first reading"
+    );
 }
 
 impl AsyncClock for SawtoothClock {
@@ -269,6 +278,11 @@ fn a_backwards_clock_cannot_un_spend_the_async_timeout_budget() {
         matches!(result, Err(relentless::RetryError::Exhausted { .. })),
         "the timeout must fire; got {result:?} after {} attempts",
         attempts.get()
+    );
+    assert_eq!(
+        attempts.get(),
+        1,
+        "the budget is spent by the first reading"
     );
 }
 
