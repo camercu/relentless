@@ -226,6 +226,53 @@ fn a_cap_is_invisible_through_a_composite_with_an_undeclared_sibling() {
     );
 }
 
+/// Two forwarding shims that every other test reaches only indirectly, so a
+/// mutation replacing either body with `None` survived the whole suite:
+/// `max_delay` on a `&W`, and on a `Jittered` asked for its own ceiling rather
+/// than consulting its inner one. Both matter when a capped strategy is
+/// borrowed or nested a level deeper than the cap-forwarding family covers.
+#[test]
+fn max_delay_survives_borrowing_and_nesting() {
+    // Through a generic bound, so `W` really is `&WaitCapped<_>` and the
+    // blanket `impl Wait for &W` is what answers. Calling `.max_delay()` on a
+    // `&capped` binding auto-derefs straight to the inherent impl and proves
+    // nothing about the forwarding shim.
+    fn ceiling_of<W: Wait>(strategy: W) -> Option<Duration> {
+        strategy.max_delay()
+    }
+
+    let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
+    assert_eq!(
+        ceiling_of(&capped),
+        Some(WAIT_CAP),
+        "a shared reference must forward the ceiling it borrows"
+    );
+
+    let jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
+    assert_eq!(
+        jittered.max_delay(),
+        Some(WAIT_CAP),
+        "a jittered strategy carries the ceiling it clamps to"
+    );
+
+    // Nested one level deeper: the outer jitter must see the inner one's
+    // ceiling, or the cap stops binding as decorators stack up. Seeded,
+    // because a wide outer draw saturates at the ceiling often enough that an
+    // unseeded distributional assertion would be answering a coin toss.
+    let nested = jittered.jitter(WIDE_JITTER).with_seed(SEEDED_JITTER_SEED);
+    let delays: Vec<Duration> = (1..=ATTEMPTS)
+        .map(|attempt| nested.next_wait(&state(attempt)))
+        .collect();
+    assert!(
+        delays.iter().all(|&d| (BASE_WAIT..=WAIT_CAP).contains(&d)),
+        "stacking decorators must not lift the delay past the cap: {delays:?}"
+    );
+    assert!(
+        delays.contains(&WAIT_CAP),
+        "the outer jitter must reach the ceiling and be clamped: {delays:?}"
+    );
+}
+
 #[test]
 fn jitter_sequence_changes_between_policy_invocations() {
     let policy = RetryPolicy::new()
