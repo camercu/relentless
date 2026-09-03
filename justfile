@@ -276,8 +276,11 @@ setup:
 pre-commit: check-tool-versions fmt-check lint-typos
     cargo check --all-targets --quiet
 
+# Includes test-no-default: the feature-gated surface is where changes to
+# examples and doctests break without any default-feature run noticing, and
+# that has reached CI twice.
 pre-push:
-    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test doc
+    RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test test-no-default doc test-doc-no-default
 
 # ── CI ──────────────────────────────────────────────────────
 
