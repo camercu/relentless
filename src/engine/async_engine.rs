@@ -423,6 +423,12 @@ pin_project! {
         ReadyToStart,
         Polling { #[pin] op_future: Fut },
         Sleeping { #[pin] sleep_future: WaitFut },
+        /// Parked on a zero delay: the cooperative yield's counterpart to
+        /// `Sleeping`. Both mean "between attempts, waiting to be polled
+        /// again", and both advance the attempt counter when they end — so
+        /// the counter cannot mean two different things at a poll boundary
+        /// depending on whether the delay happened to be zero.
+        Yielding,
         Done,
     }
 }
@@ -540,8 +546,7 @@ where
                                 // `timeout` and cancellation are all defeated.
                                 // Waking first is what keeps this a yield
                                 // rather than a stall.
-                                *this.attempt = this.attempt.saturating_add(1);
-                                this.phase.set(Phase::ReadyToStart);
+                                this.phase.set(Phase::Yielding);
                                 cx.waker().wake_by_ref();
                                 return Poll::Pending;
                             }
@@ -558,6 +563,10 @@ where
                         this.phase.set(Phase::ReadyToStart);
                     }
                 },
+                PhaseProj::Yielding => {
+                    *this.attempt = this.attempt.saturating_add(1);
+                    this.phase.set(Phase::ReadyToStart);
+                }
                 PhaseProj::Done => panic!("async retry future polled after completion"),
             }
         }
