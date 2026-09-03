@@ -18,6 +18,9 @@ const SEEDED_NONCE_A: u64 = 7;
 const SEEDED_NONCE_B: u64 = 8;
 const SEEDED_ATTEMPT_COUNT: u32 = 8;
 const SEEDED_JITTER_SEED: u64 = 0x11;
+/// Wider than any headroom in this file, so a clamp under test is always
+/// exercised rather than merely satisfied.
+const WIDE_JITTER: Duration = Duration::from_millis(200);
 
 fn state(attempt: u32) -> relentless::RetryState {
     relentless::RetryState::for_attempt(attempt)
@@ -185,6 +188,42 @@ fn jitter_respects_a_cap_beneath_a_sum() {
         .jitter(wide_jitter);
 
     assert_jitter_then_cap_distribution(&strategy, floor, ceiling);
+}
+
+/// The other side of SPEC 3.3.8.1: a ceiling is only visible when everything
+/// between the cap and the jitter declares one. The shipped leaves do not, so
+/// a cap buried under a composite with an undeclared sibling is invisible and
+/// the jitter above it is unbounded by that cap. Pinned because it is a sharp
+/// edge — a reader who saw the cap survive a chain of two capped branches
+/// would reasonably expect this to hold too.
+#[test]
+fn a_cap_is_invisible_through_a_composite_with_an_undeclared_sibling() {
+    let uncapped_branch = wait::fixed(BASE_WAIT);
+    let chained = wait::fixed(BASE_WAIT)
+        .cap(WAIT_CAP)
+        .chain(uncapped_branch, ATTEMPTS / 2);
+    assert_eq!(
+        chained.max_delay(),
+        None,
+        "one undeclared branch leaves the chain's ceiling unknown"
+    );
+
+    let summed = wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT);
+    assert_eq!(
+        summed.max_delay(),
+        None,
+        "one undeclared addend leaves the sum's ceiling unknown"
+    );
+
+    let jittered = chained.jitter(WIDE_JITTER);
+    let worst = (1..=ATTEMPTS)
+        .map(|attempt| jittered.next_wait(&state(attempt)))
+        .max()
+        .expect("ATTEMPTS is non-zero");
+    assert!(
+        worst > WAIT_CAP,
+        "the buried cap does not bound the jitter above it: {worst:?}"
+    );
 }
 
 #[test]
