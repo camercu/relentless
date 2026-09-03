@@ -86,6 +86,10 @@ pub trait SyncClock: Clock {
     /// Waits for `dur`: blocks the thread on a real clock, or advances virtual
     /// time on a test clock. Afterwards, [`now()`](Clock::now) reflects the
     /// wait.
+    ///
+    /// The engine never calls this with [`Duration::ZERO`] — it skips the
+    /// clock entirely for a zero delay (SPEC 3.2.8) — so an implementation
+    /// counting calls here counts performed sleeps, not inter-attempt gaps.
     fn wait(&self, dur: Duration);
 }
 
@@ -112,6 +116,11 @@ pub trait AsyncClock: Clock {
     /// The wait must take effect when the future is *polled*, not when it is
     /// created: the engine may build a wait future and drop it unpolled (e.g.
     /// when cancelled), and an unpolled wait must not advance time.
+    ///
+    /// The engine never calls this with [`Duration::ZERO`]. It skips the clock
+    /// for a zero delay and yields cooperatively instead (SPEC 3.2.8), so an
+    /// implementation counting calls here counts performed sleeps, not
+    /// inter-attempt gaps.
     fn wait_async(&self, dur: Duration) -> Self::Wait;
 }
 
