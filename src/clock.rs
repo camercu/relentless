@@ -60,8 +60,11 @@ use crate::compat::Vec;
 /// through shared state, as [`VirtualClock`] does.
 ///
 /// Every real timer has a longest wait it can express, so that guarantee is
-/// bounded by the platform ceiling each adapter documents; beyond it a wait
-/// completes early rather than panicking or firing immediately.
+/// bounded by a platform ceiling: beyond it a wait may complete early rather
+/// than panicking or firing immediately. [`TokioClock`] documents where its
+/// own sits; the others inherit whatever their runtime provides and make no
+/// promise about it. Bound the strategy with `.cap(...)` if a run must not
+/// depend on where that ceiling falls.
 pub trait Clock {
     /// Returns the current time since the clock's origin.
     fn now(&self) -> Duration;
