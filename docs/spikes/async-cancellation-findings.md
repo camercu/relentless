@@ -78,7 +78,8 @@ enumeration missed.
 | `b-on-cancel` | B | directed | a separate `on_cancel` hook, distinct from `on_exit` |
 | `b-cleanroom` | B | clean-room | unanchored |
 
-Status: **1 of 6 reported** (`b-cleanroom`). Five still building.
+Status: **3 of 6 reported** (`b-cleanroom`, `a-cleanroom`, `b-on-cancel`).
+Three still building: `a-futures-core`, `a-self-fusing`, `b-drop-hook`.
 
 ## 3. Lessons captured
 
@@ -130,6 +131,82 @@ slot). Tier 1 judged unreachable — the crate cannot inspect a closure body.
 Self-declared limits: sugar, not new power; cannot fix already-written call
 sites; cannot tell the guard *why* the run ended; `RetryPolicy` still cannot
 carry a resource; a builder with `.holding()` is not `Clone`; async-only.
+
+### `a-cleanroom` — found a live defect in the crate, not just a design answer
+
+**Verdict it reached: the panic is correct and should stay; the crate's
+documented *remedy* for it was wrong.** `AsyncRetry::call` told callers to
+reach for `futures::FutureExt::fuse`. Verified independently against tokio
+1.47.1's macro source: `tokio::select!` contains **zero** occurrences of
+`Fused` and never consults `FusedFuture`, while a fused future returns
+`Poll::Pending` forever once resolved. The advice traded a panic that names the
+offending line for a task that hangs silently — in exactly the case the
+sentence singled out. **Fixed on main immediately** (`fix(docs): retract the
+.fuse() remedy`), along with the same wrong premise in this catalog's item 7.
+That is not a spike outcome to be gated; it was shipped guidance that was
+actively harmful.
+
+Second finding, independent of the first: `#[doc(hidden)]` on `AsyncRun` and
+`DropStats` meant `cargo doc` emitted no `struct.AsyncRun.html`, so **the
+`# Panics` section SPEC 15.6 claims lives there was never rendered**, and
+`cargo public-api --simplified` skips doc-hidden items, so the return types of
+the crate's async entry point sat outside the drift gate entirely. This is hard
+evidence for the third deferred design question (unhide the plumbing), which
+had been argued on aesthetics alone.
+
+Its design: an inherent `is_terminated()` on `AsyncRun`/`DropStats` reading the
+existing `Phase::Done`, no dependency, name- and semantics-compatible with a
+later `FusedFuture` impl. Zero existing tests modified; 5 added, including the
+crate's first `#[should_panic]` pinning SPEC 15.2.
+
+Rejected there, with reasons: self-fusing to `Pending` (a regression, and
+precisely what the bad `.fuse()` advice caused by accident — so already
+observed rather than merely predicted); `FusedFuture` behind `futures-core` (a
+non-answer for the motivating case, since tokio ignores it); cached re-`Ready`
+(needs `Clone` bounds the classifier model lacks); type-level prevention
+(unreachable — `Future::poll` cannot consume, and `impl Future for &mut F` is
+blanket).
+
+Disclosure it volunteered: a repo-wide grep printed matching lines from two
+forbidden files. It did not open them, itemized the lines it saw, and re-scoped
+later searches. It had already reached the tokio conclusion from tokio's own
+source, so nothing was anchored.
+
+### `b-on-cancel` — mechanism works, loses on cost, and left two gifts
+
+`demo_cancel` goes `fired=0 gauge=8` → `fired=8 gauge=0`. The defect is fixed
+8/8. All of R1-R6 hold, with one named breach: the panic guard needs
+`std::thread::panicking()`, so `no_std` plus an unwinding panic runtime still
+aborts — inherited identically by *any* Q-B mechanism that runs a hook from
+`Drop`.
+
+**It answers `b-cleanroom`'s kill rather than dying to it.** Guarding on
+`thread::panicking()` skips the hook during unwinding; child-process tests show
+the unguarded destructor dying by `SIGABRT` while the guarded one exits 101
+with the original panic intact. So "runs user code from `Drop`" is survivable
+under `std` — the abort is a property of the naive form, not of the mechanism.
+
+Why it still loses: `public-api.txt` goes 1538 → 1568, and of the 72 added
+lines **42 are pre-existing signatures rewritten to thread a `CX` parameter for
+zero new capability**; exactly one line is `on_cancel` itself. `AsyncRun`
+reaches 11 type parameters. Two of the repo's own nameability tests break. A
+42:1 churn-to-capability ratio is the finding, and it indicts the *type-state
+encoding* rather than the feature: with hooks held as one non-positional value
+instead of three positional parameters, a fourth event would cost ~30 new lines
+and none of the 42 rewritten ones.
+
+Two carry-forwards, both worth having whichever mechanism wins:
+
+1. A `Cancelled { attempt, elapsed }` payload with no verdict, no outcome and
+   no `Exit` type parameters **dissolves R7 by construction** — `Exit`'s
+   contract survives untouched and the SPEC changes become purely additive
+   (8.3, 8.7, 8.8, 9.1 all stay true). Any Q-B design should adopt this shape.
+2. It found a **pre-existing latent defect in this run's own zero-delay yield**:
+   the attempt counter advanced before `Pending` on the zero-delay path and
+   after the sleep on the other, so the counter meant two different things at a
+   poll boundary. Unobservable today, a trap for anything that later reports
+   state from a drop. **Landed independently on main** as
+   `refactor(async): park a zero-delay yield in its own phase`.
 
 ## 4. Verdict
 
