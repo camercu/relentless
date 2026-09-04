@@ -123,7 +123,7 @@ fn assert_jitter_then_cap_distribution(strategy: &impl Wait, floor: Duration, ce
 #[test]
 fn jitter_respects_cap_when_cap_called_before_jitter() {
     // Cap first, jitter second: the cap survives because `WaitCapped` reports
-    // its ceiling through `Wait::max_delay` and the jitter decorator clamps to
+    // its ceiling through `Wait::imposed_cap` and the jitter decorator clamps to
     // it. Nothing here depends on which method name resolution picked.
     assert_jitter_then_cap_distribution(
         &wait::fixed(BASE_WAIT)
@@ -192,13 +192,17 @@ fn composing_does_not_carry_a_branch_cap_outward() {
         .cap(WAIT_CAP)
         .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1);
     assert_eq!(
-        chained.max_delay(),
+        chained.imposed_cap(),
         None,
         "a chain imposes no cap of its own"
     );
 
     let summed = wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP);
-    assert_eq!(summed.max_delay(), None, "a sum imposes no cap of its own");
+    assert_eq!(
+        summed.imposed_cap(),
+        None,
+        "a sum imposes no cap of its own"
+    );
 
     // Capping the composite is what bounds it, and that still normalizes
     // against a jitter above it exactly as SPEC 3.3.8 says.
@@ -214,17 +218,17 @@ fn composing_does_not_carry_a_branch_cap_outward() {
 
 /// Two forwarding shims that every other test reaches only indirectly, so a
 /// mutation replacing either body with `None` survived the whole suite:
-/// `max_delay` on a `&W`, and on a `Jittered` asked for its own ceiling rather
+/// `imposed_cap` on a `&W`, and on a `Jittered` asked for its own cap rather
 /// than consulting its inner one. Both matter when a capped strategy is
 /// borrowed or nested a level deeper than the cap-forwarding family covers.
 #[test]
-fn max_delay_survives_borrowing_and_nesting() {
+fn imposed_cap_survives_borrowing_and_nesting() {
     // Through a generic bound, so `W` really is `&WaitCapped<_>` and the
-    // blanket `impl Wait for &W` is what answers. Calling `.max_delay()` on a
+    // blanket `impl Wait for &W` is what answers. Calling `.imposed_cap()` on a
     // `&capped` binding auto-derefs straight to the inherent impl and proves
     // nothing about the forwarding shim.
     fn ceiling_of<W: Wait>(strategy: W) -> Option<Duration> {
-        strategy.max_delay()
+        strategy.imposed_cap()
     }
 
     let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
@@ -236,7 +240,7 @@ fn max_delay_survives_borrowing_and_nesting() {
 
     let jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
     assert_eq!(
-        jittered.max_delay(),
+        jittered.imposed_cap(),
         Some(WAIT_CAP),
         "a jittered strategy carries the ceiling it clamps to"
     );

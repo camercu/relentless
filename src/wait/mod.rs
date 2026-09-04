@@ -49,31 +49,26 @@ pub trait Wait {
     /// Returns the duration to sleep before the next retry attempt.
     fn next_wait(&self, state: &RetryState) -> Duration;
 
-    /// Returns a ceiling **imposed** on this strategy, if one has been.
+    /// Returns the cap [`cap`](Self::cap) imposed on this strategy, if any.
     ///
-    /// This reports a deliberate bound — what [`cap`](Self::cap) creates — and
-    /// not merely the largest value the strategy happens to produce. The
-    /// distinction is the whole contract: decorators that can inflate their
-    /// inner strategy's output, [`jitter`](Self::jitter) above all, clamp
-    /// themselves to whatever this returns, so a `.cap(max)` stays binding in
-    /// a generic function, behind `Box<dyn Wait>`, or under UFCS, where the
-    /// concrete type is not visible and no inherent method can intervene
-    /// (SPEC 3.3.8).
+    /// This is how a cap survives being wrapped. Decorators that can inflate
+    /// their inner strategy's output — [`jitter`](Self::jitter) above all —
+    /// clamp themselves to whatever this reports, so `.cap(max).jitter(j)`
+    /// stays bounded in a generic function, behind `Box<dyn Wait>`, or under
+    /// UFCS, where the concrete type is not visible and no inherent method can
+    /// intervene (SPEC 3.3.8). Behind a `dyn Wait` the vtable is the only
+    /// channel that survives, which is why this lives on the trait.
     ///
-    /// `None` means "no ceiling imposed" and is the correct answer for every
-    /// undecorated strategy, including a deterministic one. Do **not** report
-    /// a strategy's own output here: making [`fixed`]
-    /// return `Some(d)` looks like free precision and instead clamps
-    /// `wait::fixed(d).jitter(j)` to `d`, silently deleting the jitter. The
-    /// suite fails loudly if you try it.
+    /// `None` means no cap, and is correct for every strategy that has not been
+    /// capped. It asks what was *imposed*, not what the strategy happens to
+    /// return: `wait::fixed(d)` reports `None`, because `d` is its interval and
+    /// nothing bounded it.
     ///
-    /// A cap bounds the strategy it encloses, and nothing further. Composing
-    /// with [`chain`](Self::chain) or [`add`](Self::add) builds a *new*
-    /// strategy that no cap was applied to, so the composites report `None`
-    /// even when a branch is capped — cap the composite itself if you want a
-    /// bound over it. Reporting a ceiling above a genuinely imposed one is
-    /// harmless; reporting one below it silently shortens delays.
-    fn max_delay(&self) -> Option<Duration> {
+    /// Override it only in a decorator that imposes or forwards a cap. A cap
+    /// bounds the strategy it encloses and nothing further, so
+    /// [`chain`](Self::chain) and [`add`](Self::add) report `None` even when a
+    /// branch is capped — cap the composite to bound the composite.
+    fn imposed_cap(&self) -> Option<Duration> {
         None
     }
 
@@ -164,8 +159,8 @@ where
         (**self).next_wait(state)
     }
 
-    fn max_delay(&self) -> Option<Duration> {
-        (**self).max_delay()
+    fn imposed_cap(&self) -> Option<Duration> {
+        (**self).imposed_cap()
     }
 }
 
@@ -176,7 +171,7 @@ impl<W: Wait + ?Sized> Wait for &W {
         (**self).next_wait(state)
     }
 
-    fn max_delay(&self) -> Option<Duration> {
-        (**self).max_delay()
+    fn imposed_cap(&self) -> Option<Duration> {
+        (**self).imposed_cap()
     }
 }

@@ -34,8 +34,8 @@ impl<W: Wait> Wait for WaitCapped<W> {
         self.inner.next_wait(state).min(self.max)
     }
 
-    fn max_delay(&self) -> Option<Duration> {
-        Some(self.inner.max_delay().unwrap_or(self.max).min(self.max))
+    fn imposed_cap(&self) -> Option<Duration> {
+        Some(self.inner.imposed_cap().unwrap_or(self.max).min(self.max))
     }
 }
 

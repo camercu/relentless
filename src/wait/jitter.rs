@@ -277,7 +277,7 @@ impl<W: Wait> Wait for Jittered<W> {
         // A cap anywhere beneath this decorator stays the final word, whatever
         // syntax composed the two (SPEC 3.3.8). Only additive and decorrelated
         // jitter can exceed the base; for the others this is a no-op.
-        match self.inner.max_delay() {
+        match self.inner.imposed_cap() {
             Some(ceiling) => jittered.min(ceiling),
             None => jittered,
         }
@@ -287,8 +287,8 @@ impl<W: Wait> Wait for Jittered<W> {
     /// clamps to it above — additive and decorrelated jitter can both exceed
     /// their base, so without that clamp this would report a bound the
     /// strategy does not honour.
-    fn max_delay(&self) -> Option<Duration> {
-        self.inner.max_delay()
+    fn imposed_cap(&self) -> Option<Duration> {
+        self.inner.imposed_cap()
     }
 }
 
