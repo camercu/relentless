@@ -270,22 +270,16 @@ per decorator, because only additive jitter can breach the cap:
   jitter *after* the cap would otherwise add `random(0, max_jitter)` on top of a
   value already at `max`.
 
-  The guarantee holds however the *cap and the jitter* are composed — method-call
+  The guarantee holds however the *cap and the jitter* are spelled — method-call
   syntax, a generic `W: Wait` bound, `Box<dyn Wait>`, UFCS — because it is
-  carried by the trait, not by name resolution. `Wait::max_delay` reports a
-  strategy's ceiling, `.cap(max)` reports `max`, and every jitter decorator
-  clamps its draw to whatever ceiling its inner strategy reports.
+  carried by the trait, not by name resolution. `Wait::max_delay` reports the
+  ceiling a `.cap(max)` imposed, and every jitter decorator clamps its draw to
+  whatever ceiling its inner strategy reports.
 
-  **3.3.8.1** The guarantee covers a cap the jitter can see, and a ceiling is
-  only visible when *everything* between the two declares one. `.chain(a, b)`
-  reports the higher of its branches and `+` reports the saturating sum, each
-  only when both sides have a ceiling; the shipped leaves
-  (`fixed`/`linear`/`exponential`) and any hand-written strategy report `None`,
-  meaning "no ceiling known". So a cap buried under a composite with an
-  undeclared sibling — `.cap(max).chain(wait::fixed(d), n).jitter(j)` — is
-  invisible to that jitter, and the jitter is unbounded by it. This is not the
-  `.cap(max).jitter(j)` shape 3.3.8 normalizes. Put `.cap(max)` outermost when
-  a bound must hold over a composite; a cap is only a cap for what it encloses.
+  **3.3.8.1** A cap bounds the strategy it encloses. `.chain(a, b)` and `+`
+  build a *new* strategy that no cap was applied to, so they impose no ceiling
+  of their own even when a branch is capped; cap the composite itself to bound
+  the composite.
 - **Full** `.full_jitter()` and **equal** `.equal_jitter()` never exceed the
   base (their outputs are `random(0, base)` and `base/2 + random(0, base/2)`),
   so applying them after a cap can never breach it. They apply in the written

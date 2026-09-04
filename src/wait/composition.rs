@@ -77,17 +77,6 @@ impl<A, B> WaitCombine<A, B> {
 }
 
 impl<A: Wait, B: Wait> Wait for WaitCombine<A, B> {
-    fn max_delay(&self) -> Option<Duration> {
-        // A sum is bounded only when both halves are, and then by their sum.
-        // Reporting a ceiling higher than reality is harmless; reporting one
-        // that does not hold would silently shorten delays.
-        Some(
-            self.left
-                .max_delay()?
-                .saturating_add(self.right.max_delay()?),
-        )
-    }
-
     fn next_wait(&self, state: &RetryState) -> Duration {
         let left = self.left.next_wait(state);
         let right = self.right.next_wait(state);
@@ -140,12 +129,6 @@ impl<A, B> WaitChain<A, B> {
 }
 
 impl<A: Wait, B: Wait> Wait for WaitChain<A, B> {
-    fn max_delay(&self) -> Option<Duration> {
-        // Exactly one branch runs per attempt, so the ceiling is whichever is
-        // higher — and only if both branches have one.
-        Some(self.first.max_delay()?.max(self.second.max_delay()?))
-    }
-
     fn next_wait(&self, state: &RetryState) -> Duration {
         if state.attempt <= self.after {
             self.first.next_wait(state)

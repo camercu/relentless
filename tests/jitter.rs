@@ -183,70 +183,32 @@ fn jitter_respects_cap_through_a_boxed_strategy() {
     assert_jitter_then_cap_distribution(&jittered, BASE_WAIT, WAIT_CAP);
 }
 
-/// A cap does not stop being a cap because a composite sits between it and the
-/// jitter. `WaitChain` and `WaitCombine` must report a ceiling too, or the
-/// guarantee holds only for the shapes someone remembered to cover.
+/// A cap bounds the strategy it encloses. `.chain()` and `+` build a new
+/// strategy that no cap was applied to, so composing does not carry a branch's
+/// cap outward — cap the composite to bound the composite.
 #[test]
-fn jitter_respects_a_cap_beneath_a_chain() {
-    let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
-    let strategy = capped
-        .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1)
-        .jitter(MAX_JITTER)
-        .with_seed(jitter_seed());
-
-    assert_jitter_then_cap_distribution(&strategy, BASE_WAIT, WAIT_CAP);
-}
-
-#[test]
-fn jitter_respects_a_cap_beneath_a_sum() {
-    // Both halves are capped, so the sum's floor and ceiling are the doubled
-    // ones. The jitter must be able to overshoot that ceiling, or the clamp
-    // would pass by never being exercised — the headroom is `WAIT_CAP * 2 -
-    // BASE_WAIT * 2`, so a jitter wider than that is what makes the assertion
-    // bite.
-    let floor = BASE_WAIT * 2;
-    let ceiling = WAIT_CAP * 2;
-    let wide_jitter = ceiling.saturating_sub(floor) * 4;
-    let strategy = (wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP))
-        .jitter(wide_jitter)
-        .with_seed(jitter_seed());
-
-    assert_jitter_then_cap_distribution(&strategy, floor, ceiling);
-}
-
-/// The other side of SPEC 3.3.8.1: a ceiling is only visible when everything
-/// between the cap and the jitter declares one. The shipped leaves do not, so
-/// a cap buried under a composite with an undeclared sibling is invisible and
-/// the jitter above it is unbounded by that cap. Pinned because it is a sharp
-/// edge — a reader who saw the cap survive a chain of two capped branches
-/// would reasonably expect this to hold too.
-#[test]
-fn a_cap_is_invisible_through_a_composite_with_an_undeclared_sibling() {
-    let uncapped_branch = wait::fixed(BASE_WAIT);
+fn composing_does_not_carry_a_branch_cap_outward() {
     let chained = wait::fixed(BASE_WAIT)
         .cap(WAIT_CAP)
-        .chain(uncapped_branch, ATTEMPTS / 2);
+        .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1);
     assert_eq!(
         chained.max_delay(),
         None,
-        "one undeclared branch leaves the chain's ceiling unknown"
+        "a chain imposes no cap of its own"
     );
 
-    let summed = wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT);
-    assert_eq!(
-        summed.max_delay(),
-        None,
-        "one undeclared addend leaves the sum's ceiling unknown"
-    );
+    let summed = wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP);
+    assert_eq!(summed.max_delay(), None, "a sum imposes no cap of its own");
 
-    let jittered = chained.jitter(WIDE_JITTER);
-    let worst = (1..=ATTEMPTS)
-        .map(|attempt| jittered.next_wait(&state(attempt)))
-        .max()
-        .expect("ATTEMPTS is non-zero");
-    assert!(
-        worst > WAIT_CAP,
-        "the buried cap does not bound the jitter above it: {worst:?}"
+    // Capping the composite is what bounds it, and that still normalizes
+    // against a jitter above it exactly as SPEC 3.3.8 says.
+    assert_jitter_then_cap_distribution(
+        &chained
+            .cap(WAIT_CAP)
+            .jitter(MAX_JITTER)
+            .with_seed(jitter_seed()),
+        BASE_WAIT,
+        WAIT_CAP,
     );
 }
 

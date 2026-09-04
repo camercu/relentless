@@ -67,8 +67,12 @@ pub trait Wait {
     /// `wait::fixed(d).jitter(j)` to `d`, silently deleting the jitter. The
     /// suite fails loudly if you try it.
     ///
-    /// Reporting a ceiling above a genuinely imposed one is harmless;
-    /// reporting one below it silently shortens delays.
+    /// A cap bounds the strategy it encloses, and nothing further. Composing
+    /// with [`chain`](Self::chain) or [`add`](Self::add) builds a *new*
+    /// strategy that no cap was applied to, so the composites report `None`
+    /// even when a branch is capped — cap the composite itself if you want a
+    /// bound over it. Reporting a ceiling above a genuinely imposed one is
+    /// harmless; reporting one below it silently shortens delays.
     fn max_delay(&self) -> Option<Duration> {
         None
     }
