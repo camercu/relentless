@@ -273,22 +273,7 @@ impl<W: Clone> Clone for Jittered<W> {
 impl<W: Wait> Wait for Jittered<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         let base = self.inner.next_wait(state);
-        let jittered = self.jitter_from(base, state);
-        // A cap anywhere beneath this decorator stays the final word, whatever
-        // syntax composed the two (SPEC 3.3.8). Only additive and decorrelated
-        // jitter can exceed the base; for the others this is a no-op.
-        match self.inner.imposed_cap() {
-            Some(ceiling) => jittered.min(ceiling),
-            None => jittered,
-        }
-    }
-
-    /// Forwards the inner ceiling, which holds only because `next_wait`
-    /// clamps to it above — additive and decorrelated jitter can both exceed
-    /// their base, so without that clamp this would report a bound the
-    /// strategy does not honour.
-    fn imposed_cap(&self) -> Option<Duration> {
-        self.inner.imposed_cap()
+        self.jitter_from(base, state)
     }
 }
 

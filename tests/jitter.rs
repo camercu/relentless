@@ -1,8 +1,10 @@
 //! Tests for additive jitter on wait strategies.
 //!
-//! Verifies that jitter stays within [base, base+max], that `.cap()` order does not
-//! affect the cap invariant, and that each policy invocation and each clone produces
-//! a distinct sequence (decorrelation). Seeded tests confirm reproducibility.
+//! Verifies that jitter stays within [base, base+max], that `.cap()` and
+//! `.jitter()` compose in the order written (and that the order is what decides
+//! whether jitter survives saturation), and that each policy invocation and each
+//! clone produces a distinct sequence (decorrelation). Seeded tests confirm
+//! reproducibility.
 
 use core::cell::{Cell, RefCell};
 use core::time::Duration;
@@ -19,9 +21,6 @@ const SEEDED_NONCE_A: u64 = 7;
 const SEEDED_NONCE_B: u64 = 8;
 const SEEDED_ATTEMPT_COUNT: u32 = 8;
 const SEEDED_JITTER_SEED: u64 = 0x11;
-/// Wider than any headroom in this file, so a clamp under test is always
-/// exercised rather than merely satisfied.
-const WIDE_JITTER: Duration = Duration::from_millis(200);
 
 fn state(attempt: u32) -> relentless::RetryState {
     relentless::RetryState::for_attempt(attempt)
@@ -74,12 +73,11 @@ fn jitter_additive_stays_within_base_plus_max() {
     }
 }
 
-// BASE_WAIT (20) < WAIT_CAP (25) < BASE_WAIT + MAX_JITTER (30): jitter applied
-// to the base can push the value above the cap, so a capped pipeline both
-// stays within [BASE_WAIT, WAIT_CAP] and reaches WAIT_CAP whenever the draw
-// exceeds the 5ms headroom. Asserting the value *hits* the cap proves jitter is
-// genuinely applied to the pre-cap base and clamped — a jitter stuck at zero,
-// or jitter applied on top of an already-capped value, would fail these.
+// BASE_WAIT (20) < WAIT_CAP (25) < BASE_WAIT + MAX_JITTER (30). The 5ms of
+// headroom between the base and the cap is what makes both orderings
+// observable: jitter-then-cap has draws to clamp, and cap-then-jitter has room
+// to climb past WAIT_CAP. Equal values would make the two orderings agree by
+// accident and the tests below would pass without distinguishing anything.
 const ATTEMPTS: u32 = 64;
 
 /// Seed for the cap-forwarding draws below.
@@ -95,6 +93,13 @@ fn jitter_seed() -> u64 {
         .unwrap_or(SEEDED_JITTER_SEED)
 }
 
+/// The delays a strategy produces over [`ATTEMPTS`] attempts.
+fn delays_of(strategy: &impl Wait) -> Vec<Duration> {
+    (1..=ATTEMPTS)
+        .map(|attempt| strategy.next_wait(&state(attempt)))
+        .collect()
+}
+
 /// Asserts a jitter-then-cap distribution: every delay inside
 /// `[floor, ceiling]`, the ceiling actually reached (so the clamp is
 /// exercised, not merely satisfied), and not every delay pinned there (so
@@ -102,9 +107,7 @@ fn jitter_seed() -> u64 {
 #[track_caller]
 fn assert_jitter_then_cap_distribution(strategy: &impl Wait, floor: Duration, ceiling: Duration) {
     let seed = jitter_seed();
-    let delays: Vec<Duration> = (1..=ATTEMPTS)
-        .map(|attempt| strategy.next_wait(&state(attempt)))
-        .collect();
+    let delays = delays_of(strategy);
 
     assert!(
         delays.iter().all(|&d| (floor..=ceiling).contains(&d)),
@@ -120,23 +123,10 @@ fn assert_jitter_then_cap_distribution(strategy: &impl Wait, floor: Duration, ce
     );
 }
 
+/// Jitter last bounds the total: every draw is clamped to the cap, and the
+/// ones that would have exceeded it pile up exactly there.
 #[test]
-fn jitter_respects_cap_when_cap_called_before_jitter() {
-    // Cap first, jitter second: the cap survives because `WaitCapped` reports
-    // its ceiling through `Wait::imposed_cap` and the jitter decorator clamps to
-    // it. Nothing here depends on which method name resolution picked.
-    assert_jitter_then_cap_distribution(
-        &wait::fixed(BASE_WAIT)
-            .cap(WAIT_CAP)
-            .jitter(MAX_JITTER)
-            .with_seed(jitter_seed()),
-        BASE_WAIT,
-        WAIT_CAP,
-    );
-}
-
-#[test]
-fn jitter_respects_cap_when_cap_called_after_jitter() {
+fn jitter_then_cap_bounds_the_total() {
     assert_jitter_then_cap_distribution(
         &wait::fixed(BASE_WAIT)
             .jitter(MAX_JITTER)
@@ -147,120 +137,94 @@ fn jitter_respects_cap_when_cap_called_after_jitter() {
     );
 }
 
-/// Three spellings that do not see the concrete type: extracting a generic
-/// helper, boxing for storage, or writing the call out in full. Each is a
-/// refactoring a consumer performs on working code, and the cap must survive
-/// all of them — nothing about the guarantee may depend on the caller's syntax.
+/// Cap first, jitter last: the cap bounds the base and the jitter spreads on
+/// top of it, so delays run to `cap + max_jitter`. This is the ordering that
+/// keeps jitter alive once growth has saturated the cap — see
+/// `jitter_after_a_cap_still_spreads_at_saturation`.
 #[test]
-fn jitter_respects_cap_through_a_generic_bound() {
+fn cap_then_jitter_spreads_above_the_cap() {
+    let strategy = wait::fixed(BASE_WAIT)
+        .cap(WAIT_CAP)
+        .jitter(MAX_JITTER)
+        .with_seed(jitter_seed());
+    let delays = delays_of(&strategy);
+    let ceiling = BASE_WAIT.saturating_add(MAX_JITTER);
+
+    assert!(
+        delays.iter().all(|&d| (BASE_WAIT..=ceiling).contains(&d)),
+        "the jitter adds on top of the capped base: {delays:?}"
+    );
+    assert!(
+        delays.iter().any(|&d| d > WAIT_CAP),
+        "cap-then-jitter must be free to exceed the cap: {delays:?}"
+    );
+}
+
+/// The reason the ordering matters. Once growth has saturated the cap, capping
+/// *after* additive jitter pins every client at exactly `cap` — a thundering
+/// herd, at precisely the point a sustained outage has everyone retrying
+/// together. Capping first keeps the spread.
+#[test]
+fn jitter_after_a_cap_still_spreads_at_saturation() {
+    // A base far above the cap, so every draw is in the saturated regime.
+    let saturated = wait::fixed(WAIT_CAP * 4);
+
+    let capped_last = saturated.cap(WAIT_CAP).jitter(MAX_JITTER);
+    let capped_last = capped_last.with_seed(jitter_seed());
+    let jittered_last = wait::fixed(WAIT_CAP * 4)
+        .jitter(MAX_JITTER)
+        .with_seed(jitter_seed())
+        .cap(WAIT_CAP);
+
+    let spread = delays_of(&capped_last);
+    let pinned = delays_of(&jittered_last);
+
+    assert!(
+        spread
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 1,
+        "cap-then-jitter must still vary at saturation: {spread:?}"
+    );
+    assert!(
+        pinned.iter().all(|&d| d == WAIT_CAP),
+        "jitter-then-cap collapses to the cap at saturation: {pinned:?}"
+    );
+}
+
+/// Ordering is the entire mechanism, so nothing may rewrite a composition based
+/// on the types involved. These four spellings of the same expression — direct,
+/// through a generic bound, through `Box<dyn Wait>`, and UFCS — must agree
+/// exactly, which is what stops a consumer's refactor from changing behavior.
+#[test]
+fn cap_then_jitter_is_identical_however_it_is_spelled() {
     fn add_jitter<W: Wait>(inner: W, max_jitter: Duration) -> Jittered<W> {
         inner.jitter(max_jitter)
     }
 
-    assert_jitter_then_cap_distribution(
-        &add_jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
-        BASE_WAIT,
-        WAIT_CAP,
-    );
-}
-
-#[test]
-fn jitter_respects_cap_through_universal_function_call_syntax() {
-    assert_jitter_then_cap_distribution(
-        &Wait::jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
-        BASE_WAIT,
-        WAIT_CAP,
-    );
-}
-
-/// `Box<dyn Wait>` needs the `alloc` feature for the blanket `Wait` impl that
-/// makes the box itself a strategy.
-#[cfg(feature = "alloc")]
-#[test]
-fn jitter_respects_cap_through_a_boxed_strategy() {
-    let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE_WAIT).cap(WAIT_CAP));
-    let jittered = boxed.jitter(MAX_JITTER).with_seed(jitter_seed());
-    assert_jitter_then_cap_distribution(&jittered, BASE_WAIT, WAIT_CAP);
-}
-
-/// A cap bounds the strategy it encloses. `.chain()` and `+` build a new
-/// strategy that no cap was applied to, so composing does not carry a branch's
-/// cap outward — cap the composite to bound the composite.
-#[test]
-fn composing_does_not_carry_a_branch_cap_outward() {
-    let chained = wait::fixed(BASE_WAIT)
-        .cap(WAIT_CAP)
-        .chain(wait::fixed(BASE_WAIT).cap(WAIT_CAP), 1);
-    assert_eq!(
-        chained.imposed_cap(),
-        None,
-        "a chain imposes no cap of its own"
-    );
-
-    let summed = wait::fixed(BASE_WAIT).cap(WAIT_CAP) + wait::fixed(BASE_WAIT).cap(WAIT_CAP);
-    assert_eq!(
-        summed.imposed_cap(),
-        None,
-        "a sum imposes no cap of its own"
-    );
-
-    // Capping the composite is what bounds it, and that still normalizes
-    // against a jitter above it exactly as SPEC 3.3.8 says.
-    assert_jitter_then_cap_distribution(
-        &chained
+    let direct = delays_of(
+        &wait::fixed(BASE_WAIT)
             .cap(WAIT_CAP)
             .jitter(MAX_JITTER)
             .with_seed(jitter_seed()),
-        BASE_WAIT,
-        WAIT_CAP,
     );
-}
+    let generic = delays_of(
+        &add_jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
+    );
+    let ufcs = delays_of(
+        &Wait::jitter(wait::fixed(BASE_WAIT).cap(WAIT_CAP), MAX_JITTER).with_seed(jitter_seed()),
+    );
 
-/// Two forwarding shims that every other test reaches only indirectly, so a
-/// mutation replacing either body with `None` survived the whole suite:
-/// `imposed_cap` on a `&W`, and on a `Jittered` asked for its own cap rather
-/// than consulting its inner one. Both matter when a capped strategy is
-/// borrowed or nested a level deeper than the cap-forwarding family covers.
-#[test]
-fn imposed_cap_survives_borrowing_and_nesting() {
-    // Through a generic bound, so `W` really is `&WaitCapped<_>` and the
-    // blanket `impl Wait for &W` is what answers. Calling `.imposed_cap()` on a
-    // `&capped` binding auto-derefs straight to the inherent impl and proves
-    // nothing about the forwarding shim.
-    fn ceiling_of<W: Wait>(strategy: W) -> Option<Duration> {
-        strategy.imposed_cap()
+    assert_eq!(direct, generic, "a generic bound must not change behavior");
+    assert_eq!(direct, ufcs, "UFCS must not change behavior");
+
+    #[cfg(feature = "alloc")]
+    {
+        let boxed: Box<dyn Wait> = Box::new(wait::fixed(BASE_WAIT).cap(WAIT_CAP));
+        let boxed = delays_of(&boxed.jitter(MAX_JITTER).with_seed(jitter_seed()));
+        assert_eq!(direct, boxed, "boxing must not change behavior");
     }
-
-    let capped = wait::fixed(BASE_WAIT).cap(WAIT_CAP);
-    assert_eq!(
-        ceiling_of(&capped),
-        Some(WAIT_CAP),
-        "a shared reference must forward the ceiling it borrows"
-    );
-
-    let jittered = wait::fixed(BASE_WAIT).cap(WAIT_CAP).jitter(MAX_JITTER);
-    assert_eq!(
-        jittered.imposed_cap(),
-        Some(WAIT_CAP),
-        "a jittered strategy carries the ceiling it clamps to"
-    );
-
-    // Nested one level deeper: the outer jitter must see the inner one's
-    // ceiling, or the cap stops binding as decorators stack up. Seeded,
-    // because a wide outer draw saturates at the ceiling often enough that an
-    // unseeded distributional assertion would be answering a coin toss.
-    let nested = jittered.jitter(WIDE_JITTER).with_seed(jitter_seed());
-    let delays: Vec<Duration> = (1..=ATTEMPTS)
-        .map(|attempt| nested.next_wait(&state(attempt)))
-        .collect();
-    assert!(
-        delays.iter().all(|&d| (BASE_WAIT..=WAIT_CAP).contains(&d)),
-        "stacking decorators must not lift the delay past the cap: {delays:?}"
-    );
-    assert!(
-        delays.contains(&WAIT_CAP),
-        "the outer jitter must reach the ceiling and be clamped: {delays:?}"
-    );
 }
 
 #[test]

@@ -49,29 +49,6 @@ pub trait Wait {
     /// Returns the duration to sleep before the next retry attempt.
     fn next_wait(&self, state: &RetryState) -> Duration;
 
-    /// Returns the cap [`cap`](Self::cap) imposed on this strategy, if any.
-    ///
-    /// This is how a cap survives being wrapped. Decorators that can inflate
-    /// their inner strategy's output — [`jitter`](Self::jitter) above all —
-    /// clamp themselves to whatever this reports, so `.cap(max).jitter(j)`
-    /// stays bounded in a generic function, behind `Box<dyn Wait>`, or under
-    /// UFCS, where the concrete type is not visible and no inherent method can
-    /// intervene (SPEC 3.3.8). Behind a `dyn Wait` the vtable is the only
-    /// channel that survives, which is why this lives on the trait.
-    ///
-    /// `None` means no cap, and is correct for every strategy that has not been
-    /// capped. It asks what was *imposed*, not what the strategy happens to
-    /// return: `wait::fixed(d)` reports `None`, because `d` is its interval and
-    /// nothing bounded it.
-    ///
-    /// Override it only in a decorator that imposes or forwards a cap. A cap
-    /// bounds the strategy it encloses and nothing further, so
-    /// [`chain`](Self::chain) and [`add`](Self::add) report `None` even when a
-    /// branch is capped — cap the composite to bound the composite.
-    fn imposed_cap(&self) -> Option<Duration> {
-        None
-    }
-
     /// Clamps the returned duration to at most `max`.
     #[must_use]
     fn cap(self, max: Duration) -> WaitCapped<Self>
@@ -158,10 +135,6 @@ where
     fn next_wait(&self, state: &RetryState) -> Duration {
         (**self).next_wait(state)
     }
-
-    fn imposed_cap(&self) -> Option<Duration> {
-        (**self).imposed_cap()
-    }
 }
 
 /// A shared reference to a wait strategy is itself one, so a builder can borrow
@@ -169,9 +142,5 @@ where
 impl<W: Wait + ?Sized> Wait for &W {
     fn next_wait(&self, state: &RetryState) -> Duration {
         (**self).next_wait(state)
-    }
-
-    fn imposed_cap(&self) -> Option<Duration> {
-        (**self).imposed_cap()
     }
 }

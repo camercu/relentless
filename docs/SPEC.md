@@ -252,38 +252,39 @@ nonce. `.with_nonce(n)` decorrelates same-seed instances; call it after
 `.with_seed`, which resets the nonce. Cloning still assigns a fresh nonce
 (3.3.4), so a clone diverges from its seeded original.
 
-**3.3.8** In the natural authoring order — a jitter decorator followed by
-`.cap(...)` — jitter is applied to the base and the result is then capped:
+**3.3.8** Decorators apply in the order written. Each wraps the one before it
+and sees only that strategy's output, so `.cap(max)` bounds what it encloses
+and nothing outside it. The two orderings are different strategies:
 
 ```rust
-// Jitter applied to base, then capped:
+// Jitter the base, then bound the total: delays are <= 30s.
 wait::exponential(Duration::from_millis(100))
-    .full_jitter()
+    .jitter(Duration::from_secs(5))
     .cap(Duration::from_secs(30))
+
+// Bound the growth, then spread on top: delays are <= 35s.
+wait::exponential(Duration::from_millis(100))
+    .cap(Duration::from_secs(30))
+    .jitter(Duration::from_secs(5))
 ```
 
-The reversed order — `.cap(...)` followed by a jitter decorator — is treated
-per decorator, because only additive jitter can breach the cap:
+**3.3.8.1** Prefer the second form when the point of the jitter is to
+desynchronise clients. Capping *after* additive jitter pins the delay at `max`
+for every attempt whose base has reached `max` — with exponential growth that is
+every attempt past the first few, so the jitter stops spreading anything at
+exactly the point a sustained outage has every client retrying together. Capping
+*first* keeps the spread: the delay is `max + random(0, j)`.
 
-- **Additive** `.jitter(max_jitter)` cannot breach the cap: `.cap(max).jitter(j)`
-  yields the same distribution as `.jitter(j).cap(max)`. Applying additive
-  jitter *after* the cap would otherwise add `random(0, max_jitter)` on top of a
-  value already at `max`.
+**3.3.8.2** This applies only to additive `.jitter(j)`, which can only push a
+value up. `.full_jitter()` and `.equal_jitter()` draw at or below the base
+(`random(0, base)` and `base/2 + random(0, base/2)`), so a preceding cap bounds
+them without collapsing them, and `.cap(max).full_jitter()` spreads over
+`[0, max]`.
 
-  The guarantee holds however the *cap and the jitter* are spelled — method-call
-  syntax, a generic `W: Wait` bound, `Box<dyn Wait>`, UFCS — because it is
-  carried by the trait, not by name resolution. `Wait::imposed_cap` reports the
-  cap a `.cap(max)` imposed, and every jitter decorator clamps its draw to
-  whatever cap its inner strategy reports.
-
-  **3.3.8.1** A cap bounds the strategy it encloses. `.chain(a, b)` and `+`
-  build a *new* strategy that no cap was applied to, so they impose no cap of
-  their own even when a branch is capped; cap the composite itself to bound the
-  composite.
-- **Full** `.full_jitter()` and **equal** `.equal_jitter()` never exceed the
-  base (their outputs are `random(0, base)` and `base/2 + random(0, base/2)`),
-  so applying them after a cap can never breach it. They apply in the written
-  order: `.cap(max).full_jitter()` jitters the already-capped value.
+**3.3.8.3** Ordering is the whole mechanism, so it behaves identically however
+the call is spelled — method-call syntax, a generic `W: Wait` bound,
+`Box<dyn Wait>`, or UFCS. Nothing rewrites a composition based on the types
+involved.
 
 ### 3.4 Classifier
 

@@ -33,10 +33,6 @@ impl<W: Wait> Wait for WaitCapped<W> {
     fn next_wait(&self, state: &RetryState) -> Duration {
         self.inner.next_wait(state).min(self.max)
     }
-
-    fn imposed_cap(&self) -> Option<Duration> {
-        Some(self.inner.imposed_cap().unwrap_or(self.max).min(self.max))
-    }
 }
 
 /// Composite strategy that returns the **sum** of two strategies' outputs.
