@@ -78,8 +78,27 @@ enumeration missed.
 | `b-on-cancel` | B | directed | a separate `on_cancel` hook, distinct from `on_exit` |
 | `b-cleanroom` | B | clean-room | unanchored |
 
-Status: **3 of 6 reported** (`b-cleanroom`, `a-cleanroom`, `b-on-cancel`).
-Three still building: `a-futures-core`, `a-self-fusing`, `b-drop-hook`.
+Status: **3 of 6 reported** — `b-cleanroom`, `a-cleanroom`, `b-on-cancel`.
+
+`a-futures-core`, `a-self-fusing` and `b-drop-hook` never produced a report.
+Each was attempted twice and died to an infrastructure limit both times: the
+first round to a `cp -R` of the repo that dragged a 24 GB `target/` directory (a
+defect in the brief, corrected to an `rsync --exclude 'target/'`), the second
+round to session limits, at which point all three were mid-build.
+
+**Their artifacts, and those of the three that finished, were later lost** — the
+scratch trees under `/private/tmp/relentless-spike/` were reaped, taking every
+`report.md` and `spike.patch` with them. What survives is this document, which
+is why the skill makes it the checkpoint rather than the reports. The designs
+and measurements below are recorded in substance; what would have to be redone
+is the implementation of whichever design is chosen.
+
+**Round 1 is closed anyway, as decision-ready rather than complete.** The stop
+condition that fires is "finalists bracket the open axes, the rest is a values
+call" — see section 4. The three missing spikes would not have moved it: on Q-A
+they were assigned the two mechanisms `a-cleanroom` had already rejected with
+source evidence, and on Q-B the two finished spikes agree on every measured
+fact and differ only in judgment, which a third opinion does not settle.
 
 ## 3. Lessons captured
 
@@ -210,4 +229,62 @@ Two carry-forwards, both worth having whichever mechanism wins:
 
 ## 4. Verdict
 
-_(pending)_
+### Q-A — recommend: keep the panic, add `is_terminated()`, skip `FusedFuture`
+
+The panic is correct. What was wrong was the crate's remedy for it, and that is
+already fixed on main: `.fuse()` was retracted once `tokio::select!` was
+confirmed never to consult `FusedFuture` (zero occurrences of `Fused` in tokio
+1.47.1's macro source, verified twice independently), while a fused future
+returns `Pending` forever — so the advice swapped a panic naming the offending
+line for a silent hang.
+
+That leaves an inherent `is_terminated()` reading the existing `Phase::Done`:
+no dependency, `no_std`-clean, and name- and semantics-compatible with a
+`FusedFuture` impl if one is ever wanted. A `futures-core` feature buys nothing
+for the case that motivated the work and only serves `futures::select!` users,
+of whom none have asked; defer it until someone does.
+
+Self-fusing to `Pending` is rejected on evidence rather than taste: it is
+precisely the behaviour the bad `.fuse()` advice produced by accident, so it has
+already been observed to turn a diagnosable failure into a hang.
+
+### Q-B — recommend: `.holding(resource)`; the disagreement is a values call
+
+Both Q-B spikes agree on every measured fact:
+
+- an unguarded hook fired from `Drop`, when the operation panics and the hook
+  panics during unwinding, aborts the process (`exit=134`), uncatchable;
+- guarding on `std::thread::panicking()` skips the hook and survives, exiting
+  101 with the original panic intact;
+- that guard needs `std`, so `no_std` plus an unwinding panic runtime still
+  aborts, with no fix available in `core` without `unsafe` or a dependency.
+
+They differ only on whether that residue disqualifies the mechanism for a
+`no_std`-first crate. No further spike settles that; it is a judgment about what
+this crate is for.
+
+`.holding(resource)` avoids the question entirely. It runs no user code from
+`Drop`, so it adds no abort path at all, in `std` or `no_std`. It fixes the
+measured defect (`fired=0 gauge=8` → `fired=8 gauge=0`) with zero existing tests
+changed, and it is not new capability but a new *spelling*: cancellation-safe
+cleanup was already expressible, and the defect was that the safe and unsafe
+forms looked identical. Its cost is that it cannot tell the guard why the run
+ended, `RetryPolicy` cannot carry a resource, and a builder holding one is not
+`Clone`.
+
+`on_cancel` is the more capable design and is not rejected on the abort risk —
+it answered that. It is deferred on cost: 42 pre-existing signatures rewritten
+to thread a parameter for one line of new capability, and `AsyncRun` at 11 type
+parameters. That ratio is an argument about the positional type-state encoding,
+not about cancellation. **Revisit `on_cancel` if and when hooks are ever held as
+one non-positional value** — at which point it would cost roughly 30 new lines
+and none of the rewritten ones.
+
+Doing nothing is rejected on measurement: the rule is already documented in four
+places including a worked example, and 32 of 32 cancelled retries still leaked.
+
+### Not yet decided
+
+Whether to build either recommendation. This document records what a build would
+cost and buy; the spike code that demonstrated both was lost with the scratch
+trees, so shipping either means reimplementing it against the current tree.
