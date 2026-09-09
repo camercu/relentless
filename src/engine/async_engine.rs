@@ -28,8 +28,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use pin_project_lite::pin_project;
 
-const DEFAULT_MAX_ATTEMPTS: u32 = 3;
-const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
+use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
 
 /// A classifier-driven async retry builder — the async twin of
 /// [`Retry`](super::Retry).

@@ -22,8 +22,7 @@ use crate::wait::Wait;
 use crate::wait::{self, WaitExponential};
 use core::future::Future;
 
-const DEFAULT_MAX_ATTEMPTS: u32 = 3;
-const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
+use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
 
 /// Reusable retry configuration: a stop strategy, a wait strategy, and a
 /// classifier.
