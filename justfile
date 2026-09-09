@@ -151,8 +151,15 @@ check-msrv:
     msrv=$(cargo metadata --format-version 1 --no-deps | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['rust_version'])")
     cargo "+${msrv}" check --quiet
 
+# Runs on the pinned toolchain, not `+stable`. cargo-semver-checks parses
+# rustdoc JSON, whose format version tracks the compiler, so a floating
+# `stable` pairs an unpinned rustdoc with the `cargo-semver-checks` pinned in
+# `.tool-versions` — and any new stable release can then fail the release with
+# "unsupported rustdoc format". That is what blocked v0.18.0. Newest-stable
+# drift is `ci-stable`'s job, where it is advisory; the release path needs to
+# be reproducible.
 semver-check:
-    cargo +stable semver-checks check-release
+    cargo semver-checks check-release
 
 # Remove run artifacts: build tree, cargo-mutants output, bacon locations.
 # Deliberately keeps node_modules (environment, restored by npm ci) and
