@@ -1,3 +1,5 @@
+## [0.18.2](https://github.com/camercu/relentless/compare/v0.18.1...v0.18.2) (2026-09-15)
+
 ## [0.18.1](https://github.com/camercu/relentless/compare/v0.18.0...v0.18.1) (2026-09-15)
 
 ## [0.18.0](https://github.com/camercu/relentless/compare/v0.17.0...v0.18.0) (2026-09-09)
