@@ -124,7 +124,8 @@ enum JitterKind {
 ///
 /// Jitter uses a fast PRNG intended for retry backoff behavior, not for
 /// cryptographic use. Cloning a `Jittered` strategy produces a decorrelated
-/// copy — the clone will generate a different jitter sequence.
+/// copy that generates a different jitter sequence, except on the targets
+/// without a nonce counter described below.
 ///
 /// The default PRNG seed is fixed, and each instance mixes in a per-instance
 /// nonce so that instances within a run are decorrelated. What that nonce is
