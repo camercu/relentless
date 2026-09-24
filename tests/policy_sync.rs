@@ -673,7 +673,7 @@ fn retry_succeeds_on_first_attempt() {
 fn exhausted_returned_for_ok_predicate_exhaustion() {
     // predicate::ok retries while the Ok value satisfies the condition. When stop
     // fires with an Ok value still being rejected, the error variant must be
-    // Exhausted with last=Ok(_), not Aborted (which is reserved for Err outcomes).
+    // Exhausted with last=Ok(_), not Aborted (which `.when` yields only for Err).
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
