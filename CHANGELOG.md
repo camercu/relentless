@@ -1,12 +1,92 @@
 ## [0.18.2](https://github.com/camercu/relentless/compare/v0.18.1...v0.18.2) (2026-09-15)
 
+### Upgrading from 0.18.1
+
+No library code changed. This release updates npm packages used by the release tooling. Nothing to do.
+
+### Bug Fixes
+
+* **deps:** patch npm-bundled vulns (undici, tar, ip-address, brace-expansion) ([38af0b7](https://github.com/camercu/relentless/commit/38af0b7c15dfcccc22a800f75417b45ac7c4bb93))
+
 ## [0.18.1](https://github.com/camercu/relentless/compare/v0.18.0...v0.18.1) (2026-09-15)
+
+### Upgrading from 0.18.0
+
+No library code changed. This release updates `rustls`, which the crate's tests and examples pull in through the `reqwest` dev-dependency. Nothing to do.
+
+### Bug Fixes
+
+* **deps:** update rustls to 0.23.45 for RUSTSEC-2026-0285 ([d583d20](https://github.com/camercu/relentless/commit/d583d2073292866889351d66b62bf956a5b29702))
 
 ## [0.18.0](https://github.com/camercu/relentless/compare/v0.17.0...v0.18.0) (2026-09-09)
 
+### Upgrading from 0.17
+
+* **`.cap(max).jitter(j)` changed behavior.** Delays can now reach `max + j`; in 0.17 they were clamped to `max`. To keep the old bound, write `.jitter(j).cap(max)`. Code that names the type now gets `Jittered<WaitCapped<W>>` instead of `WaitCapped<Jittered<W>>`.
+* **Async retries with a zero delay now yield between attempts.** Each attempt takes one poll instead of the whole loop running inside a single poll, so `select!`, `tokio::time::timeout` and cancellation now take effect. Code that awaits the future to completion needs no change.
+* **A clock that moves backwards no longer refunds the time budget.** `.timeout()` and `stop::elapsed` count from the highest reading seen. Debug builds panic if a custom `Clock` goes backwards.
+* **More types are nameable.** `StatelessOp`, `HookChain`, `RetryOp`, `AsyncRetryOp`, `BeforeAttemptHook`, `AttemptHook` and `ExitHook` are exported from the crate root, so builder types can be written out in signatures.
+* The breaking-change list below also mentions `Wait::max_delay`, `Wait::imposed_cap` and a public `StatelessOp` field. All three were added and removed during this release; 0.17 had none of them.
+
+### ⚠ BREAKING CHANGES
+
+* **wait:** .cap(max).jitter(j) now yields delays up to
+max + j rather than being clamped to max. Code relying on the
+previous normalization should write .jitter(j).cap(max), which is
+unchanged. Wait::imposed_cap is removed; it was added earlier in this
+unreleased series.
+* **wait:** Wait::max_delay is now Wait::imposed_cap. It was
+introduced earlier in this unreleased series and has never shipped.
+* **api:** relentless::StatelessOp no longer exposes its
+field. It was only reachable at all from the re-export added earlier
+in this same unreleased series.
+* **async:** an async retry with a zero inter-attempt delay now
+takes one poll per attempt rather than completing within a single
+poll. No API changed; code that drives the future to completion
+is unaffected.
+* **wait:** the inherent WaitCapped::jitter is gone, so
+.cap(max).jitter(j) now has type Jittered<WaitCapped<W>> rather than
+WaitCapped<Jittered<W>>. Code that spells the type out must be updated;
+behavior is identical.
+
+### Features
+
+* **api:** hide the StatelessOp field and derive the standard traits ([9130ae7](https://github.com/camercu/relentless/commit/9130ae787b90924f2d9227e728da1557d24fe4f0))
+* **api:** make the builder's type-state plumbing nameable ([b57c5bd](https://github.com/camercu/relentless/commit/b57c5bd4ae573550566adddc3c08fa1fd953fa70))
+* **wait:** carry the cap guarantee on the trait, not on name resolution ([0f0f69a](https://github.com/camercu/relentless/commit/0f0f69aa2ae01c3b14a33429febba3b6e2324aa4))
+* **wait:** compose cap and jitter in the order written ([b842de4](https://github.com/camercu/relentless/commit/b842de4d63618991415ceb0d49c58c06666d3eb2))
+
+### Bug Fixes
+
+* **async:** yield cooperatively instead of spinning on a zero delay ([ee2ad4f](https://github.com/camercu/relentless/commit/ee2ad4fd53806320a8d1136fd3ad7b44cb14ab63))
+* **bench:** stop the retry-loop benchmark folding to a constant ([595771a](https://github.com/camercu/relentless/commit/595771a06e5b0ce1580a842a7d8970f179d891d5))
+* **ci:** run semver-checks on the pinned toolchain ([9392737](https://github.com/camercu/relentless/commit/93927374e34c4238eb304c294bb3837a3a71b321))
+* **deps:** bump h2 to 0.4.19 for RUSTSEC-2026-0258 ([8a187a7](https://github.com/camercu/relentless/commit/8a187a7e75cf4556c2576003ed22a125ccaa1ab8))
+* **docs:** retract the .fuse() remedy for the re-poll panic ([7252f50](https://github.com/camercu/relentless/commit/7252f50419988e8e7dd9b8a30302005e782a1a64))
+* **engine:** keep elapsed time non-decreasing across clock reads ([adc01a1](https://github.com/camercu/relentless/commit/adc01a1a2b4e65ffa183b212688ac8c68fabebeb))
+* **engine:** stop Elapsed being copyable ([3c77eef](https://github.com/camercu/relentless/commit/3c77eef27c7cc6cce2cf2c35a699e1d39fbe0f0e))
+* **examples:** make the two silent examples show their result ([8f744c0](https://github.com/camercu/relentless/commit/8f744c05cfa7f8b015741a7ebd1b9d1e76c4146a))
+* **wait:** propagate the delay ceiling through chain and sum ([c68aa94](https://github.com/camercu/relentless/commit/c68aa94da282aab6f2fbb1b06ba5f80cfc31125c))
+* **wait:** stop carrying a branch cap outward through composites ([dd75dbf](https://github.com/camercu/relentless/commit/dd75dbf66b48d2d5bd51f4bb1fcbed899f112952))
+
+### Code Refactoring
+
+* **wait:** rename Wait::max_delay to imposed_cap ([0a75ddf](https://github.com/camercu/relentless/commit/0a75ddfd7368808f29d5b47d627a808f89a56e03))
+
 ## [0.17.0](https://github.com/camercu/relentless/compare/v0.16.0...v0.17.0) (2026-07-25)
 
+### Features
+
+* **decision:** classify ControlFlow outcomes as Break-returns/Continue-retries ([e772976](https://github.com/camercu/relentless/commit/e7729762f51b47e7941341127b1c43532c7b1dbf))
+* **error:** give the ControlFlow error shape Display and Error impls ([0b52a11](https://github.com/camercu/relentless/commit/0b52a11b9d87b1dc42f69836fb62feaec0da84d6))
+
 ## [0.16.0](https://github.com/camercu/relentless/compare/v0.15.0...v0.16.0) (2026-07-25)
+
+### Features
+
+* **decision:** classify Option outcomes as None-retries/Some-returns ([694a7a3](https://github.com/camercu/relentless/commit/694a7a3f4cf6b554abfdc37ea1eed9d75beb9695))
+* **error:** give the Option error shape Display and Error impls ([9b5545a](https://github.com/camercu/relentless/commit/9b5545a591959da588fd91edf6d42ed3501a86ba))
+* **error:** make last()/into_last() available for all outcome shapes ([edb046a](https://github.com/camercu/relentless/commit/edb046ab5a775fde05a4082b92f06aa58f15f0aa))
 
 ## [0.15.0](https://github.com/camercu/relentless/compare/v0.14.0...v0.15.0) (2026-07-24)
 
