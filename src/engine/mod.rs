@@ -1,11 +1,11 @@
-//! The classifier-driven retry engine (ADR-6).
+//! The classifier-driven retry engine.
 //!
 //! This is the crate's retry engine, exposed through [`retry`]/[`retry_async`],
 //! the [`RetryExt`]/[`AsyncRetryExt`] closure extensions, and
-//! [`crate::RetryPolicy`]. It reuses the outcome-agnostic infrastructure
-//! unchanged — [`Stop`], [`Wait`], [`SyncClock`], and [`RetryState`] — and
-//! drives retries with a [`Decide`] classifier that consumes each outcome by
-//! value, rather than a boolean predicate over `Result`.
+//! [`crate::RetryPolicy`]. It uses the outcome-agnostic [`Stop`], [`Wait`],
+//! [`SyncClock`], and [`RetryState`], and drives retries with a [`Decide`]
+//! classifier that consumes each outcome by value, rather than a boolean
+//! predicate over `Result`.
 //!
 //! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full
 //! classifier surface — `.decide`/`.when`/`.until`, hooks, stats, and timeout.

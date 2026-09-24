@@ -1,5 +1,5 @@
 //! The unified clock abstraction: one injected value that owns both "what time
-//! is it" and "wait this long" (ADR-0005).
+//! is it" and "wait this long".
 //!
 //! The retry engines read elapsed time and perform inter-attempt waits through
 //! a single clock value, so the two can never disagree: whatever advances time
@@ -87,9 +87,9 @@ pub trait SyncClock: Clock {
     /// time on a test clock. Afterwards, [`now()`](Clock::now) reflects the
     /// wait.
     ///
-    /// The engine never calls this with [`Duration::ZERO`] — it skips the
-    /// clock entirely for a zero delay (SPEC 3.2.8) — so an implementation
-    /// counting calls here counts performed sleeps, not inter-attempt gaps.
+    /// The engine never calls this with [`Duration::ZERO`]. It skips the clock
+    /// entirely for a zero delay, so an implementation counting calls here
+    /// counts performed sleeps, not inter-attempt gaps.
     fn wait(&self, dur: Duration);
 }
 
@@ -118,9 +118,8 @@ pub trait AsyncClock: Clock {
     /// when cancelled), and an unpolled wait must not advance time.
     ///
     /// The engine never calls this with [`Duration::ZERO`]. It skips the clock
-    /// for a zero delay and yields cooperatively instead (SPEC 3.2.8), so an
-    /// implementation counting calls here counts performed sleeps, not
-    /// inter-attempt gaps.
+    /// for a zero delay and yields cooperatively instead, so an implementation
+    /// counting calls here counts performed sleeps, not inter-attempt gaps.
     fn wait_async(&self, dur: Duration) -> Self::Wait;
 }
 
@@ -558,8 +557,8 @@ impl<F: Fn() -> Duration> AsyncClock for GlooClock<F> {
         // anything above i32::MAX milliseconds (~24.8 days) reaches JS
         // `setTimeout` as a negative number, which the platform clamps to an
         // *immediate* fire. Saturate to the largest wait the platform can
-        // actually perform — SPEC 15.5 rules out panicking waits, and an
-        // immediately-completing "wait" would violate the Clock contract.
+        // actually perform. A wait must never panic, and an immediately
+        // completing "wait" would violate the Clock contract.
         const MAX_TIMEOUT_MILLIS: u128 = i32::MAX as u128;
         let millis = u32::try_from(dur.as_millis().min(MAX_TIMEOUT_MILLIS))
             .expect("value clamped to i32::MAX fits in u32");

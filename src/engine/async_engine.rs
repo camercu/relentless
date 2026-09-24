@@ -1,4 +1,4 @@
-//! The asynchronous classifier engine (ADR-6 S6).
+//! The asynchronous classifier engine.
 //!
 //! The async twin of the sync [`Retry`](super::Retry) builder. It carries the
 //! same configuration surface and the same by-value [`Decide`] classifier; the

@@ -94,6 +94,11 @@ Use this loop for every feature-development iteration.
 
 ## Coding Rules
 
+- `src/` docs and comments describe current behavior, self-contained to
+  shipped files (`include` in `Cargo.toml`). Cite no SPEC section, ADR,
+  `docs/` path, or prior engine/variant name; state the rule itself. SPEC
+  traceability belongs in `tests/`. README may link `docs/` by absolute GitHub
+  URL only.
 - Never use magic numbers whose meaning isn't obvious from context. Extract them
   into named constants. Values that carry domain meaning (thresholds, limits,
   configuration) must always be constants.

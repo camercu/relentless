@@ -1,11 +1,12 @@
 //! The outcome-classification layer.
 //!
-//! Where the engine once asked a boolean [`Predicate`](crate::Predicate) "should
-//! this outcome retry?", it now asks a *classifier* to sort each outcome into a
-//! three-way [`Verdict`]: return it to the caller, retry it, or abort with a
-//! projected payload. This lets the retry decision be independent of
-//! `Result<T, E>` semantics — a sought-after `Err`, a non-`Result` poll enum, or
-//! a search state can each drive the loop directly.
+//! The engine asks a *classifier* to sort each outcome into a three-way
+//! [`Verdict`]: return it to the caller, retry it, or abort with a projected
+//! payload. The retry decision is therefore independent of `Result<T, E>`
+//! semantics. A sought-after `Err`, a non-`Result` poll enum, or a search state
+//! can each drive the loop directly. A boolean [`Predicate`](crate::Predicate)
+//! is one way to build a classifier (via `.when`/`.until`), not the engine's own
+//! currency.
 //!
 //! This module is the vocabulary; the engine that consumes it lives in
 //! [`crate::engine`].
@@ -69,8 +70,7 @@ pub trait Outcome: Sized {
 
 /// Default: `Ok(v)` → `Return(v)`, any `Err` → `Retry`.
 ///
-/// This encodes today's engine semantics — every error is retried, so the loop
-/// terminates on an error only by exhausting its stop strategy
+/// Every error is retried, so the loop terminates on an error only by exhausting its stop strategy
 /// (`RetryError::Exhausted`), never by aborting on the default path. `Abort` is
 /// typed as `E` (not `Infallible`) so the default and `.when`/`.until` paths
 /// share one `RetryError<E, Result<T, E>>` shape.
@@ -168,8 +168,8 @@ impl<O, C: Decide<O> + ?Sized> Decide<O> for &C {
 /// The default classifier slot: delegates to `O: Outcome`.
 ///
 /// Carries no outcome type of its own, so it can sit in a policy built before
-/// any operation exists; `O` is pinned by the operation at `.call()`, where the
-/// `O: Outcome` bound is required (mirroring the old `P: Predicate<T, E>` bound).
+/// any operation exists. The operation pins `O` at `.call()`, where the
+/// `O: Outcome` bound applies.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultClassifier;
 
@@ -251,8 +251,8 @@ where
 /// accept, returning an `Ok` and aborting on an `Err` with the bare error.
 ///
 /// This bridges the `Result`-shaped [`Predicate`] world onto the classifier:
-/// a rejected `Err(e)` becomes `Verdict::Abort(e)` (the payload the old engine
-/// reported as `RetryError::Rejected`).
+/// a rejected `Err(e)` becomes `Verdict::Abort(e)`, which the caller receives as
+/// `RetryError::Aborted { last: e }`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct When<P>(pub(crate) P);
 

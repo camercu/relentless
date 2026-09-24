@@ -1,8 +1,8 @@
 //! Observation state passed to the classifier engine's hooks.
 //!
 //! [`RetryState`](crate::state::RetryState) (the pre-attempt, outcome-free
-//! context for the operation and `before_attempt`) is reused unchanged from the
-//! old engine. This module adds the two outcome-carrying views:
+//! context for the operation and `before_attempt`) lives in `crate::state`. This
+//! module adds the two outcome-carrying views:
 //!
 //! - [`AttemptState`] — passed to `after_attempt`, once per attempt, holding a
 //!   borrow of the raw outcome *before* classification.

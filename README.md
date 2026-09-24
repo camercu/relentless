@@ -166,9 +166,8 @@ fn read_pidfile() -> Option<u32> { todo!() }
 let pid = retry(|_| read_pidfile()).call(); // Result<u32, RetryError<Infallible, Option<u32>>>
 ```
 
-`ControlFlow<B, C>` classifies itself the same way when you prefer its naming —
-`Continue(_)` retries, `Break(b)` returns `b`. (Which standard types get this
-treatment, and why others don't, is [ADR-0007](https://github.com/camercu/relentless/blob/main/docs/adr/0007-blanket-outcome-impls-for-std-types.md).)
+`ControlFlow<B, C>` classifies itself the same way when you prefer its naming:
+`Continue(_)` retries, `Break(b)` returns `b`.
 
 > **Note:** give a self-classifying op a concrete signature, as the examples
 > above do. An op that only ever produces one variant can leave a sibling type
