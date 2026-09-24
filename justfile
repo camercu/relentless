@@ -311,6 +311,13 @@ ci-stable: build-stable test-stable lint-clippy-stable
 
 # ── Release ─────────────────────────────────────────────────
 
+# Checks that .releaserc.json's plugins still pick the right release type and
+# render commits into the notes. A preset/plugin major mismatch otherwise
+# publishes with an empty changelog and GitHub release body.
+check-release-config:
+    node scripts/check-release-config.mjs
+
 release:
     npm ci
+    just check-release-config
     npx semantic-release

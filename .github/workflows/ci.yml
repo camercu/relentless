@@ -124,6 +124,20 @@ jobs:
           fi
           just mutants-diff "$base"
 
+  release-config:
+    # The Release workflow only runs after CI passes, so a dependency bump
+    # that breaks note rendering fails here, on its own PR, not at release.
+    name: Release config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node scripts/check-release-config.mjs
+
   commitlint:
     # Enforce Conventional Commits in CI, not only via the local commit-msg
     # hook (which a --no-verify bypass or a non-nix contributor can skip).
