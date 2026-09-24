@@ -70,9 +70,9 @@ pub trait Outcome: Sized {
 
 /// Default: `Ok(v)` → `Return(v)`, any `Err` → `Retry`.
 ///
-/// Every error is retried, so the loop terminates on an error only by exhausting its stop strategy
-/// (`RetryError::Exhausted`), never by aborting on the default path. `Abort` is
-/// typed as `E` (not `Infallible`) so the default and `.when`/`.until` paths
+/// Every error is retried, so the loop terminates on an error only by
+/// exhausting its stop strategy (`RetryError::Exhausted`), never by aborting on
+/// the default path. `Abort` is typed as `E` (not `Infallible`) so the default and `.when`/`.until` paths
 /// share one `RetryError<E, Result<T, E>>` shape.
 impl<T, E> Outcome for Result<T, E> {
     type Return = T;
