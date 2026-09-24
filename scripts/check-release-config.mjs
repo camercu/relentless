@@ -43,6 +43,13 @@ const failures = [];
 
 const releaseCases = [
   { commits: ['chore: tidy'], expected: null },
+  { commits: ['fix(ci): pin a tool'], expected: null },
+  { commits: ['fix(ci)!: drop a tool'], expected: 'minor' },
+  {
+    commits: ['fix(ci): drop a tool\n\nBREAKING CHANGE: callers install it.'],
+    expected: 'minor',
+  },
+  { commits: ['fix: stop a panic'], expected: 'patch' },
   { commits: ['fix(engine): stop a panic'], expected: 'patch' },
   { commits: ['feat(wait): add a strategy'], expected: 'minor' },
   { commits: ['refactor(api)!: rename a method'], expected: 'minor' },
