@@ -82,6 +82,8 @@ const expectedNotes = [
   '### Bug Fixes',
   '* **engine:** stop a panic',
   '### Performance Improvements',
+  // A breaking commit of a hidden type is still listed, under its section.
+  '### Code Refactoring',
   '* **api:** rename a method',
 ];
 for (const line of expectedNotes) {
