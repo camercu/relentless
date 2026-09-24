@@ -172,7 +172,7 @@ fn when_builder_configures_predicate() {
         Err(RetryError::Aborted { last }) => {
             assert_eq!(last, "fatal");
         }
-        other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
+        other => panic!("expected Aborted with last=\"fatal\", got {other:?}"),
     }
 }
 
@@ -673,7 +673,7 @@ fn retry_succeeds_on_first_attempt() {
 fn exhausted_returned_for_ok_predicate_exhaustion() {
     // predicate::ok retries while the Ok value satisfies the condition. When stop
     // fires with an Ok value still being rejected, the error variant must be
-    // Exhausted with last=Ok(_), not Rejected (which is reserved for Err outcomes).
+    // Exhausted with last=Ok(_), not Aborted (which is reserved for Err outcomes).
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
@@ -772,7 +772,7 @@ fn predicate_rejects_err_means_immediate_return() {
         Err(RetryError::Aborted { last }) => {
             assert_eq!(last, "fatal");
         }
-        other => panic!("expected Rejected with last=\"fatal\", got {other:?}"),
+        other => panic!("expected Aborted with last=\"fatal\", got {other:?}"),
     }
 }
 

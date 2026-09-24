@@ -1,6 +1,6 @@
 //! Tests for `RetryError` and `RetryResult`.
 //!
-//! Verifies the variant payloads (Exhausted carries last: Result<T,E>; Rejected carries last: E),
+//! Verifies the variant payloads (Exhausted carries last: Result<T,E>; Aborted carries last: E),
 //! Display output, the `std::error::Error` source chain under the `std` feature, accessor methods,
 //! and the `RetryResult` type alias.
 
@@ -20,7 +20,7 @@ fn retry_error_exhausted_variant() {
 }
 
 #[test]
-fn retry_error_rejected_variant() {
+fn retry_error_aborted_variant() {
     let err: relentless::RetryError<String, Result<(), String>> = relentless::RetryError::Aborted {
         last: "fatal".to_string(),
     };
@@ -29,7 +29,7 @@ fn retry_error_rejected_variant() {
         relentless::RetryError::Aborted { ref last } => {
             assert_eq!(last, "fatal");
         }
-        _ => panic!("expected Rejected variant"),
+        _ => panic!("expected Aborted variant"),
     }
 }
 
@@ -96,7 +96,7 @@ fn retry_error_exhausted_ok_source_is_none() {
 
 #[test]
 #[cfg(feature = "std")]
-fn retry_error_rejected_source_is_inner_error() {
+fn retry_error_aborted_source_is_inner_error() {
     let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "fatal");
     let err: relentless::RetryError<std::io::Error, Result<(), std::io::Error>> =
         relentless::RetryError::Aborted { last: inner };
@@ -104,7 +104,7 @@ fn retry_error_rejected_source_is_inner_error() {
     let dyn_err: &dyn std::error::Error = &err;
     assert!(
         dyn_err.source().is_some(),
-        "Rejected should chain to the inner error via source()"
+        "Aborted should chain to the inner error via source()"
     );
 }
 
@@ -213,7 +213,7 @@ fn retry_error_display_exact_format() {
     let msg2 = format!("{rejected}");
     assert_eq!(
         msg2, "aborted: fatal error",
-        "Rejected Display format should match spec"
+        "Aborted Display format should match spec"
     );
 
     // Exhausted with Ok(T) — no error to display, just "retries exhausted"
@@ -225,7 +225,7 @@ fn retry_error_display_exact_format() {
 
 /// 4.1.4
 #[test]
-fn retry_error_last_returns_some_for_exhausted_none_for_rejected() {
+fn retry_error_last_returns_some_for_exhausted_none_for_aborted() {
     let exhausted: relentless::RetryError<String, Result<i32, String>> =
         relentless::RetryError::Exhausted {
             last: Err("fail".to_string()),
@@ -263,7 +263,7 @@ fn retry_error_last_error_returns_none_for_exhausted_ok() {
 
 /// 4.1.7
 #[test]
-fn retry_error_into_last_error_for_rejected() {
+fn retry_error_into_last_error_for_aborted() {
     let rejected: relentless::RetryError<String, Result<i32, String>> =
         relentless::RetryError::Aborted {
             last: "rejected-error".to_string(),

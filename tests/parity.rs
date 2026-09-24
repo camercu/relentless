@@ -297,10 +297,10 @@ fn parity_zero_wait() {
 }
 
 /// GIVEN a predicate rejecting a specific error on attempt 2
-/// WHEN both engines terminate as Rejected
+/// WHEN both engines terminate as Aborted
 /// THEN the traces are identical
 #[test]
-fn parity_rejected_by_predicate() {
+fn parity_aborted_by_predicate() {
     let mut scenario = Scenario::new(
         vec![Err("transient"), Err(ARBITRARY_ERROR)],
         5,

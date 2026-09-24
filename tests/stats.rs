@@ -2,7 +2,7 @@
 //!
 //! Verifies that stats are accumulated fresh per invocation, that attempt counts and
 //! `total_wait` match expected values, and that `StopReason` correctly
-//! distinguishes Succeeded/Rejected from Exhausted (including the
+//! distinguishes Returned/Aborted from Exhausted (including the
 //! rejected-error case). The sync engine's mandatory clock means
 //! `total_elapsed` is always available there.
 
@@ -209,7 +209,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
 }
 
 #[test]
-fn sync_stop_reason_succeeded_with_default_predicate() {
+fn sync_stop_reason_returned_with_default_predicate() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let (result, stats) = policy
@@ -243,7 +243,7 @@ fn sync_stop_reason_exhausted_on_exhaustion() {
 }
 
 #[test]
-fn sync_stop_reason_succeeded_for_custom_predicate_on_ok() {
+fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::ok(|value: &i32| *value < 0));
@@ -261,7 +261,7 @@ fn sync_stop_reason_succeeded_for_custom_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_succeeded_for_result_predicate_on_ok() {
+fn sync_stop_reason_returned_for_result_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::result(|r: &Result<i32, &str>| r.is_err()));
@@ -278,7 +278,7 @@ fn sync_stop_reason_succeeded_for_result_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_succeeded_for_error_predicate_on_ok() {
+fn sync_stop_reason_returned_for_error_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
@@ -295,8 +295,8 @@ fn sync_stop_reason_succeeded_for_error_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_rejected_for_non_retryable_error() {
-    // A non-retryable error exits immediately with Rejected (the predicate declined
+fn sync_stop_reason_aborted_for_non_retryable_error() {
+    // A non-retryable error exits immediately with Aborted (the predicate declined
     // to retry), not Exhausted — the stop strategy never fired.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -402,7 +402,7 @@ fn async_stop_reason_condition_not_met() {
 
 #[test]
 #[cfg(all(feature = "alloc", feature = "std"))]
-fn async_stop_reason_succeeded_for_custom_predicate_on_ok() {
+fn async_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::ok(|value: &i32| *value < 0));
@@ -616,8 +616,8 @@ fn stats_total_wait_includes_zero_duration_delays() {
 
 /// 4.2.1
 #[test]
-fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
-    // Succeeded Ok
+fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
+    // Returned Ok
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
     let (_, stats) = policy
         .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
@@ -626,7 +626,7 @@ fn stop_reason_succeeded_or_rejected_for_predicate_accepted_outcomes() {
         .call();
     assert_eq!(stats.stop_reason, StopReason::Returned);
 
-    // Rejected Err (predicate does not match — Rejected)
+    // Aborted Err (predicate does not match — Aborted)
     let policy2 = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
