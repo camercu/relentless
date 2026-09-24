@@ -238,7 +238,9 @@ impl<W> Jittered<W> {
     /// [`with_nonce`](Self::with_nonce) *after* `with_seed`.
     ///
     /// Cloning still decorrelates: a clone receives a fresh nonce and
-    /// diverges from the seeded original.
+    /// diverges from the seeded original. On targets without a nonce counter
+    /// (see the type docs), every clone gets the same nonce, so clones match
+    /// each other.
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
