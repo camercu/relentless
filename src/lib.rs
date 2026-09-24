@@ -6,8 +6,12 @@
 //! error, back off. `relentless` handles that too, but it also handles the cases
 //! those libraries make awkward:
 //!
-//! - **Polling**, where `Ok("pending")` means "keep going" and you need
-//!   [`.until(predicate)`](Retry::until) rather than just retrying errors.
+//! - **Classification, not just error-retry.** Each completed outcome is sorted
+//!   into *return*, *retry*, or *abort* ([`Verdict`]), so polling
+//!   (`Ok("pending")` means "keep going"), a sought-after `Err`, or a
+//!   non-`Result` poll enum can drive the loop directly. Use
+//!   [`.until(predicate)`](Retry::until) for polling and
+//!   [`.decide(closure)`](Retry::decide) for full control.
 //! - **Policy reuse**, where a single [`RetryPolicy`] captures your retry rules and
 //!   gets shared across multiple call sites — no duplicated builder chains.
 //! - **Strategy composition**, where
