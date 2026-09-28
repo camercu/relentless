@@ -41,6 +41,13 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
+    ignore:
+      # Preset 10 targets conventional-changelog-writer 9, but
+      # @semantic-release/release-notes-generator 14 still uses writer 8, so
+      # 10 publishes empty release notes (`just check-release-config` fails).
+      # Drop this ignore once release-notes-generator moves to writer 9.
+      - dependency-name: conventional-changelog-conventionalcommits
+        versions: [">=10.0.0"]
 
   - package-ecosystem: pre-commit
     directory: /
