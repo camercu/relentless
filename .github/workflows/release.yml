@@ -34,6 +34,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # `workflow_run` checks out the current tip of `main` by default.
+          # Pin to the commit CI validated, or a later red commit would ship
+          # on the strength of an earlier green run.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: cachix/install-nix-action@v31
 
