@@ -1,3 +1,9 @@
+## [0.18.3](https://github.com/camercu/relentless/compare/v0.18.2...v0.18.3) (2026-10-14)
+
+### Bug Fixes
+
+* **deps:** bump rustls to 0.23.46 for the key-share advisory ([6dbbda3](https://github.com/camercu/relentless/commit/6dbbda3921d89c47eacc59f8f2a59a7db843b9c0))
+
 ## [0.18.2](https://github.com/camercu/relentless/compare/v0.18.1...v0.18.2) (2026-09-15)
 
 ### Upgrading from 0.18.1
