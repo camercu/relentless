@@ -1,27 +1,8 @@
-//! Acceptance tests for standard trait implementations.
+//! Derive coverage that spans the strategy and value types: `Copy`, `Debug`
+//! and `PartialEq` on the public wait/stop/predicate/state types.
 //!
-//! These tests verify:
-//! - Default `RetryPolicy` is Send + Sync
-//! - Public value types implement Copy
-
-use relentless::clock::VirtualClock;
-
-fn assert_send_sync<T: Send + Sync>() {}
-
-#[test]
-fn default_retry_policy_is_send_and_sync() {
-    assert_send_sync::<relentless::RetryPolicy>();
-}
-
-/// §10 — jittered strategies must not break policy shareability: production
-/// configs (exponential + jitter) live in shared statics/config structs.
-#[test]
-fn jittered_wait_is_send_and_sync() {
-    use relentless::wait::{Jittered, WaitExponential, WaitFixed};
-
-    assert_send_sync::<Jittered<WaitFixed>>();
-    assert_send_sync::<Jittered<WaitExponential>>();
-}
+//! Each type's own behavior tests live with its concept (`error.rs`,
+//! `stats.rs`, `state.rs`, `predicate.rs`, `jitter.rs`, `policy_sync.rs`).
 
 #[test]
 fn value_types_implement_copy() {
@@ -82,97 +63,4 @@ fn wait_exponential_has_partial_eq_not_eq() {
         Duration::from_millis(5),
     ));
     // assert_eq_bound(wait::exponential(Duration::from_millis(10))); // would not compile
-}
-
-/// 4.2.3
-#[test]
-fn stop_reason_display_values() {
-    use relentless::StopReason;
-
-    assert_eq!(format!("{}", StopReason::Returned), "returned");
-    assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
-}
-
-/// 4.1.9
-#[test]
-fn retry_error_display_format() {
-    use relentless::RetryError;
-
-    let e: RetryError<String, Result<(), String>> = RetryError::Exhausted {
-        last: Err("network timeout".to_string()),
-    };
-    assert_eq!(format!("{e}"), "retries exhausted: network timeout");
-
-    let r: RetryError<String, Result<i32, String>> = RetryError::Aborted {
-        last: "fatal".to_string(),
-    };
-    assert_eq!(format!("{r}"), "aborted: fatal");
-}
-
-/// §14
-#[test]
-fn retry_stats_is_clone_and_copy() {
-    use core::time::Duration;
-    use relentless::{RetryStats, StopReason};
-
-    let stats = RetryStats {
-        attempts: 2,
-        total_elapsed: Duration::from_secs(1),
-        total_wait: Duration::from_millis(100),
-        stop_reason: StopReason::Exhausted,
-    };
-
-    let cloned = stats; // Copy — assignment is a copy
-    let copied = stats; // Copy — can copy again
-    assert_eq!(stats.attempts, cloned.attempts);
-    assert_eq!(stats.attempts, copied.attempts);
-}
-
-/// §14
-#[test]
-fn retry_state_is_clone_copy_partial_eq() {
-    use core::time::Duration;
-    use relentless::RetryState;
-
-    let s = RetryState::for_attempt(3).with_elapsed(Duration::from_secs(1));
-    let cloned = s; // Copy
-    let copied = s; // Copy again — would fail if s were moved
-    assert_eq!(s, cloned);
-    assert_eq!(s, copied);
-    assert_ne!(s, RetryState::for_attempt(4));
-}
-
-/// 5.7
-#[test]
-fn retry_policy_is_clone_when_components_are_clone() {
-    use core::time::Duration;
-    use relentless::{RetryPolicy, stop, wait};
-
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::from_millis(10)));
-
-    let cloned = policy.clone();
-
-    // Both clones produce the same results when used independently.
-    let result1 = policy
-        .retry(|_| Ok::<i32, &str>(1))
-        .clock(VirtualClock::new())
-        .call();
-    let result2 = cloned
-        .retry(|_| Ok::<i32, &str>(1))
-        .clock(VirtualClock::new())
-        .call();
-    assert_eq!(result1, result2);
-}
-
-/// §14
-#[test]
-fn all_predicate_types_implement_clone() {
-    use relentless::predicate;
-
-    let _ = predicate::any_error().clone();
-    let _ = predicate::error(|_e: &&str| true).clone();
-    let _ = predicate::ok(|_v: &u32| true).clone();
-    let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
 }

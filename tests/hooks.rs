@@ -12,6 +12,7 @@ use relentless::{StopReason, predicate, stop, wait};
 use std::cell::RefCell;
 
 const MAX_ATTEMPTS: u32 = 3;
+const SUCCESS_VALUE: i32 = 42;
 const WAIT_DURATION: Duration = Duration::from_millis(10);
 
 #[test]
@@ -176,5 +177,243 @@ fn multiple_hooks_of_same_kind_fire_in_registration_order() {
         vec![
             "before_1", "before_2", "after_1", "after_2", "exit_1", "exit_2",
         ]
+    );
+}
+
+/// 3.6.6
+#[test]
+fn exit_attempt_is_exactly_one_for_single_attempt_stop() {
+    use relentless::{Exit, RetryPolicy, stop};
+    use std::cell::Cell;
+
+    let exit_attempt = Cell::new(0_u32);
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_attempt.set(exit.attempt());
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(exit_attempt.get(), 1);
+}
+
+/// 3.6.6
+#[test]
+fn exit_attempt_matches_completed_attempts() {
+    use relentless::{Exit, RetryPolicy, stop, wait};
+    use std::cell::Cell;
+
+    let exit_attempt = Cell::new(0_u32);
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(3))
+        .wait(wait::fixed(Duration::ZERO));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_attempt.set(exit.attempt());
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(exit_attempt.get(), 3);
+}
+
+/// 3.6.7
+#[test]
+fn exit_exposes_the_final_exhausted_outcome() {
+    use relentless::{Exit, RetryPolicy, stop};
+    use std::cell::RefCell;
+
+    let final_outcome: RefCell<Option<bool>> = RefCell::new(None); // true=ok, false=err
+
+    let policy = RetryPolicy::new().stop(stop::attempts(1));
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("final error"))
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            if let Exit::Exhausted { last, .. } = exit {
+                *final_outcome.borrow_mut() = Some(last.is_ok());
+            }
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(*final_outcome.borrow(), Some(false));
+}
+
+/// 3.6.6
+#[test]
+fn exit_reports_elapsed_since_first_attempt() {
+    use relentless::{Exit, RetryPolicy, stop};
+    use std::cell::Cell;
+
+    // The op advances the virtual clock by one step before failing, so the
+    // terminal `Exit` must report exactly that elapsed — not zero.
+    const STEP: Duration = Duration::from_millis(50);
+    let clock = VirtualClock::new();
+    let exit_elapsed = Cell::new(Duration::ZERO);
+
+    let _ = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .retry(|_| {
+            clock.advance(STEP);
+            Err::<i32, &str>("fail")
+        })
+        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
+            exit_elapsed.set(exit.elapsed());
+        })
+        .clock(&clock)
+        .call();
+
+    assert_eq!(exit_elapsed.get(), STEP);
+}
+
+#[test]
+fn hooks_are_per_call_and_do_not_persist_across_retries() {
+    let before_calls = Cell::new(0_u32);
+    let policy = RetryPolicy::new().stop(stop::attempts(2));
+
+    let _ = policy
+        .retry(|_| Err::<i32, _>("fail"))
+        .before_attempt(|_state| {
+            before_calls.set(before_calls.get().saturating_add(1));
+        })
+        .clock(VirtualClock::new())
+        .call();
+    assert_eq!(before_calls.get(), 2);
+
+    let _ = policy
+        .retry(|_| Err::<i32, _>("fail again"))
+        .clock(VirtualClock::new())
+        .call();
+    assert_eq!(
+        before_calls.get(),
+        2,
+        "hook should not carry over to later retry invocations"
+    );
+}
+
+#[test]
+fn after_attempt_hook_fires_after_each_attempt() {
+    let hook_results: RefCell<Vec<(u32, bool)>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let call_count = Cell::new(0_u32);
+    let _ = policy
+        .retry(|_| {
+            let n = call_count.get() + 1;
+            call_count.set(n);
+            if n < MAX_ATTEMPTS {
+                Err("fail")
+            } else {
+                Ok(SUCCESS_VALUE)
+            }
+        })
+        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
+            let is_ok = state.outcome.is_ok();
+            hook_results.borrow_mut().push((state.attempt, is_ok));
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    let results = hook_results.borrow();
+    assert_eq!(results.len(), MAX_ATTEMPTS as usize);
+    assert_eq!(results[0], (1, false));
+    assert_eq!(results[1], (2, false));
+    assert_eq!(results[2], (3, true));
+}
+
+#[test]
+fn on_exit_hook_fires_when_stop_triggers() {
+    let exit_reason = Cell::new(None);
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let _ = policy
+        .retry(|_| Err::<i32, _>("fail"))
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            exit_reason.set(Some(exit.stop_reason()));
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(exit_reason.get(), Some(StopReason::Exhausted));
+}
+
+#[test]
+fn on_exit_hook_fires_on_success() {
+    let exit_reason = Cell::new(None);
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let _ = policy
+        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            exit_reason.set(Some(exit.stop_reason()));
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(exit_reason.get(), Some(StopReason::Returned));
+}
+
+/// 7.2.1
+#[test]
+fn after_attempt_fires_including_final_attempt() {
+    let attempt_nums: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
+            attempt_nums.borrow_mut().push(state.attempt);
+        })
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(*attempt_nums.borrow(), vec![1, 2, 3]);
+}
+
+/// §6.4
+#[test]
+fn sleep_occurs_after_after_attempt_hook_fires() {
+    /// Clock that logs each wait into a shared event list.
+    struct EventClock<'a> {
+        events: &'a RefCell<Vec<&'static str>>,
+        now: Cell<Duration>,
+    }
+    impl relentless::Clock for EventClock<'_> {
+        fn now(&self) -> Duration {
+            self.now.get()
+        }
+    }
+    impl relentless::SyncClock for EventClock<'_> {
+        fn wait(&self, dur: Duration) {
+            self.events.borrow_mut().push("sleep");
+            self.now.set(self.now.get().saturating_add(dur));
+        }
+    }
+
+    let events: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(WAIT_DURATION));
+
+    let _ = policy
+        .retry(|_| Err::<i32, &str>("fail"))
+        .after_attempt(|_: &relentless::AttemptState<Result<i32, &str>>| {
+            events.borrow_mut().push("after_attempt");
+        })
+        .clock(EventClock {
+            events: &events,
+            now: Cell::new(Duration::ZERO),
+        })
+        .call();
+
+    // after_attempt fires, then sleep fires, then final after_attempt (no sleep after terminal).
+    assert_eq!(
+        *events.borrow(),
+        vec!["after_attempt", "sleep", "after_attempt"]
     );
 }

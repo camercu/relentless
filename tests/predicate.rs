@@ -343,3 +343,14 @@ fn boxed_dyn_predicate_delegates_should_retry() {
     assert!(send_sync.should_retry(&err(TestError::Retryable)));
     assert!(!send_sync.should_retry(&ok(ARBITRARY_OK_VALUE)));
 }
+
+/// §14
+#[test]
+fn all_predicate_types_implement_clone() {
+    use relentless::predicate;
+
+    let _ = predicate::any_error().clone();
+    let _ = predicate::error(|_e: &&str| true).clone();
+    let _ = predicate::ok(|_v: &u32| true).clone();
+    let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
+}

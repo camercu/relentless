@@ -573,3 +573,15 @@ fn jitter_with_seed_matches_reference_splitmix64_vector() {
         .collect();
     assert_eq!(drawn, expected);
 }
+
+/// §10 — jittered strategies must not break policy shareability: production
+/// configs (exponential + jitter) live in shared statics/config structs.
+#[test]
+fn jittered_wait_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    use relentless::wait::{Jittered, WaitExponential, WaitFixed};
+
+    assert_send_sync::<Jittered<WaitFixed>>();
+    assert_send_sync::<Jittered<WaitExponential>>();
+}

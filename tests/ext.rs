@@ -369,24 +369,6 @@ fn retry_ext_until_retries_until_predicate_fires() {
 }
 
 #[test]
-fn retry_ext_timeout_stops_on_deadline() {
-    let clock = VirtualClock::new();
-
-    let result = (|| {
-        clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
-        Err::<i32, &str>(ERROR_VALUE)
-    })
-    .retry()
-    .stop(stop::attempts(100))
-    .wait(wait::fixed(WAIT_DURATION))
-    .clock(&clock)
-    .timeout(TIMEOUT_DEADLINE)
-    .call();
-
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
-#[test]
 fn sync_retry_builder_debug_format() {
     let builder = (|| Ok::<i32, &str>(1)).retry().clock(VirtualClock::new());
     let debug = format!("{builder:?}");

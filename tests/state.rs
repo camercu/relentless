@@ -1,7 +1,7 @@
 //! Tests for state types passed to Stop strategies and hooks.
 //!
 //! Verifies the public layout of `RetryState`, the 1-indexed attempt numbers,
-//! and the `Exit` view delivered to `on_exit`.
+//! and the `Exit`-independent state views.
 
 use core::time::Duration;
 use relentless::clock::VirtualClock;
@@ -79,97 +79,6 @@ fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
     assert_eq!(*op_attempts.borrow(), vec![1, 2, 3]);
 }
 
-/// 3.6.6
-#[test]
-fn exit_attempt_is_exactly_one_for_single_attempt_stop() {
-    use relentless::{Exit, RetryPolicy, stop};
-    use std::cell::Cell;
-
-    let exit_attempt = Cell::new(0_u32);
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
-            exit_attempt.set(exit.attempt());
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(exit_attempt.get(), 1);
-}
-
-/// 3.6.6
-#[test]
-fn exit_attempt_matches_completed_attempts() {
-    use relentless::{Exit, RetryPolicy, stop, wait};
-    use std::cell::Cell;
-
-    let exit_attempt = Cell::new(0_u32);
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::ZERO));
-
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("fail"))
-        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
-            exit_attempt.set(exit.attempt());
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(exit_attempt.get(), 3);
-}
-
-/// 3.6.7
-#[test]
-fn exit_exposes_the_final_exhausted_outcome() {
-    use relentless::{Exit, RetryPolicy, stop};
-    use std::cell::RefCell;
-
-    let final_outcome: RefCell<Option<bool>> = RefCell::new(None); // true=ok, false=err
-
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let _ = policy
-        .retry(|_| Err::<i32, &str>("final error"))
-        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
-            if let Exit::Exhausted { last, .. } = exit {
-                *final_outcome.borrow_mut() = Some(last.is_ok());
-            }
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(*final_outcome.borrow(), Some(false));
-}
-
-/// 3.6.6
-#[test]
-fn exit_reports_elapsed_since_first_attempt() {
-    use relentless::{Exit, RetryPolicy, stop};
-    use std::cell::Cell;
-
-    // The op advances the virtual clock by one step before failing, so the
-    // terminal `Exit` must report exactly that elapsed — not zero.
-    const STEP: Duration = Duration::from_millis(50);
-    let clock = VirtualClock::new();
-    let exit_elapsed = Cell::new(Duration::ZERO);
-
-    let _ = RetryPolicy::new()
-        .stop(stop::attempts(1))
-        .retry(|_| {
-            clock.advance(STEP);
-            Err::<i32, &str>("fail")
-        })
-        .on_exit(|exit: &Exit<i32, &str, Result<i32, &str>>| {
-            exit_elapsed.set(exit.elapsed());
-        })
-        .clock(&clock)
-        .call();
-
-    assert_eq!(exit_elapsed.get(), STEP);
-}
-
 /// 3.6.1
 #[test]
 fn retry_state_for_attempt_defaults_elapsed_zero_and_delay_none() {
@@ -213,4 +122,18 @@ fn retry_state_setters_chain_without_clobbering() {
 #[should_panic(expected = "attempt is 1-indexed")]
 fn retry_state_for_attempt_zero_panics_in_debug() {
     let _ = relentless::RetryState::for_attempt(0);
+}
+
+/// §14
+#[test]
+fn retry_state_is_clone_copy_partial_eq() {
+    use core::time::Duration;
+    use relentless::RetryState;
+
+    let s = RetryState::for_attempt(3).with_elapsed(Duration::from_secs(1));
+    let cloned = s; // Copy
+    let copied = s; // Copy again — would fail if s were moved
+    assert_eq!(s, cloned);
+    assert_eq!(s, copied);
+    assert_ne!(s, RetryState::for_attempt(4));
 }

@@ -672,3 +672,31 @@ fn retry_stats_implements_copy() {
     let b = stats; // copy again — would fail if stats were moved
     assert_eq!(a.attempts, b.attempts);
 }
+
+/// 4.2.3
+#[test]
+fn stop_reason_display_values() {
+    use relentless::StopReason;
+
+    assert_eq!(format!("{}", StopReason::Returned), "returned");
+    assert_eq!(format!("{}", StopReason::Exhausted), "retries exhausted");
+}
+
+/// §14
+#[test]
+fn retry_stats_is_clone_and_copy() {
+    use core::time::Duration;
+    use relentless::{RetryStats, StopReason};
+
+    let stats = RetryStats {
+        attempts: 2,
+        total_elapsed: Duration::from_secs(1),
+        total_wait: Duration::from_millis(100),
+        stop_reason: StopReason::Exhausted,
+    };
+
+    let cloned = stats; // Copy — assignment is a copy
+    let copied = stats; // Copy — can copy again
+    assert_eq!(stats.attempts, cloned.attempts);
+    assert_eq!(stats.attempts, copied.attempts);
+}

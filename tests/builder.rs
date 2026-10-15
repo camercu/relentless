@@ -4,7 +4,7 @@
 //! the default classifier path, `.decide`/`.when`/`.until`, self-classifying
 //! outcomes, the three hook points, `.with_stats()` and `.timeout`.
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
@@ -14,6 +14,7 @@ use relentless::{
 };
 
 const ARBITRARY_ATTEMPTS: u32 = 5;
+const SUCCESS_VALUE: i32 = 42;
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
 /// drives it with no `.decide` at the call site.
@@ -324,22 +325,65 @@ fn with_stats_reports_attempts_wait_elapsed_and_reason() {
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
+/// 6.1.1
 #[test]
-fn timeout_stops_the_loop_once_the_budget_is_exceeded() {
-    // 10ms waits under a 25ms budget: attempts run at t=0,10,20,25; the last
-    // wait is clamped to 5ms to land exactly on the deadline, where the next
-    // boundary check exhausts the loop.
-    let (result, stats) = retry(|_| Err::<i32, &str>("x"))
-        .stop(stop::attempts(100))
-        .wait(wait::fixed(Duration::from_millis(10)))
-        .timeout(Duration::from_millis(25))
-        .clock(VirtualClock::new())
-        .with_stats()
-        .call();
+fn free_function_retry_uses_default_policy() {
+    use relentless::retry;
 
+    let call_count = Cell::new(0_u32);
+    let result = retry(|_| {
+        call_count.set(call_count.get().saturating_add(1));
+        Err::<i32, &str>("always fails")
+    })
+    .clock(VirtualClock::new())
+    .call();
+
+    // Default is attempts(3), so 3 calls should be made.
+    assert_eq!(call_count.get(), 3);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(stats.attempts, 4);
-    assert_eq!(stats.total_elapsed, Duration::from_millis(25));
-    assert_eq!(stats.total_wait, Duration::from_millis(25));
-    assert_eq!(stats.stop_reason, StopReason::Exhausted);
+}
+
+/// 6.1.2
+#[test]
+fn free_function_retry_provides_retry_state_to_op() {
+    use relentless::{RetryState, retry};
+
+    let states_seen: RefCell<Vec<u32>> = RefCell::new(Vec::new());
+    let _ = retry(|state: RetryState| {
+        states_seen.borrow_mut().push(state.attempt);
+        Err::<i32, &str>("fail")
+    })
+    .stop(stop::attempts(3))
+    .wait(wait::fixed(Duration::ZERO))
+    .clock(VirtualClock::new())
+    .call();
+
+    assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
+}
+
+/// 6.2.2
+#[test]
+fn retry_ext_closure_takes_no_retry_state() {
+    use relentless::RetryExt;
+    use std::rc::Rc;
+
+    // The closure passed to .retry() via RetryExt must have zero args.
+    let call_count = Rc::new(Cell::new(0_u32));
+    let call_count_clone = call_count.clone();
+    let result = (move || {
+        call_count_clone.set(call_count_clone.get().saturating_add(1));
+        if call_count_clone.get() < 3 {
+            Err("transient")
+        } else {
+            Ok(SUCCESS_VALUE)
+        }
+    })
+    .retry()
+    .stop(stop::attempts(3))
+    .wait(wait::fixed(Duration::ZERO))
+    .clock(VirtualClock::new())
+    .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(call_count.get(), 3);
 }

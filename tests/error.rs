@@ -383,3 +383,19 @@ fn control_flow_error_is_a_std_error_with_no_source() {
     let err: &dyn std::error::Error = &exhausted;
     assert!(err.source().is_none());
 }
+
+/// 4.1.9
+#[test]
+fn retry_error_display_format() {
+    use relentless::RetryError;
+
+    let e: RetryError<String, Result<(), String>> = RetryError::Exhausted {
+        last: Err("network timeout".to_string()),
+    };
+    assert_eq!(format!("{e}"), "retries exhausted: network timeout");
+
+    let r: RetryError<String, Result<i32, String>> = RetryError::Aborted {
+        last: "fatal".to_string(),
+    };
+    assert_eq!(format!("{r}"), "aborted: fatal");
+}
