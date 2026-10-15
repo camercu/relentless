@@ -4,11 +4,11 @@
 //! deterministic and executor-agnostic: no Tokio runtime, no real timers. The
 //! `RecordingClock` captures requested waits (advancing its own `now`, so the
 //! elapsed seam stays coherent) without blocking, letting tests verify
-//! wait-strategy output without wall-clock delays. Feature-gated tests check
-//! that the runtime clock adapters satisfy the async engine's bound.
+//! wait-strategy output without wall-clock delays.
 
 mod common;
 
+use common::RecordingAsyncClock as RecordingClock;
 use common::block_on;
 use core::cell::Cell;
 use core::future::Future;
@@ -31,78 +31,6 @@ const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 
 // Helpers
-
-/// Test-side [`relentless::AsyncClock`]: waits resolve immediately, advancing
-/// the same `now` cell the elapsed seam reads (coherent by construction) and
-/// recording each requested wait. Cloning shares the underlying cells.
-#[derive(Clone, Default)]
-struct RecordingClock {
-    inner: Rc<RecordingClockCells>,
-}
-
-#[derive(Default)]
-struct RecordingClockCells {
-    now: Cell<Duration>,
-    calls: RefCell<Vec<Duration>>,
-}
-
-impl RecordingClock {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    /// Waits requested so far, in request order.
-    fn calls(&self) -> Vec<Duration> {
-        self.inner.calls.borrow().clone()
-    }
-
-    /// Advances virtual time without recording a wait (simulates op runtime).
-    fn advance(&self, dur: Duration) {
-        self.inner.now.set(self.inner.now.get().saturating_add(dur));
-    }
-}
-
-impl relentless::Clock for RecordingClock {
-    fn now(&self) -> Duration {
-        self.inner.now.get()
-    }
-}
-
-impl relentless::AsyncClock for RecordingClock {
-    type Wait = RecordingWait;
-
-    fn wait_async(&self, dur: Duration) -> Self::Wait {
-        RecordingWait {
-            inner: Rc::clone(&self.inner),
-            dur,
-            done: false,
-        }
-    }
-}
-
-/// Wait future of [`RecordingClock`]: advances and records on first poll, so
-/// an unpolled (cancelled) wait leaves time untouched.
-struct RecordingWait {
-    inner: Rc<RecordingClockCells>,
-    dur: Duration,
-    done: bool,
-}
-
-impl Future for RecordingWait {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
-        let this = self.get_mut();
-        if !this.done {
-            this.done = true;
-            this.inner
-                .now
-                .set(this.inner.now.get().saturating_add(this.dur));
-            this.inner.calls.borrow_mut().push(this.dur);
-        }
-        Poll::Ready(())
-    }
-}
 
 /// End-to-end: the async loop feeds each attempt's post-clamp delay forward as
 /// the next attempt's `RetryState::previous_delay`. The async wiring (a pinned
@@ -381,37 +309,6 @@ fn async_default_predicate_behaves_like_any_error() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// `.timeout()` stops the async loop when elapsed time meets or exceeds the budget,
-/// even if the stop strategy would allow more attempts.
-#[test]
-fn async_timeout_stops_loop_when_budget_exceeded() {
-    // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
-    // loop exits after the first attempt advances the clock past the deadline.
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
-        .wait(wait::fixed(Duration::ZERO));
-    let clock = RecordingClock::new();
-    let call_count = Cell::new(0_u32);
-
-    let result = block_on(
-        policy
-            .retry_async(|_| {
-                call_count.set(call_count.get().saturating_add(1));
-                async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
-                    Err::<i32, &str>("fail")
-                }
-            })
-            .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE)
-            .clock(clock.clone())
-            .call(),
-    );
-
-    // The timeout is tighter than MAX_ATTEMPTS+10 would allow, so only 1 attempt runs.
-    assert_eq!(call_count.get(), 1);
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
 #[test]
 fn async_custom_elapsed_clock_counts_operation_runtime() {
     let policy = RetryPolicy::new().stop(stop::elapsed(ASYNC_CUSTOM_CLOCK_DEADLINE));
@@ -433,64 +330,6 @@ fn async_custom_elapsed_clock_counts_operation_runtime() {
 
     assert_eq!(call_count.get(), 1);
     assert!(clock.calls().is_empty());
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
-/// A timeout set on the policy seeds the async builder, so it applies without
-/// being repeated at the call site.
-#[test]
-fn async_policy_timeout_seeds_builder() {
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
-        .wait(wait::fixed(Duration::ZERO))
-        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
-    let clock = RecordingClock::new();
-    let call_count = Cell::new(0_u32);
-
-    let result = block_on(
-        policy
-            .retry_async(|_| {
-                call_count.set(call_count.get().saturating_add(1));
-                async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
-                    Err::<i32, &str>("fail")
-                }
-            })
-            .clock(clock.clone())
-            .call(),
-    );
-
-    assert_eq!(call_count.get(), 1);
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
-/// A builder `.timeout()` replaces the policy's timeout for that async call (it
-/// does not take the tighter of the two).
-#[test]
-fn async_policy_timeout_replaced_by_builder() {
-    const LOOSE_BUDGET: Duration = Duration::from_secs(60);
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
-        .wait(wait::fixed(Duration::ZERO))
-        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
-    let clock = RecordingClock::new();
-    let call_count = Cell::new(0_u32);
-
-    let result = block_on(
-        policy
-            .retry_async(|_| {
-                call_count.set(call_count.get().saturating_add(1));
-                async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
-                    Err::<i32, &str>("fail")
-                }
-            })
-            .clock(clock.clone())
-            .timeout(LOOSE_BUDGET)
-            .call(),
-    );
-
-    assert_eq!(call_count.get(), MAX_ATTEMPTS + 10);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -552,47 +391,6 @@ fn async_elapsed_stop_triggers_after_deadline() {
     assert_eq!(call_count.get(), 1);
     assert!(clock.calls().is_empty());
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
-#[test]
-fn async_hooks_fire_in_expected_places() {
-    let before_attempt_calls = Rc::new(RefCell::new(Vec::new()));
-    let after_attempt_calls = Rc::new(RefCell::new(Vec::new()));
-    let exit_reason = Rc::new(Cell::new(None));
-    let clock = RecordingClock::new();
-
-    let before_attempt_ref = Rc::clone(&before_attempt_calls);
-    let after_attempt_ref = Rc::clone(&after_attempt_calls);
-    let exit_reason_ref = Rc::clone(&exit_reason);
-
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-
-    let _result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .before_attempt(move |state| {
-                before_attempt_ref.borrow_mut().push(state.attempt);
-            })
-            .after_attempt(
-                move |state: &relentless::AttemptState<'_, Result<i32, &str>>| {
-                    after_attempt_ref.borrow_mut().push(state.attempt);
-                },
-            )
-            .on_exit(
-                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
-                    exit_reason_ref.set(Some(exit.stop_reason()));
-                },
-            )
-            .clock(clock)
-            .call(),
-    );
-
-    let before_attempt = before_attempt_calls.borrow();
-    let after_attempt = after_attempt_calls.borrow();
-
-    assert_eq!(*before_attempt, vec![1, 2, 3]);
-    assert_eq!(*after_attempt, vec![1, 2, 3]);
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Exhausted));
 }
 
 /// A waker that counts wake-ups, so a cooperative yield can be checked for the
@@ -666,188 +464,4 @@ fn async_zero_delay_yields_between_attempts() {
     };
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(attempts.get(), MAX_ATTEMPTS);
-}
-
-/// GIVEN a retry future parked in an inter-attempt wait
-/// WHEN it is dropped instead of polled to completion (`select!`, `timeout`,
-///      an aborted task — the normal lifecycle of an async future)
-/// THEN `on_exit` never runs, so a hook that releases a permit or decrements
-///      an in-flight gauge leaks. SPEC 9.1 says so; this pins it, because the
-///      `on_exit` rustdoc now promises it and nothing else would catch a
-///      change.
-#[test]
-fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
-    /// A clock whose wait never resolves, so the retry future parks in the
-    /// first inter-attempt wait and can be dropped there.
-    #[derive(Clone, Default)]
-    struct StalledClock;
-
-    impl relentless::Clock for StalledClock {
-        fn now(&self) -> Duration {
-            Duration::ZERO
-        }
-    }
-
-    impl relentless::AsyncClock for StalledClock {
-        type Wait = core::future::Pending<()>;
-        fn wait_async(&self, _dur: Duration) -> Self::Wait {
-            core::future::pending()
-        }
-    }
-
-    let exit_ran = Rc::new(Cell::new(false));
-    let exit_ran_ref = Rc::clone(&exit_ran);
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
-
-    let mut cx = Context::from_waker(Waker::noop());
-    let mut future = Box::pin(
-        policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .on_exit(
-                move |_: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
-                    exit_ran_ref.set(true);
-                },
-            )
-            .clock(StalledClock)
-            .call(),
-    );
-
-    assert!(
-        future.as_mut().poll(&mut cx).is_pending(),
-        "the first attempt must fail and park in the wait"
-    );
-    drop(future);
-
-    assert!(!exit_ran.get(), "on_exit must not run on drop-cancellation");
-}
-
-#[test]
-fn async_on_exit_reports_success_reason() {
-    let exit_reason = Rc::new(Cell::new(None));
-    let exit_reason_ref = Rc::clone(&exit_reason);
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
-
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .on_exit(
-                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
-                    exit_reason_ref.set(Some(exit.stop_reason()));
-                },
-            )
-            .clock(RecordingClock::new())
-            .call(),
-    );
-
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Returned));
-}
-
-#[test]
-fn async_on_exit_reports_non_retryable_error_reason() {
-    let exit_reason = Rc::new(Cell::new(None));
-    let exit_reason_ref = Rc::clone(&exit_reason);
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .when(predicate::error(|err: &&str| *err == "retryable"));
-
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Err::<i32, &str>("fatal") })
-            .on_exit(
-                move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
-                    exit_reason_ref.set(Some(exit.stop_reason()));
-                },
-            )
-            .clock(RecordingClock::new())
-            .call(),
-    );
-
-    assert!(matches!(result, Err(RetryError::Aborted { .. })));
-    assert_eq!(exit_reason.get(), Some(relentless::StopReason::Aborted));
-}
-
-#[test]
-fn async_hooks_are_per_call_and_do_not_persist() {
-    let exit_calls = Rc::new(Cell::new(0_u32));
-    let exit_calls_ref = Rc::clone(&exit_calls);
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-
-    let _ = block_on(
-        policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .on_exit(
-                move |_e: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
-                    exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
-                },
-            )
-            .clock(RecordingClock::new())
-            .call(),
-    );
-    assert_eq!(exit_calls.get(), 1);
-
-    let _ = block_on(
-        policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .clock(RecordingClock::new())
-            .call(),
-    );
-    assert_eq!(exit_calls.get(), 1);
-}
-
-#[cfg(feature = "tokio-clock")]
-#[test]
-fn tokio_clock_adapter_is_available() {
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(relentless::clock::TokioClock::new())
-            .call(),
-    );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-}
-
-#[cfg(all(feature = "embassy-clock", target_os = "none"))]
-#[test]
-fn embassy_clock_adapter_is_available() {
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(relentless::clock::EmbassyClock::new())
-            .call(),
-    );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-}
-
-#[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
-#[test]
-fn gloo_clock_adapter_is_available() {
-    fn zero_now() -> Duration {
-        Duration::ZERO
-    }
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(relentless::clock::GlooClock::with_now(zero_now))
-            .call(),
-    );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-}
-
-#[cfg(feature = "futures-timer-clock")]
-#[test]
-fn futures_timer_clock_adapter_is_available() {
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(relentless::clock::FuturesTimerClock::new())
-            .call(),
-    );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
 }
