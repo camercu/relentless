@@ -4,6 +4,12 @@
 //! Display output, the `std::error::Error` source chain under the `std` feature, accessor methods,
 //! and the `RetryResult` type alias.
 
+use core::convert::Infallible;
+#[cfg(feature = "alloc")]
+use core::ops::ControlFlow;
+
+use relentless::{RetryError, StopReason};
+
 #[test]
 fn retry_error_exhausted_variant() {
     let err: relentless::RetryError<String, Result<(), String>> =
@@ -290,4 +296,90 @@ fn stop_reason_available_without_extra_bounds() {
     let rejected: relentless::RetryError<Opaque, Result<Opaque, Opaque>> =
         relentless::RetryError::Aborted { last: Opaque };
     assert_eq!(rejected.stop_reason(), StopReason::Aborted);
+}
+
+// RetryError accessors and Display over non-`Result` outcome shapes.
+
+type StrErr = RetryError<&'static str, Result<i32, &'static str>>;
+
+#[test]
+fn stop_reason_matches_the_variant() {
+    let aborted: StrErr = RetryError::Aborted { last: "x" };
+    let exhausted: StrErr = RetryError::Exhausted { last: Err("y") };
+    assert_eq!(aborted.stop_reason(), StopReason::Aborted);
+    assert_eq!(exhausted.stop_reason(), StopReason::Exhausted);
+}
+
+#[test]
+fn last_retains_the_outcome_only_on_exhausted() {
+    let exhausted: StrErr = RetryError::Exhausted { last: Ok(3) };
+    let aborted: StrErr = RetryError::Aborted { last: "boom" };
+    assert_eq!(exhausted.last(), Some(&Ok(3)));
+    assert_eq!(aborted.last(), None);
+}
+
+#[test]
+fn last_is_available_for_non_result_outcomes() {
+    // An `Option`-outcome op (or any custom `Outcome`) produces this error
+    // shape; `last`/`into_last` are outcome-agnostic and must work on it,
+    // not only on the `Result` shape.
+    type OptErr = RetryError<Infallible, Option<i32>>;
+    let exhausted: OptErr = RetryError::Exhausted { last: None };
+    assert_eq!(exhausted.last(), Some(&None));
+    assert_eq!(exhausted.into_last(), Some(None));
+}
+
+#[test]
+fn last_error_collapses_to_the_error() {
+    let aborted: StrErr = RetryError::Aborted { last: "boom" };
+    let exhausted_err: StrErr = RetryError::Exhausted { last: Err("net") };
+    let exhausted_ok: StrErr = RetryError::Exhausted { last: Ok(1) };
+    assert_eq!(aborted.last_error(), Some(&"boom"));
+    assert_eq!(exhausted_err.last_error(), Some(&"net"));
+    assert_eq!(exhausted_ok.last_error(), None);
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn display_reports_the_terminal_reason() {
+    let aborted: StrErr = RetryError::Aborted { last: "boom" };
+    let exhausted: StrErr = RetryError::Exhausted { last: Err("net") };
+    assert_eq!(aborted.to_string(), "aborted: boom");
+    assert_eq!(exhausted.to_string(), "retries exhausted: net");
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn option_error_display_reports_exhaustion() {
+    // Option's only reachable terminal error is exhaustion (abort is
+    // `Infallible`), so the message needs no outcome detail.
+    let exhausted: RetryError<Infallible, Option<i32>> = RetryError::Exhausted { last: None };
+    assert_eq!(exhausted.to_string(), "retries exhausted");
+}
+
+#[cfg(feature = "std")]
+#[test]
+fn option_error_is_a_std_error_with_no_source() {
+    let exhausted: RetryError<Infallible, Option<i32>> = RetryError::Exhausted { last: None };
+    let err: &dyn std::error::Error = &exhausted;
+    assert!(err.source().is_none());
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn control_flow_error_display_reports_exhaustion() {
+    let exhausted: RetryError<Infallible, ControlFlow<i32, i32>> = RetryError::Exhausted {
+        last: ControlFlow::Continue(0),
+    };
+    assert_eq!(exhausted.to_string(), "retries exhausted");
+}
+
+#[cfg(feature = "std")]
+#[test]
+fn control_flow_error_is_a_std_error_with_no_source() {
+    let exhausted: RetryError<Infallible, ControlFlow<i32, i32>> = RetryError::Exhausted {
+        last: ControlFlow::Continue(0),
+    };
+    let err: &dyn std::error::Error = &exhausted;
+    assert!(err.source().is_none());
 }
