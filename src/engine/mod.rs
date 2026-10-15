@@ -38,9 +38,10 @@ pub use stats::RetryStats;
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, When};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision};
 use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
 use crate::predicate::Predicate;
+use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 use crate::stop::{self, Stop, StopAfterAttempts};
 use crate::wait::{self, Wait, WaitExponential};

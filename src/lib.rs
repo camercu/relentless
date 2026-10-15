@@ -316,7 +316,7 @@ pub mod stop;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
-pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Until, Verdict, When};
+pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Verdict};
 // `Decide`/`IntoDecision` are sealed engine-facing classifier traits: users
 // never implement or name them, but they appear in public bounds, so they must
 // be reachable. Hidden from the docs to keep the surface focused on the names
@@ -342,6 +342,7 @@ pub use engine::{
 pub use engine::{AsyncRun, DropStats};
 pub use policy::RetryPolicy;
 pub use predicate::Predicate;
+pub use predicate::classifier::{Until, When};
 pub use state::RetryState;
 pub use stop::Stop;
 pub use wait::Wait;

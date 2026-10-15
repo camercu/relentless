@@ -11,8 +11,9 @@ use crate::clock::SystemClock;
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, DefaultClassifier, Until, When};
+use crate::decision::{ClosureClassifier, DefaultClassifier};
 use crate::engine::{AsyncRetry, Retry};
+use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;

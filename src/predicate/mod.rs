@@ -12,6 +12,8 @@
 //! [`result`] closure (`result(|o| a(o) || b(o))`); for full return / retry /
 //! abort control, use [`Retry::decide`](crate::Retry::decide).
 
+pub(crate) mod classifier;
+
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
 
