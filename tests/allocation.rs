@@ -4,18 +4,16 @@
 //! Boxed policies are also tested to confirm that construction allocates but
 //! subsequent execution does not.
 
-use core::time::Duration;
+mod common;
+
 #[cfg(feature = "alloc")]
-use core::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll, Waker},
-};
+use common::block_on;
+use core::time::Duration;
 use relentless::{RetryPolicy, Wait, stop, wait};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
-use std::sync::{Mutex, MutexGuard, OnceLock};
 #[cfg(feature = "alloc")]
-use std::{cell::Cell, pin::pin};
+use std::cell::Cell;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[global_allocator]
 static GLOBAL: &StatsAlloc<std::alloc::System> = &INSTRUMENTED_SYSTEM;
@@ -56,19 +54,6 @@ impl relentless::Clock for InstantClock {
 impl relentless::SyncClock for InstantClock {
     fn wait(&self, dur: Duration) {
         self.0.set(self.0.get().saturating_add(dur));
-    }
-}
-
-#[cfg(feature = "alloc")]
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = pin!(future);
-    let waker = Waker::noop().clone();
-    let mut cx = Context::from_waker(&waker);
-    loop {
-        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
     }
 }
 

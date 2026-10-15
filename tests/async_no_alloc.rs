@@ -1,9 +1,10 @@
 //! Async API coverage that must remain available without the crate's `alloc` feature.
 
+mod common;
+
+use common::block_on;
 use core::cell::{Cell, RefCell};
-use core::future::{Future, ready};
-use core::pin::Pin;
-use core::task::{Context, Poll, Waker};
+use core::future::ready;
 
 use relentless::clock::VirtualClock;
 use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
@@ -11,18 +12,6 @@ use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 const MAX_ATTEMPTS: u32 = 3;
-
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = Box::pin(future);
-    let mut cx = Context::from_waker(Waker::noop());
-
-    loop {
-        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
-    }
-}
 
 #[test]
 fn policy_async_retry_remains_available_without_alloc() {

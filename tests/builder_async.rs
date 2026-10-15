@@ -3,10 +3,10 @@
 //! Mirrors the sync builder scenarios in `builder.rs`, driven under a virtual
 //! clock and a no-op waker so no executor is needed.
 
+mod common;
+
+use common::block_on;
 use core::cell::Cell;
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
@@ -14,18 +14,6 @@ use relentless::{
     AsyncRetryExt, Decision, Exit, RetryError, StopReason, Verdict, predicate, retry_async, stop,
     wait,
 };
-
-/// Polls a future to completion under a no-op waker. The virtual clock's
-/// async waits resolve on poll, so no real executor is needed.
-fn block_on<Fut: Future>(future: Fut) -> Fut::Output {
-    let mut future = core::pin::pin!(future);
-    let mut cx = Context::from_waker(Waker::noop());
-    loop {
-        if let Poll::Ready(output) = Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            return output;
-        }
-    }
-}
 
 type IntResult = Result<i32, &'static str>;
 const ARBITRARY_ATTEMPTS: u32 = 5;

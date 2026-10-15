@@ -3,6 +3,8 @@
 //! Each adapter pairs a coherent `now` source with its runtime's wait, so the
 //! read seam and the wait seam come from one value.
 
+mod common;
+
 #[cfg(feature = "tokio-clock")]
 mod tokio_clock {
     use core::time::Duration;
@@ -78,26 +80,11 @@ mod tokio_clock {
 
 #[cfg(feature = "futures-timer-clock")]
 mod futures_timer_clock {
-    use core::future::Future;
-    use core::pin::pin;
-    use core::task::{Context, Poll, Waker};
+    use crate::common::block_on;
     use core::time::Duration;
     use relentless::clock::{AsyncClock, Clock, FuturesTimerClock};
 
     const WAIT: Duration = Duration::from_millis(10);
-
-    /// Spin-polls to completion; fine for the short timer future under test.
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = pin!(future);
-        let waker = Waker::noop();
-        let mut cx = Context::from_waker(waker);
-        loop {
-            match future.as_mut().poll(&mut cx) {
-                Poll::Ready(output) => return output,
-                Poll::Pending => std::thread::yield_now(),
-            }
-        }
-    }
 
     #[test]
     fn wait_advances_now_by_at_least_the_requested_duration() {

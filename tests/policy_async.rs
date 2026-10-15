@@ -7,6 +7,9 @@
 //! wait-strategy output without wall-clock delays. Feature-gated tests check
 //! that the runtime clock adapters satisfy the async engine's bound.
 
+mod common;
+
+use common::block_on;
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::Pin;
@@ -28,20 +31,6 @@ const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
 
 // Helpers
-
-/// Polls a future to completion. Only correct for futures that never return `Pending`
-/// permanently; yields the thread on each `Pending` to let cooperative tasks make progress.
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = Box::pin(future);
-    let mut cx = Context::from_waker(Waker::noop());
-
-    loop {
-        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
-    }
-}
 
 /// Test-side [`relentless::AsyncClock`]: waits resolve immediately, advancing
 /// the same `now` cell the elapsed seam reads (coherent by construction) and

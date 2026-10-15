@@ -8,6 +8,9 @@
 //! regression guard for the public type API.
 #![cfg(feature = "std")]
 
+mod common;
+
+use common::block_on;
 use core::cell::Cell;
 use core::ops::ControlFlow;
 use core::time::Duration;
@@ -393,18 +396,6 @@ mod async_tests {
     use core::task::{Context, Poll, Waker};
 
     use super::*;
-
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = Box::pin(future);
-        let mut cx = Context::from_waker(Waker::noop());
-
-        loop {
-            match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-                Poll::Ready(output) => return output,
-                Poll::Pending => std::thread::yield_now(),
-            }
-        }
-    }
 
     fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
         ready(Ok(SUCCESS_VALUE))

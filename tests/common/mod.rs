@@ -45,3 +45,17 @@ impl relentless::SyncClock for RecordingClock {
         self.waits.borrow_mut().push(dur);
     }
 }
+
+/// Polls a future to completion under a no-op waker, yielding the thread on
+/// each `Pending`. Correct for futures that resolve without an external wake,
+/// such as those driven by a virtual or recording clock.
+pub fn block_on<F: core::future::Future>(future: F) -> F::Output {
+    let mut future = core::pin::pin!(future);
+    let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
+    loop {
+        if let core::task::Poll::Ready(output) = future.as_mut().poll(&mut cx) {
+            return output;
+        }
+        std::thread::yield_now();
+    }
+}

@@ -6,13 +6,18 @@
 //! rejected-error case). The sync engine's mandatory clock means
 //! `total_elapsed` is always available there.
 
+mod common;
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+#[cfg(all(feature = "alloc", feature = "std"))]
+use common::block_on;
 use core::cell::Cell;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use core::future::Future;
 #[cfg(all(feature = "alloc", feature = "std"))]
 use core::pin::Pin;
 #[cfg(all(feature = "alloc", feature = "std"))]
-use core::task::{Context, Poll, Waker};
+use core::task::{Context, Poll};
 use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy};
@@ -24,20 +29,6 @@ const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(5);
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
-
-#[cfg(all(feature = "alloc", feature = "std"))]
-#[cfg(all(feature = "alloc", feature = "std"))]
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = Box::pin(future);
-    let mut cx = Context::from_waker(Waker::noop());
-
-    loop {
-        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
-    }
-}
 
 /// Wait-free async clock for stats tests that don't assert on elapsed time.
 #[derive(Clone)]

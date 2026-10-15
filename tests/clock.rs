@@ -4,6 +4,8 @@
 //! (`SyncClock::wait` / `AsyncClock::wait_async`), so elapsed time and waits
 //! can never desync.
 
+mod common;
+
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::pin;
@@ -292,22 +294,11 @@ fn a_backwards_clock_cannot_un_spend_the_async_timeout_budget() {
 #[cfg(feature = "alloc")]
 mod engine_integration {
     use super::*;
+    use crate::common::block_on;
     use relentless::{retry, retry_async, stop, wait};
     use std::vec;
 
     const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
-
-    /// Polls a future to completion (every wait here is immediately ready).
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = core::pin::pin!(future);
-        let waker = Waker::noop();
-        let mut cx = Context::from_waker(waker);
-        loop {
-            if let Poll::Ready(output) = future.as_mut().poll(&mut cx) {
-                return output;
-            }
-        }
-    }
 
     /// GIVEN exponential backoff from 100ms and a 3-attempt budget
     /// WHEN an always-failing operation runs against a `VirtualClock`

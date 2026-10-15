@@ -9,9 +9,9 @@
 
 #![cfg(feature = "alloc")]
 
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll, Waker};
+mod common;
+
+use common::block_on;
 use core::time::Duration;
 use std::format;
 use std::string::String;
@@ -23,18 +23,6 @@ use relentless::clock::VirtualClock;
 use relentless::{RetryStats, predicate, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
-
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = Box::pin(future);
-    let mut cx = Context::from_waker(Waker::noop());
-
-    loop {
-        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
-    }
-}
 
 /// Everything observable about one execution, rendered comparable.
 #[derive(Debug, PartialEq)]
