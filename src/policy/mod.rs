@@ -17,13 +17,13 @@ use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;
-use crate::stop::{self, StopAfterAttempts};
+use crate::stop::StopAfterAttempts;
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
-use crate::wait::{self, WaitExponential};
+use crate::wait::WaitExponential;
 use core::future::Future;
 
-use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
+use crate::defaults;
 
 /// Reusable retry configuration: a stop strategy, a wait strategy, and a
 /// classifier.
@@ -60,8 +60,8 @@ impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
     #[must_use]
     pub fn new() -> Self {
         RetryPolicy {
-            stop: stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait: wait::exponential(DEFAULT_INITIAL_WAIT),
+            stop: defaults::stop(),
+            wait: defaults::wait(),
             classifier: DefaultClassifier,
             timeout: None,
         }

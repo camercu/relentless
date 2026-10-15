@@ -39,12 +39,12 @@ pub use stats::RetryStats;
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision};
-use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
+use crate::defaults;
 use crate::predicate::Predicate;
 use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
-use crate::stop::{self, Stop, StopAfterAttempts};
-use crate::wait::{self, Wait, WaitExponential};
+use crate::stop::{Stop, StopAfterAttempts};
+use crate::wait::{Wait, WaitExponential};
 use hooks::ExecutionHooks;
 
 /// A classifier-driven sync retry builder.
@@ -96,8 +96,8 @@ impl<F> DefaultRetry<F> {
         Retry::from_parts(
             op,
             DefaultClassifier,
-            stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait::exponential(DEFAULT_INITIAL_WAIT),
+            defaults::stop(),
+            defaults::wait(),
             None,
         )
     }

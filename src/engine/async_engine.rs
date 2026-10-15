@@ -21,15 +21,15 @@ use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision
 use crate::predicate::Predicate;
 use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
-use crate::stop::{self, Stop, StopAfterAttempts};
-use crate::wait::{self, Wait, WaitExponential};
+use crate::stop::{Stop, StopAfterAttempts};
+use crate::wait::{Wait, WaitExponential};
 use core::future::Future;
 use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use pin_project_lite::pin_project;
 
-use crate::defaults::{DEFAULT_INITIAL_WAIT, DEFAULT_MAX_ATTEMPTS};
+use crate::defaults;
 
 /// A classifier-driven async retry builder — the async twin of
 /// [`Retry`](super::Retry).
@@ -81,8 +81,8 @@ impl<F> DefaultAsyncRetry<F> {
         AsyncRetry::from_parts(
             op,
             DefaultClassifier,
-            stop::attempts(DEFAULT_MAX_ATTEMPTS),
-            wait::exponential(DEFAULT_INITIAL_WAIT),
+            defaults::stop(),
+            defaults::wait(),
             None,
         )
     }
