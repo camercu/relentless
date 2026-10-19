@@ -6,7 +6,9 @@
 //! clone produces a distinct sequence (decorrelation). Seeded tests confirm
 //! reproducibility.
 
-use core::cell::{Cell, RefCell};
+mod common;
+
+use common::RecordingClock;
 use core::time::Duration;
 use relentless::RetryPolicy;
 use relentless::Wait;
@@ -24,41 +26,6 @@ const SEEDED_JITTER_SEED: u64 = 0x11;
 
 fn state(attempt: u32) -> relentless::RetryState {
     relentless::RetryState::for_attempt(attempt)
-}
-
-/// Test-side clock that records each wait into a `Vec`, so wait-sequence
-/// assertions also run under `--no-default-features`, where the library's
-/// `VirtualClock` has no `alloc`-gated recorder. (The test binary always
-/// links `std`.)
-struct RecordingClock {
-    now: Cell<Duration>,
-    waits: RefCell<Vec<Duration>>,
-}
-
-impl RecordingClock {
-    fn new() -> Self {
-        Self {
-            now: Cell::new(Duration::ZERO),
-            waits: RefCell::new(Vec::new()),
-        }
-    }
-
-    fn waits(&self) -> Vec<Duration> {
-        self.waits.borrow().clone()
-    }
-}
-
-impl relentless::Clock for RecordingClock {
-    fn now(&self) -> Duration {
-        self.now.get()
-    }
-}
-
-impl relentless::SyncClock for RecordingClock {
-    fn wait(&self, dur: Duration) {
-        self.now.set(self.now.get().saturating_add(dur));
-        self.waits.borrow_mut().push(dur);
-    }
 }
 
 #[test]
