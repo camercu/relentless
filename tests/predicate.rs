@@ -354,3 +354,20 @@ fn all_predicate_types_implement_clone() {
     let _ = predicate::ok(|_v: &u32| true).clone();
     let _ = predicate::result(|_r: &Result<u32, &str>| true).clone();
 }
+
+#[test]
+fn until_aborts_on_an_error_the_predicate_accepts() {
+    // `.until(p)` retries until `p` is satisfied; a satisfying `Err` ends the
+    // execution as an abort carrying the bare error.
+    let result = relentless::retry(|_| Err::<i32, &str>("fatal"))
+        .until(predicate::error(|e: &&str| *e == "fatal"))
+        .stop(relentless::stop::attempts(3))
+        .wait(relentless::wait::fixed(core::time::Duration::ZERO))
+        .clock(relentless::clock::VirtualClock::new())
+        .call();
+
+    assert_eq!(
+        result,
+        Err(relentless::RetryError::Aborted { last: "fatal" })
+    );
+}

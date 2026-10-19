@@ -691,3 +691,8 @@ fn retry_stats_is_clone_and_copy() {
     assert_eq!(stats.attempts, cloned.attempts);
     assert_eq!(stats.attempts, copied.attempts);
 }
+
+#[test]
+fn stop_reason_aborted_display() {
+    assert_eq!(format!("{}", StopReason::Aborted), "aborted");
+}

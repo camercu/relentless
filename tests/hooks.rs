@@ -417,3 +417,30 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
         vec!["after_attempt", "sleep", "after_attempt"]
     );
 }
+
+#[test]
+fn on_exit_aborted_reports_attempt_count_and_elapsed() {
+    let seen: RefCell<Vec<(u32, Duration)>> = RefCell::new(Vec::new());
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION))
+        .when(predicate::error(|err: &&str| *err == "retryable"));
+    let clock = VirtualClock::new();
+    let first = Cell::new(true);
+
+    let _ = policy
+        .retry(|_| {
+            if first.replace(false) {
+                Err::<i32, _>("retryable")
+            } else {
+                Err("fatal")
+            }
+        })
+        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
+            seen.borrow_mut().push((exit.attempt(), exit.elapsed()));
+        })
+        .clock(&clock)
+        .call();
+
+    assert_eq!(*seen.borrow(), vec![(2, WAIT_DURATION)]);
+}

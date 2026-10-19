@@ -399,3 +399,11 @@ fn retry_error_display_format() {
     };
     assert_eq!(format!("{r}"), "aborted: fatal");
 }
+
+#[test]
+fn aborted_error_has_no_last_outcome() {
+    let aborted: StrErr = RetryError::Aborted { last: "boom" };
+    assert_eq!(aborted.clone().into_last(), None);
+    assert_eq!(aborted.clone().into_last_error(), Some("boom"));
+    assert_eq!(aborted.last(), None);
+}

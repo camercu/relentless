@@ -443,3 +443,17 @@ mod engine_integration {
         );
     }
 }
+
+#[test]
+fn shared_references_forward_both_clock_seams() {
+    // `&&VirtualClock` reaches the blanket `&C` impls rather than the direct
+    // `&VirtualClock` one.
+    let clock = VirtualClock::new();
+    let by_ref = &clock;
+    let nested = &by_ref;
+
+    common::block_on(AsyncClock::wait_async(&nested, ARBITRARY_DURATION));
+    assert_eq!(Clock::now(&nested), ARBITRARY_DURATION);
+    SyncClock::wait(&nested, ARBITRARY_DURATION);
+    assert_eq!(clock.now(), ARBITRARY_DURATION * 2);
+}
