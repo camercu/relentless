@@ -284,9 +284,13 @@ fn timeout_with_std_uses_instant_clock() {
 #[cfg(feature = "std")]
 #[test]
 fn retry_ext_timeout_stops_on_deadline() {
+    // One attempt consumes twice the budget, so the timeout, not the 100-attempt
+    // stop strategy, ends the execution after exactly one attempt.
     let clock = VirtualClock::new();
+    let attempts = Cell::new(0_u32);
 
     let result = (|| {
+        attempts.set(attempts.get() + 1);
         clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
         Err::<i32, &str>(ARBITRARY_ERROR)
     })
@@ -298,6 +302,7 @@ fn retry_ext_timeout_stops_on_deadline() {
     .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(attempts.get(), 1);
 }
 
 #[test]
