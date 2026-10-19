@@ -9,33 +9,22 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_VALUE};
+
 use common::RecordingClock;
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, RetryPolicy, RetryState};
+use relentless::{RetryError, RetryPolicy};
 use relentless::{predicate, stop, wait};
-use std::cell::RefCell;
 
-const MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_POLICY_MAX_ATTEMPTS: u32 = 3;
-const WAIT_DURATION: Duration = Duration::from_millis(10);
 const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
-const SUCCESS_VALUE: i32 = 42;
-/// Deadline shorter than `CUSTOM_CLOCK_STEP_MILLIS` so the first attempt always exhausts it.
-const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
-const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
 const STORAGE_POLICY_WAIT: Duration = Duration::from_millis(1);
-
-// Baseline tests (SPEC 11.1.1): three whole 20 ms attempt steps — 20, 40, 60 —
-// against a 50 ms deadline, so the loop stops on the third attempt.
-const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
-const PER_ATTEMPT_MILLIS: u64 = 20;
-const BASELINE_DEADLINE: Duration = Duration::from_millis(50);
 
 #[test]
 fn new_policy_retries_on_any_error_by_default() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -46,38 +35,38 @@ fn new_policy_retries_on_any_error_by_default() {
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 #[test]
 fn new_policy_accepts_ok_immediately() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let result = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[test]
 fn new_policy_has_exponential_wait_by_default() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
     let clock = RecordingClock::new();
 
     let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
     let recorded = clock.waits();
-    assert_eq!(recorded.len(), (MAX_ATTEMPTS - 1) as usize);
+    assert_eq!(recorded.len(), (ARBITRARY_ATTEMPTS - 1) as usize);
     assert_eq!(recorded[0], Duration::from_millis(100));
     assert_eq!(recorded[1], Duration::from_millis(200));
 }
 
 #[test]
 fn stop_builder_configures_stop_strategy() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
@@ -88,25 +77,25 @@ fn stop_builder_configures_stop_strategy() {
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
 }
 
 #[test]
 fn wait_builder_configures_wait_strategy() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
-        .wait(wait::fixed(WAIT_DURATION));
+        .wait(wait::fixed(ARBITRARY_DELAY));
     let clock = RecordingClock::new();
 
     let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
 
-    assert_eq!(clock.waits(), vec![WAIT_DURATION]);
+    assert_eq!(clock.waits(), vec![ARBITRARY_DELAY]);
 }
 
 #[test]
 fn when_builder_configures_predicate() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
 
     // Retryable error: should retry until exhausted.
@@ -118,7 +107,7 @@ fn when_builder_configures_predicate() {
         })
         .clock(VirtualClock::new())
         .call();
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 
     // Non-retryable error: should NOT retry, returns immediately.
@@ -156,11 +145,11 @@ fn policy_is_easy_to_store_via_three_type_params() {
 
     let result = service
         .retry
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[test]
@@ -185,7 +174,7 @@ fn retry_borrows_policy_without_mut() {
 #[test]
 fn retry_succeeds_after_transient_failures() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
     let call_count = Cell::new(0_u32);
@@ -193,32 +182,32 @@ fn retry_succeeds_after_transient_failures() {
         .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
-            if n < MAX_ATTEMPTS {
+            if n < ARBITRARY_ATTEMPTS {
                 Err("transient")
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
 }
 
 #[test]
 fn sync_retry_type_is_nameable_from_crate_root() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let retry = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new());
     let typed: relentless::Retry<_, _, _, _, _, (), (), ()> = retry;
-    assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
+    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
 }
 
 #[test]
 fn retry_returns_exhausted_when_all_attempts_fail() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let result = policy
         .retry(|_| Err::<i32, _>("always fails"))
@@ -239,15 +228,15 @@ fn retry_predicate_evaluated_before_stop() {
     // satisfies the predicate immediately, so the loop exits even though attempts
     // remain — stop::attempts is never reached.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
 
     let result = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[test]
@@ -265,13 +254,13 @@ fn retry_with_never_stop_still_returns_on_ok() {
             if n < 3 {
                 Err("transient")
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(call_count.get(), 3);
 }
 
@@ -286,23 +275,6 @@ fn default_policy_uses_exponential_backoff() {
     assert_eq!(durations.len(), (DEFAULT_POLICY_MAX_ATTEMPTS - 1) as usize);
     assert_eq!(durations[0], DEFAULT_POLICY_INITIAL_WAIT);
     assert_eq!(durations[1], DEFAULT_POLICY_INITIAL_WAIT.saturating_mul(2),);
-}
-
-#[test]
-fn clock_receives_computed_delay() {
-    let clock = RecordingClock::new();
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
-
-    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
-
-    let durations = clock.waits();
-    // The wait is injected between attempts, not after the last one.
-    assert_eq!(durations.len(), (MAX_ATTEMPTS - 1) as usize);
-    for d in &durations {
-        assert_eq!(*d, WAIT_DURATION);
-    }
 }
 
 #[test]
@@ -325,16 +297,16 @@ fn exponential_wait_increases_sleep_durations() {
 #[test]
 fn policy_is_clone() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let policy2 = policy.clone();
 
     let result = policy2
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[cfg(feature = "alloc")]
@@ -361,7 +333,7 @@ fn boxed_local_erases_policy_types() {
 fn boxed_policy_reuses_across_different_ok_types() {
     let policy: RetryPolicy<Box<dyn relentless::Stop + Send>, Box<dyn relentless::Wait + Send>> =
         RetryPolicy::new()
-            .stop(stop::attempts(MAX_ATTEMPTS))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
             .wait(wait::fixed(Duration::ZERO))
             .boxed();
 
@@ -384,7 +356,7 @@ fn boxed_policy_reuses_across_different_ok_types() {
 #[test]
 fn boxed_local_runs_full_retry_cycle() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .boxed_local();
 
@@ -399,8 +371,8 @@ fn boxed_local_runs_full_retry_cycle() {
 
     assert_eq!(
         call_count.get(),
-        MAX_ATTEMPTS,
-        "should run MAX_ATTEMPTS times"
+        ARBITRARY_ATTEMPTS,
+        "should run ARBITRARY_ATTEMPTS times"
     );
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
@@ -417,7 +389,7 @@ fn boxed_local_is_usable_without_send_bound() {
     let counter_clone = counter.clone();
 
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .boxed_local();
 
@@ -429,7 +401,7 @@ fn boxed_local_is_usable_without_send_bound() {
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(counter.get(), MAX_ATTEMPTS);
+    assert_eq!(counter.get(), ARBITRARY_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -437,7 +409,7 @@ fn boxed_local_is_usable_without_send_bound() {
 #[test]
 fn boxed_policy_erases_strategy_types() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .boxed();
 
@@ -450,14 +422,14 @@ fn boxed_policy_erases_strategy_types() {
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
 #[test]
 fn policy_resets_between_retry_invocations() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
 
     let result = policy
@@ -468,7 +440,7 @@ fn policy_resets_between_retry_invocations() {
 
     // A second `.retry()` call on the same policy must start from attempt 1.
     // If internal state leaked across calls, the counter would already be at
-    // MAX_ATTEMPTS and op would never be invoked.
+    // ARBITRARY_ATTEMPTS and op would never be invoked.
     let call_count = Cell::new(0_u32);
     let result = policy
         .retry(|_| {
@@ -477,7 +449,7 @@ fn policy_resets_between_retry_invocations() {
         })
         .clock(VirtualClock::new())
         .call();
-    assert_eq!(call_count.get(), MAX_ATTEMPTS);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -501,12 +473,12 @@ fn std_feature_provides_default_clock() {
             if attempts.get() == 1 {
                 Err("fail")
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     // The default provider must actually block: thread::sleep guarantees at
     // least the requested duration, so this lower bound is deterministic.
     assert!(started.elapsed() >= DEFAULT_SLEEP_WAIT);
@@ -530,18 +502,18 @@ fn retry_with_single_attempt_calls_op_once() {
 
 #[test]
 fn retry_succeeds_on_first_attempt() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let result = policy
         .retry(|_| {
             call_count.set(call_count.get() + 1);
-            Ok::<_, &str>(SUCCESS_VALUE)
+            Ok::<_, &str>(ARBITRARY_VALUE)
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(call_count.get(), 1);
 }
 
@@ -551,7 +523,7 @@ fn exhausted_returned_for_ok_predicate_exhaustion() {
     // fires with an Ok value still being rejected, the error variant must be
     // Exhausted with last=Ok(_), not Aborted (which `.when` yields only for Err).
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
 
     let result = policy
@@ -570,10 +542,10 @@ fn exhausted_returned_for_ok_predicate_exhaustion() {
 #[test]
 fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .when(predicate::result(|o: &Result<i32, &str>| {
-            matches!(o, Err("transient")) || matches!(o, Ok(v) if *v < SUCCESS_VALUE)
+            matches!(o, Err("transient")) || matches!(o, Ok(v) if *v < ARBITRARY_VALUE)
         }));
 
     let call_count = Cell::new(0_u32);
@@ -584,13 +556,13 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
             match next_call {
                 1 => Err("transient"),
                 2 => Ok(0),
-                _ => Ok(SUCCESS_VALUE),
+                _ => Ok(ARBITRARY_VALUE),
             }
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(call_count.get(), 3);
 }
 
@@ -601,9 +573,9 @@ fn until_ok_retries_through_transient_errors_while_polling() {
     // the semantics documented on `.until` (retry on everything except the match)
     // and on `predicate::ok`: under `.until`, `Err` is retried, not terminal.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .until(predicate::ok(|v: &i32| *v >= SUCCESS_VALUE));
+        .until(predicate::ok(|v: &i32| *v >= ARBITRARY_VALUE));
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -612,13 +584,13 @@ fn until_ok_retries_through_transient_errors_while_polling() {
             call_count.set(next_call);
             match next_call {
                 1 | 2 => Err("transient"),
-                _ => Ok(SUCCESS_VALUE),
+                _ => Ok(ARBITRARY_VALUE),
             }
         })
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(
         call_count.get(),
         3,
@@ -631,7 +603,7 @@ fn predicate_rejects_err_means_immediate_return() {
     // When the predicate does not match an Err, the loop exits immediately with
     // RetryError::Aborted rather than waiting for the stop strategy to fire.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let call_count = Cell::new(0_u32);
@@ -650,96 +622,6 @@ fn predicate_rejects_err_means_immediate_return() {
         }
         other => panic!("expected Aborted with last=\"fatal\", got {other:?}"),
     }
-}
-
-/// End-to-end: the engine feeds each attempt's post-clamp delay forward as the
-/// next attempt's `RetryState::previous_delay`. The unit tests construct
-/// `RetryState` by hand; this proves the sync loop actually wires it, without
-/// which feedback strategies (decorrelated jitter) silently degrade.
-#[test]
-fn engine_feeds_previous_delay_forward_sync() {
-    struct RecordingWait<'a> {
-        seen: &'a RefCell<Vec<Option<Duration>>>,
-        delay: Duration,
-    }
-    impl relentless::Wait for RecordingWait<'_> {
-        fn next_wait(&self, state: &RetryState) -> Duration {
-            self.seen.borrow_mut().push(state.previous_delay);
-            self.delay
-        }
-    }
-
-    const FEEDBACK_DELAY: Duration = Duration::from_millis(7);
-    let seen: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
-
-    let _ = RetryPolicy::new()
-        .stop(stop::attempts(4))
-        .wait(RecordingWait {
-            seen: &seen,
-            delay: FEEDBACK_DELAY,
-        })
-        .retry(|_| Err::<i32, &str>("fail"))
-        .clock(VirtualClock::new())
-        .call();
-
-    // The wait strategy is consulted once per *retry* (not on the terminal
-    // attempt, which stops before any wait). The first consultation sees no
-    // previous delay; each later one sees the prior (constant) delay fed forward.
-    assert_eq!(
-        *seen.borrow(),
-        vec![None, Some(FEEDBACK_DELAY), Some(FEEDBACK_DELAY)]
-    );
-}
-
-/// The elapsed clock is read twice per attempt: once for the `RetryState` the
-/// operation receives (attempt start) and again after the operation completes,
-/// for the stop/wait evaluation. A clock that advances during the operation
-/// must therefore show the operation an *earlier* elapsed than the wait
-/// strategy sees for the same attempt. This guards the two-snapshot semantics
-/// so engine refactors that thread `RetryState` as a unit cannot silently
-/// collapse the pre-op and post-op snapshots into one.
-#[cfg(feature = "alloc")]
-#[test]
-fn elapsed_is_snapshotted_separately_for_op_and_wait() {
-    use std::rc::Rc;
-
-    struct RecordingWait {
-        seen: Rc<RefCell<Vec<Duration>>>,
-    }
-    impl relentless::Wait for RecordingWait {
-        fn next_wait(&self, state: &relentless::RetryState) -> Duration {
-            self.seen.borrow_mut().push(state.elapsed);
-            Duration::ZERO
-        }
-    }
-
-    let clock = VirtualClock::new();
-    let op_elapsed: Cell<Option<Duration>> = Cell::new(None);
-    let wait_elapsed: Rc<RefCell<Vec<Duration>>> = Rc::new(RefCell::new(Vec::new()));
-
-    let _ = RetryPolicy::new()
-        .stop(stop::attempts(2))
-        .wait(RecordingWait {
-            seen: Rc::clone(&wait_elapsed),
-        })
-        .retry(|state: RetryState| {
-            // Record the elapsed the op sees on the first attempt, then advance
-            // the clock so the post-op read differs.
-            if op_elapsed.get().is_none() {
-                op_elapsed.set(Some(state.elapsed));
-            }
-            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
-            Err::<i32, &str>("fail")
-        })
-        .clock(&clock)
-        .call();
-
-    let op_saw = op_elapsed.get().expect("op ran at least once");
-    let wait_saw = wait_elapsed.borrow()[0];
-    assert!(
-        wait_saw > op_saw,
-        "wait should see post-op elapsed ({wait_saw:?}), later than the op ({op_saw:?})"
-    );
 }
 
 /// §6
@@ -810,54 +692,11 @@ fn predicate_accepted_before_stop_fires() {
         .when(predicate::ok(|v: &i32| *v < 0));
 
     let result = policy
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-}
-
-#[test]
-fn custom_elapsed_clock_drives_elapsed_stop_without_std_clock() {
-    let policy = RetryPolicy::new().stop(stop::elapsed(CUSTOM_CLOCK_DEADLINE));
-    let call_count = Cell::new(0_u32);
-    let clock = VirtualClock::new();
-
-    let result = policy
-        .retry(|_| {
-            call_count.set(call_count.get().saturating_add(1));
-            clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
-            Err::<i32, _>("clocked failure")
-        })
-        .clock(&clock)
-        .call();
-
-    assert_eq!(call_count.get(), 1);
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-}
-
-/// 11.1.1 — the elapsed baseline is captured when execution starts (`.call()`),
-/// not when the builder is configured. Idle time between configuring the
-/// builder and calling it must not consume the elapsed budget.
-#[test]
-fn elapsed_baseline_starts_at_call_not_builder_construction() {
-    let clock = VirtualClock::new();
-    let policy = RetryPolicy::new()
-        .stop(stop::elapsed(BASELINE_DEADLINE))
-        .wait(wait::fixed(Duration::ZERO));
-    let execution = policy
-        .retry(|_| {
-            clock.advance(Duration::from_millis(PER_ATTEMPT_MILLIS));
-            Err::<i32, &str>("fail")
-        })
-        .clock(&clock)
-        .with_stats();
-
-    clock.advance(Duration::from_millis(IDLE_BEFORE_CALL_MILLIS));
-    let (result, stats) = execution.call();
-
-    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(stats.attempts, 3);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 /// 5.4
@@ -929,11 +768,11 @@ fn builder_methods_return_typed_policy() {
         .until(predicate::ok(|_: &i32| true));
 
     let result = policy
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 /// 3.5.2
@@ -943,9 +782,9 @@ fn std_sync_retry_uses_thread_sleep_by_default() {
     let result = RetryPolicy::new()
         .stop(stop::attempts(1))
         .wait(wait::fixed(Duration::ZERO))
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .call();
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[test]

@@ -6,6 +6,12 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
+#[cfg(feature = "std")]
+use common::{
+    ARBITRARY_DELAY, ARBITRARY_ERROR, ARBITRARY_VALUE, CLOCK_STEP_MILLIS, TIMEOUT_DEADLINE,
+};
+
 use common::RecordingClock;
 use core::cell::Cell;
 use core::time::Duration;
@@ -14,29 +20,14 @@ use relentless::RetryExt;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy, StopReason, Verdict, retry, stop, wait};
 
-const MAX_ATTEMPTS: u32 = 3;
-#[cfg(feature = "std")]
-const WAIT_DURATION: Duration = Duration::from_millis(10);
-/// Deadline shorter than `CUSTOM_CLOCK_STEP_MILLIS` so the first attempt always exhausts it.
-const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
-const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-#[cfg(feature = "std")]
-const SUCCESS_VALUE: i32 = 42;
-#[cfg(feature = "std")]
-const ERROR_VALUE: &str = "fail";
-#[cfg(feature = "std")]
-const CLOCK_STEP_MILLIS: u64 = 100;
-#[cfg(feature = "std")]
-const TIMEOUT_DEADLINE: Duration = Duration::from_millis(50);
-
 /// `.timeout()` stops the loop when elapsed time meets or exceeds the budget,
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn timeout_stops_loop_when_budget_exceeded() {
-    // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
+    // Allow up to ARBITRARY_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Cell::new(0_u32);
     let clock = VirtualClock::new();
@@ -51,7 +42,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
         .timeout(CUSTOM_CLOCK_DEADLINE)
         .call();
 
-    // The timeout is tighter than MAX_ATTEMPTS would allow, so only 1 attempt runs.
+    // The timeout is tighter than ARBITRARY_ATTEMPTS would allow, so only 1 attempt runs.
     assert_eq!(call_count.get(), 1);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
@@ -61,7 +52,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
 #[test]
 fn policy_timeout_seeds_builder() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let call_count = Cell::new(0_u32);
@@ -97,7 +88,7 @@ fn policy_timeout_survives_later_combinators() {
             Err("fatal") => Verdict::Abort("boom"),
             Err(_) => Verdict::Retry(o),
         })
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Cell::new(0_u32);
     let clock = VirtualClock::new();
@@ -122,7 +113,7 @@ fn policy_timeout_survives_later_combinators() {
 #[test]
 fn policy_timeout_survives_boxed() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE)
         .boxed();
@@ -149,7 +140,7 @@ fn policy_timeout_survives_boxed() {
 fn policy_timeout_replaced_by_builder() {
     const LOOSE_BUDGET: Duration = Duration::from_secs(60);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let call_count = Cell::new(0_u32);
@@ -167,7 +158,7 @@ fn policy_timeout_replaced_by_builder() {
 
     // The loose builder timeout wins over the policy's tight one, so the stop
     // strategy bounds the loop instead.
-    assert_eq!(call_count.get(), MAX_ATTEMPTS + 10);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS + 10);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -181,7 +172,7 @@ fn timeout_zero_permits_exactly_one_attempt() {
     let clock = VirtualClock::new();
 
     let result = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
@@ -284,10 +275,10 @@ fn timeout_with_std_uses_instant_clock() {
     let result = RetryPolicy::new()
         .stop(stop::attempts(1))
         .wait(wait::fixed(Duration::ZERO))
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .timeout(Duration::from_secs(60))
         .call();
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[cfg(feature = "std")]
@@ -297,11 +288,11 @@ fn retry_ext_timeout_stops_on_deadline() {
 
     let result = (|| {
         clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
-        Err::<i32, &str>(ERROR_VALUE)
+        Err::<i32, &str>(ARBITRARY_ERROR)
     })
     .retry()
     .stop(stop::attempts(100))
-    .wait(wait::fixed(WAIT_DURATION))
+    .wait(wait::fixed(ARBITRARY_DELAY))
     .clock(&clock)
     .timeout(TIMEOUT_DEADLINE)
     .call();

@@ -125,58 +125,54 @@ mod embassy_clock {
 #[cfg(feature = "tokio-clock")]
 #[test]
 fn tokio_clock_adapter_is_available() {
-    const SUCCESS_VALUE: i32 = 42;
     let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
     let result: relentless::RetryResult<i32, &str> = crate::common::block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(crate::common::ARBITRARY_VALUE) })
             .clock(relentless::clock::TokioClock::new())
             .call(),
     );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(crate::common::ARBITRARY_VALUE));
 }
 
 #[cfg(all(feature = "embassy-clock", target_os = "none"))]
 #[test]
 fn embassy_clock_adapter_is_available() {
-    const SUCCESS_VALUE: i32 = 42;
     let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
     let result: relentless::RetryResult<i32, &str> = crate::common::block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(crate::common::ARBITRARY_VALUE) })
             .clock(relentless::clock::EmbassyClock::new())
             .call(),
     );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(crate::common::ARBITRARY_VALUE));
 }
 
 #[cfg(all(feature = "gloo-timers-clock", target_arch = "wasm32"))]
 #[test]
 fn gloo_clock_adapter_is_available() {
-    const SUCCESS_VALUE: i32 = 42;
     fn zero_now() -> core::time::Duration {
         core::time::Duration::ZERO
     }
     let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
     let result: relentless::RetryResult<i32, &str> = crate::common::block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(crate::common::ARBITRARY_VALUE) })
             .clock(relentless::clock::GlooClock::with_now(zero_now))
             .call(),
     );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(crate::common::ARBITRARY_VALUE));
 }
 
 #[cfg(feature = "futures-timer-clock")]
 #[test]
 fn futures_timer_clock_adapter_is_available() {
-    const SUCCESS_VALUE: i32 = 42;
     let policy = relentless::RetryPolicy::new().stop(relentless::stop::attempts(1));
     let result: relentless::RetryResult<i32, &str> = crate::common::block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(crate::common::ARBITRARY_VALUE) })
             .clock(relentless::clock::FuturesTimerClock::new())
             .call(),
     );
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(crate::common::ARBITRARY_VALUE));
 }

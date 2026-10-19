@@ -6,6 +6,8 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, RecordingClock};
+
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::pin;
@@ -13,6 +15,7 @@ use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 
 use relentless::clock::{AsyncClock, Clock, SyncClock, VirtualClock};
+use relentless::{RetryPolicy, stop, wait};
 
 const ARBITRARY_DURATION: Duration = Duration::from_millis(10);
 
@@ -456,4 +459,21 @@ fn shared_references_forward_both_clock_seams() {
     assert_eq!(Clock::now(&nested), ARBITRARY_DURATION);
     SyncClock::wait(&nested, ARBITRARY_DURATION);
     assert_eq!(clock.now(), ARBITRARY_DURATION * 2);
+}
+
+#[test]
+fn clock_receives_computed_delay() {
+    let clock = RecordingClock::new();
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
+
+    let _ = policy.retry(|_| Err::<i32, _>("fail")).clock(&clock).call();
+
+    let durations = clock.waits();
+    // The wait is injected between attempts, not after the last one.
+    assert_eq!(durations.len(), (ARBITRARY_ATTEMPTS - 1) as usize);
+    for d in &durations {
+        assert_eq!(*d, ARBITRARY_DELAY);
+    }
 }

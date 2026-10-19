@@ -10,7 +10,13 @@
 
 mod common;
 
+use common::{
+    ARBITRARY_ATTEMPTS, ARBITRARY_ERROR, ARBITRARY_VALUE, CLOCK_STEP_MILLIS, CONTINUE_PAYLOAD,
+    TIMEOUT_DEADLINE,
+};
+
 use common::block_on;
+
 use core::cell::Cell;
 use core::ops::ControlFlow;
 use core::time::Duration;
@@ -23,20 +29,13 @@ use relentless::{
     Wait, predicate, retry, stop, wait,
 };
 
-const MAX_ATTEMPTS: u32 = 3;
-const SUCCESS_VALUE: i32 = 42;
-const ERROR_VALUE: &str = "fail";
-/// A distinctive, non-unit `ControlFlow::Continue` payload used to prove it
-/// survives end to end into the exhausted error's `last`.
-const CONTINUE_PAYLOAD: i32 = 7;
-const WAIT_DURATION: Duration = Duration::from_millis(1);
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
 const DEFAULT_WAIT_SEQUENCE: [Duration; 2] = [DEFAULT_INITIAL_WAIT, DEFAULT_SECOND_WAIT];
+/// The delay `StatefulWait` returns; asserted against the recorded waits.
+const WAIT_DURATION: Duration = Duration::from_millis(1);
 const STATEFUL_STOP_THRESHOLD: u32 = 2;
 const UNTIL_TARGET: u32 = 3;
-const CLOCK_STEP_MILLIS: u64 = 100;
-const TIMEOUT_DEADLINE: Duration = Duration::from_millis(50);
 
 struct StatefulStop {
     consultations: Cell<u32>,
@@ -70,31 +69,31 @@ fn retry_ext_closure_form_retries_until_success() {
 
     let result: relentless::RetryResult<i32, &str> = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
-        if attempts_ref.get() < MAX_ATTEMPTS {
-            Err(ERROR_VALUE)
+        if attempts_ref.get() < ARBITRARY_ATTEMPTS {
+            Err(ARBITRARY_ERROR)
         } else {
-            Ok(SUCCESS_VALUE)
+            Ok(ARBITRARY_VALUE)
         }
     })
     .retry()
-    .stop(stop::attempts(MAX_ATTEMPTS))
+    .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(WAIT_DURATION))
     .clock(VirtualClock::new())
     .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
 }
 
 #[allow(clippy::unnecessary_wraps)]
 fn do_work() -> Result<i32, &'static str> {
-    Ok(SUCCESS_VALUE)
+    Ok(ARBITRARY_VALUE)
 }
 
 #[test]
 fn retry_ext_function_pointer_form_works() {
     let result = do_work.retry().call();
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[test]
@@ -102,7 +101,7 @@ fn default_sync_retry_builder_alias_is_nameable() {
     type SyncWorkFn = fn() -> Result<i32, &'static str>;
 
     let typed = (do_work as SyncWorkFn).retry();
-    assert_eq!(typed.call(), Ok(SUCCESS_VALUE));
+    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
 }
 
 #[test]
@@ -114,7 +113,7 @@ fn default_sync_retry_builder_with_stats_alias_is_nameable() {
         .clock(VirtualClock::new())
         .with_stats();
     let (result, stats) = typed.call();
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
 }
 
@@ -126,14 +125,14 @@ fn retry_ext_uses_default_policy_when_not_overridden() {
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
-        Err::<i32, &str>(ERROR_VALUE)
+        Err::<i32, &str>(ARBITRARY_ERROR)
     })
     .retry()
     .clock(&clock)
     .call();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
     assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
 }
 
@@ -145,7 +144,7 @@ fn retry_ext_with_stats_reports_attempts() {
     let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
         (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
-            Err(ERROR_VALUE)
+            Err(ARBITRARY_ERROR)
         })
         .retry()
         .stop(stop::attempts(2))
@@ -166,7 +165,7 @@ fn retry_ext_stateful_stop_and_wait_work() {
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
-        Err::<i32, &str>(ERROR_VALUE)
+        Err::<i32, &str>(ARBITRARY_ERROR)
     })
     .retry()
     .stop(StatefulStop {
@@ -190,9 +189,9 @@ fn retry_ext_hooks_match_policy_hook_points() {
     let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
     let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
-    let _ = (|| Err::<i32, _>(ERROR_VALUE))
+    let _ = (|| Err::<i32, _>(ARBITRARY_ERROR))
         .retry()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(WAIT_DURATION))
         .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
         .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
@@ -215,7 +214,7 @@ fn retry_ext_hooks_match_policy_hook_points() {
     assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
     assert_eq!(
         *exit_calls.borrow(),
-        vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
+        vec![(ARBITRARY_ATTEMPTS, true, StopReason::Exhausted)]
     );
 }
 
@@ -236,9 +235,9 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
 
 #[test]
 fn retry_ext_non_retryable_error_returns_immediately() {
-    let result = (|| Err::<i32, &str>(ERROR_VALUE))
+    let result = (|| Err::<i32, &str>(ARBITRARY_ERROR))
         .retry()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"))
         .clock(VirtualClock::new())
         .call();
@@ -246,7 +245,7 @@ fn retry_ext_non_retryable_error_returns_immediately() {
     assert!(matches!(
         result,
         Err(RetryError::Aborted {
-            last: ERROR_VALUE,
+            last: ARBITRARY_ERROR,
             ..
         })
     ));
@@ -298,7 +297,7 @@ mod async_tests {
     use super::*;
 
     fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
-        ready(Ok(SUCCESS_VALUE))
+        ready(Ok(ARBITRARY_VALUE))
     }
 
     /// Owned, nameable async clock for tests with no elapsed-based
@@ -327,21 +326,21 @@ mod async_tests {
 
         let future = (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
-            if attempts_ref.get() < MAX_ATTEMPTS {
-                ready(Err(ERROR_VALUE))
+            if attempts_ref.get() < ARBITRARY_ATTEMPTS {
+                ready(Err(ARBITRARY_ERROR))
             } else {
-                ready(Ok(SUCCESS_VALUE))
+                ready(Ok(ARBITRARY_VALUE))
             }
         })
         .retry_async()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(ReadyClock)
         .call();
 
         let result: relentless::RetryResult<i32, &str> = block_on(future);
-        assert_eq!(result, Ok(SUCCESS_VALUE));
-        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(result, Ok(ARBITRARY_VALUE));
+        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
     }
 
     #[test]
@@ -353,7 +352,7 @@ mod async_tests {
         let result = block_on(
             (move || {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+                ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR))
             })
             .retry_async()
             .clock(&clock)
@@ -361,7 +360,7 @@ mod async_tests {
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
         assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
     }
 
@@ -371,7 +370,7 @@ mod async_tests {
 
         let typed = (do_async_work as AsyncWorkFn).retry_async();
         let result: relentless::RetryResult<i32, &str> = block_on(typed.clock(ReadyClock).call());
-        assert_eq!(result, Ok(SUCCESS_VALUE));
+        assert_eq!(result, Ok(ARBITRARY_VALUE));
     }
 
     #[test]
@@ -384,7 +383,7 @@ mod async_tests {
             .with_stats();
         let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
             block_on(typed.call());
-        assert_eq!(result, Ok(SUCCESS_VALUE));
+        assert_eq!(result, Ok(ARBITRARY_VALUE));
         assert_eq!(stats.attempts, 1);
     }
 
@@ -394,9 +393,9 @@ mod async_tests {
         let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
         let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
 
-        let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
+        let future = (|| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
             .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
             .wait(wait::fixed(WAIT_DURATION))
             .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
             .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
@@ -421,13 +420,13 @@ mod async_tests {
         assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
         assert_eq!(
             *exit_calls.borrow(),
-            vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
+            vec![(ARBITRARY_ATTEMPTS, true, StopReason::Exhausted)]
         );
     }
 
     #[test]
     fn async_retry_ext_with_stats_reports_attempts() {
-        let future = (|| ready::<Result<i32, &str>>(Err(ERROR_VALUE)))
+        let future = (|| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
             .retry_async()
             .stop(stop::attempts(2))
             .when(predicate::any_error())
@@ -449,7 +448,7 @@ mod async_tests {
         let result = block_on(
             (move || {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+                ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR))
             })
             .retry_async()
             .stop(StatefulStop {
@@ -471,7 +470,7 @@ mod async_tests {
     #[test]
     fn async_retry_ext_repoll_after_completion_panics() {
         let mut retry = Box::pin(
-            (|| ready(Ok::<i32, &str>(SUCCESS_VALUE)))
+            (|| ready(Ok::<i32, &str>(ARBITRARY_VALUE)))
                 .retry_async()
                 .stop(stop::attempts(1))
                 .clock(ReadyClock)
@@ -480,7 +479,7 @@ mod async_tests {
         let mut cx = Context::from_waker(Waker::noop());
 
         let first_poll = Future::poll(Pin::as_mut(&mut retry), &mut cx);
-        assert_eq!(first_poll, Poll::Ready(Ok(SUCCESS_VALUE)));
+        assert_eq!(first_poll, Poll::Ready(Ok(ARBITRARY_VALUE)));
 
         let second_poll = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = Future::poll(Pin::as_mut(&mut retry), &mut cx);
@@ -496,14 +495,14 @@ mod async_tests {
         let result = block_on(
             relentless::retry_async(move |_| {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
-                ready::<Result<i32, &str>>(Err(ERROR_VALUE))
+                ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR))
             })
             .clock(ReadyClock)
             .call(),
         );
 
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
-        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
     }
 
     #[test]
@@ -534,7 +533,7 @@ mod async_tests {
         let result = block_on(
             (|| {
                 clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
-                ready(Err::<i32, &str>(ERROR_VALUE))
+                ready(Err::<i32, &str>(ARBITRARY_ERROR))
             })
             .retry_async()
             .stop(stop::attempts(100))
@@ -578,24 +577,24 @@ mod async_tests {
 
         let future = (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
-            ready((attempts_ref.get() >= MAX_ATTEMPTS).then_some(SUCCESS_VALUE))
+            ready((attempts_ref.get() >= ARBITRARY_ATTEMPTS).then_some(ARBITRARY_VALUE))
         })
         .retry_async()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(ReadyClock)
         .call();
 
         let result = block_on(future);
-        assert_eq!(result, Ok(SUCCESS_VALUE));
-        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(result, Ok(ARBITRARY_VALUE));
+        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
     }
 
     #[test]
     fn async_option_outcome_all_none_exhausts_carrying_none() {
         let future = (|| ready(None::<i32>))
             .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
             .wait(wait::fixed(Duration::from_millis(1)))
             .clock(ReadyClock)
             .call();
@@ -616,28 +615,28 @@ mod async_tests {
 
         let future = (move || {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
-            ready(if attempts_ref.get() >= MAX_ATTEMPTS {
-                ControlFlow::Break(SUCCESS_VALUE)
+            ready(if attempts_ref.get() >= ARBITRARY_ATTEMPTS {
+                ControlFlow::Break(ARBITRARY_VALUE)
             } else {
                 ControlFlow::Continue(())
             })
         })
         .retry_async()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(ReadyClock)
         .call();
 
         let result = block_on(future);
-        assert_eq!(result, Ok(SUCCESS_VALUE));
-        assert_eq!(attempts.get(), MAX_ATTEMPTS);
+        assert_eq!(result, Ok(ARBITRARY_VALUE));
+        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
     }
 
     #[test]
     fn async_control_flow_outcome_all_continue_exhausts_carrying_continue() {
         let future = (|| ready(ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD)))
             .retry_async()
-            .stop(stop::attempts(MAX_ATTEMPTS))
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
             .wait(wait::fixed(Duration::from_millis(1)))
             .clock(ReadyClock)
             .call();
@@ -659,27 +658,27 @@ mod async_tests {
 
 #[test]
 fn policy_and_extension_forms_are_equivalent_for_basic_case() {
-    let from_ext = (|| Err::<i32, &str>(ERROR_VALUE))
+    let from_ext = (|| Err::<i32, &str>(ARBITRARY_ERROR))
         .retry()
         .clock(VirtualClock::new())
         .call();
 
     let from_policy = RetryPolicy::default()
-        .retry(|_state: RetryState| Err::<i32, &str>(ERROR_VALUE))
+        .retry(|_state: RetryState| Err::<i32, &str>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .call();
 
     assert!(matches!(
         from_ext,
         Err(RetryError::Exhausted {
-            last: Err(ERROR_VALUE),
+            last: Err(ARBITRARY_ERROR),
             ..
         })
     ));
     assert!(matches!(
         from_policy,
         Err(RetryError::Exhausted {
-            last: Err(ERROR_VALUE),
+            last: Err(ARBITRARY_ERROR),
             ..
         })
     ));
@@ -698,7 +697,7 @@ fn free_fn_and_extension_forms_agree_when_state_is_ignored() {
         if n.get() >= SUCCEED_ON_ATTEMPT {
             Ok(n.get())
         } else {
-            Err(ERROR_VALUE)
+            Err(ARBITRARY_ERROR)
         }
     }
 

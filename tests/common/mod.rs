@@ -10,6 +10,19 @@ use core::task::{Context, Poll};
 use core::time::Duration;
 use std::rc::Rc;
 
+// Arbitrary values: any valid value would do. Tests that depend on a specific
+// number declare their own constant instead.
+pub const ARBITRARY_ATTEMPTS: u32 = 3;
+pub const ARBITRARY_VALUE: i32 = 42;
+pub const ARBITRARY_ERROR: &str = "fail";
+pub const ARBITRARY_DELAY: Duration = Duration::from_millis(10);
+pub const CONTINUE_PAYLOAD: i32 = 7;
+/// Deadline shorter than `CUSTOM_CLOCK_STEP_MILLIS`, so one attempt exhausts it.
+pub const CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
+pub const CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
+pub const CLOCK_STEP_MILLIS: u64 = 100;
+pub const TIMEOUT_DEADLINE: Duration = Duration::from_millis(50);
+
 /// Test-side clock that records each wait into a `Vec`, so wait-sequence
 /// assertions also run under `--no-default-features`, where the library's
 /// `VirtualClock` has no `alloc`-gated recorder. (The test binary always

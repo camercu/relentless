@@ -3,6 +3,9 @@
 //! Verifies call ordering relative to the operation and classification, the
 //! `Exit` view delivered to `on_exit`, and that multiple hooks of the same kind
 //! fire in registration order.
+mod common;
+
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_VALUE};
 
 use core::cell::Cell;
 use core::time::Duration;
@@ -11,16 +14,12 @@ use relentless::clock::VirtualClock;
 use relentless::{StopReason, predicate, stop, wait};
 use std::cell::RefCell;
 
-const MAX_ATTEMPTS: u32 = 3;
-const SUCCESS_VALUE: i32 = 42;
-const WAIT_DURATION: Duration = Duration::from_millis(10);
-
 #[test]
 fn before_attempt_and_after_attempt_fire_at_defined_points() {
     let events: RefCell<Vec<(char, u32)>> = RefCell::new(Vec::new());
     let op_attempt = Cell::new(0_u32);
 
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _ = policy
         .retry(|_| {
@@ -60,8 +59,8 @@ fn before_attempt_sees_previous_delay() {
     let delays: RefCell<Vec<Option<Duration>>> = RefCell::new(Vec::new());
 
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
@@ -71,7 +70,7 @@ fn before_attempt_sees_previous_delay() {
 
     assert_eq!(
         *delays.borrow(),
-        vec![None, Some(WAIT_DURATION), Some(WAIT_DURATION)]
+        vec![None, Some(ARBITRARY_DELAY), Some(ARBITRARY_DELAY)]
     );
 }
 
@@ -106,7 +105,7 @@ fn after_attempt_runs_before_classification() {
 #[test]
 fn on_exit_fires_once_with_final_state() {
     let exits: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
@@ -125,7 +124,7 @@ fn on_exit_fires_once_with_final_state() {
 
     assert_eq!(
         *exits.borrow(),
-        vec![(MAX_ATTEMPTS, true, StopReason::Exhausted)]
+        vec![(ARBITRARY_ATTEMPTS, true, StopReason::Exhausted)]
     );
 }
 
@@ -133,7 +132,7 @@ fn on_exit_fires_once_with_final_state() {
 fn on_exit_reports_non_retryable_error_reason() {
     let reasons: RefCell<Vec<StopReason>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"));
 
     let _ = policy
@@ -299,17 +298,17 @@ fn hooks_are_per_call_and_do_not_persist_across_retries() {
 #[test]
 fn after_attempt_hook_fires_after_each_attempt() {
     let hook_results: RefCell<Vec<(u32, bool)>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let call_count = Cell::new(0_u32);
     let _ = policy
         .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
-            if n < MAX_ATTEMPTS {
+            if n < ARBITRARY_ATTEMPTS {
                 Err("fail")
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
@@ -320,7 +319,7 @@ fn after_attempt_hook_fires_after_each_attempt() {
         .call();
 
     let results = hook_results.borrow();
-    assert_eq!(results.len(), MAX_ATTEMPTS as usize);
+    assert_eq!(results.len(), ARBITRARY_ATTEMPTS as usize);
     assert_eq!(results[0], (1, false));
     assert_eq!(results[1], (2, false));
     assert_eq!(results[2], (3, true));
@@ -329,7 +328,7 @@ fn after_attempt_hook_fires_after_each_attempt() {
 #[test]
 fn on_exit_hook_fires_when_stop_triggers() {
     let exit_reason = Cell::new(None);
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _ = policy
         .retry(|_| Err::<i32, _>("fail"))
@@ -345,10 +344,10 @@ fn on_exit_hook_fires_when_stop_triggers() {
 #[test]
 fn on_exit_hook_fires_on_success() {
     let exit_reason = Cell::new(None);
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _ = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
             exit_reason.set(Some(exit.stop_reason()));
         })
@@ -362,7 +361,7 @@ fn on_exit_hook_fires_on_success() {
 #[test]
 fn after_attempt_fires_including_final_attempt() {
     let attempt_nums: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
@@ -398,7 +397,7 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
     let events: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
-        .wait(wait::fixed(WAIT_DURATION));
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let _ = policy
         .retry(|_| Err::<i32, &str>("fail"))
@@ -422,8 +421,8 @@ fn sleep_occurs_after_after_attempt_hook_fires() {
 fn on_exit_aborted_reports_attempt_count_and_elapsed() {
     let seen: RefCell<Vec<(u32, Duration)>> = RefCell::new(Vec::new());
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY))
         .when(predicate::error(|err: &&str| *err == "retryable"));
     let clock = VirtualClock::new();
     let first = Cell::new(true);
@@ -442,5 +441,5 @@ fn on_exit_aborted_reports_attempt_count_and_elapsed() {
         .clock(&clock)
         .call();
 
-    assert_eq!(*seen.borrow(), vec![(2, WAIT_DURATION)]);
+    assert_eq!(*seen.borrow(), vec![(2, ARBITRARY_DELAY)]);
 }

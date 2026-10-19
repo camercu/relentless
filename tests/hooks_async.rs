@@ -5,6 +5,8 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_ERROR, ARBITRARY_VALUE};
+
 use common::RecordingAsyncClock as RecordingClock;
 use common::block_on;
 use core::cell::Cell;
@@ -14,11 +16,6 @@ use core::time::Duration;
 use relentless::{RetryError, RetryPolicy, predicate, stop, wait};
 use std::cell::RefCell;
 use std::rc::Rc;
-
-const MAX_ATTEMPTS: u32 = 3;
-const WAIT_DURATION: Duration = Duration::from_millis(10);
-const SUCCESS_VALUE: i32 = 42;
-const ERROR_VALUE: &str = "fail";
 
 #[test]
 fn async_hooks_fire_in_expected_places() {
@@ -31,11 +28,11 @@ fn async_hooks_fire_in_expected_places() {
     let after_attempt_ref = Rc::clone(&after_attempt_calls);
     let exit_reason_ref = Rc::clone(&exit_reason);
 
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let _result: relentless::RetryResult<i32, &str> = block_on(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .before_attempt(move |state| {
                 before_attempt_ref.borrow_mut().push(state.attempt);
             })
@@ -91,13 +88,13 @@ fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
     let exit_ran = Rc::new(Cell::new(false));
     let exit_ran_ref = Rc::clone(&exit_ran);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let mut cx = Context::from_waker(Waker::noop());
     let mut future = Box::pin(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .on_exit(
                 move |_: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
                     exit_ran_ref.set(true);
@@ -120,11 +117,11 @@ fn async_on_exit_does_not_run_when_the_retry_future_is_dropped() {
 fn async_on_exit_reports_success_reason() {
     let exit_reason = Rc::new(Cell::new(None));
     let exit_reason_ref = Rc::clone(&exit_reason);
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let result: relentless::RetryResult<i32, &str> = block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
             .on_exit(
                 move |exit: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
                     exit_reason_ref.set(Some(exit.stop_reason()));
@@ -134,7 +131,7 @@ fn async_on_exit_reports_success_reason() {
             .call(),
     );
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(exit_reason.get(), Some(relentless::StopReason::Returned));
 }
 
@@ -143,7 +140,7 @@ fn async_on_exit_reports_non_retryable_error_reason() {
     let exit_reason = Rc::new(Cell::new(None));
     let exit_reason_ref = Rc::clone(&exit_reason);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|err: &&str| *err == "retryable"));
 
     let result: relentless::RetryResult<i32, &str> = block_on(
@@ -170,7 +167,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 
     let _ = block_on(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .on_exit(
                 move |_e: &relentless::Exit<'_, i32, &str, Result<i32, &str>>| {
                     exit_calls_ref.set(exit_calls_ref.get().saturating_add(1));
@@ -183,7 +180,7 @@ fn async_hooks_are_per_call_and_do_not_persist() {
 
     let _ = block_on(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .clock(RecordingClock::new())
             .call(),
     );

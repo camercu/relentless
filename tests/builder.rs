@@ -3,6 +3,9 @@
 //! Each test drives one builder surface end to end under a virtual clock:
 //! the default classifier path, `.decide`/`.when`/`.until`, self-classifying
 //! outcomes, the three hook points, `.with_stats()` and `.timeout`.
+mod common;
+
+use common::ARBITRARY_VALUE;
 
 use core::cell::{Cell, RefCell};
 use core::time::Duration;
@@ -14,7 +17,6 @@ use relentless::{
 };
 
 const ARBITRARY_ATTEMPTS: u32 = 5;
-const SUCCESS_VALUE: i32 = 42;
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
 /// drives it with no `.decide` at the call site.
@@ -375,7 +377,7 @@ fn retry_ext_closure_takes_no_retry_state() {
         if call_count_clone.get() < 3 {
             Err("transient")
         } else {
-            Ok(SUCCESS_VALUE)
+            Ok(ARBITRARY_VALUE)
         }
     })
     .retry()
@@ -384,6 +386,6 @@ fn retry_ext_closure_takes_no_retry_state() {
     .clock(VirtualClock::new())
     .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(call_count.get(), 3);
 }

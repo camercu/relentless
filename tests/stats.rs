@@ -8,6 +8,8 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_ERROR, ARBITRARY_VALUE};
+
 use common::RecordingAsyncClock;
 use common::block_on;
 use core::cell::Cell;
@@ -17,37 +19,32 @@ use relentless::{RetryError, RetryPolicy};
 use relentless::{RetryStats, StopReason, predicate, stop, wait};
 use std::rc::Rc;
 
-const MAX_ATTEMPTS: u32 = 3;
-const WAIT_DURATION: Duration = Duration::from_millis(5);
-const SUCCESS_VALUE: i32 = 42;
-const ERROR_VALUE: &str = "fail";
-
 #[test]
 fn sync_with_stats_returns_result_and_stats() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
     let call_count = Cell::new(0_u32);
 
     let (result, stats) = policy
         .retry(|_| {
             let n = call_count.get().saturating_add(1);
             call_count.set(n);
-            if n < MAX_ATTEMPTS {
-                Err::<i32, _>(ERROR_VALUE)
+            if n < ARBITRARY_ATTEMPTS {
+                Err::<i32, _>(ARBITRARY_ERROR)
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
     assert_eq!(
         stats.total_wait,
-        WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
+        ARBITRARY_DELAY.saturating_mul(ARBITRARY_ATTEMPTS - 1)
     );
     // The clock is mandatory, so elapsed time is always tracked; with a
     // virtual clock the waits are the only time source, so elapsed equals
@@ -59,8 +56,8 @@ fn sync_with_stats_returns_result_and_stats() {
 #[test]
 fn async_with_stats_returns_result_and_stats() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
     let call_count = Rc::new(Cell::new(0_u32));
 
     let (result, stats) = block_on(
@@ -69,10 +66,10 @@ fn async_with_stats_returns_result_and_stats() {
                 let count = Rc::clone(&call_count);
                 count.set(count.get().saturating_add(1));
                 async move {
-                    if count.get() < MAX_ATTEMPTS {
-                        Err::<i32, _>(ERROR_VALUE)
+                    if count.get() < ARBITRARY_ATTEMPTS {
+                        Err::<i32, _>(ARBITRARY_ERROR)
                     } else {
-                        Ok(SUCCESS_VALUE)
+                        Ok(ARBITRARY_VALUE)
                     }
                 }
             })
@@ -81,11 +78,11 @@ fn async_with_stats_returns_result_and_stats() {
             .call(),
     );
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
     assert_eq!(
         stats.total_wait,
-        WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
+        ARBITRARY_DELAY.saturating_mul(ARBITRARY_ATTEMPTS - 1)
     );
     // The async test clock advances only through its waits, so elapsed
     // equals total_wait exactly.
@@ -95,15 +92,15 @@ fn async_with_stats_returns_result_and_stats() {
 
 #[test]
 fn sync_first_attempt_success_has_minimal_stats() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let (result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
     // The clock is mandatory, so elapsed time is always tracked; with a
@@ -122,7 +119,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
         .wait(wait::exponential(initial));
 
     let (_result, stats) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
@@ -137,34 +134,34 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
 
 #[test]
 fn sync_stop_reason_returned_with_default_predicate() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let (result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.stop_reason, StopReason::Returned);
 }
 
 #[test]
 fn sync_stop_reason_exhausted_on_exhaustion() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (_result, stats) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
     assert_eq!(
         stats.total_wait,
-        WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
+        ARBITRARY_DELAY.saturating_mul(ARBITRARY_ATTEMPTS - 1)
     );
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
@@ -172,16 +169,16 @@ fn sync_stop_reason_exhausted_on_exhaustion() {
 #[test]
 fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|value: &i32| *value < 0));
 
     let (result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
     assert_eq!(stats.stop_reason, StopReason::Returned);
@@ -190,16 +187,16 @@ fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
 #[test]
 fn sync_stop_reason_returned_for_result_predicate_on_ok() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::result(|r: &Result<i32, &str>| r.is_err()));
 
     let (result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.stop_reason, StopReason::Returned);
 }
@@ -207,16 +204,16 @@ fn sync_stop_reason_returned_for_result_predicate_on_ok() {
 #[test]
 fn sync_stop_reason_returned_for_error_predicate_on_ok() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let (result, stats) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.stop_reason, StopReason::Returned);
 }
@@ -226,7 +223,7 @@ fn sync_stop_reason_aborted_for_non_retryable_error() {
     // A non-retryable error exits immediately with Aborted (the predicate declined
     // to retry), not Exhausted — the stop strategy never fired.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
 
     let (result, stats) = policy
@@ -243,7 +240,7 @@ fn sync_stop_reason_aborted_for_non_retryable_error() {
 #[test]
 fn sync_stop_reason_exhausted_on_condition_not_met() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
 
     let (result, stats) = policy
@@ -259,44 +256,44 @@ fn sync_stop_reason_exhausted_on_condition_not_met() {
         other => panic!("expected Exhausted, got {other:?}"),
     }
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
 }
 
 #[test]
 fn async_stop_reason_exhausted_on_exhaustion() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (_result, stats) = block_on(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
 
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
     assert_eq!(
         stats.total_wait,
-        WAIT_DURATION.saturating_mul(MAX_ATTEMPTS - 1)
+        ARBITRARY_DELAY.saturating_mul(ARBITRARY_ATTEMPTS - 1)
     );
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
 #[test]
 fn async_first_attempt_success_has_minimal_stats() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
             .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
     assert_eq!(stats.stop_reason, StopReason::Returned);
@@ -305,7 +302,7 @@ fn async_first_attempt_success_has_minimal_stats() {
 #[test]
 fn async_stop_reason_condition_not_met() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|v: &i32| *v < 0));
 
     let (result, stats) = block_on(
@@ -321,24 +318,24 @@ fn async_stop_reason_condition_not_met() {
         Err(RetryError::Exhausted { last: Ok(-1), .. })
     ));
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
 }
 
 #[test]
 fn async_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::ok(|value: &i32| *value < 0));
 
     let (result, stats) = block_on(
         policy
-            .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
+            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
             .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(stats.attempts, 1);
     assert_eq!(stats.total_wait, Duration::ZERO);
     assert_eq!(stats.stop_reason, StopReason::Returned);
@@ -346,14 +343,14 @@ fn async_stop_reason_returned_for_custom_predicate_on_ok() {
 
 #[test]
 fn sync_call_without_stats_returns_plain_result() {
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let result: Result<i32, RetryError<&str, Result<i32, &str>>> = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 /// The clock is mandatory, so elapsed tracking cannot be absent: an op that
@@ -367,7 +364,7 @@ fn sync_total_elapsed_reports_clock_time() {
     let (_result, stats) = policy
         .retry(|_| {
             clock.advance(OP_RUNTIME);
-            Ok::<_, &str>(SUCCESS_VALUE)
+            Ok::<_, &str>(ARBITRARY_VALUE)
         })
         .clock(&clock)
         .with_stats()
@@ -382,25 +379,25 @@ fn sync_total_elapsed_reports_clock_time() {
 fn async_total_elapsed_reports_clock_time() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
-        .wait(wait::fixed(WAIT_DURATION));
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (_result, stats) = block_on(
         policy
-            .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
+            .retry_async(|_| async { Err::<i32, &str>(ARBITRARY_ERROR) })
             .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
 
-    assert_eq!(stats.total_elapsed, WAIT_DURATION);
+    assert_eq!(stats.total_elapsed, ARBITRARY_DELAY);
 }
 
 #[test]
 fn retry_stats_implements_debug_and_clone() {
     let stats = RetryStats {
-        attempts: MAX_ATTEMPTS,
+        attempts: ARBITRARY_ATTEMPTS,
         total_elapsed: Duration::from_secs(1),
-        total_wait: WAIT_DURATION,
+        total_wait: ARBITRARY_DELAY,
         stop_reason: StopReason::Returned,
     };
 
@@ -430,23 +427,23 @@ fn stop_reason_implements_debug_clone_copy_eq() {
 #[test]
 fn sync_stats_are_fresh_after_policy_reuse() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (_result1, stats1) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
-    assert_eq!(stats1.attempts, MAX_ATTEMPTS);
+    assert_eq!(stats1.attempts, ARBITRARY_ATTEMPTS);
     assert_eq!(stats1.stop_reason, StopReason::Exhausted);
 
     let (result2, stats2) = policy
-        .retry(|_| Ok::<_, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
-    assert_eq!(result2, Ok(SUCCESS_VALUE));
+    assert_eq!(result2, Ok(ARBITRARY_VALUE));
     assert_eq!(stats2.attempts, 1);
     assert_eq!(stats2.total_wait, Duration::ZERO);
     assert_eq!(stats2.stop_reason, StopReason::Returned);
@@ -456,15 +453,15 @@ fn sync_stats_are_fresh_after_policy_reuse() {
 fn sync_stats_work_alongside_hooks() {
     let hook_calls = Cell::new(0_u32);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION));
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (result, stats) = policy
         .retry(|_| {
-            if hook_calls.get() < MAX_ATTEMPTS {
-                Err::<i32, _>(ERROR_VALUE)
+            if hook_calls.get() < ARBITRARY_ATTEMPTS {
+                Err::<i32, _>(ARBITRARY_ERROR)
             } else {
-                Ok(SUCCESS_VALUE)
+                Ok(ARBITRARY_VALUE)
             }
         })
         .before_attempt(|_state| {
@@ -474,9 +471,9 @@ fn sync_stats_work_alongside_hooks() {
         .with_stats()
         .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(stats.attempts, MAX_ATTEMPTS);
-    assert_eq!(hook_calls.get(), MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
+    assert_eq!(hook_calls.get(), ARBITRARY_ATTEMPTS);
 }
 
 /// 4.3.1
@@ -485,7 +482,7 @@ fn stats_attempts_always_at_least_one() {
     // Single-attempt success.
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let (_, stats) = policy
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
@@ -500,10 +497,10 @@ fn stats_total_wait_excludes_final_attempt_delay() {
     let num_attempts: u32 = 3;
     let policy = RetryPolicy::new()
         .stop(stop::attempts(num_attempts))
-        .wait(wait::fixed(WAIT_DURATION));
+        .wait(wait::fixed(ARBITRARY_DELAY));
 
     let (_, stats) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
@@ -511,7 +508,7 @@ fn stats_total_wait_excludes_final_attempt_delay() {
     // The final attempt fires stop; its wait is never slept.
     assert_eq!(
         stats.total_wait,
-        WAIT_DURATION.saturating_mul(num_attempts - 1)
+        ARBITRARY_DELAY.saturating_mul(num_attempts - 1)
     );
     assert_eq!(stats.attempts, num_attempts);
 }
@@ -525,7 +522,7 @@ fn stats_total_wait_includes_zero_duration_delays() {
         .wait(wait::fixed(Duration::ZERO));
 
     let (_, stats) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
@@ -540,9 +537,9 @@ fn stats_total_wait_includes_zero_duration_delays() {
 #[test]
 fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
     // Returned Ok
-    let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
+    let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
     let (_, stats) = policy
-        .retry(|_| Ok::<i32, &str>(SUCCESS_VALUE))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new())
         .with_stats()
         .call();
@@ -550,7 +547,7 @@ fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
 
     // Aborted Err (predicate does not match — Aborted)
     let policy2 = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(predicate::error(|e: &&str| *e == "retryable"));
     let (_, stats2) = policy2
         .retry(|_| Err::<i32, _>("fatal"))
@@ -564,10 +561,10 @@ fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
 #[test]
 fn stop_reason_exhausted_when_stop_strategy_fires() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
     let (_, stats) = policy
-        .retry(|_| Err::<i32, _>(ERROR_VALUE))
+        .retry(|_| Err::<i32, _>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .with_stats()
         .call();

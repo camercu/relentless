@@ -5,25 +5,22 @@
 
 mod common;
 
+use common::{ARBITRARY_ATTEMPTS, CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
+
 use common::RecordingAsyncClock as RecordingClock;
 use common::block_on;
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy, stop, wait};
 
-const MAX_ATTEMPTS: u32 = 3;
-/// Deadline shorter than `ASYNC_CUSTOM_CLOCK_STEP_MILLIS` so the first attempt always exhausts it.
-const ASYNC_CUSTOM_CLOCK_DEADLINE: Duration = Duration::from_millis(5);
-const ASYNC_CUSTOM_CLOCK_STEP_MILLIS: u64 = 10;
-
 /// `.timeout()` stops the async loop when elapsed time meets or exceeds the budget,
 /// even if the stop strategy would allow more attempts.
 #[test]
 fn async_timeout_stops_loop_when_budget_exceeded() {
-    // Allow up to MAX_ATTEMPTS+10 attempts but set a tight timeout so the
+    // Allow up to ARBITRARY_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO));
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
@@ -33,16 +30,16 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
+                    clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
                     Err::<i32, &str>("fail")
                 }
             })
-            .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE)
+            .timeout(CUSTOM_CLOCK_DEADLINE)
             .clock(clock.clone())
             .call(),
     );
 
-    // The timeout is tighter than MAX_ATTEMPTS+10 would allow, so only 1 attempt runs.
+    // The timeout is tighter than ARBITRARY_ATTEMPTS+10 would allow, so only 1 attempt runs.
     assert_eq!(call_count.get(), 1);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
@@ -52,9 +49,9 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
 #[test]
 fn async_policy_timeout_seeds_builder() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
-        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
+        .timeout(CUSTOM_CLOCK_DEADLINE);
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
@@ -63,7 +60,7 @@ fn async_policy_timeout_seeds_builder() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
+                    clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
                     Err::<i32, &str>("fail")
                 }
             })
@@ -81,9 +78,9 @@ fn async_policy_timeout_seeds_builder() {
 fn async_policy_timeout_replaced_by_builder() {
     const LOOSE_BUDGET: Duration = Duration::from_secs(60);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(MAX_ATTEMPTS + 10))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
         .wait(wait::fixed(Duration::ZERO))
-        .timeout(ASYNC_CUSTOM_CLOCK_DEADLINE);
+        .timeout(CUSTOM_CLOCK_DEADLINE);
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
@@ -92,7 +89,7 @@ fn async_policy_timeout_replaced_by_builder() {
             .retry_async(|_| {
                 call_count.set(call_count.get().saturating_add(1));
                 async {
-                    clock.advance(Duration::from_millis(ASYNC_CUSTOM_CLOCK_STEP_MILLIS));
+                    clock.advance(Duration::from_millis(CUSTOM_CLOCK_STEP_MILLIS));
                     Err::<i32, &str>("fail")
                 }
             })
@@ -101,6 +98,6 @@ fn async_policy_timeout_replaced_by_builder() {
             .call(),
     );
 
-    assert_eq!(call_count.get(), MAX_ATTEMPTS + 10);
+    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS + 10);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }

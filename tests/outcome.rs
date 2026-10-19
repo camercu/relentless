@@ -4,21 +4,16 @@
 //! classifier delegates to `Outcome::classify` and hands a retried outcome
 //! back whole. End-to-end sync runs cover `Option` and `ControlFlow` ops with
 //! and without a `.decide` override.
+mod common;
+
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_VALUE, CONTINUE_PAYLOAD};
 
 use core::cell::Cell;
 use core::ops::ControlFlow;
-use core::time::Duration;
 use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
 use relentless::{Decide, DefaultClassifier, Outcome, RetryError, Verdict, retry, stop, wait};
-
-const MAX_ATTEMPTS: u32 = 3;
-const SUCCESS_VALUE: i32 = 42;
-const WAIT_DURATION: Duration = Duration::from_millis(1);
-/// A distinctive, non-unit `ControlFlow::Continue` payload used to prove it
-/// survives end to end into the exhausted error's `last`.
-const CONTINUE_PAYLOAD: i32 = 7;
 
 #[test]
 fn result_ok_classifies_as_return() {
@@ -92,15 +87,15 @@ fn option_outcome_retries_through_none_then_returns_some() {
     // `None` retries, `Some(v)` delivers `v`.
     let result = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
-        (attempts_ref.get() >= MAX_ATTEMPTS).then_some(SUCCESS_VALUE)
+        (attempts_ref.get() >= ARBITRARY_ATTEMPTS).then_some(ARBITRARY_VALUE)
     })
-    .stop(stop::attempts(MAX_ATTEMPTS))
-    .wait(wait::fixed(WAIT_DURATION))
+    .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+    .wait(wait::fixed(ARBITRARY_DELAY))
     .clock(VirtualClock::new())
     .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
 }
 
 #[test]
@@ -108,8 +103,8 @@ fn option_outcome_all_none_exhausts_carrying_none() {
     // No `Some` ever arrives, so the loop exhausts its stop strategy; the last
     // outcome carried out is `None` (Option's abort type is `Infallible`).
     let result = retry(|_| None::<i32>)
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY))
         .clock(VirtualClock::new())
         .call();
 
@@ -127,8 +122,8 @@ fn option_op_decide_override_projects_a_custom_verdict() {
             Some(v) => Verdict::Return(v),
             None => Verdict::Retry(None),
         })
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY))
         .clock(VirtualClock::new())
         .call();
 
@@ -144,26 +139,26 @@ fn control_flow_outcome_retries_through_continue_then_breaks() {
     // `Continue(_)` retries, `Break(v)` delivers `v`.
     let result = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
-        if attempts_ref.get() >= MAX_ATTEMPTS {
-            ControlFlow::Break(SUCCESS_VALUE)
+        if attempts_ref.get() >= ARBITRARY_ATTEMPTS {
+            ControlFlow::Break(ARBITRARY_VALUE)
         } else {
             ControlFlow::Continue(())
         }
     })
-    .stop(stop::attempts(MAX_ATTEMPTS))
-    .wait(wait::fixed(WAIT_DURATION))
+    .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+    .wait(wait::fixed(ARBITRARY_DELAY))
     .clock(VirtualClock::new())
     .call();
 
-    assert_eq!(result, Ok(SUCCESS_VALUE));
-    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
 }
 
 #[test]
 fn control_flow_outcome_all_continue_exhausts_carrying_continue() {
     let result = retry(|_| ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD))
-        .stop(stop::attempts(MAX_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
+        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+        .wait(wait::fixed(ARBITRARY_DELAY))
         .clock(VirtualClock::new())
         .call();
 
