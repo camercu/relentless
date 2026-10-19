@@ -10,9 +10,10 @@
 //! phases exist only because an async attempt or sleep can span multiple polls.
 
 use super::elapsed::Elapsed;
-use super::hooks::{AttemptHook, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain};
+use super::hooks::{
+    AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, Exit, ExitHook, HookChain,
+};
 use super::op::{AsyncRetryOp, StatelessOp};
-use super::state::{AttemptState, Exit};
 use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};

@@ -1,6 +1,6 @@
 //! The classifier engine's error type.
 
-use super::state::StopReason;
+use super::termination::StopReason;
 use core::convert::Infallible;
 use core::fmt;
 use core::ops::ControlFlow;

@@ -56,9 +56,10 @@ changing code.
   machine, `before_attempt` timing — edit both in lockstep; core changes touch
   `step` alone.
 - The core and drivers share these building blocks:
-  [src/engine/state.rs](/src/engine/state.rs) (`AttemptState`, `Exit`,
-  `StopReason`), [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain`
-  type-state), [src/engine/op.rs](/src/engine/op.rs)
+  [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain` type-state and the
+  `AttemptState`/`Exit` views the hooks receive),
+  [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason`),
+  [src/engine/op.rs](/src/engine/op.rs)
   (`RetryOp`/`AsyncRetryOp`), [src/engine/error.rs](/src/engine/error.rs)
   (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)
   (`RetryStats`); the outcome-agnostic `Stop`/`Wait`/`Clock`/`RetryState`

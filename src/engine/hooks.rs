@@ -6,7 +6,8 @@
 //! `before_attempt`/`after_attempt`/`on_exit`; the traits are named only in
 //! the `where` bounds of code generic over a configured builder.
 
-use super::state::{AttemptState, Exit};
+use super::termination::StopReason;
+use crate::compat::Duration;
 use crate::state::RetryState;
 
 /// Dispatch trait for before-attempt hooks (outcome-free context).
@@ -159,5 +160,133 @@ impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
             after_attempt: self.after_attempt,
             on_exit: HookChain::new(self.on_exit, hook),
         }
+    }
+}
+
+// The outcome-carrying views handed to the hooks above. `RetryState` (the
+// pre-attempt, outcome-free context for the operation and `before_attempt`)
+// lives in `crate::state`.
+
+/// Read-only context passed to the `after_attempt` hook, once per attempt.
+///
+/// Fires *before* the classifier consumes the outcome, so the hook sees every
+/// raw outcome under a uniform contract — including the terminal one.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub struct AttemptState<'a, O> {
+    /// The 1-indexed attempt number that just completed.
+    pub attempt: u32,
+    /// Wall-clock time elapsed since the first attempt began.
+    pub elapsed: Duration,
+    /// A borrow of the raw outcome, before classification.
+    pub outcome: &'a O,
+}
+
+impl<'a, O> AttemptState<'a, O> {
+    /// Creates an `AttemptState` for the given 1-indexed attempt and outcome.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `attempt` is `0` (attempts are 1-indexed).
+    #[must_use]
+    pub(crate) const fn new(attempt: u32, elapsed: Duration, outcome: &'a O) -> Self {
+        debug_assert!(attempt >= 1, "attempt is 1-indexed");
+        Self {
+            attempt,
+            elapsed,
+            outcome,
+        }
+    }
+}
+
+/// Final context passed to the `on_exit` hook: a borrowed view of exactly what
+/// the caller receives, plus the terminal attempt's counters.
+///
+/// [`stop_reason`](Self::stop_reason) is derived from the variant, so the reason
+/// and the payload cannot disagree.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub enum Exit<'a, R, A, O> {
+    /// The classifier returned `value` — the caller receives `Ok(value)`.
+    Returned {
+        /// The 1-indexed number of completed attempts.
+        attempt: u32,
+        /// Wall-clock time elapsed since the first attempt began.
+        elapsed: Duration,
+        /// The value the caller receives.
+        value: &'a R,
+    },
+    /// The classifier aborted with `last`.
+    Aborted {
+        /// The 1-indexed number of completed attempts.
+        attempt: u32,
+        /// Wall-clock time elapsed since the first attempt began.
+        elapsed: Duration,
+        /// The abort payload the caller receives.
+        last: &'a A,
+    },
+    /// The stop strategy fired while the classifier still wanted to retry.
+    Exhausted {
+        /// The 1-indexed number of completed attempts.
+        attempt: u32,
+        /// Wall-clock time elapsed since the first attempt began.
+        elapsed: Duration,
+        /// The final whole outcome the caller receives.
+        last: &'a O,
+    },
+}
+
+impl<R, A, O> Exit<'_, R, A, O> {
+    /// The 1-indexed number of completed attempts.
+    #[must_use]
+    pub fn attempt(&self) -> u32 {
+        match self {
+            Exit::Returned { attempt, .. }
+            | Exit::Aborted { attempt, .. }
+            | Exit::Exhausted { attempt, .. } => *attempt,
+        }
+    }
+
+    /// Wall-clock time elapsed since the first attempt began.
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        match self {
+            Exit::Returned { elapsed, .. }
+            | Exit::Aborted { elapsed, .. }
+            | Exit::Exhausted { elapsed, .. } => *elapsed,
+        }
+    }
+
+    /// The reason the loop terminated, derived from the variant.
+    #[must_use]
+    pub fn stop_reason(&self) -> StopReason {
+        match self {
+            Exit::Returned { .. } => StopReason::Returned,
+            Exit::Aborted { .. } => StopReason::Aborted,
+            Exit::Exhausted { .. } => StopReason::Exhausted,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attempt_state_exposes_attempt_elapsed_and_outcome() {
+        let outcome: Result<(), &str> = Err("network timeout");
+        let state = AttemptState::new(1, Duration::ZERO, &outcome);
+
+        assert_eq!(state.attempt, 1);
+        assert_eq!(state.elapsed, Duration::ZERO);
+        assert_eq!(state.outcome.unwrap_err(), "network timeout");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "attempt is 1-indexed")]
+    fn attempt_state_new_zero_panics_in_debug() {
+        let outcome: Result<i32, &str> = Ok(1);
+        let _ = AttemptState::new(0, Duration::ZERO, &outcome);
     }
 }

@@ -15,14 +15,14 @@ mod elapsed;
 mod error;
 mod hooks;
 mod op;
-mod state;
 mod stats;
 mod step;
+mod termination;
 
 pub use error::{RetryError, RetryResult};
 
 use elapsed::Elapsed;
-pub use hooks::{AttemptHook, BeforeAttemptHook, ExitHook, HookChain};
+pub use hooks::{AttemptHook, AttemptState, BeforeAttemptHook, Exit, ExitHook, HookChain};
 pub use op::{AsyncRetryOp, RetryOp, StatelessOp};
 use step::{Progress, Step, step};
 
@@ -33,8 +33,8 @@ type DefaultRetry<F> =
 pub use async_engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, DropStats, retry_async,
 };
-pub use state::{AttemptState, Exit, StopReason};
 pub use stats::RetryStats;
+pub use termination::StopReason;
 
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;

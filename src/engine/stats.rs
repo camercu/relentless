@@ -1,6 +1,6 @@
 //! Aggregate statistics for a completed classifier-engine execution.
 
-use super::state::StopReason;
+use super::termination::StopReason;
 use crate::compat::Duration;
 
 /// Aggregate statistics for a completed retry execution.
