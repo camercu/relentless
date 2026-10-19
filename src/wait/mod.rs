@@ -10,7 +10,6 @@ use crate::compat::Duration;
 use crate::state::RetryState;
 
 mod composition;
-mod math;
 mod strategies;
 
 mod jitter;
