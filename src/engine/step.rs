@@ -9,9 +9,9 @@
 //! `tests/parity.rs`.
 
 use super::error::RetryError;
-use super::hooks::{AttemptHook, AttemptState, ExecutionHooks, Exit, ExitHook};
+use super::hooks::{AttemptHook, AttemptState, ExecutionHooks, ExitHook};
 use super::stats::RetryStats;
-use super::termination::StopReason;
+use super::termination::{Exit, StopReason};
 use crate::compat::Duration;
 use crate::decision::{Decide, Verdict};
 use crate::state::RetryState;

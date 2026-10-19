@@ -24,8 +24,8 @@ pub use async_engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, DropStats, retry_async,
 };
 pub use error::{RetryError, RetryResult};
-pub use hooks::{AttemptHook, AttemptState, BeforeAttemptHook, Exit, ExitHook, HookChain};
+pub use hooks::{AttemptHook, AttemptState, BeforeAttemptHook, ExitHook, HookChain};
 pub use op::{AsyncRetryOp, RetryOp, StatelessOp};
 pub use stats::RetryStats;
 pub use sync_engine::{Retry, RetryExt, RetryWithStats, retry};
-pub use termination::StopReason;
+pub use termination::{Exit, StopReason};

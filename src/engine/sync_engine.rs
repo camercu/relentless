@@ -7,10 +7,11 @@
 
 use super::elapsed::Elapsed;
 use super::hooks::{
-    AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, Exit, ExitHook, HookChain,
+    AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
 };
 use super::op::{RetryOp, StatelessOp};
 use super::step::{Progress, Step, step};
+use super::termination::Exit;
 use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;

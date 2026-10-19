@@ -57,8 +57,9 @@ changing code.
   `step` alone.
 - The core and drivers share these building blocks:
   [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain` type-state and the
-  `AttemptState`/`Exit` views the hooks receive),
-  [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason`),
+  `AttemptState` view),
+  [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason` and the
+  `Exit` view),
   [src/engine/op.rs](/src/engine/op.rs)
   (`RetryOp`/`AsyncRetryOp`), [src/engine/error.rs](/src/engine/error.rs)
   (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)

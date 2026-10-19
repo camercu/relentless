@@ -6,11 +6,11 @@
 //! `before_attempt`/`after_attempt`/`on_exit`; the traits are named only in
 //! the `where` bounds of code generic over a configured builder.
 //!
-//! [`AttemptState`] (passed to `after_attempt`) and [`Exit`] (passed to
-//! `on_exit`) are the outcome-carrying views; [`RetryState`] is the
-//! pre-attempt context.
+//! [`AttemptState`] (passed to `after_attempt`) is the outcome-carrying view;
+//! [`RetryState`] is the pre-attempt context. `on_exit` receives an
+//! [`Exit`](super::termination::Exit).
 
-use super::termination::StopReason;
+use super::termination::Exit;
 use crate::compat::Duration;
 use crate::state::RetryState;
 
@@ -167,7 +167,7 @@ impl<BA, AA, OX> ExecutionHooks<BA, AA, OX> {
     }
 }
 
-// The outcome-carrying views handed to the hooks above. `RetryState` (the
+// The outcome-carrying view handed to `after_attempt`. `RetryState` (the
 // pre-attempt, outcome-free context for the operation and `before_attempt`)
 // lives in `crate::state`.
 
@@ -199,75 +199,6 @@ impl<'a, O> AttemptState<'a, O> {
             attempt,
             elapsed,
             outcome,
-        }
-    }
-}
-
-/// Final context passed to the `on_exit` hook: a borrowed view of exactly what
-/// the caller receives, plus the terminal attempt's counters.
-///
-/// [`stop_reason`](Self::stop_reason) is derived from the variant, so the reason
-/// and the payload cannot disagree.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy)]
-pub enum Exit<'a, R, A, O> {
-    /// The classifier returned `value` — the caller receives `Ok(value)`.
-    Returned {
-        /// The 1-indexed number of completed attempts.
-        attempt: u32,
-        /// Wall-clock time elapsed since the first attempt began.
-        elapsed: Duration,
-        /// The value the caller receives.
-        value: &'a R,
-    },
-    /// The classifier aborted with `last`.
-    Aborted {
-        /// The 1-indexed number of completed attempts.
-        attempt: u32,
-        /// Wall-clock time elapsed since the first attempt began.
-        elapsed: Duration,
-        /// The abort payload the caller receives.
-        last: &'a A,
-    },
-    /// The stop strategy fired while the classifier still wanted to retry.
-    Exhausted {
-        /// The 1-indexed number of completed attempts.
-        attempt: u32,
-        /// Wall-clock time elapsed since the first attempt began.
-        elapsed: Duration,
-        /// The final whole outcome the caller receives.
-        last: &'a O,
-    },
-}
-
-impl<R, A, O> Exit<'_, R, A, O> {
-    /// The 1-indexed number of completed attempts.
-    #[must_use]
-    pub fn attempt(&self) -> u32 {
-        match self {
-            Exit::Returned { attempt, .. }
-            | Exit::Aborted { attempt, .. }
-            | Exit::Exhausted { attempt, .. } => *attempt,
-        }
-    }
-
-    /// Wall-clock time elapsed since the first attempt began.
-    #[must_use]
-    pub fn elapsed(&self) -> Duration {
-        match self {
-            Exit::Returned { elapsed, .. }
-            | Exit::Aborted { elapsed, .. }
-            | Exit::Exhausted { elapsed, .. } => *elapsed,
-        }
-    }
-
-    /// The reason the loop terminated, derived from the variant.
-    #[must_use]
-    pub fn stop_reason(&self) -> StopReason {
-        match self {
-            Exit::Returned { .. } => StopReason::Returned,
-            Exit::Aborted { .. } => StopReason::Aborted,
-            Exit::Exhausted { .. } => StopReason::Exhausted,
         }
     }
 }
