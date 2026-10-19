@@ -48,7 +48,7 @@ changing code.
   All classify → stop → wait → hook → exit transitions and stats accounting live
   here once, so this is where correctness changes belong.
 - Two thin drivers wrap that core and differ only in how they invoke the
-  operation and how they sleep: [src/engine/mod.rs](/src/engine/mod.rs)
+  operation and how they sleep: [src/engine/sync_engine.rs](/src/engine/sync_engine.rs)
   `Retry::run` (sync, blocks on `clock.wait`; entry points `retry`, `RetryExt`)
   and [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
   (async `Phase` state machine, polls a `wait_async` future; `retry_async`,
