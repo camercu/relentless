@@ -8,82 +8,19 @@
 
 mod common;
 
-#[cfg(all(feature = "alloc", feature = "std"))]
-#[cfg(all(feature = "alloc", feature = "std"))]
+use common::RecordingAsyncClock;
 use common::block_on;
 use core::cell::Cell;
-#[cfg(all(feature = "alloc", feature = "std"))]
-use core::future::Future;
-#[cfg(all(feature = "alloc", feature = "std"))]
-use core::pin::Pin;
-#[cfg(all(feature = "alloc", feature = "std"))]
-use core::task::{Context, Poll};
 use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy};
 use relentless::{RetryStats, StopReason, predicate, stop, wait};
-#[cfg(all(feature = "alloc", feature = "std"))]
 use std::rc::Rc;
 
 const MAX_ATTEMPTS: u32 = 3;
 const WAIT_DURATION: Duration = Duration::from_millis(5);
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
-
-/// Wait-free async clock for stats tests that don't assert on elapsed time.
-#[derive(Clone)]
-#[cfg(all(feature = "alloc", feature = "std"))]
-struct InstantAsyncClock(Rc<Cell<Duration>>);
-
-#[cfg(all(feature = "alloc", feature = "std"))]
-impl InstantAsyncClock {
-    fn new() -> Self {
-        Self(Rc::new(Cell::new(Duration::ZERO)))
-    }
-}
-
-#[cfg(all(feature = "alloc", feature = "std"))]
-impl relentless::Clock for InstantAsyncClock {
-    fn now(&self) -> Duration {
-        self.0.get()
-    }
-}
-
-#[cfg(all(feature = "alloc", feature = "std"))]
-impl relentless::AsyncClock for InstantAsyncClock {
-    type Wait = InstantWait;
-
-    fn wait_async(&self, dur: Duration) -> Self::Wait {
-        InstantWait {
-            now: Rc::clone(&self.0),
-            dur,
-            done: false,
-        }
-    }
-}
-
-/// Resolves immediately, advancing the clock on first poll so waits stay
-/// visible to the elapsed seam.
-#[cfg(all(feature = "alloc", feature = "std"))]
-struct InstantWait {
-    now: Rc<Cell<Duration>>,
-    dur: Duration,
-    done: bool,
-}
-
-#[cfg(all(feature = "alloc", feature = "std"))]
-impl Future for InstantWait {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
-        let this = self.get_mut();
-        if !this.done {
-            this.done = true;
-            this.now.set(this.now.get().saturating_add(this.dur));
-        }
-        Poll::Ready(())
-    }
-}
 
 #[test]
 fn sync_with_stats_returns_result_and_stats() {
@@ -120,7 +57,6 @@ fn sync_with_stats_returns_result_and_stats() {
 }
 
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_with_stats_returns_result_and_stats() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -140,7 +76,7 @@ fn async_with_stats_returns_result_and_stats() {
                     }
                 }
             })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -327,7 +263,6 @@ fn sync_stop_reason_exhausted_on_condition_not_met() {
 }
 
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_exhausted_on_exhaustion() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -336,7 +271,7 @@ fn async_stop_reason_exhausted_on_exhaustion() {
     let (_result, stats) = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -350,14 +285,13 @@ fn async_stop_reason_exhausted_on_exhaustion() {
 }
 
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_first_attempt_success_has_minimal_stats() {
     let policy = RetryPolicy::new().stop(stop::attempts(MAX_ATTEMPTS));
 
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -369,7 +303,6 @@ fn async_first_attempt_success_has_minimal_stats() {
 }
 
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_condition_not_met() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -378,7 +311,7 @@ fn async_stop_reason_condition_not_met() {
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(-1) })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -392,7 +325,6 @@ fn async_stop_reason_condition_not_met() {
 }
 
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(MAX_ATTEMPTS))
@@ -401,7 +333,7 @@ fn async_stop_reason_returned_for_custom_predicate_on_ok() {
     let (result, stats) = block_on(
         policy
             .retry_async(|_| async { Ok::<i32, &str>(SUCCESS_VALUE) })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
@@ -447,7 +379,6 @@ fn sync_total_elapsed_reports_clock_time() {
 /// Async mirror of the mandatory-elapsed contract: virtual waits are the only
 /// time source, so elapsed equals the accumulated wait exactly.
 #[test]
-#[cfg(all(feature = "alloc", feature = "std"))]
 fn async_total_elapsed_reports_clock_time() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(2))
@@ -456,7 +387,7 @@ fn async_total_elapsed_reports_clock_time() {
     let (_result, stats) = block_on(
         policy
             .retry_async(|_| async { Err::<i32, &str>(ERROR_VALUE) })
-            .clock(InstantAsyncClock::new())
+            .clock(RecordingAsyncClock::new())
             .with_stats()
             .call(),
     );
