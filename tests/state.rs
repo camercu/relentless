@@ -1,7 +1,7 @@
-//! Tests for state types passed to Stop strategies and hooks.
+//! Tests for `RetryState`, the context passed to Stop and Wait strategies and
+//! to `before_attempt`.
 //!
-//! Verifies the public layout of `RetryState`, the 1-indexed attempt numbers,
-//! and the `Exit`-independent state views.
+//! Verifies the public layout, the 1-indexed attempt numbers and the setters.
 
 use core::time::Duration;
 use relentless::clock::VirtualClock;

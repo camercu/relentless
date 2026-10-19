@@ -2,11 +2,23 @@
 //!
 //! `Result`, `Option` and `ControlFlow` classify themselves; the default
 //! classifier delegates to `Outcome::classify` and hands a retried outcome
-//! back whole.
+//! back whole. End-to-end sync runs cover `Option` and `ControlFlow` ops with
+//! and without a `.decide` override.
 
+use core::cell::Cell;
 use core::ops::ControlFlow;
+use core::time::Duration;
+use std::rc::Rc;
 
-use relentless::{Decide, DefaultClassifier, Outcome, Verdict};
+use relentless::clock::VirtualClock;
+use relentless::{Decide, DefaultClassifier, Outcome, RetryError, Verdict, retry, stop, wait};
+
+const MAX_ATTEMPTS: u32 = 3;
+const SUCCESS_VALUE: i32 = 42;
+const WAIT_DURATION: Duration = Duration::from_millis(1);
+/// A distinctive, non-unit `ControlFlow::Continue` payload used to prove it
+/// survives end to end into the exhausted error's `last`.
+const CONTINUE_PAYLOAD: i32 = 7;
 
 #[test]
 fn result_ok_classifies_as_return() {
@@ -68,5 +80,105 @@ fn default_classifier_delegates_to_control_flow() {
     assert_eq!(
         classifier.decide(cont),
         Verdict::Retry(ControlFlow::Continue(1))
+    );
+}
+
+#[test]
+fn option_outcome_retries_through_none_then_returns_some() {
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+
+    // An `Option`-returning op drives the default classifier with no `.decide`:
+    // `None` retries, `Some(v)` delivers `v`.
+    let result = retry(move |_| {
+        attempts_ref.set(attempts_ref.get().saturating_add(1));
+        (attempts_ref.get() >= MAX_ATTEMPTS).then_some(SUCCESS_VALUE)
+    })
+    .stop(stop::attempts(MAX_ATTEMPTS))
+    .wait(wait::fixed(WAIT_DURATION))
+    .clock(VirtualClock::new())
+    .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+}
+
+#[test]
+fn option_outcome_all_none_exhausts_carrying_none() {
+    // No `Some` ever arrives, so the loop exhausts its stop strategy; the last
+    // outcome carried out is `None` (Option's abort type is `Infallible`).
+    let result = retry(|_| None::<i32>)
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION))
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(result, Err(RetryError::Exhausted { last: None }));
+}
+
+#[test]
+fn option_op_decide_override_projects_a_custom_verdict() {
+    // The default classifier is not the only path for an `Option` op: `.decide`
+    // composes with it, and a non-`Infallible` abort type flows through. Here a
+    // sentinel `Some(0)` is treated as fatal rather than as success.
+    let result = retry(|_| Some(0_i32))
+        .decide(|outcome: Option<i32>| match outcome {
+            Some(0) => Verdict::Abort("sentinel"),
+            Some(v) => Verdict::Return(v),
+            None => Verdict::Retry(None),
+        })
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION))
+        .clock(VirtualClock::new())
+        .call();
+
+    assert_eq!(result, Err(RetryError::Aborted { last: "sentinel" }));
+}
+
+#[test]
+fn control_flow_outcome_retries_through_continue_then_breaks() {
+    let attempts = Rc::new(Cell::new(0_u32));
+    let attempts_ref = Rc::clone(&attempts);
+
+    // A `ControlFlow` op drives the default classifier with no `.decide`:
+    // `Continue(_)` retries, `Break(v)` delivers `v`.
+    let result = retry(move |_| {
+        attempts_ref.set(attempts_ref.get().saturating_add(1));
+        if attempts_ref.get() >= MAX_ATTEMPTS {
+            ControlFlow::Break(SUCCESS_VALUE)
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .stop(stop::attempts(MAX_ATTEMPTS))
+    .wait(wait::fixed(WAIT_DURATION))
+    .clock(VirtualClock::new())
+    .call();
+
+    assert_eq!(result, Ok(SUCCESS_VALUE));
+    assert_eq!(attempts.get(), MAX_ATTEMPTS);
+}
+
+#[test]
+fn control_flow_outcome_all_continue_exhausts_carrying_continue() {
+    let result = retry(|_| ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD))
+        .stop(stop::attempts(MAX_ATTEMPTS))
+        .wait(wait::fixed(WAIT_DURATION))
+        .clock(VirtualClock::new())
+        .call();
+
+    let err = result.unwrap_err();
+    // The non-unit `Continue` payload survives into the exhausted error.
+    assert_eq!(
+        err,
+        RetryError::Exhausted {
+            last: ControlFlow::Continue(CONTINUE_PAYLOAD)
+        }
+    );
+    // The engine-produced ControlFlow error is usable end to end (Display/last).
+    assert_eq!(err.to_string(), "retries exhausted");
+    assert_eq!(
+        err.into_last(),
+        Some(ControlFlow::Continue(CONTINUE_PAYLOAD))
     );
 }
