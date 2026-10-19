@@ -1551,7 +1551,10 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/stats.rs` | §4.3, §7 |
 | `tests/policy_sync.rs` | §5, §6.1–6.4, §11 |
 | `tests/policy_async.rs` | §6.5 |
-| `tests/hooks.rs` | §8 |
+| `tests/builder.rs`, `tests/builder_async.rs` | §6.1–6.3, §6.6 |
+| `tests/outcome.rs` | §3.4 |
+| `tests/timeout.rs`, `tests/timeout_async.rs` | §11.4 |
+| `tests/hooks.rs`, `tests/hooks_async.rs` | §8 |
 | `tests/ext.rs` | §6.2 |
 | `tests/allocation.rs` | §12.3 |
 | `tests/trait_impls.rs` | §14 |
