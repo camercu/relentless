@@ -14,8 +14,8 @@ use crate::compat::Duration;
 /// until a real clock is supplied via `.clock(...)`.
 ///
 /// `SystemClock` is deliberately sync-only: it does not implement
-/// [`AsyncClock`](super::AsyncClock), so the async engine rejects it at compile time instead of
-/// letting a blocking clock stall a reactor thread.
+/// [`AsyncClock`](super::AsyncClock), so the async engine rejects it at
+/// compile time instead of letting a blocking clock stall a reactor thread.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SystemClock;
 

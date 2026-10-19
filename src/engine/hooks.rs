@@ -1,10 +1,14 @@
-//! Hook dispatch for the classifier engine.
+//! Hook dispatch for the classifier engine, and the views hooks receive.
 //!
 //! Three dispatch traits, each with a zero-cost `()` no-op impl, an `FnMut`
 //! impl for user closures, and a [`HookChain`] impl so several hooks can be
 //! registered at one point. Registering a hook means passing a closure to
 //! `before_attempt`/`after_attempt`/`on_exit`; the traits are named only in
 //! the `where` bounds of code generic over a configured builder.
+//!
+//! [`AttemptState`] (passed to `after_attempt`) and [`Exit`] (passed to
+//! `on_exit`) are the outcome-carrying views; [`RetryState`] is the
+//! pre-attempt context.
 
 use super::termination::StopReason;
 use crate::compat::Duration;

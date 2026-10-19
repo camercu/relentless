@@ -12,6 +12,7 @@ use crate::clock::SystemClock;
 use crate::compat::Box;
 use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, DefaultClassifier};
+use crate::defaults;
 use crate::engine::{AsyncRetry, Retry};
 use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
@@ -22,8 +23,6 @@ use crate::stop::StopAfterAttempts;
 use crate::wait::Wait;
 use crate::wait::WaitExponential;
 use core::future::Future;
-
-use crate::defaults;
 
 /// Reusable retry configuration: a stop strategy, a wait strategy, and a
 /// classifier.
