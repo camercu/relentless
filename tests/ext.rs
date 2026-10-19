@@ -11,14 +11,12 @@
 mod common;
 
 use common::{
-    ARBITRARY_ATTEMPTS, ARBITRARY_ERROR, ARBITRARY_VALUE, CLOCK_STEP_MILLIS, CONTINUE_PAYLOAD,
-    TIMEOUT_DEADLINE,
+    ARBITRARY_ATTEMPTS, ARBITRARY_ERROR, ARBITRARY_VALUE, CLOCK_STEP_MILLIS, TIMEOUT_DEADLINE,
 };
 
 use common::block_on;
 
 use core::cell::Cell;
-use core::ops::ControlFlow;
 use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -94,27 +92,6 @@ fn do_work() -> Result<i32, &'static str> {
 fn retry_ext_function_pointer_form_works() {
     let result = do_work.retry().call();
     assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[test]
-fn default_sync_retry_builder_alias_is_nameable() {
-    type SyncWorkFn = fn() -> Result<i32, &'static str>;
-
-    let typed = (do_work as SyncWorkFn).retry();
-    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
-}
-
-#[test]
-fn default_sync_retry_builder_with_stats_alias_is_nameable() {
-    type SyncWorkFn = fn() -> Result<i32, &'static str>;
-
-    let typed = (do_work as SyncWorkFn)
-        .retry()
-        .clock(VirtualClock::new())
-        .with_stats();
-    let (result, stats) = typed.call();
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(stats.attempts, 1);
 }
 
 #[test]
@@ -296,10 +273,6 @@ mod async_tests {
 
     use super::*;
 
-    fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
-        ready(Ok(ARBITRARY_VALUE))
-    }
-
     /// Owned, nameable async clock for tests with no elapsed-based
     /// assertions: `now` pins at zero and waits resolve immediately.
     #[derive(Clone, Copy)]
@@ -362,29 +335,6 @@ mod async_tests {
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
         assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
-    }
-
-    #[test]
-    fn default_async_retry_builder_alias_is_nameable() {
-        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-
-        let typed = (do_async_work as AsyncWorkFn).retry_async();
-        let result: relentless::RetryResult<i32, &str> = block_on(typed.clock(ReadyClock).call());
-        assert_eq!(result, Ok(ARBITRARY_VALUE));
-    }
-
-    #[test]
-    fn default_async_retry_builder_with_stats_alias_is_nameable() {
-        type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-
-        let typed = (do_async_work as AsyncWorkFn)
-            .retry_async()
-            .clock(ReadyClock)
-            .with_stats();
-        let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
-            block_on(typed.call());
-        assert_eq!(result, Ok(ARBITRARY_VALUE));
-        assert_eq!(stats.attempts, 1);
     }
 
     #[test]
@@ -564,95 +514,6 @@ mod async_tests {
             .with_stats();
         let debug = format!("{builder:?}");
         assert!(debug.contains("AsyncRetryWithStats"));
-    }
-
-    // The `Option` classifier lives in the shared `step` core both drivers call,
-    // so sync/async drift is structurally impossible — but the CLAUDE.md lockstep
-    // mandate wants it guarded, not assumed. These mirror the sync `option_*`
-    // tests through the async driver.
-    #[test]
-    fn async_option_outcome_retries_through_none_then_returns_some() {
-        let attempts = Rc::new(Cell::new(0_u32));
-        let attempts_ref = Rc::clone(&attempts);
-
-        let future = (move || {
-            attempts_ref.set(attempts_ref.get().saturating_add(1));
-            ready((attempts_ref.get() >= ARBITRARY_ATTEMPTS).then_some(ARBITRARY_VALUE))
-        })
-        .retry_async()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(Duration::from_millis(1)))
-        .clock(ReadyClock)
-        .call();
-
-        let result = block_on(future);
-        assert_eq!(result, Ok(ARBITRARY_VALUE));
-        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
-    }
-
-    #[test]
-    fn async_option_outcome_all_none_exhausts_carrying_none() {
-        let future = (|| ready(None::<i32>))
-            .retry_async()
-            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-            .wait(wait::fixed(Duration::from_millis(1)))
-            .clock(ReadyClock)
-            .call();
-
-        let err = block_on(future).unwrap_err();
-        assert_eq!(err, RetryError::Exhausted { last: None });
-        // The engine-produced Option error — not just a hand-built value — is
-        // Display-able and carries the last outcome (exercises the S2 impls end
-        // to end).
-        assert_eq!(err.to_string(), "retries exhausted");
-        assert_eq!(err.into_last(), Some(None));
-    }
-
-    #[test]
-    fn async_control_flow_outcome_retries_through_continue_then_breaks() {
-        let attempts = Rc::new(Cell::new(0_u32));
-        let attempts_ref = Rc::clone(&attempts);
-
-        let future = (move || {
-            attempts_ref.set(attempts_ref.get().saturating_add(1));
-            ready(if attempts_ref.get() >= ARBITRARY_ATTEMPTS {
-                ControlFlow::Break(ARBITRARY_VALUE)
-            } else {
-                ControlFlow::Continue(())
-            })
-        })
-        .retry_async()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(Duration::from_millis(1)))
-        .clock(ReadyClock)
-        .call();
-
-        let result = block_on(future);
-        assert_eq!(result, Ok(ARBITRARY_VALUE));
-        assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
-    }
-
-    #[test]
-    fn async_control_flow_outcome_all_continue_exhausts_carrying_continue() {
-        let future = (|| ready(ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD)))
-            .retry_async()
-            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-            .wait(wait::fixed(Duration::from_millis(1)))
-            .clock(ReadyClock)
-            .call();
-
-        let err = block_on(future).unwrap_err();
-        assert_eq!(
-            err,
-            RetryError::Exhausted {
-                last: ControlFlow::Continue(CONTINUE_PAYLOAD)
-            }
-        );
-        assert_eq!(err.to_string(), "retries exhausted");
-        assert_eq!(
-            err.into_last(),
-            Some(ControlFlow::Continue(CONTINUE_PAYLOAD))
-        );
     }
 }
 

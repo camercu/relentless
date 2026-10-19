@@ -49,29 +49,6 @@ fn retry_async_executes_when_clock_is_set() {
 }
 
 #[test]
-fn async_retry_type_is_nameable_from_crate_root() {
-    #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<F, C, S, W, Cl, BA, AA, OX>(
-        retry: relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
-    ) {
-        let _ = retry;
-    }
-
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let retry = policy
-        .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
-        .clock(RecordingClock::new());
-    assert_nameable(retry);
-    let result: relentless::RetryResult<i32, &str> = block_on(
-        policy
-            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
-            .clock(RecordingClock::new())
-            .call(),
-    );
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[test]
 fn async_retry_call_returns_an_awaitable_future() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
     let clock = RecordingClock::new();

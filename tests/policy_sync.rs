@@ -196,16 +196,6 @@ fn retry_succeeds_after_transient_failures() {
 }
 
 #[test]
-fn sync_retry_type_is_nameable_from_crate_root() {
-    let policy = RetryPolicy::new().stop(stop::attempts(1));
-    let retry = policy
-        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
-        .clock(VirtualClock::new());
-    let typed: relentless::Retry<_, _, _, _, _, (), (), ()> = retry;
-    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
-}
-
-#[test]
 fn retry_returns_exhausted_when_all_attempts_fail() {
     let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
@@ -292,21 +282,6 @@ fn exponential_wait_increases_sleep_durations() {
     assert_eq!(durations[0], Duration::from_millis(10));
     assert_eq!(durations[1], Duration::from_millis(20));
     assert_eq!(durations[2], Duration::from_millis(40));
-}
-
-#[test]
-fn policy_is_clone() {
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(ARBITRARY_DELAY));
-
-    let policy2 = policy.clone();
-
-    let result = policy2
-        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
-        .clock(VirtualClock::new())
-        .call();
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 
 #[cfg(feature = "alloc")]

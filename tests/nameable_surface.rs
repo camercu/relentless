@@ -8,14 +8,18 @@
 //! consumer writes when they outgrow a single inline `.retry()` call, and it
 //! fails to compile if a name stops being reachable.
 
+mod common;
+
+use common::{ARBITRARY_VALUE, block_on};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    AsyncRetry, AsyncRetryOp, AttemptHook, BeforeAttemptHook, Decide, DefaultClassifier, ExitHook,
-    HookChain, Retry, RetryError, RetryOp, RetryState, StatelessOp,
+    AsyncRetry, AsyncRetryExt, AsyncRetryOp, AttemptHook, BeforeAttemptHook, Decide,
+    DefaultClassifier, ExitHook, HookChain, Retry, RetryError, RetryExt, RetryOp, RetryPolicy,
+    RetryState, RetryStats, StatelessOp,
 };
 
 const ARBITRARY_ATTEMPTS: u32 = 2;
@@ -96,4 +100,94 @@ fn code_can_be_generic_over_a_configured_async_builder() {
             .stop(relentless::stop::attempts(ARBITRARY_ATTEMPTS))
             .clock(VirtualClock::new()),
     );
+}
+
+/// The builder a policy hands back is nameable as `Retry<..>`.
+#[test]
+fn sync_retry_type_is_nameable_from_crate_root() {
+    let policy = RetryPolicy::new().stop(relentless::stop::attempts(1));
+    let retry = policy
+        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
+        .clock(VirtualClock::new());
+    let typed: Retry<_, _, _, _, _, (), (), ()> = retry;
+    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
+}
+
+/// The builder a policy hands back to the async engine is nameable as
+/// `AsyncRetry<..>`.
+#[test]
+fn async_retry_type_is_nameable_from_crate_root() {
+    #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
+    fn assert_nameable<F, C, S, W, Cl, BA, AA, OX>(retry: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>) {
+        let _ = retry;
+    }
+
+    let clock = VirtualClock::new();
+    let policy = RetryPolicy::new().stop(relentless::stop::attempts(1));
+    assert_nameable(
+        policy
+            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
+            .clock(&clock),
+    );
+    let result: relentless::RetryResult<i32, &str> = block_on(
+        policy
+            .retry_async(|_| async { Ok::<i32, &str>(ARBITRARY_VALUE) })
+            .clock(&clock)
+            .call(),
+    );
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn do_work() -> Result<i32, &'static str> {
+    Ok(ARBITRARY_VALUE)
+}
+
+fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
+    core::future::ready(Ok(ARBITRARY_VALUE))
+}
+
+#[test]
+fn default_sync_retry_builder_alias_is_nameable() {
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
+
+    let typed = (do_work as SyncWorkFn).retry().clock(VirtualClock::new());
+    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
+}
+
+#[test]
+fn default_sync_retry_builder_with_stats_alias_is_nameable() {
+    type SyncWorkFn = fn() -> Result<i32, &'static str>;
+
+    let typed = (do_work as SyncWorkFn)
+        .retry()
+        .clock(VirtualClock::new())
+        .with_stats();
+    let (result, stats): (relentless::RetryResult<i32, &str>, RetryStats) = typed.call();
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(stats.attempts, 1);
+}
+
+#[test]
+fn default_async_retry_builder_alias_is_nameable() {
+    type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
+
+    let clock = VirtualClock::new();
+    let typed = (do_async_work as AsyncWorkFn).retry_async();
+    let result: relentless::RetryResult<i32, &str> = block_on(typed.clock(&clock).call());
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+}
+
+#[test]
+fn default_async_retry_builder_with_stats_alias_is_nameable() {
+    type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
+
+    let clock = VirtualClock::new();
+    let typed = (do_async_work as AsyncWorkFn)
+        .retry_async()
+        .clock(&clock)
+        .with_stats();
+    let (result, stats): (relentless::RetryResult<i32, &str>, RetryStats) = block_on(typed.call());
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert_eq!(stats.attempts, 1);
 }
