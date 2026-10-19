@@ -1552,9 +1552,11 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/policy_sync.rs` | §5, §6.1–6.4, §11 |
 | `tests/policy_async.rs` | §6.5 |
 | `tests/builder.rs`, `tests/builder_async.rs` | §6.1–6.3, §6.6 |
-| `tests/outcome.rs` | §3.4 |
-| `tests/timeout.rs`, `tests/timeout_async.rs` | §11.4 |
-| `tests/hooks.rs`, `tests/hooks_async.rs` | §8 |
+| `tests/outcome.rs`, `tests/outcome_async.rs` | §3.4 |
+| `tests/elapsed.rs`, `tests/elapsed_async.rs` | §11.1 |
+| `tests/timeout.rs`, `tests/timeout_async.rs` | §11.1, §11.4 |
+| `tests/hooks.rs`, `tests/hooks_async.rs` | §3.6 (`Exit` view), §6.4, §7.2, §8 |
+| `tests/nameable_surface.rs` | §13 |
 | `tests/ext.rs` | §6.2 |
 | `tests/allocation.rs` | §12.3 |
 | `tests/trait_impls.rs` | §14 |
