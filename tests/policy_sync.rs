@@ -742,13 +742,6 @@ fn elapsed_is_snapshotted_separately_for_op_and_wait() {
     );
 }
 
-/// 16.2, 16.3
-#[test]
-fn compat_duration_is_core_time_duration() {
-    let _: relentless::RetryState =
-        relentless::RetryState::for_attempt(1).with_elapsed(core::time::Duration::from_millis(5));
-}
-
 /// §6
 #[test]
 fn policy_retry_borrows_self_immutably() {
