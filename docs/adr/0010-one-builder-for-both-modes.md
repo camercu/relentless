@@ -4,7 +4,8 @@ Date: 2026-10-19
 
 ## Status
 
-Proposed
+Accepted. Decision 5 is refined by
+[ADR-0011](0011-bounded-call-type-on-operation.md).
 
 Builds on [ADR-0004](0004-split-async-builder-from-state-machine.md). Leaves
 [ADR-0009](0009-observer-hook-encoding.md) deferred.
