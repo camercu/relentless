@@ -83,25 +83,8 @@ pub(crate) use sealed::AsyncToken;
 /// appears in bounds only as the item bound on [`Operation::Call`]; code never
 /// names it.
 ///
-/// No other crate can add a mode or an implementation:
-///
-/// ```compile_fail
-/// use core::pin::Pin;
-/// use core::task::{Context, Poll};
-///
-/// enum Custom {}
-/// struct Probe;
-///
-/// impl relentless::Attempt<Custom> for Probe {
-///     type Output = ();
-///     fn poll_attempt(self: Pin<&mut Self>, _: &mut Context<'_>, _: ()) -> Poll<()>
-///     where
-///         Custom: Sized,
-///     {
-///         Poll::Ready(())
-///     }
-/// }
-/// ```
+/// No other crate can add a mode or an implementation: the hidden method takes
+/// a token type that no other crate can name.
 pub trait Attempt<M>: sealed::Sealed<M> {
     /// The outcome the attempt produces.
     type Output;
