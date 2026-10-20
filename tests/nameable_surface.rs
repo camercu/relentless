@@ -18,9 +18,9 @@ use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    Async, AsyncRetry, AsyncRetryExt, AttemptHook, BeforeAttemptHook, Blocking, Decide,
-    DefaultClassifier, ExitHook, HookChain, Operation, Retry, RetryError, RetryExt, RetryPolicy,
-    RetryState, RetryStats, StatelessOp,
+    Async, AsyncRetry, AsyncRetryExt, AsyncRun, AttemptHook, BeforeAttemptHook, Blocking, Decide,
+    DefaultClassifier, DropStats, ExitHook, HookChain, Operation, Retry, RetryError, RetryExt,
+    RetryPolicy, RetryState, RetryStats, StatelessOp,
 };
 
 const SUCCESS_VALUE: u32 = 7;
@@ -165,6 +165,28 @@ fn generic_async_code_can_require_a_send_retry_future() {
     let builder =
         relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ImmediateClock);
     assert_eq!(block_on(spawnable(builder)), Ok(SUCCESS_VALUE));
+}
+
+/// An in-flight retry stored in a struct field, as a hand-written future or
+/// a connection pool would hold it. The field restates only the bounds the
+/// future type itself declares.
+struct InFlight<F, C, S, W, BA, AA, OX>
+where
+    F: Operation<Async>,
+{
+    // Spelling the full type out is what this test checks.
+    #[allow(clippy::type_complexity)]
+    future: DropStats<AsyncRun<F, C, S, W, ImmediateClock, BA, AA, OX>>,
+}
+
+#[test]
+fn a_struct_field_can_hold_the_async_retry_future() {
+    let in_flight = InFlight {
+        future: relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) })
+            .clock(ImmediateClock)
+            .call(),
+    };
+    assert_eq!(block_on(in_flight.future), Ok(SUCCESS_VALUE));
 }
 
 /// The builder a policy hands back is nameable as `Retry<..>`.
