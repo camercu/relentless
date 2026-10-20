@@ -8,7 +8,7 @@
 //!
 //! [`AttemptState`] (passed to `after_attempt`) is the outcome-carrying view;
 //! [`RetryState`] is the pre-attempt context. `on_exit` receives an
-//! [`Exit`](super::termination::Exit).
+//! [`Exit`].
 
 use super::termination::Exit;
 use crate::compat::Duration;

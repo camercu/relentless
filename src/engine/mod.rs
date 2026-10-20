@@ -2,9 +2,10 @@
 //!
 //! This is the crate's retry engine, exposed through [`retry`]/[`retry_async`],
 //! the [`RetryExt`]/[`AsyncRetryExt`] closure extensions, and
-//! [`crate::RetryPolicy`]. It uses the outcome-agnostic [`Stop`], [`Wait`],
-//! [`SyncClock`], and [`RetryState`], and drives retries with a [`Decide`]
-//! classifier that consumes each outcome by value, rather than a boolean
+//! [`crate::RetryPolicy`]. It uses the outcome-agnostic [`Stop`](crate::Stop),
+//! [`Wait`](crate::Wait), [`SyncClock`](crate::SyncClock), and
+//! [`RetryState`](crate::RetryState), and drives retries with a
+//! [`Decide`](crate::Decide) classifier that consumes each outcome by value, rather than a boolean
 //! predicate over `Result`.
 //!
 //! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full

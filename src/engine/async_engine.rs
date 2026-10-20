@@ -346,7 +346,7 @@ where
     /// # Panics
     ///
     /// The returned future panics if it is polled again after it has returned
-    /// [`Poll::Ready`](core::task::Poll::Ready). The reachable case is
+    /// [`Poll::Ready`]. The reachable case is
     /// `tokio::select!` over a `&mut` future in a loop, which re-polls
     /// whichever branch did not complete.
     ///
@@ -410,7 +410,7 @@ where
     /// # Panics
     ///
     /// The returned future panics if it is polled again after it has returned
-    /// [`Poll::Ready`](core::task::Poll::Ready), and — in debug builds only —
+    /// [`Poll::Ready`], and — in debug builds only —
     /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
     /// reading below one it already reported. See
     /// [`AsyncRetry::call`](AsyncRetry::call).
@@ -442,7 +442,7 @@ pin_project! {
     /// # Panics
     ///
     /// Polling this future after it has returned
-    /// [`Poll::Ready`](core::task::Poll::Ready) panics.
+    /// [`Poll::Ready`] panics.
     ///
     /// Polling also panics, in debug builds only, if the injected
     /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it
