@@ -1392,6 +1392,9 @@ Types:
   builder futures)
 - classifier vocabulary: `Decision`, `Verdict`, `DefaultClassifier`,
   `ClosureClassifier`, `When`, `Until`
+- builder type-state plumbing, named only when spelling out a configured
+  builder's type or bounds: `Blocking`, `Async` (mode markers),
+  `StatelessOp`, `HookChain`
 
 Traits:
 
@@ -1402,6 +1405,12 @@ Traits:
 - `Outcome` (user-implementable for owned outcome types); `Decide`,
   `IntoDecision` (sealed engine-facing classifier traits, named only in bounds)
 - `Clock`, `SyncClock`, `AsyncClock` (re-exported from `clock`)
+- `Operation<M>` (sealed; implemented by closures and `StatelessOp`, named
+  only in bounds as `Operation<Blocking, Output = O>` or
+  `Operation<Async, Output = O>`); `Attempt<M>` (sealed, hidden, the item
+  bound on `Operation::Call`)
+- `BeforeAttemptHook`, `AttemptHook`, `ExitHook` (blanket-implemented for
+  closures, named only in bounds)
 - `RetryExt` (blanket-implemented for `FnMut() -> O`)
 - `AsyncRetryExt` (blanket-implemented for
   `FnMut() -> Fut where Fut: Future<Output = O>`)
