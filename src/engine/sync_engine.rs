@@ -60,6 +60,10 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for RetryWithStats<F, C, S, W,
 /// `wait::exponential(100ms)`, the default classifier, no hooks, and
 /// [`SystemClock`]. In non-`std` builds `.clock(...)` must be set before
 /// `.call()`.
+///
+/// For an operation that returns a future, use
+/// [`retry_async`](crate::retry_async). Passed here, the future itself becomes
+/// the outcome, which the default classifier cannot classify.
 pub fn retry<F, O>(op: F) -> DefaultRetry<F>
 where
     F: FnMut(RetryState) -> O,
@@ -96,6 +100,8 @@ impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
 /// state (e.g. the attempt number); the switch is mechanical, changing only the
 /// closure's argument. Defaults match [`retry`]: `stop::attempts(3)`,
 /// `wait::exponential(100ms)`, retry on any `Err` (via the default classifier).
+/// A closure that returns a future starts with
+/// [`retry_async`](crate::AsyncRetryExt::retry_async) instead.
 pub trait RetryExt<O>: FnMut() -> O + Sized {
     /// Begins an owned retry builder from this closure.
     fn retry(self) -> DefaultRetry<StatelessOp<Self>>;
