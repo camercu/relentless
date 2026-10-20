@@ -5,13 +5,16 @@
 
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
+use common::{CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
 
 use common::RecordingAsyncClock as RecordingClock;
 use common::block_on;
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy, stop, wait};
+
+/// A stop budget the timeout must beat.
+const UNREACHED_ATTEMPTS: u32 = 100;
 
 /// `.timeout()` stops the async loop when elapsed time meets or exceeds the budget,
 /// even if the stop strategy would allow more attempts.
@@ -20,7 +23,7 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
     // Allow up to ARBITRARY_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
@@ -49,7 +52,7 @@ fn async_timeout_stops_loop_when_budget_exceeded() {
 #[test]
 fn async_policy_timeout_seeds_builder() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let clock = RecordingClock::new();
@@ -78,7 +81,7 @@ fn async_policy_timeout_seeds_builder() {
 fn async_policy_timeout_replaced_by_builder() {
     const LOOSE_BUDGET: Duration = Duration::from_secs(60);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let clock = RecordingClock::new();
@@ -98,6 +101,6 @@ fn async_policy_timeout_replaced_by_builder() {
             .call(),
     );
 
-    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS + 10);
+    assert_eq!(call_count.get(), UNREACHED_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }

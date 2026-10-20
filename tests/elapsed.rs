@@ -14,12 +14,13 @@ use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy, RetryState, stop, wait};
 
+use std::cell::RefCell;
+
+const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
 // Three whole 20 ms attempt steps (20, 40, 60) against a 50 ms deadline, so
 // the loop stops on the third attempt.
-const IDLE_BEFORE_CALL_MILLIS: u64 = 1_000;
 const PER_ATTEMPT_MILLIS: u64 = 20;
 const BASELINE_DEADLINE: Duration = Duration::from_millis(50);
-use std::cell::RefCell;
 
 /// End-to-end: the engine feeds each attempt's post-clamp delay forward as the
 /// next attempt's `RetryState::previous_delay`. The unit tests construct

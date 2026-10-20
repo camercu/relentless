@@ -6,11 +6,12 @@
 
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
+use common::{CUSTOM_CLOCK_DEADLINE, CUSTOM_CLOCK_STEP_MILLIS};
+/// A stop budget the timeout must beat.
+const UNREACHED_ATTEMPTS: u32 = 100;
+
 #[cfg(feature = "std")]
-use common::{
-    ARBITRARY_DELAY, ARBITRARY_ERROR, ARBITRARY_VALUE, CLOCK_STEP_MILLIS, TIMEOUT_DEADLINE,
-};
+use common::{ARBITRARY_DELAY, ARBITRARY_ERROR, CLOCK_STEP_MILLIS, TIMEOUT_DEADLINE};
 
 use common::RecordingClock;
 use core::cell::Cell;
@@ -27,7 +28,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
     // Allow up to ARBITRARY_ATTEMPTS+10 attempts but set a tight timeout so the
     // loop exits after the first attempt advances the clock past the deadline.
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Cell::new(0_u32);
     let clock = VirtualClock::new();
@@ -42,7 +43,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
         .timeout(CUSTOM_CLOCK_DEADLINE)
         .call();
 
-    // The timeout is tighter than ARBITRARY_ATTEMPTS would allow, so only 1 attempt runs.
+    // The timeout is tighter than the stop strategy, so only 1 attempt runs.
     assert_eq!(call_count.get(), 1);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
@@ -52,7 +53,7 @@ fn timeout_stops_loop_when_budget_exceeded() {
 #[test]
 fn policy_timeout_seeds_builder() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let call_count = Cell::new(0_u32);
@@ -88,7 +89,7 @@ fn policy_timeout_survives_later_combinators() {
             Err("fatal") => Verdict::Abort("boom"),
             Err(_) => Verdict::Retry(o),
         })
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO));
     let call_count = Cell::new(0_u32);
     let clock = VirtualClock::new();
@@ -113,7 +114,7 @@ fn policy_timeout_survives_later_combinators() {
 #[test]
 fn policy_timeout_survives_boxed() {
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE)
         .boxed();
@@ -140,7 +141,7 @@ fn policy_timeout_survives_boxed() {
 fn policy_timeout_replaced_by_builder() {
     const LOOSE_BUDGET: Duration = Duration::from_secs(60);
     let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .timeout(CUSTOM_CLOCK_DEADLINE);
     let call_count = Cell::new(0_u32);
@@ -158,7 +159,7 @@ fn policy_timeout_replaced_by_builder() {
 
     // The loose builder timeout wins over the policy's tight one, so the stop
     // strategy bounds the loop instead.
-    assert_eq!(call_count.get(), ARBITRARY_ATTEMPTS + 10);
+    assert_eq!(call_count.get(), UNREACHED_ATTEMPTS);
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
@@ -172,7 +173,7 @@ fn timeout_zero_permits_exactly_one_attempt() {
     let clock = VirtualClock::new();
 
     let result = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS + 10))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .retry(|_| {
             call_count.set(call_count.get().saturating_add(1));
@@ -271,14 +272,20 @@ fn timeout_clamps_delay_to_partial_remaining_budget() {
 #[test]
 #[cfg(feature = "std")]
 fn timeout_with_std_uses_instant_clock() {
-    // Just verify it compiles and runs correctly with the default SystemClock.
+    // With the default SystemClock, a zero timeout is consulted after the first
+    // attempt: the 100-attempt stop strategy never gets to run.
+    let attempts = Cell::new(0_u32);
     let result = RetryPolicy::new()
-        .stop(stop::attempts(1))
+        .stop(stop::attempts(UNREACHED_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
-        .timeout(Duration::from_secs(60))
+        .retry(|_| {
+            attempts.set(attempts.get() + 1);
+            Err::<i32, &str>(ARBITRARY_ERROR)
+        })
+        .timeout(Duration::ZERO)
         .call();
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    assert!(matches!(result, Err(RetryError::Exhausted { .. })));
+    assert_eq!(attempts.get(), 1);
 }
 
 #[cfg(feature = "std")]

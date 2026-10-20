@@ -5,7 +5,7 @@
 //! outcomes, the three hook points, `.with_stats()` and `.timeout`.
 mod common;
 
-use common::ARBITRARY_VALUE;
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE};
 
 use core::cell::{Cell, RefCell};
 use core::time::Duration;
@@ -15,8 +15,6 @@ use relentless::{
     AttemptState, Decision, Exit, Outcome, RetryError, RetryExt, StopReason, Verdict, predicate,
     retry, stop, wait,
 };
-
-const ARBITRARY_ATTEMPTS: u32 = 5;
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
 /// drives it with no `.decide` at the call site.

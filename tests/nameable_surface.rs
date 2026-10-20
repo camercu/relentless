@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{ARBITRARY_VALUE, block_on};
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, block_on};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
@@ -22,7 +22,6 @@ use relentless::{
     RetryState, RetryStats, StatelessOp,
 };
 
-const ARBITRARY_ATTEMPTS: u32 = 2;
 const SUCCESS_VALUE: u32 = 7;
 
 /// Sharing a retry shape by returning a preconfigured builder — the

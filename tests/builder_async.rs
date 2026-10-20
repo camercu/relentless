@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::block_on;
+use common::{ARBITRARY_ATTEMPTS, block_on};
 use core::cell::Cell;
 use core::time::Duration;
 
@@ -16,7 +16,6 @@ use relentless::{
 };
 
 type IntResult = Result<i32, &'static str>;
-const ARBITRARY_ATTEMPTS: u32 = 5;
 
 #[test]
 fn async_retry_ext_starts_from_a_no_arg_closure() {
