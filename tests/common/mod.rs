@@ -135,6 +135,25 @@ impl Future for RecordingAsyncWait {
     }
 }
 
+/// Owned, nameable, `Send` async clock for tests with no elapsed-based
+/// assertions: `now` pins at zero and waits resolve immediately.
+#[derive(Clone, Copy)]
+pub struct ReadyClock;
+
+impl relentless::Clock for ReadyClock {
+    fn now(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+impl relentless::AsyncClock for ReadyClock {
+    type Wait = core::future::Ready<()>;
+
+    fn wait_async(&self, _dur: Duration) -> Self::Wait {
+        core::future::ready(())
+    }
+}
+
 /// Polls a future to completion under a no-op waker, yielding the thread on
 /// each `Pending`. Correct for futures that resolve without an external wake,
 /// such as those driven by a virtual or recording clock.

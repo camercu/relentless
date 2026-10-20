@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, block_on};
+use common::{ARBITRARY_VALUE, ReadyClock, block_on};
 use core::future::Future;
 use core::time::Duration;
 
@@ -83,48 +83,12 @@ fn code_can_be_generic_over_a_configured_builder() {
     );
 }
 
-/// The async operation trait is the same story on the async builder.
-#[test]
-fn code_can_be_generic_over_a_configured_async_builder() {
-    fn accepts_async_op<F, C, S, W, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, VirtualClock, BA, AA, OX>,
-    ) -> AsyncRetry<F, C, S, W, VirtualClock, BA, AA, OX>
-    where
-        F: Operation<Async, Output = O>,
-    {
-        builder.timeout(Duration::from_secs(1))
-    }
-
-    let _builder = accepts_async_op(
-        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) })
-            .stop(relentless::stop::attempts(ARBITRARY_ATTEMPTS))
-            .clock(VirtualClock::new()),
-    );
-}
-
-/// A `Send` async clock whose waits resolve at once, for the `Send` probe.
-struct ImmediateClock;
-
-impl relentless::Clock for ImmediateClock {
-    fn now(&self) -> Duration {
-        Duration::ZERO
-    }
-}
-
-impl relentless::AsyncClock for ImmediateClock {
-    type Wait = core::future::Ready<()>;
-
-    fn wait_async(&self, _dur: Duration) -> Self::Wait {
-        core::future::ready(())
-    }
-}
-
 /// Awaiting a generic async builder binds the outcome only, as the blocking
 /// one does: no bound names the future the operation returns.
 #[test]
 fn code_can_await_a_configured_async_builder_generically() {
     async fn drive<F, C, S, W, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, ImmediateClock, BA, AA, OX>,
+        builder: AsyncRetry<F, C, S, W, ReadyClock, BA, AA, OX>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
         F: Operation<Async, Output = O>,
@@ -135,11 +99,11 @@ fn code_can_await_a_configured_async_builder_generically() {
         AA: AttemptHook<O>,
         OX: ExitHook<C::R, C::A, O>,
     {
-        builder.call().await
+        builder.timeout(Duration::from_secs(1)).call().await
     }
 
     let builder =
-        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ImmediateClock);
+        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ReadyClock);
     assert_eq!(block_on(drive(builder)), Ok(SUCCESS_VALUE));
 }
 
@@ -148,7 +112,7 @@ fn code_can_await_a_configured_async_builder_generically() {
 #[test]
 fn generic_async_code_can_require_a_send_retry_future() {
     fn spawnable<F, C, S, W, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, ImmediateClock, BA, AA, OX>,
+        builder: AsyncRetry<F, C, S, W, ReadyClock, BA, AA, OX>,
     ) -> impl Future<Output = Result<C::R, RetryError<C::A, O>>> + Send
     where
         F: Operation<Async, Output = O, Call: Send> + Send,
@@ -163,7 +127,7 @@ fn generic_async_code_can_require_a_send_retry_future() {
     }
 
     let builder =
-        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ImmediateClock);
+        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ReadyClock);
     assert_eq!(block_on(spawnable(builder)), Ok(SUCCESS_VALUE));
 }
 
@@ -176,14 +140,14 @@ where
 {
     // Spelling the full type out is what this test checks.
     #[allow(clippy::type_complexity)]
-    future: DropStats<AsyncRun<F, C, S, W, ImmediateClock, BA, AA, OX>>,
+    future: DropStats<AsyncRun<F, C, S, W, ReadyClock, BA, AA, OX>>,
 }
 
 #[test]
 fn a_struct_field_can_hold_the_async_retry_future() {
     let in_flight = InFlight {
         future: relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) })
-            .clock(ImmediateClock)
+            .clock(ReadyClock)
             .call(),
     };
     assert_eq!(block_on(in_flight.future), Ok(SUCCESS_VALUE));

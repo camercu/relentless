@@ -268,29 +268,12 @@ fn sync_retry_builder_with_stats_debug_format() {
 #[cfg(feature = "alloc")]
 mod async_tests {
     use core::future::{Future, ready};
+
+    use common::ReadyClock;
     use core::pin::Pin;
     use core::task::{Context, Poll, Waker};
 
     use super::*;
-
-    /// Owned, nameable async clock for tests with no elapsed-based
-    /// assertions: `now` pins at zero and waits resolve immediately.
-    #[derive(Clone, Copy)]
-    struct ReadyClock;
-
-    impl relentless::Clock for ReadyClock {
-        fn now(&self) -> Duration {
-            Duration::ZERO
-        }
-    }
-
-    impl relentless::AsyncClock for ReadyClock {
-        type Wait = core::future::Ready<()>;
-
-        fn wait_async(&self, _dur: Duration) -> Self::Wait {
-            ready(())
-        }
-    }
 
     #[test]
     fn async_retry_ext_retries_until_success() {
