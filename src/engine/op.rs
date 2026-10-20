@@ -82,6 +82,26 @@ pub(crate) use sealed::AsyncToken;
 /// and every future implements `Attempt<Async>` with the future's output. It
 /// appears in bounds only as the item bound on [`Operation::Call`]; code never
 /// names it.
+///
+/// No other crate can add a mode or an implementation:
+///
+/// ```compile_fail
+/// use core::pin::Pin;
+/// use core::task::{Context, Poll};
+///
+/// enum Custom {}
+/// struct Probe;
+///
+/// impl relentless::Attempt<Custom> for Probe {
+///     type Output = ();
+///     fn poll_attempt(self: Pin<&mut Self>, _: &mut Context<'_>, _: ()) -> Poll<()>
+///     where
+///         Custom: Sized,
+///     {
+///         Poll::Ready(())
+///     }
+/// }
+/// ```
 pub trait Attempt<M>: sealed::Sealed<M> {
     /// The outcome the attempt produces.
     type Output;
@@ -139,6 +159,23 @@ impl<F: Future> Attempt<Async> for F {
 ///
 /// A closure that returns a future implements both modes, which is why the
 /// entry point chooses the mode rather than inferring it.
+///
+/// Every entry point takes a closure, so no other implementation could run;
+/// the trait is sealed to say so at compile time:
+///
+/// ```compile_fail
+/// use relentless::{Blocking, Operation, RetryState};
+///
+/// struct Ping;
+///
+/// impl Operation<Blocking> for Ping {
+///     type Output = Result<(), ()>;
+///     type Call = Result<(), ()>;
+///     fn call_op(&mut self, _state: RetryState) -> Self::Call {
+///         Ok(())
+///     }
+/// }
+/// ```
 pub trait Operation<M>: sealed::SealedOp<M> {
     /// The outcome an attempt produces.
     ///
