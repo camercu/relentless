@@ -13,6 +13,10 @@ _Avoid_: op (outside type names), probe, task, job
 **Attempt**:
 One 1-indexed run of the operation inside an execution.
 _Avoid_: try, call, iteration
+_Note_: the sealed trait `Attempt<M>` and the associated type
+`Operation::Call` are code plumbing, not this term: `Call` is what running
+the operation once returns (the outcome, or a future of it). In prose, say
+attempt and outcome.
 
 **Outcome**:
 The whole value one attempt produces, before classification.
@@ -165,7 +169,7 @@ Views:
 - **Exit** (`Exit`): what the caller receives plus counters; read by `on_exit`.
 - **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `HookChain`, `StatelessOp`, `Operation`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `HookChain`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 
