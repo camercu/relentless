@@ -108,7 +108,8 @@ one more public name and three operation traits instead of one.
   over the mode and calls a setter needs no extra bound.
 - Generic async code requires `Send` with `Call: Send`, and never names
   `Attempt`. The other builder parameters (`F`, the classifier, the stop and
-  wait strategies, the hooks) need `Send` bounds too, as the table shows.
+  wait strategies, the hooks) need `Send` bounds too, as the table shows. A
+  clock left generic needs `Cl: AsyncClock<Wait: Send> + Send`.
 - `AsyncRun` keeps a nameable future. It pins the call with
   `pin_project_lite`, which the crate already uses under
   `#![forbid(unsafe_code)]`. No `Unpin` bound is needed; one would reject

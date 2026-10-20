@@ -136,12 +136,12 @@ impl<F: Future> Attempt<Async> for F {
 ///
 /// To require a `Send` retry future, add `Call: Send` and bound every other
 /// builder parameter `Send` as well — the operation itself, the classifier,
-/// the stop and wait strategies, and each hook:
-/// `F: Operation<Async, Output = O, Call: Send> + Send, C: Decide<O> + Send`,
-/// and so on.
+/// the stop and wait strategies, each hook, and the clock with its wait
+/// future: `F: Operation<Async, Output = O, Call: Send> + Send,
+/// C: Decide<O> + Send, Cl: AsyncClock<Wait: Send> + Send`, and so on.
 ///
 /// A struct field that stores the async retry future repeats the future's own
-/// bound, `F: Operation<Async>`.
+/// bounds, `F: Operation<Async>` and `Cl: AsyncClock`.
 ///
 /// A closure that returns a future implements both modes, which is why the
 /// entry point chooses the mode rather than inferring it.

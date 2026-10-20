@@ -10,17 +10,16 @@
 
 mod common;
 
-use common::{ARBITRARY_VALUE, ReadyClock, block_on};
+use common::{ARBITRARY_DELAY, ARBITRARY_VALUE, ReadyClock, block_on};
 use core::future::Future;
-use core::time::Duration;
 
 use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    Async, AsyncRetry, AsyncRetryExt, AsyncRun, AttemptHook, BeforeAttemptHook, Blocking, Decide,
-    DefaultClassifier, DropStats, ExitHook, HookChain, Operation, Retry, RetryError, RetryExt,
-    RetryPolicy, RetryState, RetryStats, StatelessOp,
+    Async, AsyncClock, AsyncRetry, AsyncRetryExt, AsyncRun, AttemptHook, BeforeAttemptHook,
+    Blocking, Decide, DefaultClassifier, DropStats, ExitHook, HookChain, Operation, Retry,
+    RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, StatelessOp,
 };
 
 const SUCCESS_VALUE: u32 = 7;
@@ -99,7 +98,7 @@ fn code_can_await_a_configured_async_builder_generically() {
         AA: AttemptHook<O>,
         OX: ExitHook<C::R, C::A, O>,
     {
-        builder.timeout(Duration::from_secs(1)).call().await
+        builder.timeout(ARBITRARY_DELAY).call().await
     }
 
     let builder =
@@ -111,14 +110,15 @@ fn code_can_await_a_configured_async_builder_generically() {
 /// requires `Send` through `Call: Send`, without naming the future type.
 #[test]
 fn generic_async_code_can_require_a_send_retry_future() {
-    fn spawnable<F, C, S, W, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, ReadyClock, BA, AA, OX>,
+    fn spawnable<F, C, S, W, Cl, BA, AA, OX, O>(
+        builder: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
     ) -> impl Future<Output = Result<C::R, RetryError<C::A, O>>> + Send
     where
         F: Operation<Async, Output = O, Call: Send> + Send,
         C: Decide<O> + Send,
         S: relentless::stop::Stop + Send,
         W: relentless::wait::Wait + Send,
+        Cl: AsyncClock<Wait: Send> + Send,
         BA: BeforeAttemptHook + Send,
         AA: AttemptHook<O> + Send,
         OX: ExitHook<C::R, C::A, O> + Send,
@@ -134,13 +134,14 @@ fn generic_async_code_can_require_a_send_retry_future() {
 /// An in-flight retry stored in a struct field, as a hand-written future or
 /// a connection pool would hold it. The field restates only the bounds the
 /// future type itself declares.
-struct InFlight<F, C, S, W, BA, AA, OX>
+struct InFlight<F, C, S, W, Cl, BA, AA, OX>
 where
     F: Operation<Async>,
+    Cl: AsyncClock,
 {
     // Spelling the full type out is what this test checks.
     #[allow(clippy::type_complexity)]
-    future: DropStats<AsyncRun<F, C, S, W, ReadyClock, BA, AA, OX>>,
+    future: DropStats<AsyncRun<F, C, S, W, Cl, BA, AA, OX>>,
 }
 
 #[test]
