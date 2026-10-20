@@ -16,7 +16,7 @@ use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision};
-use crate::defaults;
+use crate::policy::RetryPolicy;
 use crate::predicate::Predicate;
 use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
@@ -35,12 +35,9 @@ type DefaultRetry<F> =
 /// default to `()` (no-op).
 pub struct Retry<F, C, S, W, Cl, BA, AA, OX> {
     op: F,
-    classifier: C,
-    stop: S,
-    wait: W,
+    policy: RetryPolicy<S, W, C>,
     clock: Cl,
     hooks: ExecutionHooks<BA, AA, OX>,
-    timeout: Option<Duration>,
 }
 
 impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for Retry<F, C, S, W, Cl, BA, AA, OX> {
@@ -73,36 +70,20 @@ where
 impl<F> DefaultRetry<F> {
     /// Builds a default-configured retry around an operation.
     fn from_op(op: F) -> Self {
-        Retry::from_parts(
-            op,
-            DefaultClassifier,
-            defaults::stop(),
-            defaults::wait(),
-            None,
-        )
+        Retry::from_policy(op, RetryPolicy::new())
     }
 }
 
 impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
-    /// Assembles a retry from an operation and pre-chosen classifier/stop/wait,
-    /// with the default clock and no hooks. Used by
-    /// [`RetryPolicy::retry`](crate::RetryPolicy::retry) to borrow a reusable
-    /// policy's parts and seed its timeout.
-    pub(crate) fn from_parts(
-        op: F,
-        classifier: C,
-        stop: S,
-        wait: W,
-        timeout: Option<Duration>,
-    ) -> Self {
+    /// Assembles a retry from an operation and a policy, with the default clock
+    /// and no hooks. Used by [`RetryPolicy::retry`](crate::RetryPolicy::retry)
+    /// to borrow a reusable policy.
+    pub(crate) fn from_policy(op: F, policy: RetryPolicy<S, W, C>) -> Self {
         Retry {
             op,
-            classifier,
-            stop,
-            wait,
+            policy,
             clock: SystemClock,
             hooks: ExecutionHooks::new(),
-            timeout,
         }
     }
 }
@@ -132,12 +113,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     pub fn stop<NewStop>(self, stop: NewStop) -> Retry<F, C, NewStop, W, Cl, BA, AA, OX> {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop,
-            wait: self.wait,
+            policy: self.policy.stop(stop),
             clock: self.clock,
             hooks: self.hooks,
-            timeout: self.timeout,
         }
     }
 
@@ -146,12 +124,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     pub fn wait<NewWait>(self, wait: NewWait) -> Retry<F, C, S, NewWait, Cl, BA, AA, OX> {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop: self.stop,
-            wait,
+            policy: self.policy.wait(wait),
             clock: self.clock,
             hooks: self.hooks,
-            timeout: self.timeout,
         }
     }
 
@@ -160,12 +135,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     pub fn clock<NewClock>(self, clock: NewClock) -> Retry<F, C, S, W, NewClock, BA, AA, OX> {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop: self.stop,
-            wait: self.wait,
+            policy: self.policy,
             clock,
             hooks: self.hooks,
-            timeout: self.timeout,
         }
     }
 
@@ -259,7 +231,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// elapsed reading, so a budget once spent cannot be refunded.
     #[must_use]
     pub fn timeout(mut self, dur: Duration) -> Self {
-        self.timeout = Some(dur);
+        self.policy = self.policy.timeout(dur);
         self
     }
 
@@ -273,12 +245,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     fn with_classifier<NewC>(self, classifier: NewC) -> Retry<F, NewC, S, W, Cl, BA, AA, OX> {
         Retry {
             op: self.op,
-            classifier,
-            stop: self.stop,
-            wait: self.wait,
+            policy: self.policy.with_classifier(classifier),
             clock: self.clock,
             hooks: self.hooks,
-            timeout: self.timeout,
         }
     }
 
@@ -293,12 +262,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop: self.stop,
-            wait: self.wait,
+            policy: self.policy,
             clock: self.clock,
             hooks: self.hooks.chain_before_attempt(hook),
-            timeout: self.timeout,
         }
     }
 
@@ -315,12 +281,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop: self.stop,
-            wait: self.wait,
+            policy: self.policy,
             clock: self.clock,
             hooks: self.hooks.chain_after_attempt(hook),
-            timeout: self.timeout,
         }
     }
 
@@ -339,12 +302,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     {
         Retry {
             op: self.op,
-            classifier: self.classifier,
-            stop: self.stop,
-            wait: self.wait,
+            policy: self.policy,
             clock: self.clock,
             hooks: self.hooks.chain_on_exit(hook),
-            timeout: self.timeout,
         }
     }
 }
@@ -417,10 +377,10 @@ where
                     total_wait,
                 },
                 outcome,
-                &self.classifier,
-                &self.stop,
-                &self.wait,
-                self.timeout,
+                &self.policy.classifier,
+                &self.policy.stop,
+                &self.policy.wait,
+                self.policy.timeout,
                 &mut self.hooks,
             ) {
                 Step::Done { result, stats } => return (result, stats),

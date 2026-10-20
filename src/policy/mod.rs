@@ -47,10 +47,10 @@ use core::future::Future;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy<S = StopAfterAttempts, W = WaitExponential, C = DefaultClassifier> {
-    stop: S,
-    wait: W,
-    classifier: C,
-    timeout: Option<Duration>,
+    pub(crate) stop: S,
+    pub(crate) wait: W,
+    pub(crate) classifier: C,
+    pub(crate) timeout: Option<Duration>,
 }
 
 impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
@@ -119,12 +119,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// with the bare error). Replaces the classifier slot.
     #[must_use]
     pub fn when<P>(self, predicate: P) -> RetryPolicy<S, W, When<P>> {
-        RetryPolicy {
-            stop: self.stop,
-            wait: self.wait,
-            classifier: When::new(predicate),
-            timeout: self.timeout,
-        }
+        self.with_classifier(When::new(predicate))
     }
 
     /// Retries *until* `predicate` is satisfied, then accepts the outcome
@@ -133,12 +128,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// [`Retry::until`](crate::Retry::until) for the fatal-error recipe.
     #[must_use]
     pub fn until<P>(self, predicate: P) -> RetryPolicy<S, W, Until<P>> {
-        RetryPolicy {
-            stop: self.stop,
-            wait: self.wait,
-            classifier: Until::new(predicate),
-            timeout: self.timeout,
-        }
+        self.with_classifier(Until::new(predicate))
     }
 
     /// Installs a classifier closure, replacing the classifier slot.
@@ -148,10 +138,25 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// [`Retry::decide`](crate::Retry::decide)).
     #[must_use]
     pub fn decide<NewC>(self, classifier: NewC) -> RetryPolicy<S, W, ClosureClassifier<NewC>> {
+        self.with_classifier(ClosureClassifier(classifier))
+    }
+
+    /// Replaces the classifier, keeping every other setting.
+    pub(crate) fn with_classifier<NewC>(self, classifier: NewC) -> RetryPolicy<S, W, NewC> {
         RetryPolicy {
             stop: self.stop,
             wait: self.wait,
-            classifier: ClosureClassifier(classifier),
+            classifier,
+            timeout: self.timeout,
+        }
+    }
+
+    /// Borrows every strategy, so one policy can seed many builders.
+    fn borrowed(&self) -> RetryPolicy<&S, &W, &C> {
+        RetryPolicy {
+            stop: &self.stop,
+            wait: &self.wait,
+            classifier: &self.classifier,
             timeout: self.timeout,
         }
     }
@@ -205,7 +210,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     where
         F: FnMut(RetryState) -> O,
     {
-        Retry::from_parts(op, &self.classifier, &self.stop, &self.wait, self.timeout)
+        Retry::from_policy(op, self.borrowed())
     }
 
     /// Creates an asynchronous retry for `op`, borrowing this policy's parts.
@@ -218,6 +223,6 @@ impl<S, W, C> RetryPolicy<S, W, C> {
         F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = O>,
     {
-        AsyncRetry::from_parts(op, &self.classifier, &self.stop, &self.wait, self.timeout)
+        AsyncRetry::from_policy(op, self.borrowed())
     }
 }
