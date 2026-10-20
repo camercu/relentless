@@ -64,10 +64,11 @@ Give the operation trait a call type that the trait itself bounds by the
 outcome:
 
 ```rust
-pub trait Operation<M> {
+// `SealedOp<M>` is a private supertrait: only closures and `StatelessOp`.
+pub trait Operation<M>: SealedOp<M> {
     type Output;
     type Call: Attempt<M, Output = Self::Output>;
-    fn call(&mut self, state: RetryState) -> Self::Call;
+    fn call_op(&mut self, state: RetryState) -> Self::Call;
 }
 
 // `Sealed<M>` is a private supertrait, so only these two blanket impls exist.
@@ -106,14 +107,20 @@ one more public name and three operation traits instead of one.
 - Consumers bind one thing, `Output = O`, in both modes. Code that is generic
   over the mode and calls a setter needs no extra bound.
 - Generic async code requires `Send` with `Call: Send`, and never names
-  `Attempt`.
+  `Attempt`. The other builder parameters (`F`, the classifier, the stop and
+  wait strategies, the hooks) need `Send` bounds too, as the table shows.
 - `AsyncRun` keeps a nameable future. It pins the call with
   `pin_project_lite`, which the crate already uses under
   `#![forbid(unsafe_code)]`. No `Unpin` bound is needed; one would reject
   every plain `async {}` block.
-- `Attempt` is public and sealed. It appears in rustdoc on blanket impls and in
-  errors for a hand-written `Operation` with a wrong `Call` or `Output` type.
-  Consumers who only use closures never see it.
+- `Attempt` is public, sealed and hidden from rustdoc, like `Decide`.
+  Consumers never write it.
+- `Operation` is sealed too. Every entry point takes a closure, so a
+  hand-written `Operation` could never run; sealing turns that dead end into
+  a compile error. Consumers still name it in bounds. The per-mode call trait
+  fallback's advantage for hand implementers is therefore moot.
+- The method keeps the first cut's name, `call_op`, so it does not read like
+  `Retry::call` or `AttemptHook::call` next to it.
 - Two internals are load-bearing and need a comment each: `ready_outcome`, and
   calling `Attempt::<Async>::poll_attempt` with the mode spelled out, so the
   blanket blocking impl is never a candidate.

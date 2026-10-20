@@ -48,8 +48,8 @@ the best design over the smallest diff.
    so an alias would be a method-less stub.
 5. **`Operation<M>` replaces `RetryOp` and `AsyncRetryOp`.** It carries
    `type Output` (the outcome) and the per-mode attempt type. Closures and
-   `StatelessOp<F>` implement it for both markers; the impls do not overlap
-   because the trait parameter differs. The five outcome-anchored setters
+   `StatelessOp<F>` implement it for both markers, through one blanket impl
+   each that is generic over the mode. The five outcome-anchored setters
    (`decide`, `when`, `until`, `after_attempt`, `on_exit`) bound
    `F: Operation<M, Output = O>`.
 6. **One `RetryExt` trait** replaces `RetryExt` and `AsyncRetryExt`, with two
