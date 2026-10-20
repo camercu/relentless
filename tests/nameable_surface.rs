@@ -11,14 +11,15 @@
 mod common;
 
 use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, block_on};
+use core::future::Future;
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    AsyncRetry, AsyncRetryExt, AsyncRetryOp, AttemptHook, BeforeAttemptHook, Decide,
-    DefaultClassifier, ExitHook, HookChain, Retry, RetryError, RetryExt, RetryOp, RetryPolicy,
+    Async, AsyncRetry, AsyncRetryExt, AttemptHook, BeforeAttemptHook, Blocking, Decide,
+    DefaultClassifier, ExitHook, HookChain, Operation, Retry, RetryError, RetryExt, RetryPolicy,
     RetryState, RetryStats, StatelessOp,
 };
 
@@ -65,7 +66,7 @@ fn code_can_be_generic_over_a_configured_builder() {
         builder: Retry<F, C, S, W, VirtualClock, BA, AA, OX>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
-        F: RetryOp<Output = O>,
+        F: Operation<Blocking, Output = O>,
         C: Decide<O>,
         S: relentless::stop::Stop,
         W: relentless::wait::Wait,
@@ -89,7 +90,7 @@ fn code_can_be_generic_over_a_configured_async_builder() {
         builder: AsyncRetry<F, C, S, W, VirtualClock, BA, AA, OX>,
     ) -> AsyncRetry<F, C, S, W, VirtualClock, BA, AA, OX>
     where
-        F: AsyncRetryOp<Output = O>,
+        F: Operation<Async, Output = O>,
     {
         builder.timeout(Duration::from_secs(1))
     }
@@ -99,6 +100,71 @@ fn code_can_be_generic_over_a_configured_async_builder() {
             .stop(relentless::stop::attempts(ARBITRARY_ATTEMPTS))
             .clock(VirtualClock::new()),
     );
+}
+
+/// A `Send` async clock whose waits resolve at once, for the `Send` probe.
+struct ImmediateClock;
+
+impl relentless::Clock for ImmediateClock {
+    fn now(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+impl relentless::AsyncClock for ImmediateClock {
+    type Wait = core::future::Ready<()>;
+
+    fn wait_async(&self, _dur: Duration) -> Self::Wait {
+        core::future::ready(())
+    }
+}
+
+/// Awaiting a generic async builder binds the outcome only, as the blocking
+/// one does: no bound names the future the operation returns.
+#[test]
+fn code_can_await_a_configured_async_builder_generically() {
+    async fn drive<F, C, S, W, BA, AA, OX, O>(
+        builder: AsyncRetry<F, C, S, W, ImmediateClock, BA, AA, OX>,
+    ) -> Result<C::R, RetryError<C::A, O>>
+    where
+        F: Operation<Async, Output = O>,
+        C: Decide<O>,
+        S: relentless::stop::Stop,
+        W: relentless::wait::Wait,
+        BA: BeforeAttemptHook,
+        AA: AttemptHook<O>,
+        OX: ExitHook<C::R, C::A, O>,
+    {
+        builder.call().await
+    }
+
+    let builder =
+        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ImmediateClock);
+    assert_eq!(block_on(drive(builder)), Ok(SUCCESS_VALUE));
+}
+
+/// Generic async code that hands the retry future to a multithreaded executor
+/// requires `Send` through `Call: Send`, without naming the future type.
+#[test]
+fn generic_async_code_can_require_a_send_retry_future() {
+    fn spawnable<F, C, S, W, BA, AA, OX, O>(
+        builder: AsyncRetry<F, C, S, W, ImmediateClock, BA, AA, OX>,
+    ) -> impl Future<Output = Result<C::R, RetryError<C::A, O>>> + Send
+    where
+        F: Operation<Async, Output = O, Call: Send> + Send,
+        C: Decide<O> + Send,
+        S: relentless::stop::Stop + Send,
+        W: relentless::wait::Wait + Send,
+        BA: BeforeAttemptHook + Send,
+        AA: AttemptHook<O> + Send,
+        OX: ExitHook<C::R, C::A, O> + Send,
+    {
+        builder.call()
+    }
+
+    let builder =
+        relentless::retry_async(|_| async { Ok::<u32, &str>(SUCCESS_VALUE) }).clock(ImmediateClock);
+    assert_eq!(block_on(spawnable(builder)), Ok(SUCCESS_VALUE));
 }
 
 /// The builder a policy hands back is nameable as `Retry<..>`.

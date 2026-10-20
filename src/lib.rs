@@ -334,8 +334,12 @@ pub use engine::{
 // helper, means writing them out. Unreachable names there would be a dead end,
 // and dead tokens on the crate's own entry-point pages.
 pub use engine::{
-    AsyncRetryOp, AttemptHook, BeforeAttemptHook, ExitHook, HookChain, RetryOp, StatelessOp,
+    Async, AttemptHook, BeforeAttemptHook, Blocking, ExitHook, HookChain, Operation, StatelessOp,
 };
+// Sealed: the item bound on `Operation::Call`. Reachable because that bound is
+// public, hidden because no consumer writes it.
+#[doc(hidden)]
+pub use engine::Attempt;
 // The async builder future types: you `.await` `.call()` rather than naming
 // them, so they are reachable (as the return type) but not featured.
 #[doc(hidden)]

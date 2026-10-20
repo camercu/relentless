@@ -13,7 +13,7 @@ use super::elapsed::Elapsed;
 use super::hooks::{
     AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
 };
-use super::op::{AsyncRetryOp, StatelessOp};
+use super::op::{Async, AsyncToken, Attempt, Operation, StatelessOp};
 use super::step::{Progress, Step, step};
 use super::termination::Exit;
 use super::{RetryError, RetryStats};
@@ -27,7 +27,6 @@ use crate::state::RetryState;
 use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
 use core::future::Future;
-use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use pin_project_lite::pin_project;
@@ -155,15 +154,14 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     /// Installs a classifier closure, replacing the classifier slot.
     ///
     /// Like [`Retry::decide`](super::Retry::decide), the op-anchored bound infers
-    /// the closure parameter from the operation's output, reached here through
-    /// `Fut::Output`.
+    /// the closure parameter from the operation's output.
     #[must_use]
     pub fn decide<O, D, NewC>(
         self,
         classifier: NewC,
     ) -> AsyncRetry<F, ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX>
     where
-        F: AsyncRetryOp<Output = O>,
+        F: Operation<Async, Output = O>,
         NewC: Fn(O) -> D,
         D: IntoDecision<O>,
     {
@@ -176,7 +174,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn when<T, E, P>(self, predicate: P) -> AsyncRetry<F, When<P>, S, W, Cl, BA, AA, OX>
     where
-        F: AsyncRetryOp<Output = Result<T, E>>,
+        F: Operation<Async, Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(When(predicate))
@@ -189,7 +187,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn until<T, E, P>(self, predicate: P) -> AsyncRetry<F, Until<P>, S, W, Cl, BA, AA, OX>
     where
-        F: AsyncRetryOp<Output = Result<T, E>>,
+        F: Operation<Async, Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(Until(predicate))
@@ -242,7 +240,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
         hook: Hook,
     ) -> AsyncRetry<F, C, S, W, Cl, BA, HookChain<AA, Hook>, OX>
     where
-        F: AsyncRetryOp<Output = O>,
+        F: Operation<Async, Output = O>,
         Hook: for<'a> FnMut(&AttemptState<'a, O>),
     {
         AsyncRetry {
@@ -273,7 +271,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
         hook: Hook,
     ) -> AsyncRetry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
     where
-        F: AsyncRetryOp<Output = O>,
+        F: Operation<Async, Output = O>,
         C: Decide<O>,
         Hook: for<'a> FnMut(&Exit<'a, C::R, C::A, O>),
     {
@@ -286,9 +284,9 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     }
 }
 
-impl<F, Fut, C, S, W, Cl, BA, AA, OX, O> AsyncRetry<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, BA, AA, OX, O> AsyncRetry<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: AsyncRetryOp<Output = O, Future = Fut>,
+    F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -322,13 +320,13 @@ where
     /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it
     /// already reported — see [`Retry::call`](super::Retry::call).
     #[allow(clippy::type_complexity)]
-    pub fn call(self) -> DropStats<AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>> {
+    pub fn call(self) -> DropStats<AsyncRun<F, C, S, W, Cl, BA, AA, OX>> {
         DropStats {
             inner: self.into_run(),
         }
     }
 
-    fn into_run(self) -> AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O> {
+    fn into_run(self) -> AsyncRun<F, C, S, W, Cl, BA, AA, OX> {
         AsyncRun {
             op: self.op,
             classifier: self.policy.classifier,
@@ -342,7 +340,6 @@ where
             previous_delay: None,
             total_wait: Duration::ZERO,
             elapsed: None,
-            _marker: PhantomData,
         }
     }
 }
@@ -353,9 +350,9 @@ pub struct AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
     inner: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
 }
 
-impl<F, Fut, C, S, W, Cl, BA, AA, OX, O> AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, BA, AA, OX, O> AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: AsyncRetryOp<Output = O, Future = Fut>,
+    F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -373,7 +370,7 @@ where
     /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
     /// reading below one it already reported. See
     /// [`AsyncRetry::call`](AsyncRetry::call).
-    pub fn call(self) -> AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O> {
+    pub fn call(self) -> AsyncRun<F, C, S, W, Cl, BA, AA, OX> {
         self.inner.into_run()
     }
 }
@@ -411,8 +408,9 @@ pin_project! {
     /// timeout budget either way; the assertion exists to surface the broken
     /// clock in its implementor's own tests. No clock shipped with this crate
     /// can trigger it.
-    pub struct AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>
+    pub struct AsyncRun<F, C, S, W, Cl, BA, AA, OX>
     where
+        F: Operation<Async>,
         Cl: AsyncClock,
     {
         op: F,
@@ -423,19 +421,17 @@ pin_project! {
         hooks: ExecutionHooks<BA, AA, OX>,
         timeout: Option<Duration>,
         #[pin]
-        phase: Phase<Fut, Cl::Wait>,
+        phase: Phase<F::Call, Cl::Wait>,
         attempt: u32,
         previous_delay: Option<Duration>,
         total_wait: Duration,
         elapsed: Option<Elapsed>,
-        _marker: PhantomData<fn() -> O>,
     }
 }
 
-impl<F, Fut, C, S, W, Cl, BA, AA, OX, O> Future for AsyncRun<F, Fut, C, S, W, Cl, BA, AA, OX, O>
+impl<F, C, S, W, Cl, BA, AA, OX, O> Future for AsyncRun<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: AsyncRetryOp<Output = O, Future = Fut>,
-    Fut: Future<Output = O>,
+    F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -466,7 +462,10 @@ where
                     this.phase.set(Phase::Polling { op_future });
                 }
                 PhaseProj::Polling { op_future } => {
-                    let outcome = match op_future.poll(cx) {
+                    // The mode is spelled out so the blanket `Attempt<Blocking>`
+                    // impl, which every type satisfies, is never a candidate.
+                    let polled = Attempt::<Async>::poll_attempt(op_future, cx, AsyncToken::new());
+                    let outcome = match polled {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(outcome) => outcome,
                     };

@@ -61,7 +61,7 @@ changing code.
   [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason` and the
   `Exit` view),
   [src/engine/op.rs](/src/engine/op.rs)
-  (`RetryOp`/`AsyncRetryOp`), [src/engine/error.rs](/src/engine/error.rs)
+  (`Operation<M>`), [src/engine/error.rs](/src/engine/error.rs)
   (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)
   (`RetryStats`); the outcome-agnostic `Stop`/`Wait`/`Clock`/`RetryState`
   infrastructure is reused unchanged.

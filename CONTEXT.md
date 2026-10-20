@@ -136,7 +136,7 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | Request stats | | tenacity `.statistics` | `.with_stats` |
 | Run the execution | Execution started | | `.call()` (sync, async, `*WithStats`) |
 | | Attempt starting | tenacity `before` | `BeforeAttemptHook`, `RetryState` |
-| Run an attempt | Attempt completed | tenacity `after` | `RetryOp::call_op`, `AttemptHook`, `AttemptState` |
+| Run an attempt | Attempt completed | tenacity `after` | `Operation::call_op`, `AttemptHook`, `AttemptState` |
 | Classify the outcome | Outcome returned; outcome retried; outcome aborted | | `Outcome::classify`, `Predicate::should_retry`, `Verdict::{Return, Retry, Abort}`, `Decision::{Return, Retry}` |
 | Check the stop strategy | Stop strategy fired; timeout reached | tenacity `stop` | `Stop::should_stop` |
 | Compute the next delay | Delay computed; delay clamped to timeout | tenacity `wait` | `Wait::next_wait` |
@@ -165,7 +165,7 @@ Views:
 - **Exit** (`Exit`): what the caller receives plus counters; read by `on_exit`.
 - **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `HookChain`, `StatelessOp`, `AsyncRetryOp`, `AsyncRun`, `DropStats`, `VirtualWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `HookChain`, `StatelessOp`, `Operation`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 

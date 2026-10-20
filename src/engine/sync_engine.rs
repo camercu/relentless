@@ -9,7 +9,7 @@ use super::elapsed::Elapsed;
 use super::hooks::{
     AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
 };
-use super::op::{RetryOp, StatelessOp};
+use super::op::{Blocking, Operation, StatelessOp, ready_outcome};
 use super::step::{Progress, Step, step};
 use super::termination::Exit;
 use super::{RetryError, RetryStats};
@@ -146,7 +146,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// The closure returns either [`Decision`](crate::decision::Decision) (no
     /// abort) or [`Verdict`](crate::decision::Verdict) (abort-capable);
     /// [`IntoDecision`] unifies both. The
-    /// op-anchored `F: RetryOp<Output = O>` bound here (not deferred to
+    /// op-anchored `F: Operation<Blocking, Output = O>` bound here (not deferred to
     /// `.call()`) lets the closure's parameter infer from the operation's
     /// output, so inline classifiers need no annotations.
     #[must_use]
@@ -155,7 +155,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         classifier: NewC,
     ) -> Retry<F, ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX>
     where
-        F: RetryOp<Output = O>,
+        F: Operation<Blocking, Output = O>,
         NewC: Fn(O) -> D,
         D: IntoDecision<O>,
     {
@@ -170,7 +170,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl, BA, AA, OX>
     where
-        F: RetryOp<Output = Result<T, E>>,
+        F: Operation<Blocking, Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(When(predicate))
@@ -205,7 +205,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl, BA, AA, OX>
     where
-        F: RetryOp<Output = Result<T, E>>,
+        F: Operation<Blocking, Output = Result<T, E>>,
         P: Predicate<T, E>,
     {
         self.with_classifier(Until(predicate))
@@ -276,7 +276,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
         hook: Hook,
     ) -> Retry<F, C, S, W, Cl, BA, HookChain<AA, Hook>, OX>
     where
-        F: RetryOp<Output = O>,
+        F: Operation<Blocking, Output = O>,
         Hook: for<'a> FnMut(&AttemptState<'a, O>),
     {
         Retry {
@@ -296,7 +296,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     #[must_use]
     pub fn on_exit<O, Hook>(self, hook: Hook) -> Retry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
     where
-        F: RetryOp<Output = O>,
+        F: Operation<Blocking, Output = O>,
         C: Decide<O>,
         Hook: for<'a> FnMut(&Exit<'a, C::R, C::A, O>),
     {
@@ -311,7 +311,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
 
 impl<F, C, S, W, Cl, BA, AA, OX, O> Retry<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: RetryOp<Output = O>,
+    F: Operation<Blocking, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
@@ -363,7 +363,7 @@ where
                 .with_elapsed(elapsed.read(&self.clock))
                 .with_previous_delay(previous_delay);
             self.hooks.before_attempt.call(&before_state);
-            let outcome = self.op.call_op(before_state);
+            let outcome = ready_outcome(self.op.call_op(before_state));
 
             // Elapsed is re-read after the operation so the post-attempt hooks
             // and stop/wait see the time the attempt actually took.
@@ -410,7 +410,7 @@ pub struct RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
 
 impl<F, C, S, W, Cl, BA, AA, OX, O> RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
 where
-    F: RetryOp<Output = O>,
+    F: Operation<Blocking, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,

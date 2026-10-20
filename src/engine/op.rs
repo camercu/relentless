@@ -1,36 +1,170 @@
-//! Operation abstraction shared by the op-first and stateless-ext entry points.
+//! The operation abstraction shared by the blocking and async builders.
 //!
-//! The builder stores its operation behind [`RetryOp`] so the same engine drives
-//! both `retry(|state| ...)` (an `FnMut(RetryState) -> O`) and
-//! `(|| ...).retry()` (an `FnMut() -> O` wrapped in [`StatelessOp`], which
-//! discards the state). The op-anchored classifier methods bound `F: RetryOp<O>`,
-//! which — through the blanket impl — still pins `O` to the closure's output, so
-//! inline classifiers keep inferring with no annotations.
+//! A builder stores its operation behind [`Operation`]: `retry(|state| ...)`
+//! (an `FnMut(RetryState) -> O`), the stateless `(|| ...).retry()` form (an
+//! `FnMut() -> O` wrapped in [`StatelessOp`], which discards the state), and
+//! their async twins. The op-anchored classifier methods bound
+//! `F: Operation<M, Output = O>`, which — through the blanket impls — still
+//! pins `O` to the closure's output, so inline classifiers keep inferring with
+//! no annotations.
 
 use crate::state::RetryState;
 use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 
-/// Unifies stateful and stateless operations behind one call interface.
+/// Mode marker: the execution blocks the calling thread while it waits.
 ///
-/// `Output` is an associated (not a generic) type so that `F: RetryOp` uniquely
-/// determines the outcome type — exactly as `FnMut(..) -> O` does through
-/// `Fn::Output` — which both satisfies the constrained-type-parameter rule and
-/// lets op-anchored classifier closures keep inferring with no annotations.
-pub trait RetryOp {
-    /// The outcome an attempt produces.
-    type Output;
-    /// Runs one attempt, given the current retry state.
-    fn call_op(&mut self, state: RetryState) -> Self::Output;
+/// Chosen by the entry point: [`retry`](crate::retry) and
+/// [`RetryExt::retry`](crate::RetryExt::retry) start a `Blocking` execution.
+/// Never constructed; it only selects which `Operation` and clock a builder
+/// needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Blocking {}
+
+/// Mode marker: the execution is a future that awaits its waits.
+///
+/// Chosen by the entry point: [`retry_async`](crate::retry_async) and
+/// [`AsyncRetryExt::retry_async`](crate::AsyncRetryExt::retry_async) start an
+/// `Async` execution. Never constructed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Async {}
+
+// The items here are `pub` because public signatures mention them, and in a
+// private module so no other crate can name them: that is what seals
+// `Operation` and `Attempt` and keeps `poll_attempt` uncallable from outside.
+#[allow(unreachable_pub)]
+mod sealed {
+    use super::{Async, Attempt, Blocking, StatelessOp};
+    use crate::state::RetryState;
+    use core::future::Future;
+
+    /// Restricts [`Attempt`] to its two blanket impls.
+    pub trait Sealed<M> {}
+    impl<T> Sealed<Blocking> for T {}
+    impl<F: Future> Sealed<Async> for F {}
+
+    /// Restricts [`Operation`](super::Operation) to closures and
+    /// [`StatelessOp`]: the entry points accept nothing else.
+    pub trait SealedOp<M> {}
+    impl<M, R: Attempt<M>, F: FnMut(RetryState) -> R> SealedOp<M> for F {}
+    impl<M, R: Attempt<M>, F: FnMut() -> R> SealedOp<M> for StatelessOp<F> {}
+
+    /// Names the token that unlocks `poll_attempt` in each mode.
+    pub trait Mode {
+        type Token;
+    }
+    // Uninhabited: no blocking attempt can ever be polled.
+    impl Mode for Blocking {
+        type Token = core::convert::Infallible;
+    }
+    impl Mode for Async {
+        type Token = AsyncToken;
+    }
+
+    /// Proof that the async driver is the caller. Constructible only inside
+    /// this crate.
+    pub struct AsyncToken(());
+
+    impl AsyncToken {
+        pub(crate) const fn new() -> Self {
+            AsyncToken(())
+        }
+    }
 }
 
-impl<O, F: FnMut(RetryState) -> O> RetryOp for F {
-    type Output = O;
-    fn call_op(&mut self, state: RetryState) -> O {
+pub(crate) use sealed::AsyncToken;
+
+/// What one call of an [`Operation`] yields in mode `M`: the outcome itself in
+/// [`Blocking`] mode, or a future of it in [`Async`] mode.
+///
+/// Sealed: every type implements `Attempt<Blocking>` with itself as `Output`,
+/// and every future implements `Attempt<Async>` with the future's output. It
+/// appears in bounds only as the item bound on [`Operation::Call`]; code never
+/// names it.
+pub trait Attempt<M>: sealed::Sealed<M> {
+    /// The outcome the attempt produces.
+    type Output;
+
+    // The `M: Mode` bound sits on the method, not the trait, so code generic
+    // over the mode can name `Attempt<M>` (and `Operation<M>`) without it.
+    #[doc(hidden)]
+    fn poll_attempt(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        token: <M as sealed::Mode>::Token,
+    ) -> Poll<Self::Output>
+    where
+        M: sealed::Mode;
+}
+
+impl<T> Attempt<Blocking> for T {
+    type Output = T;
+
+    fn poll_attempt(
+        self: Pin<&mut T>,
+        _cx: &mut Context<'_>,
+        token: core::convert::Infallible,
+    ) -> Poll<T> {
+        match token {}
+    }
+}
+
+impl<F: Future> Attempt<Async> for F {
+    type Output = F::Output;
+
+    fn poll_attempt(
+        self: Pin<&mut F>,
+        cx: &mut Context<'_>,
+        _token: AsyncToken,
+    ) -> Poll<F::Output> {
+        self.poll(cx)
+    }
+}
+
+/// The operation a builder retries, in mode `M` ([`Blocking`] or [`Async`]).
+///
+/// Implemented for `FnMut(RetryState) -> R` closures and for [`StatelessOp`];
+/// sealed, so those are the only implementors. Name it in the bounds of code
+/// generic over a configured builder:
+///
+/// - `F: Operation<Blocking, Output = O>` to run a blocking builder;
+/// - `F: Operation<Async, Output = O>` to await an async one.
+///
+/// To require a `Send` retry future, add `Call: Send` and bound every other
+/// builder parameter `Send` as well — the operation itself, the classifier,
+/// the stop and wait strategies, and each hook:
+/// `F: Operation<Async, Output = O, Call: Send> + Send, C: Decide<O> + Send`,
+/// and so on.
+///
+/// A closure that returns a future implements both modes, which is why the
+/// entry point chooses the mode rather than inferring it.
+pub trait Operation<M>: sealed::SealedOp<M> {
+    /// The outcome an attempt produces.
+    ///
+    /// An associated type, so `F: Operation<M>` determines the outcome as
+    /// `FnMut(..) -> O` does; classifier closures infer their parameter from it.
+    type Output;
+    /// What running the operation once returns: the outcome itself in
+    /// `Blocking` mode, a future of it in `Async` mode.
+    type Call: Attempt<M, Output = Self::Output>;
+    /// Runs one attempt, given the current retry state.
+    fn call_op(&mut self, state: RetryState) -> Self::Call;
+}
+
+impl<M, R, F> Operation<M> for F
+where
+    F: FnMut(RetryState) -> R,
+    R: Attempt<M>,
+{
+    type Output = R::Output;
+    type Call = R;
+    fn call_op(&mut self, state: RetryState) -> R {
         (self)(state)
     }
 }
 
-/// Adapts a no-argument `FnMut() -> O` operation to [`RetryOp`] by discarding the
+/// Adapts a no-argument closure to [`Operation`] by discarding the
 /// [`RetryState`].
 ///
 /// Produced by [`RetryExt::retry`](crate::RetryExt::retry) and
@@ -44,45 +178,25 @@ impl<O, F: FnMut(RetryState) -> O> RetryOp for F {
 #[derive(Debug, Clone)]
 pub struct StatelessOp<F>(pub(crate) F);
 
-impl<O, F: FnMut() -> O> RetryOp for StatelessOp<F> {
-    type Output = O;
-    fn call_op(&mut self, _state: RetryState) -> O {
+impl<M, R, F> Operation<M> for StatelessOp<F>
+where
+    F: FnMut() -> R,
+    R: Attempt<M>,
+{
+    type Output = R::Output;
+    type Call = R;
+    fn call_op(&mut self, _state: RetryState) -> R {
         (self.0)()
     }
 }
 
-/// Async counterpart to [`RetryOp`]: unifies stateful and stateless async
-/// operations. `Future` and `Output` are associated so `F: AsyncRetryOp` pins
-/// both, preserving op-anchored inference (see [`RetryOp`]).
-pub trait AsyncRetryOp {
-    /// The outcome an attempt produces.
-    type Output;
-    /// The future an attempt returns.
-    type Future: Future<Output = Self::Output>;
-    /// Runs one attempt, given the current retry state.
-    fn call_op(&mut self, state: RetryState) -> Self::Future;
-}
-
-impl<Fut, O, F> AsyncRetryOp for F
-where
-    F: FnMut(RetryState) -> Fut,
-    Fut: Future<Output = O>,
-{
-    type Output = O;
-    type Future = Fut;
-    fn call_op(&mut self, state: RetryState) -> Fut {
-        (self)(state)
-    }
-}
-
-impl<Fut, O, F> AsyncRetryOp for StatelessOp<F>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = O>,
-{
-    type Output = O;
-    type Future = Fut;
-    fn call_op(&mut self, _state: RetryState) -> Fut {
-        (self.0)()
-    }
+/// Turns a blocking call result into its outcome.
+///
+/// An identity function the compiler needs: the blocking driver holds an
+/// `F::Call` and must hand on an `F::Output`. With `A` unbounded here the
+/// blanket impl normalizes the return type to `A`; at the call site the item
+/// bound on [`Operation::Call`] normalizes it to `F::Output`. Assigning the
+/// call result directly is rejected as a type mismatch.
+pub(crate) fn ready_outcome<A>(attempt: A) -> <A as Attempt<Blocking>>::Output {
+    attempt
 }

@@ -292,7 +292,7 @@ fn retry_ext_starts_from_a_no_arg_closure() {
 #[test]
 fn retry_ext_supports_the_classifier_surface() {
     // The stateless-ext builder still reaches `.until`, because the op slot
-    // is unified behind `RetryOp` rather than a bare `FnMut`.
+    // is unified behind `Operation` rather than a bare `FnMut`.
     let counter = Cell::new(0);
     let result = (|| {
         counter.set(counter.get() + 1);
