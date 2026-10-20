@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, block_on};
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, block_on};
 use core::cell::Cell;
 use core::time::Duration;
 
@@ -142,4 +142,57 @@ fn async_with_stats_and_on_exit_match_the_sync_engine() {
     assert_eq!(stats.attempts, 3);
     assert_eq!(stats.total_wait, Duration::from_millis(10));
     assert_eq!(reason.get(), Some(StopReason::Exhausted));
+}
+
+/// Returns `Pending` on its first poll (waking the task) and `Ready` after.
+struct YieldOnce {
+    yielded: bool,
+}
+
+impl core::future::Future for YieldOnce {
+    type Output = ();
+
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<()> {
+        if self.yielded {
+            return core::task::Poll::Ready(());
+        }
+        self.yielded = true;
+        cx.waker().wake_by_ref();
+        core::task::Poll::Pending
+    }
+}
+
+/// GIVEN an operation whose future is pending before it resolves
+/// WHEN the retry future is driven to completion
+/// THEN the same future is polled again: the operation runs once and its
+/// value is returned after one attempt.
+#[test]
+fn a_pending_operation_future_is_repolled_not_restarted() {
+    let calls = Cell::new(0);
+    let clock = VirtualClock::new();
+    let (result, stats) = block_on(
+        retry_async(|_| {
+            calls.set(calls.get() + 1);
+            // Only the first call's future yields, so a driver that restarted
+            // the operation on `Pending` would finish with two calls, not hang.
+            let first_call = calls.get() == 1;
+            async move {
+                if first_call {
+                    YieldOnce { yielded: false }.await;
+                }
+                Ok::<i32, &str>(ARBITRARY_VALUE)
+            }
+        })
+        .clock(&clock)
+        .with_stats()
+        .call(),
+    );
+
+    assert_eq!(
+        (result, stats.attempts, calls.get()),
+        (Ok(ARBITRARY_VALUE), 1, 1)
+    );
 }
