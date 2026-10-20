@@ -157,8 +157,44 @@ impl<F: Future> Attempt<Async> for F {
 /// `F: Operation<Async, Output = O, Call: Send> + Send, C: Decide<O> + Send`,
 /// and so on.
 ///
+/// A struct field that stores the async retry future repeats the future's own
+/// bound, `F: Operation<Async>`.
+///
 /// A closure that returns a future implements both modes, which is why the
 /// entry point chooses the mode rather than inferring it.
+///
+/// # Examples
+///
+/// A helper that finishes any configured blocking builder:
+///
+/// ```
+/// use relentless::clock::VirtualClock;
+/// use relentless::stop::Stop;
+/// use relentless::wait::Wait;
+/// use relentless::{
+///     AttemptHook, BeforeAttemptHook, Blocking, Decide, ExitHook, Operation, Retry, RetryError,
+///     SyncClock, retry,
+/// };
+///
+/// fn finish<F, C, S, W, Cl, BA, AA, OX, O>(
+///     builder: Retry<F, C, S, W, Cl, BA, AA, OX>,
+/// ) -> Result<C::R, RetryError<C::A, O>>
+/// where
+///     F: Operation<Blocking, Output = O>,
+///     C: Decide<O>,
+///     S: Stop,
+///     W: Wait,
+///     Cl: SyncClock,
+///     BA: BeforeAttemptHook,
+///     AA: AttemptHook<O>,
+///     OX: ExitHook<C::R, C::A, O>,
+/// {
+///     builder.call()
+/// }
+///
+/// let builder = retry(|_| Ok::<u32, &str>(1)).clock(VirtualClock::new());
+/// assert_eq!(finish(builder), Ok(1));
+/// ```
 ///
 /// Every entry point takes a closure, so no other implementation could run;
 /// the trait is sealed to say so at compile time:
