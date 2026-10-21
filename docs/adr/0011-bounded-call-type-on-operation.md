@@ -127,8 +127,3 @@ one more public name and three operation traits instead of one.
   blanket blocking impl is never a candidate.
 - A future-returning closure passed to `retry` still compiles as a blocking
   outcome, as it does today.
-- Migration from the unpushed first cut of `Operation<M>` (commit
-  `refactor(engine)!: replace RetryOp and AsyncRetryOp with Operation<M>`) is
-  small: rename `Attempt` to `Call`, add the item bound, add the sealed
-  `Attempt<M>` trait and the token, and remove `Attempt = O` from bounds and
-  from that commit's `BREAKING CHANGE` footer.
