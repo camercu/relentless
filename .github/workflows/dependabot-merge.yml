@@ -1,0 +1,44 @@
+# Squash-merge a Dependabot PR once its checks pass, so routine bumps do
+# not pile up as open PRs. Triggered by the checks workflow finishing,
+# not by GitHub auto-merge: auto-merge needs required status checks on
+# main, which would also gate direct pushes to trunk.
+#
+# Merges with GITHUB_TOKEN, so the merge commit triggers no further
+# workflows (no CI rerun on main, no release). Dependabot commits are
+# `chore`/`ci`, which semantic-release would skip anyway.
+name: Dependabot merge
+
+on:
+  workflow_run:
+    # CI in generated projects, Template in the template repo, where
+    # CI's jobs all skip.
+    workflows: [CI, Template]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    name: Squash-merge passing Dependabot PR
+    if: >-
+      ${{ github.event.workflow_run.event == 'pull_request'
+          && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.actor.login == 'dependabot[bot]'
+          && github.event.workflow_run.pull_requests[0]
+          && github.event.workflow_run.name
+             == (github.repository == 'camercu/rust-template' && 'Template' || 'CI') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # --match-head-commit refuses the merge if the PR moved after the
+      # run that passed.
+      - name: Merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash
+          --delete-branch --match-head-commit "$SHA"
