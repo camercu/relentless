@@ -1,5 +1,14 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
+# Git exports these to hooks, and no recipe tool should inherit them:
+# cargo-deny updates its advisory db with `git -C <db> fetch` and
+# `reset --hard FETCH_HEAD`, and -C does not override GIT_DIR. Inside a
+# hook (a submodule's pre-push, say) that reset this repo to its origin,
+# dropping unpushed commits.
+unexport GIT_DIR
+unexport GIT_WORK_TREE
+unexport GIT_INDEX_FILE
+
 toml_files := "Cargo.toml deny.toml"
 no_std_target := "thumbv7m-none-eabi"
 wasm_target := "wasm32-unknown-unknown"
