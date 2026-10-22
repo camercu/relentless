@@ -89,14 +89,13 @@ turns a call result into the outcome through a private identity function,
 it the compiler rejects the assignment (E0308). The async driver stores
 `F::Call` in the named `AsyncRun` future and polls it through `poll_attempt`.
 
-`Token<M>` is a private type indexed by mode, and only `Token<Async>` has a
-constructor. No code, in this crate or outside it, can call `poll_attempt` on a
-blocking attempt. A mode-generic call fails with E0308 at compile time. The
-blocking impl's body is therefore dead code. The spike's `Token<M>` is a
-`PhantomData` wrapper, so the compiler cannot prove the body dead and it holds
-an `unreachable!()`. Production can make the arm total with a per-mode token
-type whose blocking variant is uninhabited (for example `core::convert::Infallible`),
-then `match` on it.
+`Token<M>` is a per-mode type named through a private trait. The blocking
+token is `core::convert::Infallible`, so no code can call `poll_attempt` on a
+blocking attempt, and the blocking impl's body is a total `match token {}`. A
+mode-generic call fails with E0308 at compile time. The async token is `()`:
+polling an async attempt is polling its future, which needs no guard. The
+token does not seal `Attempt`; `Sealed<M>` does. (The spike's `Token<M>` was
+a `PhantomData` wrapper, so its blocking body held an `unreachable!()`.)
 
 Per-mode call traits stay the recorded fallback. They have no dead arm and the
 clearest errors for people who implement `Operation` by hand, at the cost of

@@ -13,7 +13,7 @@ use super::elapsed::Elapsed;
 use super::hooks::{
     AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
 };
-use super::op::{Async, AsyncToken, Attempt, Operation, StatelessOp};
+use super::op::{Async, Attempt, Operation, StatelessOp};
 use super::step::{Progress, Step, step};
 use super::termination::Exit;
 use super::{RetryError, RetryStats};
@@ -464,7 +464,7 @@ where
                 PhaseProj::Polling { op_future } => {
                     // The mode is spelled out so the blanket `Attempt<Blocking>`
                     // impl, which every type satisfies, is never a candidate.
-                    let polled = Attempt::<Async>::poll_attempt(op_future, cx, AsyncToken::new());
+                    let polled = Attempt::<Async>::poll_attempt(op_future, cx, ());
                     let outcome = match polled {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(outcome) => outcome,

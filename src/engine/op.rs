@@ -32,7 +32,7 @@ pub enum Async {}
 
 // The items here are `pub` because public signatures mention them, and in a
 // private module so no other crate can name them: that is what seals
-// `Operation` and `Attempt` and keeps `poll_attempt` uncallable from outside.
+// `Operation` and `Attempt`.
 #[allow(unreachable_pub)]
 mod sealed {
     use super::{Async, Attempt, Blocking, StatelessOp};
@@ -50,7 +50,7 @@ mod sealed {
     impl<M, R: Attempt<M>, F: FnMut(RetryState) -> R> SealedOp<M> for F {}
     impl<M, R: Attempt<M>, F: FnMut() -> R> SealedOp<M> for StatelessOp<F> {}
 
-    /// Names the token that unlocks `poll_attempt` in each mode.
+    /// Names the token `poll_attempt` takes in each mode.
     pub trait Mode {
         type Token;
     }
@@ -58,22 +58,11 @@ mod sealed {
     impl Mode for Blocking {
         type Token = core::convert::Infallible;
     }
+    // Polling an async attempt is polling its future, so anyone may do it.
     impl Mode for Async {
-        type Token = AsyncToken;
-    }
-
-    /// Proof that the async driver is the caller. Constructible only inside
-    /// this crate.
-    pub struct AsyncToken(());
-
-    impl AsyncToken {
-        pub(crate) const fn new() -> Self {
-            AsyncToken(())
-        }
+        type Token = ();
     }
 }
-
-pub(crate) use sealed::AsyncToken;
 
 /// What one call of an [`Operation`] yields in mode `M`: the outcome itself in
 /// [`Blocking`] mode, or a future of it in [`Async`] mode.
@@ -83,8 +72,22 @@ pub(crate) use sealed::AsyncToken;
 /// appears in bounds only as the item bound on [`Operation::Call`]; code never
 /// names it.
 ///
-/// No other crate can add a mode or an implementation: the hidden method takes
-/// a token type that no other crate can name.
+/// No other crate can add a mode or an implementation:
+///
+/// ```compile_fail
+/// use core::pin::Pin;
+/// use core::task::{Context, Poll};
+/// use relentless::{Async, Attempt};
+///
+/// struct NotAFuture;
+///
+/// impl Attempt<Async> for NotAFuture {
+///     type Output = ();
+///     fn poll_attempt(self: Pin<&mut Self>, _: &mut Context<'_>, _: ()) -> Poll<()> {
+///         Poll::Ready(())
+///     }
+/// }
+/// ```
 pub trait Attempt<M>: sealed::Sealed<M> {
     /// The outcome the attempt produces.
     type Output;
@@ -116,11 +119,7 @@ impl<T> Attempt<Blocking> for T {
 impl<F: Future> Attempt<Async> for F {
     type Output = F::Output;
 
-    fn poll_attempt(
-        self: Pin<&mut F>,
-        cx: &mut Context<'_>,
-        _token: AsyncToken,
-    ) -> Poll<F::Output> {
+    fn poll_attempt(self: Pin<&mut F>, cx: &mut Context<'_>, _token: ()) -> Poll<F::Output> {
         self.poll(cx)
     }
 }
