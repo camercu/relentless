@@ -59,10 +59,12 @@ lint-typos:
     typos
 
 # Lint Markdown structure (headings, lists, fenced-code languages).
-# Config + globs/ignores live in `.markdownlint-cli2.yaml`; line-length
-# is disabled there because it can't wrap reference tables.
+# Config + ignores live in `.markdownlint-cli2.yaml`. Files come from git,
+# not markdownlint's own globbing, which ignores .git/info/exclude and so
+# linted local working dirs such as .scratch/.
 lint-markdown:
-    markdownlint-cli2
+    git ls-files -z --cached --others --exclude-standard -- '*.md' \
+        | xargs -0 markdownlint-cli2
 
 # Lint GitHub Actions workflows (syntax, expression typos, shell issues
 # in `run:` blocks via shellcheck). Catches workflow bugs that otherwise
