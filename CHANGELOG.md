@@ -1,3 +1,9 @@
+## [0.18.4](https://github.com/camercu/relentless/compare/v0.18.3...v0.18.4) (2026-10-25)
+
+### Bug Fixes
+
+* **deps:** update rustls-webpki and webpki-root-certs to fix RUSTSEC-2026-0382 and RUSTSEC-2026-0383 ([856bffe](https://github.com/camercu/relentless/commit/856bffeb1916c1b6a5e489d4013a89ca3fd871a0))
+
 ## [0.18.3](https://github.com/camercu/relentless/compare/v0.18.2...v0.18.3) (2026-10-14)
 
 ### Bug Fixes
