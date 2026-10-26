@@ -1,6 +1,7 @@
 //! Classifiers built from a [`Predicate`]: the `.when` and `.until` adapters.
 
 use super::Predicate;
+use crate::decision::sealed::SealedDecide;
 use crate::decision::{Decide, Verdict};
 
 /// Classifier from `.when(p)`: retry while the predicate wants to; otherwise
@@ -17,6 +18,8 @@ impl<P> When<P> {
         When(predicate)
     }
 }
+
+impl<P> SealedDecide for When<P> {}
 
 impl<T, E, P> Decide<Result<T, E>> for When<P>
 where
@@ -47,6 +50,8 @@ impl<P> Until<P> {
         Until(predicate)
     }
 }
+
+impl<P> SealedDecide for Until<P> {}
 
 impl<T, E, P> Decide<Result<T, E>> for Until<P>
 where

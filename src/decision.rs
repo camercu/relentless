@@ -138,12 +138,31 @@ impl<B, C> Outcome for ControlFlow<B, C> {
     }
 }
 
-/// The engine-facing classifier trait. Users never name or implement it; it is
-/// carried in the builder's classifier slot and driven by the retry loop.
+/// The engine-facing classifier trait, carried in the builder's classifier
+/// slot and driven by the retry loop. Users name it only in the bounds of code
+/// generic over a configured builder (`C: Decide<O>`), where `C::R` and `C::A`
+/// spell the result types.
 ///
 /// A classifier consumes each outcome **by value** and returns a [`Verdict`].
 /// The `&self` receiver lets one classifier serve every attempt of a loop.
-pub trait Decide<O> {
+///
+/// Sealed: `.decide`, `.when` and `.until` install the only classifiers, so
+/// no other crate can implement it:
+///
+/// ```compile_fail
+/// use relentless::{Decide, Verdict};
+///
+/// struct Mine;
+///
+/// impl Decide<u32> for Mine {
+///     type R = u32;
+///     type A = u32;
+///     fn decide(&self, outcome: u32) -> Verdict<u32, u32, u32> {
+///         Verdict::Return(outcome)
+///     }
+/// }
+/// ```
+pub trait Decide<O>: sealed::SealedDecide {
     /// The value produced on `Return` (what `Ok` carries).
     type R;
     /// The value produced on `Abort` (what `RetryError::Aborted { last }` carries).
@@ -155,6 +174,8 @@ pub trait Decide<O> {
 
 /// A shared reference to a classifier is itself one, so a builder can borrow a
 /// classifier stored in a reusable [`RetryPolicy`](crate::RetryPolicy).
+impl<C: sealed::SealedDecide + ?Sized> sealed::SealedDecide for &C {}
+
 impl<O, C: Decide<O> + ?Sized> Decide<O> for &C {
     type R = C::R;
     type A = C::A;
@@ -172,6 +193,8 @@ impl<O, C: Decide<O> + ?Sized> Decide<O> for &C {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultClassifier;
 
+impl sealed::SealedDecide for DefaultClassifier {}
+
 impl<O: Outcome> Decide<O> for DefaultClassifier {
     type R = O::Return;
     type A = O::Abort;
@@ -181,8 +204,14 @@ impl<O: Outcome> Decide<O> for DefaultClassifier {
     }
 }
 
-mod sealed {
+// `pub` items in a crate-visible module: public bounds mention them, and no
+// other crate can name them, which seals `Decide` and `IntoDecision`.
+#[allow(unreachable_pub)]
+pub(crate) mod sealed {
     pub trait Sealed {}
+
+    /// Restricts [`Decide`](super::Decide) to the crate's own classifiers.
+    pub trait SealedDecide {}
 }
 
 /// Unifies [`Decision`] and [`Verdict`] under one `.decide` method.
@@ -232,6 +261,8 @@ impl<R, A, O> IntoDecision<O> for Verdict<R, A, O> {
 /// is no coherence overlap between the two currencies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosureClassifier<C>(pub(crate) C);
+
+impl<C> sealed::SealedDecide for ClosureClassifier<C> {}
 
 impl<O, D, C> Decide<O> for ClosureClassifier<C>
 where

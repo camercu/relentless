@@ -165,6 +165,7 @@ mod tests {
     // A classifier that fails every outcome fatally, to reach the `Abort` arm
     // the default `Result` classifier never takes.
     struct AlwaysAbort;
+    impl crate::decision::sealed::SealedDecide for AlwaysAbort {}
     impl Decide<Res> for AlwaysAbort {
         type R = i32;
         type A = &'static str;
