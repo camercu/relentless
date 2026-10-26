@@ -92,9 +92,9 @@ it the compiler rejects the assignment (E0308). The async driver stores
 `Token<M>` is a per-mode type named through a private trait. The blocking
 token is `core::convert::Infallible`, so no code can call `poll_attempt` on a
 blocking attempt, and the blocking impl's body is a total `match token {}`. A
-mode-generic call fails with E0308 at compile time. The async token is `()`:
-polling an async attempt is polling its future, which needs no guard. The
-token does not seal `Attempt`; `Sealed<M>` does. (The spike's `Token<M>` was
+mode-generic call fails to compile: it cannot prove the private `M: Mode`
+bound (E0277). The async token is `()`: polling an async attempt is polling
+its future, which needs no guard. The token does not seal `Attempt`; `Sealed<M>` does. (The spike's `Token<M>` was
 a `PhantomData` wrapper, so its blocking body held an `unreachable!()`.)
 
 Per-mode call traits stay the recorded fallback. They have no dead arm and the
