@@ -69,8 +69,8 @@ mod sealed {
 ///
 /// Sealed: every type implements `Attempt<Blocking>` with itself as `Output`,
 /// and every future implements `Attempt<Async>` with the future's output. It
-/// appears in bounds only as the item bound on [`Operation::Call`]; code never
-/// names it.
+/// appears in bounds only as the item bound on [`Operation::Call`]; consumer
+/// code never names it.
 ///
 /// No other crate can add a mode or an implementation:
 ///
