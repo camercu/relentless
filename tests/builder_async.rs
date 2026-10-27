@@ -60,9 +60,9 @@ fn async_default_path_retries_then_returns_ok() {
 }
 
 #[test]
-fn async_decide_infers_through_fut_output() {
+fn async_decide_infers_through_the_operation_output() {
     // Inline classifier with no annotations: the parameter is typed through
-    // `Fut::Output`.
+    // `Operation::Output`.
     let clock = VirtualClock::new();
     let result = block_on(
         retry_async(|_| async { Err::<i32, &str>("fatal") })
