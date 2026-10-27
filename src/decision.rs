@@ -146,8 +146,9 @@ impl<B, C> Outcome for ControlFlow<B, C> {
 /// A classifier consumes each outcome **by value** and returns a [`Verdict`].
 /// The `&self` receiver lets one classifier serve every attempt of a loop.
 ///
-/// Sealed: `.decide`, `.when` and `.until` install the only classifiers, so
-/// no other crate can implement it:
+/// Sealed: the only implementations are the crate's own classifiers — the
+/// default one and those `.decide`, `.when` and `.until` install. No other
+/// crate can add one:
 ///
 /// ```compile_fail
 /// use relentless::{Decide, Verdict};
