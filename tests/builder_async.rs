@@ -5,9 +5,10 @@
 
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, block_on};
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, ReadyClock, block_on};
 use core::cell::Cell;
 use core::time::Duration;
+use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
 use relentless::{
@@ -195,4 +196,17 @@ fn a_pending_operation_future_is_repolled_not_restarted() {
         (result, stats.attempts, calls.get()),
         (Ok(ARBITRARY_VALUE), 1, 1)
     );
+}
+
+/// §10.1 — the retry future never holds an outcome across a wait, so a `!Send`
+/// outcome still yields a `Send` future when the operation's future is `Send`.
+#[test]
+fn a_non_send_outcome_still_gives_a_send_retry_future() {
+    fn assert_send<T: Send>(_: &T) {}
+
+    let future = retry_async(|_| async { Ok::<Rc<i32>, &str>(Rc::new(ARBITRARY_VALUE)) })
+        .clock(ReadyClock)
+        .call();
+    assert_send(&future);
+    assert_eq!(block_on(future).as_deref(), Ok(&ARBITRARY_VALUE));
 }

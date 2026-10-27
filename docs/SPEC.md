@@ -1142,11 +1142,14 @@ following are `Send`:
 
 - the operation closure
 - the operation's returned `Future`
-- `T` and `E`
+- the classifier, the stop strategy, and the wait strategy
 - the clock and its `AsyncClock::Wait` future
 - all registered hooks
 
-**10.1** Async execution types are `Send` when the operation, its future, `T`, `E`, the clock, its `AsyncClock::Wait`, and all hooks are `Send`.
+The outcome type is not on the list: the retry future never holds an outcome
+across a wait, so a `!Send` `T` or `E` does not make it `!Send`.
+
+**10.1** Async execution types are `Send` when the operation, its future, the classifier, the stop and wait strategies, the clock, its `AsyncClock::Wait`, and all hooks are `Send`.
 
 **10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
