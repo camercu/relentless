@@ -113,8 +113,9 @@ one more public name and three operation traits instead of one.
   `pin_project_lite`, which the crate already uses under
   `#![forbid(unsafe_code)]`. No `Unpin` bound is needed; one would reject
   every plain `async {}` block.
-- `Attempt` is public, sealed and hidden from rustdoc, like `Decide`.
-  Consumers never write it.
+- `Attempt` is public, sealed and hidden from rustdoc, like `IntoDecision`.
+  Consumers never write it. `Decide` is sealed but documented: generic
+  builder code names it in bounds.
 - `Operation` is sealed too. Every entry point takes a closure, so a
   hand-written `Operation` could never run; sealing turns that dead end into
   a compile error. Consumers still name it in bounds. The per-mode call trait

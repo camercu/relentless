@@ -1013,14 +1013,14 @@ impl<R, A, O> core::marker::UnsafeUnpin for relentless::Verdict<R, A, O> where R
 impl<R, A, O> core::panic::unwind_safe::RefUnwindSafe for relentless::Verdict<R, A, O> where R: core::panic::unwind_safe::RefUnwindSafe, O: core::panic::unwind_safe::RefUnwindSafe, A: core::panic::unwind_safe::RefUnwindSafe
 impl<R, A, O> core::panic::unwind_safe::UnwindSafe for relentless::Verdict<R, A, O> where R: core::panic::unwind_safe::UnwindSafe, O: core::panic::unwind_safe::UnwindSafe, A: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>
-impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::decision::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>
+impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::Decide>::R, <C as relentless::Decide>::A, O>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::call(self) -> relentless::engine::async_engine::DropStats<relentless::engine::async_engine::AsyncRun<F, C, S, W, Cl, BA, AA, OX>>
 impl<F, C, S, W, Cl, BA, AA, OX> relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::after_attempt<O, Hook>(self, hook: Hook) -> relentless::AsyncRetry<F, C, S, W, Cl, BA, relentless::HookChain<AA, Hook>, OX> where F: relentless::Operation<relentless::Async, Output = O>, Hook: for<'a> core::ops::function::FnMut(&relentless::AttemptState<'a, O>)
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::before_attempt<Hook>(self, hook: Hook) -> relentless::AsyncRetry<F, C, S, W, Cl, relentless::HookChain<BA, Hook>, AA, OX> where Hook: core::ops::function::FnMut(&relentless::RetryState)
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::clock<NewClock>(self, clock: NewClock) -> relentless::AsyncRetry<F, C, S, W, NewClock, BA, AA, OX>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::AsyncRetry<F, relentless::ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::decision::IntoDecision<O>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::on_exit<O, Hook>(self, hook: Hook) -> relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, relentless::HookChain<OX, Hook>> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::decision::Decide<O>, Hook: for<'a> core::ops::function::FnMut(&relentless::Exit<'a, <C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>)
+pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::on_exit<O, Hook>(self, hook: Hook) -> relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, relentless::HookChain<OX, Hook>> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, Hook: for<'a> core::ops::function::FnMut(&relentless::Exit<'a, <C as relentless::Decide>::R, <C as relentless::Decide>::A, O>)
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::stop<NewStop>(self, stop: NewStop) -> relentless::AsyncRetry<F, C, NewStop, W, Cl, BA, AA, OX>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::timeout(self, dur: core::time::Duration) -> Self
 pub fn relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX>::until<T, E, P>(self, predicate: P) -> relentless::AsyncRetry<F, relentless::Until<P>, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
@@ -1037,7 +1037,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::marker::UnsafeUnpin for relentless::Async
 impl<F, C, S, W, Cl, BA, AA, OX> core::panic::unwind_safe::RefUnwindSafe for relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX> where F: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe, BA: core::panic::unwind_safe::RefUnwindSafe, AA: core::panic::unwind_safe::RefUnwindSafe, OX: core::panic::unwind_safe::RefUnwindSafe
 impl<F, C, S, W, Cl, BA, AA, OX> core::panic::unwind_safe::UnwindSafe for relentless::AsyncRetry<F, C, S, W, Cl, BA, AA, OX> where F: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, BA: core::panic::unwind_safe::UnwindSafe, AA: core::panic::unwind_safe::UnwindSafe, OX: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
-impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::decision::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>
+impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::Decide>::R, <C as relentless::Decide>::A, O>
 pub fn relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>::call(self) -> relentless::engine::async_engine::AsyncRun<F, C, S, W, Cl, BA, AA, OX>
 impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
 pub fn relentless::AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1073,7 +1073,7 @@ pub fn relentless::ClosureClassifier<C>::eq(&self, other: &relentless::ClosureCl
 impl<C: core::fmt::Debug> core::fmt::Debug for relentless::ClosureClassifier<C>
 pub fn relentless::ClosureClassifier<C>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<C> core::marker::StructuralPartialEq for relentless::ClosureClassifier<C>
-impl<O, D, C> relentless::decision::Decide<O> for relentless::ClosureClassifier<C> where C: core::ops::function::Fn(O) -> D, D: relentless::decision::IntoDecision<O>
+impl<O, D, C> relentless::Decide<O> for relentless::ClosureClassifier<C> where C: core::ops::function::Fn(O) -> D, D: relentless::decision::IntoDecision<O>
 pub type relentless::ClosureClassifier<C>::A = <D as relentless::decision::IntoDecision<O>>::A
 pub type relentless::ClosureClassifier<C>::R = <D as relentless::decision::IntoDecision<O>>::R
 pub fn relentless::ClosureClassifier<C>::decide(&self, outcome: O) -> relentless::Verdict<<D as relentless::decision::IntoDecision>::R, <D as relentless::decision::IntoDecision>::A, O>
@@ -1096,7 +1096,7 @@ impl core::fmt::Debug for relentless::DefaultClassifier
 pub fn relentless::DefaultClassifier::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for relentless::DefaultClassifier
 impl core::marker::StructuralPartialEq for relentless::DefaultClassifier
-impl<O: relentless::Outcome> relentless::decision::Decide<O> for relentless::DefaultClassifier
+impl<O: relentless::Outcome> relentless::Decide<O> for relentless::DefaultClassifier
 pub type relentless::DefaultClassifier::A = <O as relentless::Outcome>::Abort
 pub type relentless::DefaultClassifier::R = <O as relentless::Outcome>::Return
 pub fn relentless::DefaultClassifier::decide(&self, outcome: O) -> relentless::Verdict<<O as relentless::Outcome>::Return, <O as relentless::Outcome>::Abort, O>
@@ -1126,14 +1126,14 @@ impl<First, Second> core::marker::UnsafeUnpin for relentless::HookChain<First, S
 impl<First, Second> core::panic::unwind_safe::RefUnwindSafe for relentless::HookChain<First, Second> where First: core::panic::unwind_safe::RefUnwindSafe, Second: core::panic::unwind_safe::RefUnwindSafe
 impl<First, Second> core::panic::unwind_safe::UnwindSafe for relentless::HookChain<First, Second> where First: core::panic::unwind_safe::UnwindSafe, Second: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::Retry<F, C, S, W, Cl, BA, AA, OX>
-impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::Retry<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::decision::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>
-pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::call(self) -> core::result::Result<<C as relentless::decision::Decide>::R, relentless::RetryError<<C as relentless::decision::Decide>::A, O>>
+impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::Retry<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::Decide>::R, <C as relentless::Decide>::A, O>
+pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::call(self) -> core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>
 impl<F, C, S, W, Cl, BA, AA, OX> relentless::Retry<F, C, S, W, Cl, BA, AA, OX>
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::after_attempt<O, Hook>(self, hook: Hook) -> relentless::Retry<F, C, S, W, Cl, BA, relentless::HookChain<AA, Hook>, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, Hook: for<'a> core::ops::function::FnMut(&relentless::AttemptState<'a, O>)
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::before_attempt<Hook>(self, hook: Hook) -> relentless::Retry<F, C, S, W, Cl, relentless::HookChain<BA, Hook>, AA, OX> where Hook: core::ops::function::FnMut(&relentless::RetryState)
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::clock<NewClock>(self, clock: NewClock) -> relentless::Retry<F, C, S, W, NewClock, BA, AA, OX>
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::Retry<F, relentless::ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::decision::IntoDecision<O>
-pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::on_exit<O, Hook>(self, hook: Hook) -> relentless::Retry<F, C, S, W, Cl, BA, AA, relentless::HookChain<OX, Hook>> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::decision::Decide<O>, Hook: for<'a> core::ops::function::FnMut(&relentless::Exit<'a, <C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>)
+pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::on_exit<O, Hook>(self, hook: Hook) -> relentless::Retry<F, C, S, W, Cl, BA, AA, relentless::HookChain<OX, Hook>> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::Decide<O>, Hook: for<'a> core::ops::function::FnMut(&relentless::Exit<'a, <C as relentless::Decide>::R, <C as relentless::Decide>::A, O>)
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::stop<NewStop>(self, stop: NewStop) -> relentless::Retry<F, C, NewStop, W, Cl, BA, AA, OX>
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::timeout(self, dur: core::time::Duration) -> Self
 pub fn relentless::Retry<F, C, S, W, Cl, BA, AA, OX>::until<T, E, P>(self, predicate: P) -> relentless::Retry<F, relentless::Until<P>, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
@@ -1225,8 +1225,8 @@ impl core::marker::UnsafeUnpin for relentless::RetryStats
 impl core::panic::unwind_safe::RefUnwindSafe for relentless::RetryStats
 impl core::panic::unwind_safe::UnwindSafe for relentless::RetryStats
 pub struct relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
-impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::decision::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::decision::Decide>::R, <C as relentless::decision::Decide>::A, O>
-pub fn relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX>::call(self) -> (core::result::Result<<C as relentless::decision::Decide>::R, relentless::RetryError<<C as relentless::decision::Decide>::A, O>>, relentless::RetryStats)
+impl<F, C, S, W, Cl, BA, AA, OX, O> relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock, BA: relentless::BeforeAttemptHook, AA: relentless::AttemptHook<O>, OX: relentless::ExitHook<<C as relentless::Decide>::R, <C as relentless::Decide>::A, O>
+pub fn relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX>::call(self) -> (core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>, relentless::RetryStats)
 impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
 pub fn relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<F, C, S, W, Cl, BA, AA, OX> core::marker::Freeze for relentless::RetryWithStats<F, C, S, W, Cl, BA, AA, OX> where F: core::marker::Freeze, Cl: core::marker::Freeze, S: core::marker::Freeze, W: core::marker::Freeze, C: core::marker::Freeze, BA: core::marker::Freeze, AA: core::marker::Freeze, OX: core::marker::Freeze
@@ -1261,7 +1261,7 @@ pub fn relentless::Until<P>::eq(&self, other: &relentless::Until<P>) -> bool
 impl<P: core::fmt::Debug> core::fmt::Debug for relentless::Until<P>
 pub fn relentless::Until<P>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<P> core::marker::StructuralPartialEq for relentless::Until<P>
-impl<T, E, P> relentless::decision::Decide<core::result::Result<T, E>> for relentless::Until<P> where P: relentless::predicate::Predicate<T, E>
+impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::Until<P> where P: relentless::predicate::Predicate<T, E>
 pub type relentless::Until<P>::A = E
 pub type relentless::Until<P>::R = T
 pub fn relentless::Until<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
@@ -1281,7 +1281,7 @@ pub fn relentless::When<P>::eq(&self, other: &relentless::When<P>) -> bool
 impl<P: core::fmt::Debug> core::fmt::Debug for relentless::When<P>
 pub fn relentless::When<P>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<P> core::marker::StructuralPartialEq for relentless::When<P>
-impl<T, E, P> relentless::decision::Decide<core::result::Result<T, E>> for relentless::When<P> where P: relentless::predicate::Predicate<T, E>
+impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::When<P> where P: relentless::predicate::Predicate<T, E>
 pub type relentless::When<P>::A = E
 pub type relentless::When<P>::R = T
 pub fn relentless::When<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
@@ -1344,6 +1344,30 @@ impl relentless::clock::Clock for relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::now(&self) -> core::time::Duration
 impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Clock for &C
 pub fn &C::now(&self) -> core::time::Duration
+pub trait relentless::Decide<O>: relentless::decision::sealed::SealedDecide
+pub type relentless::Decide::A
+pub type relentless::Decide::R
+pub fn relentless::Decide::decide(&self, outcome: O) -> relentless::Verdict<Self::R, Self::A, O>
+impl<O, C: relentless::Decide<O> + ?core::marker::Sized> relentless::Decide<O> for &C
+pub type &C::A = <C as relentless::Decide<O>>::A
+pub type &C::R = <C as relentless::Decide<O>>::R
+pub fn &C::decide(&self, outcome: O) -> relentless::Verdict<<C as relentless::Decide>::R, <C as relentless::Decide>::A, O>
+impl<O, D, C> relentless::Decide<O> for relentless::ClosureClassifier<C> where C: core::ops::function::Fn(O) -> D, D: relentless::decision::IntoDecision<O>
+pub type relentless::ClosureClassifier<C>::A = <D as relentless::decision::IntoDecision<O>>::A
+pub type relentless::ClosureClassifier<C>::R = <D as relentless::decision::IntoDecision<O>>::R
+pub fn relentless::ClosureClassifier<C>::decide(&self, outcome: O) -> relentless::Verdict<<D as relentless::decision::IntoDecision>::R, <D as relentless::decision::IntoDecision>::A, O>
+impl<O: relentless::Outcome> relentless::Decide<O> for relentless::DefaultClassifier
+pub type relentless::DefaultClassifier::A = <O as relentless::Outcome>::Abort
+pub type relentless::DefaultClassifier::R = <O as relentless::Outcome>::Return
+pub fn relentless::DefaultClassifier::decide(&self, outcome: O) -> relentless::Verdict<<O as relentless::Outcome>::Return, <O as relentless::Outcome>::Abort, O>
+impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::Until<P> where P: relentless::predicate::Predicate<T, E>
+pub type relentless::Until<P>::A = E
+pub type relentless::Until<P>::R = T
+pub fn relentless::Until<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
+impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::When<P> where P: relentless::predicate::Predicate<T, E>
+pub type relentless::When<P>::A = E
+pub type relentless::When<P>::R = T
+pub fn relentless::When<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
 pub trait relentless::ExitHook<R, A, O>
 pub fn relentless::ExitHook::call(&mut self, exit: &relentless::Exit<'_, R, A, O>)
 impl<R, A, O, F: for<'a> core::ops::function::FnMut(&relentless::Exit<'a, R, A, O>)> relentless::ExitHook<R, A, O> for F

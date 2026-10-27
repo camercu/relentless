@@ -318,12 +318,13 @@ pub mod wait;
 pub use clock::{AsyncClock, Clock, SyncClock};
 pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Verdict};
 // `Decide`/`IntoDecision` are sealed engine-facing classifier traits: users
-// never implement them, and name `Decide` only in the bounds of code generic
-// over a configured builder, so they must be reachable. Hidden from the docs to
-// keep the surface focused on the names users write when configuring a retry
-// (`Decision`/`Verdict`/`Outcome`).
+// never implement them. `Decide` is documented because code generic over a
+// configured builder names it in bounds (`C: Decide<O>`, `C::R`, `C::A`).
+// `IntoDecision` only bounds the `.decide` argument, so it stays hidden to
+// keep the surface on the names users write (`Decision`/`Verdict`/`Outcome`).
+pub use decision::Decide;
 #[doc(hidden)]
-pub use decision::{Decide, IntoDecision};
+pub use decision::IntoDecision;
 pub use engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AttemptState, Exit, Retry, RetryError,
     RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
