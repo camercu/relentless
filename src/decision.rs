@@ -218,7 +218,21 @@ pub(crate) mod sealed {
 ///
 /// A `.decide` closure returns either enum; this trait converts it into the
 /// engine's canonical [`Verdict`]. It is sealed — users return one of the two
-/// enums, never implement this themselves.
+/// enums, never implement this themselves:
+///
+/// ```compile_fail
+/// use relentless::{IntoDecision, Verdict};
+///
+/// struct Always;
+///
+/// impl IntoDecision<u32> for Always {
+///     type R = u32;
+///     type A = u32;
+///     fn into_verdict(self) -> Verdict<u32, u32, u32> {
+///         Verdict::Return(0)
+///     }
+/// }
+/// ```
 pub trait IntoDecision<O>: sealed::Sealed {
     /// The value produced on `Return`.
     type R;
