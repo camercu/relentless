@@ -19,11 +19,6 @@ ignores:
   # Local Claude Code config and installed skills — agent tooling, not
   # project docs, and often third-party Markdown that won't conform.
   - .claude
-  # Point-in-time research artifacts (spike findings, scratch workspace),
-  # written once and not maintained — like CHANGELOG, not worth linting.
-  - .spike-workspace
+  # Point-in-time spike findings, written once and not maintained — like
+  # CHANGELOG, not worth linting.
   - docs/spikes
-  # Working state for an in-progress `harden` run (ledger, findings, agent
-  # reports). Git-ignored and transient; linting it makes `just lint` fail for
-  # the duration of a run. Same rationale as `.claude` above.
-  - .harden
