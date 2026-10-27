@@ -184,20 +184,27 @@ clean:
 # cargo-public-api builds rustdoc JSON, which is nightly-only, so these
 # recipes require a nightly toolchain (rustup installs one on demand).
 
-# Print the current public API surface (--simplified omits blanket/auto-trait
-# impl noise, keeping the snapshot readable and stable across toolchains).
+# --simplified omits blanket impl noise, keeping the snapshot readable and
+# stable across toolchains. --document-hidden-items keeps `#[doc(hidden)]`
+# items such as `Attempt`, `IntoDecision` and `AsyncRun`: they are still
+# public API, and without it a change to them never shows in the diff. The
+# grep drops the hidden items the compiler adds by itself: derive(Eq)'s
+# `assert_fields_are_eq` and core's `TrivialClone` impls.
+public_api := 'RUSTDOCFLAGS="-Z unstable-options --document-hidden-items" cargo public-api --all-features --simplified | grep -vE "assert_fields_are_eq|core::clone::TrivialClone"'
+
+# Print the current public API surface.
 public-api:
-    cargo public-api --all-features --simplified
+    {{public_api}}
 
 # Regenerate the committed public API snapshot after an intended change.
 public-api-bless:
-    cargo public-api --all-features --simplified > public-api.txt
+    {{public_api}} > public-api.txt
 
 # Fail if the public API has drifted from the committed snapshot.
 public-api-check:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo public-api --all-features --simplified | diff -u public-api.txt - \
+    {{public_api}} | diff -u public-api.txt - \
         || { echo "public API drifted from public-api.txt — review, then run 'just public-api-bless'"; exit 1; }
 
 # ── Documentation ───────────────────────────────────────────
