@@ -80,9 +80,10 @@ impl<F> DefaultAsyncRetry<F> {
 }
 
 impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
-    /// Assembles a retry from an operation and a policy, with the default clock
-    /// and no hooks. Used by [`RetryPolicy::retry`](crate::RetryPolicy::retry)
-    /// to borrow a reusable policy.
+    /// Assembles an async retry from an operation and a policy, with the
+    /// default clock and no hooks. Used by
+    /// [`RetryPolicy::retry_async`](crate::RetryPolicy::retry_async) to borrow a
+    /// reusable policy.
     pub(crate) fn from_policy(op: F, policy: RetryPolicy<S, W, C>) -> Self {
         AsyncRetry {
             op,
