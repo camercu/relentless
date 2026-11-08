@@ -1,3 +1,10 @@
+## [0.18.5](https://github.com/camercu/relentless/compare/v0.18.4...v0.18.5) (2026-11-08)
+
+### Bug Fixes
+
+* **just:** keep git hook variables away from recipe tools ([e1e72c4](https://github.com/camercu/relentless/commit/e1e72c4c0f58c6a6cc269bdf570c5b9dd413bc32))
+* **just:** lint only the Markdown files git sees ([904fd4f](https://github.com/camercu/relentless/commit/904fd4fea24efa74dbc262452a30f6858d23c05c))
+
 ## [0.18.4](https://github.com/camercu/relentless/compare/v0.18.3...v0.18.4) (2026-10-25)
 
 ### Bug Fixes
