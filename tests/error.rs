@@ -407,3 +407,36 @@ fn aborted_error_has_no_last_outcome() {
     assert_eq!(aborted.clone().into_last_error(), Some("boom"));
     assert_eq!(aborted.last(), None);
 }
+
+/// GIVEN a `Result` operation classified with a two-way `Decision`
+/// WHEN the retry is exhausted and the caller propagates the error with `?`
+/// THEN the error converts into `Box<dyn Error>` like a predicate-path error
+#[cfg(feature = "std")]
+#[test]
+fn a_decision_classified_error_propagates_with_question_mark() {
+    use relentless::clock::VirtualClock;
+    use relentless::{Decision, retry, stop};
+
+    #[derive(Debug)]
+    struct Busy;
+    impl core::fmt::Display for Busy {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("busy")
+        }
+    }
+    impl std::error::Error for Busy {}
+
+    fn run() -> Result<u32, Box<dyn std::error::Error>> {
+        let value = retry(|_| Err::<u32, Busy>(Busy))
+            .decide(|outcome| match outcome {
+                Ok(value) => Decision::Return(value),
+                retry => Decision::Retry(retry),
+            })
+            .stop(stop::attempts(1))
+            .clock(VirtualClock::new())
+            .call()?;
+        Ok(value)
+    }
+
+    assert_eq!(run().unwrap_err().to_string(), "retries exhausted: busy");
+}

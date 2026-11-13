@@ -548,8 +548,10 @@ The remaining accessors are `Result`-shaped, provided on
   `Exhausted` when the last outcome is `Err`; `None` otherwise
 - **4.1.7** `into_last_error() -> Option<E>`: consuming version
 
-**4.1.9** Display: `RetryError<E, Result<T, E>>` implements `Display` when
-`E: Display`. Output is lowercase without trailing punctuation, `{variant}:
+**4.1.9** Display: `RetryError<A, Result<T, E>>` implements `Display` when
+`A: Display` and `E: Display`. The abort type need not equal `E`: a `Decision`
+classifier (abort type `Infallible`) or a `Verdict` aborting with its own error
+type keeps `Display`. Output is lowercase without trailing punctuation, `{variant}:
 {error}`: `retries exhausted: connection refused`, `aborted: invalid argument`.
 The `Option` shape `RetryError<Infallible, Option<T>>` and the `ControlFlow`
 shape `RetryError<Infallible, ControlFlow<B, C>>` also implement `Display`
@@ -557,7 +559,9 @@ shape `RetryError<Infallible, ControlFlow<B, C>>` also implement `Display`
 `retries exhausted` with no outcome detail (there is no error to report).
 
 **4.1.10** It implements `std::error::Error` when `std` is active and
-`E: std::error::Error + 'static`, `T: fmt::Debug + 'static`. The `Option` shape
+`A, E: std::error::Error + 'static`, `T: fmt::Debug + 'static`. An abort payload
+that is not an error type (e.g. `String`) gives up `Error`, and with it `?`
+into `Box<dyn Error>`. The `Option` shape
 `RetryError<Infallible, Option<T>>` (when `std` and `T: fmt::Debug`) and the
 `ControlFlow` shape `RetryError<Infallible, ControlFlow<B, C>>` (when `std` and
 `B, C: fmt::Debug`) implement it with no `source` — the abort arm is uninhabited
@@ -1444,8 +1448,8 @@ an `f64` field (the exponential base). All other wait strategy types implement
 both `PartialEq` and `Eq`.
 
 † `RetryError`'s `Display` (and `std::error::Error`) are provided on the
-`Result` shape `RetryError<E, Result<T, E>>`, when `E: Display` (respectively
-`E: Error + 'static`, `T: Debug + 'static`), and on the `Infallible`-abort
+`Result` shape `RetryError<A, Result<T, E>>`, when `A, E: Display` (respectively
+`A, E: Error + 'static`, `T: Debug + 'static`), and on the `Infallible`-abort
 shapes `RetryError<Infallible, Option<T>>` and
 `RetryError<Infallible, ControlFlow<B, C>>` (unconditionally for `Display`; for
 `Error` when `std` is active and the outcome's payloads are `Debug`).
@@ -1490,11 +1494,11 @@ The crate guarantees the following project-wide properties.
 - **16.1** MSRV is Rust `1.85.0`
 - **16.2** the crate forbids `unsafe` with `#![forbid(unsafe_code)]`
 - **16.3** `Duration` is always `core::time::Duration`
-- **16.4** `RetryError` implements `Display` when `E: Display`
+- **16.4** `RetryError` implements `Display` when `A: Display` and `E: Display`
 - **16.5** `RetryError::stop_reason()` is always available regardless of type parameter
   bounds
 - **16.6** `RetryError` implements `std::error::Error` when `std` is active and
-  `E: std::error::Error + 'static`, `T: fmt::Debug + 'static`
+  `A, E: std::error::Error + 'static`, `T: fmt::Debug + 'static`
 - **16.7** all public items have rustdoc examples using `?` for error handling
 - **16.8** license is dual MIT OR Apache-2.0
 

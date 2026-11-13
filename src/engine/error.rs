@@ -22,7 +22,10 @@ use core::ops::ControlFlow;
 /// self-classifying [`Outcome`](crate::Outcome)). On the default and
 /// `.when`/`.until` paths — where the outcome is `Result<T, E>` and aborts
 /// carry the bare error — this is `RetryError<E, Result<T, E>>`, and the
-/// `Result`-shaped helpers below (`last_error`, `Display`, `Error`) also apply.
+/// `Result`-shaped helpers below (`last_error`, `into_last_error`) also apply.
+/// `Display` and `Error` need only a `Result` outcome: any abort type that is
+/// itself `Display` (respectively an error type) keeps them, including the
+/// `Infallible` of a [`Decision`](crate::Decision) classifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RetryError<A, O> {
@@ -101,7 +104,7 @@ impl<T, E> RetryError<E, Result<T, E>> {
     }
 }
 
-impl<T, E: fmt::Display> fmt::Display for RetryError<E, Result<T, E>> {
+impl<A: fmt::Display, T, E: fmt::Display> fmt::Display for RetryError<A, Result<T, E>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RetryError::Aborted { last } => write!(f, "aborted: {last}"),
@@ -114,8 +117,9 @@ impl<T, E: fmt::Display> fmt::Display for RetryError<E, Result<T, E>> {
 }
 
 #[cfg(feature = "std")]
-impl<T, E> std::error::Error for RetryError<E, Result<T, E>>
+impl<A, T, E> std::error::Error for RetryError<A, Result<T, E>>
 where
+    A: std::error::Error + 'static,
     E: std::error::Error + 'static,
     T: fmt::Debug + 'static,
 {

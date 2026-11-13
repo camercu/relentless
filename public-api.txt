@@ -961,6 +961,8 @@ impl<T, E> relentless::RetryError<E, core::result::Result<T, E>>
 pub fn relentless::RetryError<E, core::result::Result<T, E>>::into_last_error(self) -> core::option::Option<E>
 pub fn relentless::RetryError<E, core::result::Result<T, E>>::last_error(&self) -> core::option::Option<&E>
 impl<A, O> core::marker::StructuralPartialEq for relentless::RetryError<A, O>
+impl<A, T, E> core::error::Error for relentless::RetryError<A, core::result::Result<T, E>> where A: core::error::Error + 'static, E: core::error::Error + 'static, T: core::fmt::Debug + 'static
+pub fn relentless::RetryError<A, core::result::Result<T, E>>::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl<A: core::clone::Clone, O: core::clone::Clone> core::clone::Clone for relentless::RetryError<A, O>
 pub fn relentless::RetryError<A, O>::clone(&self) -> relentless::RetryError<A, O>
 impl<A: core::cmp::Eq, O: core::cmp::Eq> core::cmp::Eq for relentless::RetryError<A, O>
@@ -968,13 +970,11 @@ impl<A: core::cmp::PartialEq, O: core::cmp::PartialEq> core::cmp::PartialEq for 
 pub fn relentless::RetryError<A, O>::eq(&self, other: &relentless::RetryError<A, O>) -> bool
 impl<A: core::fmt::Debug, O: core::fmt::Debug> core::fmt::Debug for relentless::RetryError<A, O>
 pub fn relentless::RetryError<A, O>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<A: core::fmt::Display, T, E: core::fmt::Display> core::fmt::Display for relentless::RetryError<A, core::result::Result<T, E>>
+pub fn relentless::RetryError<A, core::result::Result<T, E>>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<B, C> core::fmt::Display for relentless::RetryError<core::convert::Infallible, core::ops::control_flow::ControlFlow<B, C>>
 pub fn relentless::RetryError<core::convert::Infallible, core::ops::control_flow::ControlFlow<B, C>>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<B: core::fmt::Debug, C: core::fmt::Debug> core::error::Error for relentless::RetryError<core::convert::Infallible, core::ops::control_flow::ControlFlow<B, C>>
-impl<T, E: core::fmt::Display> core::fmt::Display for relentless::RetryError<E, core::result::Result<T, E>>
-pub fn relentless::RetryError<E, core::result::Result<T, E>>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T, E> core::error::Error for relentless::RetryError<E, core::result::Result<T, E>> where E: core::error::Error + 'static, T: core::fmt::Debug + 'static
-pub fn relentless::RetryError<E, core::result::Result<T, E>>::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl<T: core::fmt::Debug> core::error::Error for relentless::RetryError<core::convert::Infallible, core::option::Option<T>>
 impl<T> core::fmt::Display for relentless::RetryError<core::convert::Infallible, core::option::Option<T>>
 pub fn relentless::RetryError<core::convert::Infallible, core::option::Option<T>>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
