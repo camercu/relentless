@@ -921,8 +921,9 @@ ordering, and panic behavior.
 
 - optional with `std` (defaults to `clock::SystemClock`: a process-global
   monotonic `Instant` anchor for `now()`, `std::thread::sleep` for the wait)
-- required without `std`; omitting it is a compile error (`SystemClock`
-  implements no clock capability there, so `.call()` is not available)
+- required without `std`, and on `wasm32-unknown-unknown` even with `std`;
+  omitting it is a compile error (`SystemClock` implements no clock capability
+  there, so `.call()` is not available; see 11.1.2.1)
 
 Terminal execution:
 
@@ -1205,6 +1206,12 @@ it from a genuinely fast execution.
 a process-global `std::time::Instant` and reports `now()` relative to it.
 Because the anchor is only ever subtracted from a baseline read from the same
 clock, its absolute origin is irrelevant. There is no async default clock.
+
+**11.1.2.1** On `wasm32-unknown-unknown`, `SystemClock` implements no clock
+trait even with `std`: that target has no OS clock, and `Instant::now` panics
+there at runtime. A sync `.call()` that relies on the default therefore fails
+to compile on that target instead of panicking. Supply a clock explicitly
+(e.g. `VirtualClock` for a loop that needs no timer).
 
 Because a clock is mandatory on every execution, elapsed time is always
 available: the engines never produce `elapsed = None`. Statistics do not force

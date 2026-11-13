@@ -149,6 +149,7 @@ check-no-std:
 
 check-wasm:
     cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
+    cargo check --target {{wasm_target}}
 
 check-embassy:
     cargo check --features embassy-clock
