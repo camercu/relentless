@@ -426,3 +426,22 @@ fn boxed_stop_delegates_should_stop() {
     assert!(!boxed.should_stop(&make_state(MAX_ATTEMPTS - 1)));
     assert!(boxed.should_stop(&make_state(MAX_ATTEMPTS)));
 }
+
+/// GIVEN stop strategies built in `const` items
+/// WHEN they are consulted at runtime
+/// THEN they behave as their runtime-built twins
+#[test]
+fn stop_strategies_can_be_consts() {
+    const ATTEMPTS: stop::StopAfterAttempts = stop::attempts(2);
+    const ELAPSED: stop::StopAfterElapsed = stop::elapsed(Duration::from_secs(1));
+    const NEVER: stop::StopNever = stop::never();
+    let state = relentless::RetryState::for_attempt(2);
+    assert_eq!(
+        (
+            ATTEMPTS.should_stop(&state),
+            ELAPSED.should_stop(&state),
+            NEVER.should_stop(&state)
+        ),
+        (true, false, false)
+    );
+}

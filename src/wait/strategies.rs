@@ -25,7 +25,7 @@ pub struct WaitFixed {
 
 /// Creates a wait strategy that waits a fixed duration between attempts.
 #[must_use]
-pub fn fixed(dur: Duration) -> WaitFixed {
+pub const fn fixed(dur: Duration) -> WaitFixed {
     WaitFixed { duration: dur }
 }
 
@@ -60,7 +60,7 @@ pub struct WaitLinear {
 
 /// Creates a linearly increasing wait strategy.
 #[must_use]
-pub fn linear(initial: Duration, increment: Duration) -> WaitLinear {
+pub const fn linear(initial: Duration, increment: Duration) -> WaitLinear {
     WaitLinear { initial, increment }
 }
 
@@ -106,7 +106,7 @@ const DEFAULT_EXPONENTIAL_BASE: f64 = 2.0;
 /// Use [`.base(f)`](WaitExponential::base) to change the multiplier from `2`.
 /// Overflow saturates at [`Duration::MAX`].
 #[must_use]
-pub fn exponential(initial: Duration) -> WaitExponential {
+pub const fn exponential(initial: Duration) -> WaitExponential {
     WaitExponential {
         initial,
         base: DEFAULT_EXPONENTIAL_BASE,

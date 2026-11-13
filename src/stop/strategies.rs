@@ -23,11 +23,22 @@ pub struct StopAfterAttempts {
 
 /// Produces a strategy that stops after `max` completed attempts.
 ///
+/// A `const fn`, so a strategy can be a `const` item. There a `max` of `0`
+/// fails to compile:
+///
+/// ```compile_fail
+/// const NONE: relentless::stop::StopAfterAttempts = relentless::stop::attempts(0);
+/// ```
+///
+/// ```
+/// const ONE: relentless::stop::StopAfterAttempts = relentless::stop::attempts(1);
+/// ```
+///
 /// # Panics
 ///
-/// Panics if `max` is `0`.
+/// Panics if `max` is `0` and the call runs at runtime.
 #[must_use]
-pub fn attempts(max: u32) -> StopAfterAttempts {
+pub const fn attempts(max: u32) -> StopAfterAttempts {
     assert!(max >= 1, "stop::attempts requires max >= 1");
     StopAfterAttempts { max }
 }
@@ -64,7 +75,7 @@ pub struct StopAfterElapsed {
 
 /// Produces a strategy that stops when elapsed time meets or exceeds `deadline`.
 #[must_use]
-pub fn elapsed(deadline: Duration) -> StopAfterElapsed {
+pub const fn elapsed(deadline: Duration) -> StopAfterElapsed {
     StopAfterElapsed { deadline }
 }
 
@@ -94,7 +105,7 @@ pub struct StopNever;
 
 /// Creates a stop strategy that never stops retrying.
 #[must_use]
-pub fn never() -> StopNever {
+pub const fn never() -> StopNever {
     StopNever
 }
 

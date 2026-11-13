@@ -616,9 +616,9 @@ impl<S> relentless::stop::Stop for alloc::boxed::Box<S> where S: relentless::sto
 pub fn alloc::boxed::Box<S>::and<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAll<Self, S> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<S>::or<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAny<Self, S> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<S>::should_stop(&self, state: &relentless::RetryState) -> bool
-pub fn relentless::stop::attempts(max: u32) -> relentless::stop::StopAfterAttempts
-pub fn relentless::stop::elapsed(deadline: core::time::Duration) -> relentless::stop::StopAfterElapsed
-pub fn relentless::stop::never() -> relentless::stop::StopNever
+pub const fn relentless::stop::attempts(max: u32) -> relentless::stop::StopAfterAttempts
+pub const fn relentless::stop::elapsed(deadline: core::time::Duration) -> relentless::stop::StopAfterElapsed
+pub const fn relentless::stop::never() -> relentless::stop::StopNever
 pub mod relentless::wait
 pub struct relentless::wait::Jittered<W>
 impl<W> relentless::wait::Jittered<W>
@@ -885,9 +885,9 @@ pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Sel
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 pub fn relentless::wait::decorrelated_jitter(base: core::time::Duration) -> relentless::wait::Jittered<relentless::wait::WaitFixed>
-pub fn relentless::wait::exponential(initial: core::time::Duration) -> relentless::wait::WaitExponential
-pub fn relentless::wait::fixed(dur: core::time::Duration) -> relentless::wait::WaitFixed
-pub fn relentless::wait::linear(initial: core::time::Duration, increment: core::time::Duration) -> relentless::wait::WaitLinear
+pub const fn relentless::wait::exponential(initial: core::time::Duration) -> relentless::wait::WaitExponential
+pub const fn relentless::wait::fixed(dur: core::time::Duration) -> relentless::wait::WaitFixed
+pub const fn relentless::wait::linear(initial: core::time::Duration, increment: core::time::Duration) -> relentless::wait::WaitLinear
 pub enum relentless::Async
 impl core::clone::Clone for relentless::Async
 pub fn relentless::Async::clone(&self) -> relentless::Async

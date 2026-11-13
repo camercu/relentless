@@ -100,7 +100,12 @@ Stop semantics:
 
 - `stop::attempts(n)` treats `n` as the maximum number of completed attempts
 - **3.1.3** `attempts` fires when `state.attempt >= n`; `n = 1` means "run at most one attempt"
-- **3.1.4** `attempts(0)` panics unconditionally
+- **3.1.4** `attempts(0)` panics at runtime and fails to compile in a const
+  context
+- **3.1.4.1** The leaf constructors `attempts`, `elapsed`, `never`, `fixed`,
+  `linear` and `exponential` are `const fn`, so a strategy can be a `const`
+  item. Combinators and `RetryPolicy` builder methods are not: they drop the
+  value they replace, which a `const fn` cannot do for a generic type
 - **3.1.5** `stop::elapsed(dur)` fires when `state.elapsed >= dur`
 - **3.1.6** `stop::never()` always returns false
 

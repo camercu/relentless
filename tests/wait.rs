@@ -661,3 +661,23 @@ fn exponential_with_zero_initial_stays_zero_past_multiplier_overflow() {
         Duration::ZERO
     );
 }
+
+/// GIVEN wait strategies built in `const` items
+/// WHEN they compute the first delay
+/// THEN each returns its initial delay
+#[test]
+fn wait_strategies_can_be_consts() {
+    const DELAY: Duration = Duration::from_millis(10);
+    const FIXED: wait::WaitFixed = wait::fixed(DELAY);
+    const LINEAR: wait::WaitLinear = wait::linear(DELAY, DELAY);
+    const EXPONENTIAL: wait::WaitExponential = wait::exponential(DELAY);
+    let state = relentless::RetryState::for_attempt(1);
+    assert_eq!(
+        (
+            FIXED.next_wait(&state),
+            LINEAR.next_wait(&state),
+            EXPONENTIAL.next_wait(&state)
+        ),
+        (DELAY, DELAY, DELAY)
+    );
+}
