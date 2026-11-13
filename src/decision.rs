@@ -33,6 +33,10 @@ pub enum Decision<R, O> {
 ///
 /// `O` is the whole outcome type the operation produces; `R` is what the caller
 /// receives on success (`Ok(R)`); `A` is the payload projected on a fatal abort.
+///
+/// A classifier that never aborts leaves `A` with nothing to infer it from,
+/// so the call needs a turbofish such as `Verdict::<_, Infallible, _>`. Return
+/// a [`Decision`] instead: it has no abort type to name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict<R, A, O> {
     /// Accept this outcome as success. `call()` yields `Ok(value)`.

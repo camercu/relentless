@@ -151,7 +151,8 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     ///
     /// The closure returns either [`Decision`](crate::decision::Decision) (no
     /// abort) or [`Verdict`](crate::decision::Verdict) (abort-capable);
-    /// [`IntoDecision`] unifies both. The
+    /// [`IntoDecision`] unifies both. When nothing is fatal, return `Decision`:
+    /// a `Verdict` with no `Abort` arm leaves its abort type to annotate. The
     /// op-anchored `F: Operation<Blocking, Output = O>` bound here (not deferred to
     /// `.call()`) lets the closure's parameter infer from the operation's
     /// output, so inline classifiers need no annotations.
