@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
 use proptest::prelude::{Strategy, any, prop_assert_eq, proptest};
+#[cfg(feature = "alloc")]
+use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
 use relentless::{RetryStats, predicate, retry, retry_async, stop, wait};
 
@@ -93,7 +95,7 @@ fn log(hooks: &HookLog, entry: String) {
 }
 
 fn run_sync(scenario: &Scenario) -> Trace {
-    let clock = VirtualClock::new();
+    let clock = Recording::new(VirtualClock::new());
     let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
     let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
 
@@ -144,7 +146,7 @@ fn run_sync(scenario: &Scenario) -> Trace {
 }
 
 fn run_async(scenario: &Scenario) -> Trace {
-    let clock = VirtualClock::new();
+    let clock = Recording::new(VirtualClock::new());
     let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
     let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
 

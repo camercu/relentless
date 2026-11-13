@@ -267,7 +267,7 @@
 //! | Flag | Purpose |
 //! |------|---------|
 //! | `std` (default) | [`clock::SystemClock`] default for sync retries, `std::error::Error` on `RetryError` |
-//! | `alloc` | Boxed policies, [`clock::VirtualClock`] wait recording |
+//! | `alloc` | Boxed policies, [`clock::Recording`] wait recorder |
 //! | `tokio-clock` | `clock::TokioClock` async clock adapter |
 //! | `embassy-clock` | `clock::EmbassyClock` async clock adapter |
 //! | `gloo-timers-clock` | `clock::GlooClock` async clock adapter (wasm32; needs a caller-supplied now-source) |

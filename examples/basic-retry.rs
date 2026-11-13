@@ -31,7 +31,7 @@ fn main() {
 
     assert_eq!(result, Ok("config_value=42"));
     println!("succeeded after 2 transient failures: {result:?}");
-    // `now()` rather than `waits()`: the recorder needs `alloc`, and this
-    // example must build on the crate's minimal feature set.
+    // `now()` rather than a `Recording` of the waits: the recorder needs
+    // `alloc`, and this example must build on the crate's minimal feature set.
     println!("virtual time spent waiting: {:?}", clock.now());
 }

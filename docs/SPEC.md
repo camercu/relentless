@@ -42,7 +42,8 @@ top of that base.
 |Async retry with explicit `.clock(...)` |yes        |yes    |yes  |
 |Free functions and extension traits     |yes        |yes    |yes  |
 |Hooks (multiple per hook point)         |yes        |yes    |yes  |
-|`VirtualClock` (waits recorder gated)   |yes        |yes    |yes  |
+|`VirtualClock`                          |yes        |yes    |yes  |
+|`Recording` (wait recorder)             |no         |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
 
 Runtime clock adapters are feature-gated separately (see 12.1):
@@ -53,7 +54,7 @@ Runtime clock adapters are feature-gated separately (see 12.1):
 - `futures-timer-clock`: `clock::FuturesTimerClock`
 
 `alloc` is not required for async retry itself. Within the clock module it
-gates only `VirtualClock::waits()`, the recorded-waits accessor (see 12.4).
+gates only `Recording`, the wait recorder (see 12.5).
 
 ## 3. Core abstractions
 
@@ -1351,15 +1352,16 @@ Use this when the policy does not need to cross thread boundaries.
 No public type aliases are provided for boxed policy types. Users who need to
 name the type can write it explicitly or use `impl` return types.
 
-### 12.4 Virtual-clock test infrastructure
+### 12.4 Virtual clock
 
-`clock::VirtualClock` is the deterministic clock for testing retry behavior
-without real sleeping. It is always available (no feature gate, `no_std`-clean)
-and implements the clock traits directly, so it is injected via `.clock(...)`
-like any production clock.
+`clock::VirtualClock` never sleeps and reads no wall time. It is always
+available (no feature gate, `no_std`-clean, every target) and implements the
+clock traits directly, so it is injected via `.clock(...)` like any other
+clock. It serves two uses: deterministic tests, and loops whose attempts block
+by themselves and need no timer. Its state is one `Duration` and never grows.
 
-- **12.4.1** `VirtualClock::new()` starts at virtual time zero with no
-  recorded waits. `Default` is equivalent to `new()`.
+- **12.4.1** `VirtualClock::new()` is a `const fn` and starts at virtual time
+  zero. `Default` is equivalent to `new()`.
 - **12.4.2** Waits advance virtual time by exactly the requested duration
   instead of sleeping. `Clock::now()` reads the very cell the waits advance —
   one cell, one writer — so the read seam and the wait seam cannot desync even
@@ -1370,11 +1372,14 @@ like any production clock.
   (`&VirtualClock`) is additionally an `AsyncClock` whose wait future advances
   time on its first poll (an unpolled, dropped wait leaves time untouched).
   Tests inject `&clock` and keep the handle for assertions.
-- **12.4.4** `.advance(dur)` adds `dur` to virtual time without recording a
-  wait (simulates time passing inside an attempt). All time arithmetic
-  saturates at `Duration::MAX`.
-- **12.4.5** With `alloc`, `.waits()` returns every wait requested so far, in
-  request order (a point-in-time snapshot).
+- **12.4.4** `.advance(dur)` adds `dur` to virtual time without a wait
+  (simulates time passing inside an attempt). All time arithmetic saturates at
+  `Duration::MAX`.
+- **12.4.5** Elapsed time under a `VirtualClock` counts the waits and any
+  `.advance` calls, never the time an attempt really took. A loop whose
+  attempts block by themselves is therefore bounded by `stop::attempts`, not
+  by `stop::elapsed` or `.timeout`. To assert a backoff schedule, wrap the
+  clock in `Recording` (12.5).
 - **12.4.6** All methods take `&self` via interior mutability (`Cell`); the
   clock is neither `Sync` nor intended to cross threads. Multi-threaded
   executors need a user-provided lock-based clock. (A lock-based `Sync`

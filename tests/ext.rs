@@ -21,6 +21,8 @@ use core::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[cfg(feature = "alloc")]
+use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
 use relentless::{
     AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, StopReason,
@@ -98,7 +100,7 @@ fn retry_ext_function_pointer_form_works() {
 fn retry_ext_uses_default_policy_when_not_overridden() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
-    let clock = VirtualClock::new();
+    let clock = Recording::new(VirtualClock::new());
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
@@ -138,7 +140,7 @@ fn retry_ext_with_stats_reports_attempts() {
 fn retry_ext_stateful_stop_and_wait_work() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
-    let clock = VirtualClock::new();
+    let clock = Recording::new(VirtualClock::new());
 
     let result = (move || {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
@@ -303,7 +305,7 @@ mod async_tests {
     fn async_retry_ext_uses_default_policy_when_not_overridden() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = block_on(
             (move || {
@@ -376,7 +378,7 @@ mod async_tests {
     fn async_retry_ext_stateful_stop_and_wait_work() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = block_on(
             (move || {

@@ -7,17 +7,24 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-#[cfg(feature = "alloc")]
-use crate::compat::Vec;
-#[cfg(feature = "alloc")]
-use core::cell::RefCell;
-
-/// A deterministic clock for testing retry behavior without real sleeping.
+/// A clock that never sleeps and reads no wall time.
 ///
 /// Waits advance virtual time by exactly the requested amount, and
 /// [`now()`](Clock::now) reads the very cell the waits advance — one cell, one
 /// writer, so the read seam and the wait seam cannot drift even by an
 /// implementation bug.
+///
+/// Two uses:
+///
+/// - **Tests.** Run a retry deterministically, with no real sleeping. Wrap it
+///   in [`Recording`](super::Recording) (feature `alloc`) to assert the
+///   backoff schedule.
+/// - **Loops that need no timer.** When each attempt blocks by itself (it
+///   waits on a socket or a channel with its own bound), the retry needs
+///   neither a sleep nor a wall clock. A `VirtualClock` supplies both seams on
+///   every target, including `no_std` and `wasm32-unknown-unknown`, and holds
+///   no growing state. Elapsed time then counts only the scheduled waits, so
+///   bound the loop with [`stop::attempts`](crate::stop::attempts).
 ///
 /// An owned `VirtualClock` is a [`SyncClock`]; a shared borrow
 /// (`&VirtualClock`) is additionally an [`AsyncClock`] whose wait future
@@ -85,50 +92,24 @@ pub struct VirtualClock {
     /// [`advance`](Self::advance) (and the wait paths that funnel through it),
     /// read only by `now()` — same cell, so read and wait cannot desync.
     now: Cell<Duration>,
-    /// Test-only record of requested waits; not part of the time coupling.
-    #[cfg(feature = "alloc")]
-    waits: RefCell<Vec<Duration>>,
 }
 
 impl VirtualClock {
-    /// Creates a virtual clock at time zero with no recorded waits.
+    /// Creates a virtual clock at time zero.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            now: Cell::new(Duration::ZERO),
+        }
     }
 
-    /// Advances virtual time by `dur` without recording a wait.
+    /// Advances virtual time by `dur` without a wait.
     ///
     /// Use inside an operation to simulate attempts that consume the elapsed
     /// budget (e.g. slow calls) without any waiting between attempts.
     /// Saturates at [`Duration::MAX`].
     pub fn advance(&self, dur: Duration) {
         self.now.set(self.now.get().saturating_add(dur));
-    }
-
-    /// Returns every wait the engine actually performed, in request order.
-    ///
-    /// Zero-delay waits are absent: both engines skip the clock entirely when
-    /// a strategy yields [`Duration::ZERO`], so the clock is never told about
-    /// them. A run under `wait::fixed(Duration::ZERO)` records nothing, and
-    /// `waits().len()` is therefore a count of performed sleeps, not of
-    /// inter-attempt gaps — assert on the schedule, not on `attempts - 1`.
-    ///
-    /// A point-in-time snapshot: the returned `Vec` is unaffected by waits
-    /// recorded after the call. Only available with the `alloc` feature
-    /// (recording needs a `Vec`); the clock's time-keeping never does.
-    #[cfg(feature = "alloc")]
-    #[must_use]
-    pub fn waits(&self) -> Vec<Duration> {
-        self.waits.borrow().clone()
-    }
-
-    /// Advances virtual time and records the wait. Both wait seams funnel
-    /// through here, so recording and advancing happen together, once.
-    fn record_wait(&self, dur: Duration) {
-        self.advance(dur);
-        #[cfg(feature = "alloc")]
-        self.waits.borrow_mut().push(dur);
     }
 }
 
@@ -141,7 +122,7 @@ impl Clock for VirtualClock {
 impl SyncClock for VirtualClock {
     fn wait(&self, dur: Duration) {
         // No blocking: virtual time simply jumps.
-        self.record_wait(dur);
+        self.advance(dur);
     }
 }
 
@@ -176,7 +157,7 @@ impl Future for VirtualWait<'_> {
     fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
         if !self.advanced {
             self.advanced = true;
-            self.clock.record_wait(self.dur);
+            self.clock.advance(self.dur);
         }
         Poll::Ready(())
     }

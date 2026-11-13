@@ -10,7 +10,7 @@
 //! milliseconds, and the wait source and elapsed source can never disagree.
 
 use core::time::Duration;
-use relentless::clock::{Clock, SyncClock, VirtualClock};
+use relentless::clock::{Clock, Recording, SyncClock, VirtualClock};
 use relentless::{RetryError, Wait, retry, stop, wait};
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
@@ -39,9 +39,10 @@ fn main() {
     // A dependency that never recovers, so the timeout is what stops us.
     let always_failing = || Err::<u32, _>("service unavailable");
 
-    // Under test: inject a VirtualClock by reference. No real time passes,
-    // and the handle stays available for assertions afterwards.
-    let clock = VirtualClock::new();
+    // Under test: inject a VirtualClock, wrapped in Recording so the waits are
+    // kept, by reference. No real time passes, and the handle stays available
+    // for assertions afterwards.
+    let clock = Recording::new(VirtualClock::new());
     let result = fetch_with_retries(always_failing, &clock);
 
     // The timeout fired rather than an attempt limit...

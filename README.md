@@ -326,8 +326,9 @@ with runnable versions in [`examples/`](./examples):
   enum, a search state) so it sorts itself into return / retry / abort, and the
   default engine drives it with no `.decide` at the call site.
   ([`custom-outcome.rs`](./examples/custom-outcome.rs))
-- **Deterministic testing** — `clock::VirtualClock` asserts the exact backoff
-  schedule with zero wall-clock time spent, so timeout and backoff tests stay
+- **Deterministic testing** — `clock::VirtualClock`, wrapped in
+  `clock::Recording`, asserts the exact backoff schedule with zero wall-clock
+  time spent, so timeout and backoff tests stay
   fast and non-flaky; one injected value drives both waits and elapsed time,
   so the two can never disagree.
   ([`testing-with-virtual-clock.rs`](./examples/testing-with-virtual-clock.rs))

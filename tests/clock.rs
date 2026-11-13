@@ -14,6 +14,8 @@ use core::pin::pin;
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 
+#[cfg(feature = "alloc")]
+use relentless::clock::Recording;
 use relentless::clock::{AsyncClock, Clock, SyncClock, VirtualClock};
 use relentless::{RetryPolicy, stop, wait};
 
@@ -42,24 +44,10 @@ fn sync_wait_advances_now_by_exactly_the_requested_duration() {
 }
 
 #[test]
-fn advance_moves_now_without_recording_a_wait() {
+fn advance_moves_now() {
     let clock = VirtualClock::new();
     clock.advance(ARBITRARY_DURATION);
     assert_eq!(clock.now(), ARBITRARY_DURATION);
-    #[cfg(feature = "alloc")]
-    assert_eq!(clock.waits(), Vec::new());
-}
-
-#[cfg(feature = "alloc")]
-#[test]
-fn waits_records_each_wait_in_request_order() {
-    let clock = VirtualClock::new();
-    clock.wait(Duration::from_millis(1));
-    clock.wait(Duration::from_millis(2));
-    assert_eq!(
-        clock.waits(),
-        vec![Duration::from_millis(1), Duration::from_millis(2)]
-    );
 }
 
 #[test]
@@ -89,8 +77,6 @@ fn dropping_an_unpolled_async_wait_does_not_advance_time() {
     let clock = VirtualClock::new();
     drop((&clock).wait_async(ARBITRARY_DURATION));
     assert_eq!(clock.now(), Duration::ZERO);
-    #[cfg(feature = "alloc")]
-    assert_eq!(clock.waits(), Vec::new());
 }
 
 #[test]
@@ -100,8 +86,6 @@ fn sync_and_async_waits_flow_through_the_same_now() {
     let mut future = pin!((&clock).wait_async(ARBITRARY_DURATION));
     assert_eq!(poll_once(&mut future), Poll::Ready(()));
     assert_eq!(clock.now(), ARBITRARY_DURATION * 2);
-    #[cfg(feature = "alloc")]
-    assert_eq!(clock.waits(), vec![ARBITRARY_DURATION, ARBITRARY_DURATION]);
 }
 
 #[test]
@@ -308,7 +292,7 @@ mod engine_integration {
     /// THEN the recorded waits are exactly the backoff schedule (1→2, 2→3)
     #[test]
     fn records_exponential_backoff_schedule() {
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = retry(|_| Err::<(), &str>("boom"))
             .wait(wait::exponential(INITIAL_BACKOFF))
@@ -345,7 +329,7 @@ mod engine_integration {
     ///      to the remaining budget
     #[test]
     fn timeout_runs_deterministically_on_virtual_time() {
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = retry(|_| Err::<(), &str>("boom"))
             .wait(wait::fixed(Duration::from_millis(100)))
@@ -378,7 +362,7 @@ mod engine_integration {
     /// `VirtualClock::waits`'s rustdoc promises.
     #[test]
     fn zero_delay_records_no_waits() {
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = retry(|_| Err::<(), &str>("boom"))
             .wait(wait::fixed(Duration::ZERO))
@@ -395,7 +379,7 @@ mod engine_integration {
     /// THEN no waits are recorded and virtual time stays at zero
     #[test]
     fn first_attempt_success_records_nothing() {
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = retry(|_| Ok::<_, &str>(42)).clock(&clock).call();
 
@@ -429,7 +413,7 @@ mod engine_integration {
     /// THEN the recorded waits match the sync engine's schedule
     #[test]
     fn async_engine_records_backoff_schedule() {
-        let clock = VirtualClock::new();
+        let clock = Recording::new(VirtualClock::new());
 
         let result = block_on(
             retry_async(|_| core::future::ready(Err::<(), &str>("boom")))

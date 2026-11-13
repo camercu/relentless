@@ -128,8 +128,7 @@ impl core::panic::unwind_safe::UnwindSafe for relentless::clock::TokioClock
 pub struct relentless::clock::VirtualClock
 impl relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::advance(&self, dur: core::time::Duration)
-pub fn relentless::clock::VirtualClock::new() -> Self
-pub fn relentless::clock::VirtualClock::waits(&self) -> alloc::vec::Vec<core::time::Duration>
+pub const fn relentless::clock::VirtualClock::new() -> Self
 impl core::default::Default for relentless::clock::VirtualClock
 pub fn relentless::clock::VirtualClock::default() -> relentless::clock::VirtualClock
 impl core::fmt::Debug for relentless::clock::VirtualClock
