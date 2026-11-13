@@ -383,10 +383,7 @@ where
                     total_wait,
                 },
                 outcome,
-                &self.policy.classifier,
-                &self.policy.stop,
-                &self.policy.wait,
-                self.policy.timeout,
+                &self.policy,
                 &mut self.hooks,
             ) {
                 Step::Done { result, stats } => return (result, stats),

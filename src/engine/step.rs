@@ -14,6 +14,7 @@ use super::stats::RetryStats;
 use super::termination::{Exit, StopReason};
 use crate::compat::Duration;
 use crate::decision::{Decide, Verdict};
+use crate::policy::RetryPolicy;
 use crate::state::RetryState;
 use crate::stop::Stop;
 use crate::wait::Wait;
@@ -59,10 +60,7 @@ pub(crate) enum Step<R, A, O> {
 pub(crate) fn step<C, S, W, BA, AA, OX, O>(
     progress: Progress,
     outcome: O,
-    classifier: &C,
-    stop: &S,
-    wait: &W,
-    timeout: Option<Duration>,
+    policy: &RetryPolicy<S, W, C>,
     hooks: &mut ExecutionHooks<BA, AA, OX>,
 ) -> Step<C::R, C::A, O>
 where
@@ -72,6 +70,13 @@ where
     AA: AttemptHook<O>,
     OX: ExitHook<C::R, C::A, O>,
 {
+    let RetryPolicy {
+        stop,
+        wait,
+        classifier,
+        timeout,
+    } = policy;
+    let timeout = *timeout;
     let Progress {
         attempt,
         elapsed: post_elapsed,
@@ -162,6 +167,20 @@ mod tests {
         ExecutionHooks::new()
     }
 
+    fn policy<C, S, W>(
+        classifier: C,
+        stop: S,
+        wait: W,
+        timeout: Option<Duration>,
+    ) -> RetryPolicy<S, W, C> {
+        RetryPolicy {
+            stop,
+            wait,
+            classifier,
+            timeout,
+        }
+    }
+
     // A classifier that fails every outcome fatally, to reach the `Abort` arm
     // the default `Result` classifier never takes.
     struct AlwaysAbort;
@@ -185,10 +204,12 @@ mod tests {
                 total_wait: Duration::ZERO,
             },
             Ok::<i32, &str>(5),
-            &DefaultClassifier,
-            &stop::attempts(3),
-            &wait::fixed(DELAY),
-            None,
+            &policy(
+                DefaultClassifier,
+                stop::attempts(3),
+                wait::fixed(DELAY),
+                None,
+            ),
             &mut hooks,
         );
         match step {
@@ -213,10 +234,7 @@ mod tests {
                 total_wait: DELAY,
             },
             Err::<i32, &str>("fatal"),
-            &AlwaysAbort,
-            &stop::attempts(5),
-            &wait::fixed(DELAY),
-            None,
+            &policy(AlwaysAbort, stop::attempts(5), wait::fixed(DELAY), None),
             &mut hooks,
         );
         match step {
@@ -242,10 +260,12 @@ mod tests {
                 total_wait: DELAY,
             },
             Err::<i32, &str>("again"),
-            &DefaultClassifier,
-            &stop::attempts(5),
-            &wait::fixed(DELAY),
-            None,
+            &policy(
+                DefaultClassifier,
+                stop::attempts(5),
+                wait::fixed(DELAY),
+                None,
+            ),
             &mut hooks,
         );
         match step {
@@ -268,10 +288,12 @@ mod tests {
                 total_wait: Duration::ZERO,
             },
             Err::<i32, &str>("last"),
-            &DefaultClassifier,
-            &stop::attempts(1),
-            &wait::fixed(DELAY),
-            None,
+            &policy(
+                DefaultClassifier,
+                stop::attempts(1),
+                wait::fixed(DELAY),
+                None,
+            ),
             &mut hooks,
         );
         match step {
@@ -299,10 +321,12 @@ mod tests {
                 total_wait: Duration::ZERO,
             },
             Err::<i32, &str>("again"),
-            &DefaultClassifier,
-            &stop::attempts(5),
-            &wait::fixed(DELAY), // 10ms, larger than the 3ms budget below
-            Some(Duration::from_millis(8)),
+            &policy(
+                DefaultClassifier,
+                stop::attempts(5),
+                wait::fixed(DELAY), // 10ms, larger than the 3ms budget below
+                Some(Duration::from_millis(8)),
+            ),
             &mut hooks,
         );
         match step {

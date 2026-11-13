@@ -330,12 +330,9 @@ where
     fn into_run(self) -> AsyncRun<F, C, S, W, Cl, BA, AA, OX> {
         AsyncRun {
             op: self.op,
-            classifier: self.policy.classifier,
-            stop: self.policy.stop,
-            wait: self.policy.wait,
+            policy: self.policy,
             clock: self.clock,
             hooks: self.hooks,
-            timeout: self.policy.timeout,
             phase: Phase::ReadyToStart,
             attempt: 1,
             previous_delay: None,
@@ -415,12 +412,9 @@ pin_project! {
         Cl: AsyncClock,
     {
         op: F,
-        classifier: C,
-        stop: S,
-        wait: W,
+        policy: RetryPolicy<S, W, C>,
         clock: Cl,
         hooks: ExecutionHooks<BA, AA, OX>,
-        timeout: Option<Duration>,
         #[pin]
         phase: Phase<F::Call, Cl::Wait>,
         attempt: u32,
@@ -480,10 +474,7 @@ where
                             total_wait: *this.total_wait,
                         },
                         outcome,
-                        this.classifier,
-                        this.stop,
-                        this.wait,
-                        *this.timeout,
+                        this.policy,
                         this.hooks,
                     ) {
                         Step::Done { result, stats } => {
