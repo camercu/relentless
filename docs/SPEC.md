@@ -1149,7 +1149,11 @@ following are `Send`:
 The outcome type is not on the list: the retry future never holds an outcome
 across a wait, so a `!Send` `T` or `E` does not make it `!Send`.
 
-**10.1** Async execution types are `Send` when the operation, its future, the classifier, the stop and wait strategies, the clock, its `AsyncClock::Wait`, and all hooks are `Send`.
+A builder from `RetryPolicy::retry_async` borrows the policy's classifier, stop
+strategy, and wait strategy. A shared reference is `Send` only when its target
+is `Sync`, so on that path those three must be `Sync`.
+
+**10.1** Async execution types are `Send` when the operation, its future, the classifier, the stop and wait strategies, the clock, its `AsyncClock::Wait`, and all hooks are `Send`. When the classifier and strategies are borrowed from a `RetryPolicy`, each must be `Sync`.
 
 **10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
