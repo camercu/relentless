@@ -41,7 +41,7 @@ top of that base.
 |Sync retry with explicit `.clock(...)`  |yes        |yes    |yes  |
 |Sync retry with the default `SystemClock`|no        |no     |yes  |
 |Async retry with explicit `.clock(...)` |yes        |yes    |yes  |
-|Free functions and extension traits     |yes        |yes    |yes  |
+|Free functions `retry`, `retry_async`   |yes        |yes    |yes  |
 |`VirtualClock`                          |yes        |yes    |yes  |
 |`Recording` (wait recorder)             |no         |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
@@ -746,79 +746,12 @@ where F: FnMut(RetryState) -> Fut, Fut: Future<Output = O>;
 **6.1.2** Free functions accept `FnMut(RetryState) -> ...`, giving the operation access
 to attempt number and elapsed time.
 
-### 6.2 Extension traits
+### 6.2 Extension traits (retired)
 
-**6.2.1** `RetryExt` and `AsyncRetryExt` provide method-call syntax for no-argument
-closures and functions returning any outcome `O`. They use the same defaults as
-`RetryPolicy::new()`.
-
-```rust
-pub trait RetryExt<O>: FnMut() -> O + Sized {
-    fn retry(self) -> Retry<...>;
-}
-
-pub trait AsyncRetryExt<Fut, O>: FnMut() -> Fut + Sized
-where Fut: Future<Output = O>
-{
-    fn retry_async(self) -> AsyncRetry<...>;
-}
-```
-
-Both traits have blanket implementations for all matching closures and function
-pointers. **6.2.2** The operation does not receive `RetryState`; the closure is wrapped
-internally as `move |_| op()`.
-
-> Extension traits are the convenience path for one-shot retry with minimal
-> ceremony. Use the free functions `retry()` / `retry_async()` when the
-> operation needs access to `RetryState`.
-
-Usage:
-
-```rust
-use relentless::{retry, retry_async, RetryExt, AsyncRetryExt};
-use relentless::clock::TokioClock;
-use relentless::{stop, wait};
-
-// Ext: one-shot retry with zero config
-(|| fetch_data()).retry().call()?;
-
-// Ext: one-shot with builder config
-(|| fetch_data()).retry()
-    .when(|e| e.is_transient())
-    .wait(wait::exponential(Duration::from_millis(200)))
-    .stop(stop::attempts(5))
-    .call()?;
-
-// Ext: one-shot async
-(|| fetch_data()).retry_async()
-    .clock(TokioClock::new())
-    .call()
-    .await?;
-
-// Ext: polling
-(|| check_status()).retry()
-    .until(ok(|s| s.is_complete()))
-    .wait(wait::fixed(Duration::from_secs(1)))
-    .stop(stop::attempts(20))
-    .call()?;
-
-// Free function: operation needs attempt state
-retry(|state| {
-    let timeout = Duration::from_secs(state.attempt as u64 * 2);
-    fetch_data_with_timeout(timeout)
-})
-.stop(stop::attempts(5))
-.call()?;
-
-// Free function: async with attempt state
-retry_async(|state| async move {
-    let timeout = Duration::from_secs(state.attempt as u64 * 2);
-    fetch_data_with_timeout(timeout).await
-})
-.clock(TokioClock::new())
-.call()
-.await?;
-```
+**6.2.1**, **6.2.2** (retired with the `RetryExt` and `AsyncRetryExt` extension
+traits; numbers retained as tombstones so later numbering is stable). A
+no-argument operation ignores the state: `retry(|_| op())`,
+`retry_async(|_| op())`.
 
 ### 6.3 Builder method signatures
 
@@ -993,12 +926,12 @@ loop. Standard patterns work as expected:
 ```rust
 // Timeout
 tokio::time::timeout(Duration::from_secs(30),
-    (|| fetch_data()).retry_async().clock(TokioClock::new()).call()
+    retry_async(|_| fetch_data()).clock(TokioClock::new()).call()
 ).await??;
 
 // Select
 tokio::select! {
-    result = (|| fetch_data()).retry_async().clock(TokioClock::new()).call() => {
+    result = retry_async(|_| fetch_data()).clock(TokioClock::new()).call() => {
         handle(result?);
     }
     _ = shutdown_signal() => {
@@ -1016,7 +949,7 @@ impls on their own types, held by the operation or its caller.
 For deadline-based cancellation, use `.timeout(dur)`:
 
 ```rust
-(|| fetch_data()).retry()
+retry(|_| fetch_data())
     .timeout(Duration::from_secs(30))
     .call()?;
 ```
@@ -1340,8 +1273,7 @@ Types:
 - classifier vocabulary: `Decision`, `Verdict`, `DefaultClassifier`,
   `ClosureClassifier`, `When`, `Until`
 - builder type-state plumbing, named only when spelling out a configured
-  builder's type or bounds: `Blocking`, `Async` (mode markers),
-  `StatelessOp`
+  builder's type or bounds: `Blocking`, `Async` (mode markers)
 
 Traits:
 
@@ -1351,13 +1283,10 @@ Traits:
 - `Outcome` (user-implementable for owned outcome types); `Decide`,
   `IntoDecision` (sealed engine-facing classifier traits, named only in bounds)
 - `Clock`, `SyncClock`, `AsyncClock` (re-exported from `clock`)
-- `Operation<M>` (sealed; implemented by closures and `StatelessOp`, named
+- `Operation<M>` (sealed; implemented by closures, named
   only in bounds as `Operation<Blocking, Output = O>` or
   `Operation<Async, Output = O>`); `Attempt<M>` (sealed, hidden, the item
   bound on `Operation::Call`)
-- `RetryExt` (blanket-implemented for `FnMut() -> O`)
-- `AsyncRetryExt` (blanket-implemented for
-  `FnMut() -> Fut where Fut: Future<Output = O>`)
 
 Free functions:
 
@@ -1501,7 +1430,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/elapsed.rs`, `tests/elapsed_async.rs` | §11.1 |
 | `tests/timeout.rs`, `tests/timeout_async.rs` | §11.1, §11.4 |
 | `tests/nameable_surface.rs` | §13 |
-| `tests/ext.rs` | §6.2 |
+| `tests/defaults.rs` | §6.1 |
 | `tests/allocation.rs` | §12.3 |
 | `tests/trait_impls.rs` | §14 |
 | `tests/composition.rs` | §3.1–3.3 (seeded property tests) |

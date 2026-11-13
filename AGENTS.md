@@ -49,10 +49,10 @@ changing code.
   live here once, so this is where correctness changes belong.
 - Two thin drivers wrap that core and differ only in how they invoke the
   operation and how they sleep: [src/engine/sync_engine.rs](/src/engine/sync_engine.rs)
-  `Retry::run` (sync, blocks on `clock.wait`; entry points `retry`, `RetryExt`)
+  `Retry::run` (sync, blocks on `clock.wait`; entry point `retry`)
   and [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
-  (async `Phase` state machine, polls a `wait_async` future; `retry_async`,
-  `AsyncRetryExt`). When you touch driver-only concerns — the sleep, the poll
+  (async `Phase` state machine, polls a `wait_async` future;
+  entry point `retry_async`). When you touch driver-only concerns — the sleep, the poll
   machine, when the clock is read — edit both in lockstep; core changes touch
   `step` alone.
 - The core and drivers share these building blocks:

@@ -8,7 +8,9 @@ Accepted. Decision 5 is refined by
 [ADR-0011](0011-bounded-call-type-on-operation.md). Amended by
 [ADR-0012](0012-remove-observer-hooks.md): the builder carries no hook
 parameters, so `Retry<M, F, C, S, W, Cl>` and the hook setters drop out of
-the plan below.
+the plan below. Decision 6 is superseded by
+[ADR-0013](0013-remove-closure-extension-traits.md): the extension traits are
+removed, not merged.
 
 Builds on [ADR-0004](0004-split-async-builder-from-state-machine.md).
 

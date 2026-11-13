@@ -16,8 +16,6 @@ use common::{ARBITRARY_DELAY, ARBITRARY_ERROR, CLOCK_STEP_MILLIS, TIMEOUT_DEADLI
 use common::RecordingClock;
 use core::cell::Cell;
 use core::time::Duration;
-#[cfg(feature = "std")]
-use relentless::RetryExt;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy, StopReason, Verdict, retry, stop, wait};
 
@@ -296,12 +294,11 @@ fn retry_ext_timeout_stops_on_deadline() {
     let clock = VirtualClock::new();
     let attempts = Cell::new(0_u32);
 
-    let result = (|| {
+    let result = retry(|_| {
         attempts.set(attempts.get() + 1);
         clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
         Err::<i32, &str>(ARBITRARY_ERROR)
     })
-    .retry()
     .stop(stop::attempts(100))
     .wait(wait::fixed(ARBITRARY_DELAY))
     .clock(&clock)

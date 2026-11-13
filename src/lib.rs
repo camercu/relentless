@@ -25,19 +25,10 @@
 //!
 //! # Quick start
 //!
-//! The [`RetryExt`] extension trait is the fastest way to add retries. Defaults:
-//! 3 attempts, exponential backoff from 100 ms, retry on any `Err`.
-//!
-//! ```
-//! use relentless::RetryExt;
-//! use relentless::clock::VirtualClock;
-//!
-//! let result = (|| Ok::<_, &str>(42)).retry().clock(VirtualClock::new()).call();
-//! assert_eq!(result.unwrap(), 42);
-//! ```
-//!
-//! The [`retry`] and [`retry_async`] free functions are equivalent, with the
-//! added ability to capture retry loop state via the [`RetryState`] argument:
+//! [`retry`] (and [`retry_async`] for futures) wraps an operation. Defaults: 3
+//! attempts, exponential backoff from 100 ms, retry on any `Err`. The operation
+//! receives a [`RetryState`] with the attempt number and elapsed time; ignore
+//! it with `|_|`.
 //!
 //! ```
 //! use relentless::retry;
@@ -348,8 +339,8 @@ pub use decision::Decide;
 #[doc(hidden)]
 pub use decision::IntoDecision;
 pub use engine::{
-    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, Retry, RetryError, RetryExt, RetryResult,
-    RetryStats, RetryWithStats, StopReason, retry, retry_async,
+    AsyncRetry, AsyncRetryWithStats, Retry, RetryError, RetryResult, RetryStats, RetryWithStats,
+    StopReason, retry, retry_async,
 };
 // The builder's type-state plumbing. You never write these to *use* the
 // crate — you pass closures and `.await` or `.call()` the result — but they
@@ -357,7 +348,7 @@ pub use engine::{
 // storing a configured builder in a struct field, or returning one from a
 // helper, means writing them out. Unreachable names there would be a dead end,
 // and dead tokens on the crate's own entry-point pages.
-pub use engine::{Async, Blocking, Operation, StatelessOp};
+pub use engine::{Async, Blocking, Operation};
 // Sealed: the item bound on `Operation::Call`. Reachable because that bound is
 // public, hidden because no consumer writes it.
 #[doc(hidden)]
@@ -374,9 +365,7 @@ pub use wait::Wait;
 /// Commonly used traits, glob-imported to enable the builder DSL.
 ///
 /// The combinator methods (`.cap()`, `.full_jitter()`, `.chain()` on [`Wait`];
-/// `.or()`/`.and()` on [`Stop`]) and the closure extensions
-/// (`.retry()` on [`RetryExt`], `.retry_async()` on [`AsyncRetryExt`]) are trait
-/// methods, so the trait must be in scope to call them. Glob-import this module
+/// `.or()`/`.and()` on [`Stop`]) are trait methods, so the trait must be in scope to call them. Glob-import this module
 /// to bring them all in at once:
 ///
 /// ```
@@ -391,11 +380,11 @@ pub use wait::Wait;
 /// ```
 ///
 /// Operator composition (`+` on waits, `|`/`&` on stops) works without any
-/// trait imports — the prelude is only needed for the method-form combinators,
-/// the closure extension traits, and implementing custom strategies.
+/// trait imports — the prelude is only needed for the method-form combinators
+/// and implementing custom strategies.
 ///
 /// Strategy constructors (`wait::exponential`, `stop::attempts`, …) are *not*
 /// re-exported here; import them explicitly by name.
 pub mod prelude {
-    pub use crate::{AsyncClock, AsyncRetryExt, Clock, RetryExt, Stop, SyncClock, Wait};
+    pub use crate::{AsyncClock, Clock, Stop, SyncClock, Wait};
 }

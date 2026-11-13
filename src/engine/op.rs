@@ -1,9 +1,7 @@
 //! The operation abstraction shared by the blocking and async builders.
 //!
 //! A builder stores its operation behind [`Operation`]: `retry(|state| ...)`
-//! (an `FnMut(RetryState) -> O`), the stateless `(|| ...).retry()` form (an
-//! `FnMut() -> O` wrapped in [`StatelessOp`], which discards the state), and
-//! their async twins. The op-anchored classifier methods bound
+//! takes an `FnMut(RetryState) -> O`, and `retry_async` its async twin. The op-anchored classifier methods bound
 //! `F: Operation<M, Output = O>`, which — through the blanket impls — still
 //! pins `O` to the closure's output, so inline classifiers keep inferring with
 //! no annotations.
@@ -16,7 +14,7 @@ use core::task::{Context, Poll};
 /// Mode marker: the execution blocks the calling thread while it waits.
 ///
 /// Chosen by the entry point: [`retry`](crate::retry) and
-/// [`RetryExt::retry`](crate::RetryExt::retry) start a `Blocking` execution.
+/// [`RetryPolicy::retry`](crate::RetryPolicy::retry) start a `Blocking` execution.
 /// Never constructed; it only selects which `Operation` and clock a builder
 /// needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,7 +23,7 @@ pub enum Blocking {}
 /// Mode marker: the execution is a future that awaits its waits.
 ///
 /// Chosen by the entry point: [`retry_async`](crate::retry_async) and
-/// [`AsyncRetryExt::retry_async`](crate::AsyncRetryExt::retry_async) start an
+/// [`RetryPolicy::retry_async`](crate::RetryPolicy::retry_async) start an
 /// `Async` execution. Never constructed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Async {}
@@ -35,7 +33,7 @@ pub enum Async {}
 // `Operation` and `Attempt`.
 #[allow(unreachable_pub)]
 mod sealed {
-    use super::{Async, Attempt, Blocking, StatelessOp};
+    use super::{Async, Attempt, Blocking};
     use crate::state::RetryState;
     use core::future::Future;
 
@@ -44,11 +42,10 @@ mod sealed {
     impl<T> Sealed<Blocking> for T {}
     impl<F: Future> Sealed<Async> for F {}
 
-    /// Restricts [`Operation`](super::Operation) to closures and
-    /// [`StatelessOp`]: the entry points accept nothing else.
+    /// Restricts [`Operation`](super::Operation) to closures: the entry points
+    /// accept nothing else.
     pub trait SealedOp<M> {}
     impl<M, R: Attempt<M>, F: FnMut(RetryState) -> R> SealedOp<M> for F {}
-    impl<M, R: Attempt<M>, F: FnMut() -> R> SealedOp<M> for StatelessOp<F> {}
 
     /// Names the token `poll_attempt` takes in each mode.
     pub trait Mode {
@@ -126,8 +123,8 @@ impl<F: Future> Attempt<Async> for F {
 
 /// The operation a builder retries, in mode `M` ([`Blocking`] or [`Async`]).
 ///
-/// Implemented for `FnMut(RetryState) -> R` closures and for [`StatelessOp`];
-/// sealed, so those are the only implementors. Name it in the bounds of code
+/// Implemented for `FnMut(RetryState) -> R` closures; sealed, so those are the
+/// only implementors. Name it in the bounds of code
 /// generic over a configured builder:
 ///
 /// - `F: Operation<Blocking, Output = O>` to run a blocking builder;
@@ -210,32 +207,6 @@ where
     type Call = R;
     fn call_op(&mut self, state: RetryState) -> R {
         (self)(state)
-    }
-}
-
-/// Adapts a no-argument closure to [`Operation`] by discarding the
-/// [`RetryState`].
-///
-/// Produced by [`RetryExt::retry`](crate::RetryExt::retry) and
-/// [`AsyncRetryExt::retry_async`](crate::AsyncRetryExt::retry_async), so it is
-/// the operation slot of every builder those two entry points return. Name it
-/// to write that builder's type out — in a helper's return type, or a struct
-/// field holding a preconfigured builder.
-/// The field is crate-private: you receive this type from `.retry()`, never
-/// build one. Exposing it would make the wrapped closure part of the
-/// committed API for no gain.
-#[derive(Debug, Clone)]
-pub struct StatelessOp<F>(pub(crate) F);
-
-impl<M, R, F> Operation<M> for StatelessOp<F>
-where
-    F: FnMut() -> R,
-    R: Attempt<M>,
-{
-    type Output = R::Output;
-    type Call = R;
-    fn call_op(&mut self, _state: RetryState) -> R {
-        (self.0)()
     }
 }
 

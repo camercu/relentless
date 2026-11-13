@@ -4,7 +4,9 @@ Date: 2026-10-20
 
 ## Status
 
-Accepted
+Accepted. Narrowed by
+[ADR-0013](0013-remove-closure-extension-traits.md): `StatelessOp` is gone, so
+closures are the only `Operation` implementors.
 
 Refines decision 5 of [ADR-0010](0010-one-builder-for-both-modes.md), which
 replaced `RetryOp` and `AsyncRetryOp` with one `Operation<M>` trait.

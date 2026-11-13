@@ -4,7 +4,7 @@
 //! Run: `cargo run --example observing-retries`
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, RetryExt, RetryState, Wait, stop, wait};
+use relentless::{RetryError, RetryState, Wait, retry, stop, wait};
 
 /// Logs each delay before the engine sleeps for it. The engine asks the wait
 /// strategy only once a retry is certain, so every line is a real retry.
@@ -35,8 +35,7 @@ fn main() {
     // `.with_stats()` wraps the builder so `.call()` returns (result, RetryStats):
     // attempt count, total wait and stop reason, without a counter threaded
     // through the closure.
-    let (result, stats) = observed_ping
-        .retry()
+    let (result, stats) = retry(|_| observed_ping())
         .stop(stop::attempts(3))
         .wait(Logged(wait::fixed(Duration::from_millis(5))))
         .clock(VirtualClock::new())

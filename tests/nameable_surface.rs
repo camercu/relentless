@@ -5,7 +5,7 @@
 //! and still renders as a dead token on the crate's own entry-point pages —
 //! the consumer who tries to write it down gets `not found in crate`. Nothing
 //! in the build catches that, so these tests do: each one is a shape a
-//! consumer writes when they outgrow a single inline `.retry()` call, and it
+//! consumer writes when they outgrow a single inline `retry(..)` call, and it
 //! fails to compile if a name stops being reachable.
 
 mod common;
@@ -17,8 +17,8 @@ use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    Async, AsyncClock, AsyncRetry, AsyncRetryExt, AsyncRun, Blocking, Decide, DefaultClassifier,
-    DropStats, Operation, Retry, RetryError, RetryExt, RetryPolicy, RetryStats, StatelessOp,
+    Async, AsyncClock, AsyncRetry, AsyncRun, Blocking, Decide, DefaultClassifier, DropStats,
+    Operation, Retry, RetryError, RetryPolicy, RetryState,
 };
 
 const SUCCESS_VALUE: u32 = 7;
@@ -27,19 +27,19 @@ const SUCCESS_VALUE: u32 = 7;
 /// Spelling the return type out is unavoidable, so every parameter in it must
 /// be nameable.
 type Preconfigured<F> =
-    Retry<StatelessOp<F>, DefaultClassifier, StopAfterAttempts, WaitExponential, VirtualClock>;
+    Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, VirtualClock>;
 
 fn preconfigured<F>(op: F) -> Preconfigured<F>
 where
-    F: FnMut() -> Result<u32, &'static str>,
+    F: FnMut(RetryState) -> Result<u32, &'static str>,
 {
-    relentless::RetryExt::retry(op).clock(VirtualClock::new())
+    relentless::retry(op).clock(VirtualClock::new())
 }
 
 #[test]
 fn a_helper_can_return_a_preconfigured_builder() {
     assert_eq!(
-        preconfigured(|| Ok(SUCCESS_VALUE)).call(),
+        preconfigured(|_| Ok(SUCCESS_VALUE)).call(),
         Ok(SUCCESS_VALUE)
     );
 }
@@ -61,7 +61,7 @@ fn code_can_be_generic_over_a_configured_builder() {
     }
 
     assert_eq!(
-        drive(preconfigured(|| Ok(SUCCESS_VALUE))),
+        drive(preconfigured(|_| Ok(SUCCESS_VALUE))),
         Ok(SUCCESS_VALUE)
     );
 }
@@ -166,58 +166,4 @@ fn async_retry_type_is_nameable_from_crate_root() {
             .call(),
     );
     assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn do_work() -> Result<i32, &'static str> {
-    Ok(ARBITRARY_VALUE)
-}
-
-fn do_async_work() -> core::future::Ready<Result<i32, &'static str>> {
-    core::future::ready(Ok(ARBITRARY_VALUE))
-}
-
-#[test]
-fn default_sync_retry_builder_alias_is_nameable() {
-    type SyncWorkFn = fn() -> Result<i32, &'static str>;
-
-    let typed = (do_work as SyncWorkFn).retry().clock(VirtualClock::new());
-    assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
-}
-
-#[test]
-fn default_sync_retry_builder_with_stats_alias_is_nameable() {
-    type SyncWorkFn = fn() -> Result<i32, &'static str>;
-
-    let typed = (do_work as SyncWorkFn)
-        .retry()
-        .clock(VirtualClock::new())
-        .with_stats();
-    let (result, stats): (relentless::RetryResult<i32, &str>, RetryStats) = typed.call();
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(stats.attempts, 1);
-}
-
-#[test]
-fn default_async_retry_builder_alias_is_nameable() {
-    type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-
-    let clock = VirtualClock::new();
-    let typed = (do_async_work as AsyncWorkFn).retry_async();
-    let result: relentless::RetryResult<i32, &str> = block_on(typed.clock(&clock).call());
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[test]
-fn default_async_retry_builder_with_stats_alias_is_nameable() {
-    type AsyncWorkFn = fn() -> core::future::Ready<Result<i32, &'static str>>;
-
-    let clock = VirtualClock::new();
-    let typed = (do_async_work as AsyncWorkFn)
-        .retry_async()
-        .clock(&clock)
-        .with_stats();
-    let (result, stats): (relentless::RetryResult<i32, &str>, RetryStats) = block_on(typed.call());
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(stats.attempts, 1);
 }

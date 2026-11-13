@@ -12,7 +12,7 @@ use core::future::ready;
 use core::ops::ControlFlow;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{AsyncRetryExt, RetryError, stop, wait};
+use relentless::{RetryError, retry_async, stop, wait};
 use std::rc::Rc;
 
 // The `Option` classifier lives in the shared `step` core both drivers call,
@@ -25,11 +25,10 @@ fn async_option_outcome_retries_through_none_then_returns_some() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let future = (move || {
+    let future = retry_async(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         ready((attempts_ref.get() >= ARBITRARY_ATTEMPTS).then_some(ARBITRARY_VALUE))
     })
-    .retry_async()
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::from_millis(1)))
     .clock(&clock)
@@ -43,8 +42,7 @@ fn async_option_outcome_retries_through_none_then_returns_some() {
 #[test]
 fn async_option_outcome_all_none_exhausts_carrying_none() {
     let clock = VirtualClock::new();
-    let future = (|| ready(None::<i32>))
-        .retry_async()
+    let future = retry_async(|_| ready(None::<i32>))
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(&clock)
@@ -65,7 +63,7 @@ fn async_control_flow_outcome_retries_through_continue_then_breaks() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let future = (move || {
+    let future = retry_async(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         ready(if attempts_ref.get() >= ARBITRARY_ATTEMPTS {
             ControlFlow::Break(ARBITRARY_VALUE)
@@ -73,7 +71,6 @@ fn async_control_flow_outcome_retries_through_continue_then_breaks() {
             ControlFlow::Continue(())
         })
     })
-    .retry_async()
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::from_millis(1)))
     .clock(&clock)
@@ -87,8 +84,7 @@ fn async_control_flow_outcome_retries_through_continue_then_breaks() {
 #[test]
 fn async_control_flow_outcome_all_continue_exhausts_carrying_continue() {
     let clock = VirtualClock::new();
-    let future = (|| ready(ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD)))
-        .retry_async()
+    let future = retry_async(|_| ready(ControlFlow::<i32, i32>::Continue(CONTINUE_PAYLOAD)))
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(&clock)

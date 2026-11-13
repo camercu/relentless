@@ -5,7 +5,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{Clock, RetryExt, stop, wait};
+use relentless::{Clock, retry, stop, wait};
 
 fn main() {
     // Represents a remote call that fails transiently before eventually succeeding.
@@ -19,11 +19,10 @@ fn main() {
         Ok("config_value=42")
     };
 
-    // The closure is the operation to retry. `.retry()` attaches a default policy;
+    // The closure is the operation to retry. `retry` attaches a default policy;
     // `.stop()` and `.wait()` override individual strategy components.
     let clock = VirtualClock::new();
-    let result = fetch_config
-        .retry()
+    let result = retry(|_| fetch_config())
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::from_millis(10)))
         .clock(&clock) // omit in production: std defaults to SystemClock

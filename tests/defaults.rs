@@ -1,11 +1,9 @@
-//! Acceptance tests for `RetryExt` and `AsyncRetryExt`.
+//! Acceptance tests for the `retry` and `retry_async` defaults.
 //!
-//! These traits let callers start a retry chain directly from a closure or function
-//! pointer without constructing a `RetryPolicy` first. Tests verify that the
-//! default policy applied by `RetryExt` matches `RetryPolicy::default()`, that
-//! stateful `Stop`/`Wait` implementors work through the extension trait, and that
-//! the ext builders drive to completion — a
-//! regression guard for the public type API.
+//! The free functions start a retry chain without a `RetryPolicy`. Tests verify
+//! that the default policy they apply matches `RetryPolicy::default()`, that
+//! stateful `Stop`/`Wait` implementors work through them, and that the builders
+//! drive to completion — a regression guard for the public type API.
 #![cfg(feature = "std")]
 
 mod common;
@@ -23,10 +21,7 @@ use std::rc::Rc;
 #[cfg(feature = "alloc")]
 use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
-use relentless::{
-    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, Wait, retry,
-    stop, wait,
-};
+use relentless::{RetryError, RetryPolicy, RetryState, Stop, Wait, retry, stop, wait};
 
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 const DEFAULT_SECOND_WAIT: Duration = Duration::from_millis(200);
@@ -62,11 +57,11 @@ impl Wait for StatefulWait {
 }
 
 #[test]
-fn retry_ext_closure_form_retries_until_success() {
+fn retry_closure_form_retries_until_success() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let result: relentless::RetryResult<i32, &str> = (move || {
+    let result: relentless::RetryResult<i32, &str> = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         if attempts_ref.get() < ARBITRARY_ATTEMPTS {
             Err(ARBITRARY_ERROR)
@@ -74,7 +69,6 @@ fn retry_ext_closure_form_retries_until_success() {
             Ok(ARBITRARY_VALUE)
         }
     })
-    .retry()
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(WAIT_DURATION))
     .clock(VirtualClock::new())
@@ -84,28 +78,16 @@ fn retry_ext_closure_form_retries_until_success() {
     assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn do_work() -> Result<i32, &'static str> {
-    Ok(ARBITRARY_VALUE)
-}
-
 #[test]
-fn retry_ext_function_pointer_form_works() {
-    let result = do_work.retry().call();
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[test]
-fn retry_ext_uses_default_policy_when_not_overridden() {
+fn retry_uses_default_policy_when_not_overridden() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
     let clock = Recording::new(VirtualClock::new());
 
-    let result = (move || {
+    let result = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Err::<i32, &str>(ARBITRARY_ERROR)
     })
-    .retry()
     .clock(&clock)
     .call();
 
@@ -115,16 +97,15 @@ fn retry_ext_uses_default_policy_when_not_overridden() {
 }
 
 #[test]
-fn retry_ext_with_stats_reports_attempts() {
+fn retry_with_stats_reports_attempts() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
     let (result, stats): (relentless::RetryResult<i32, &str>, relentless::RetryStats) =
-        (move || {
+        retry(move |_| {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             Err(ARBITRARY_ERROR)
         })
-        .retry()
         .stop(stop::attempts(2))
         .clock(VirtualClock::new())
         .with_stats()
@@ -136,16 +117,15 @@ fn retry_ext_with_stats_reports_attempts() {
 }
 
 #[test]
-fn retry_ext_stateful_stop_and_wait_work() {
+fn retry_stateful_stop_and_wait_work() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
     let clock = Recording::new(VirtualClock::new());
 
-    let result = (move || {
+    let result = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Err::<i32, &str>(ARBITRARY_ERROR)
     })
-    .retry()
     .stop(StatefulStop {
         consultations: Cell::new(0),
         threshold: STATEFUL_STOP_THRESHOLD,
@@ -162,9 +142,8 @@ fn retry_ext_stateful_stop_and_wait_work() {
 }
 
 #[test]
-fn retry_ext_condition_not_met_for_ok_exhaustion() {
-    let result = (|| Ok::<i32, &str>(-1))
-        .retry()
+fn retry_condition_not_met_for_ok_exhaustion() {
+    let result = retry(|_| Ok::<i32, &str>(-1))
         .stop(stop::attempts(2))
         .until(|_value: &i32| false)
         .clock(VirtualClock::new())
@@ -177,9 +156,8 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
 }
 
 #[test]
-fn retry_ext_non_retryable_error_returns_immediately() {
-    let result = (|| Err::<i32, &str>(ARBITRARY_ERROR))
-        .retry()
+fn retry_non_retryable_error_returns_immediately() {
+    let result = retry(|_| Err::<i32, &str>(ARBITRARY_ERROR))
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(|err: &&str| *err == "retryable")
         .clock(VirtualClock::new())
@@ -195,15 +173,14 @@ fn retry_ext_non_retryable_error_returns_immediately() {
 }
 
 #[test]
-fn retry_ext_until_retries_until_predicate_fires() {
+fn retry_until_retries_until_predicate_fires() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
-    let result = (move || {
+    let result = retry(move |_| {
         attempts_ref.set(attempts_ref.get().saturating_add(1));
         Ok::<u32, &str>(attempts_ref.get())
     })
-    .retry()
     .stop(stop::attempts(5))
     .until(move |v: &u32| *v >= UNTIL_TARGET)
     .clock(VirtualClock::new())
@@ -215,7 +192,7 @@ fn retry_ext_until_retries_until_predicate_fires() {
 
 #[test]
 fn sync_retry_builder_debug_format() {
-    let builder = (|| Ok::<i32, &str>(1)).retry().clock(VirtualClock::new());
+    let builder = retry(|_| Ok::<i32, &str>(1)).clock(VirtualClock::new());
     let debug = format!("{builder:?}");
     // The builder Debug is opaque (finish_non_exhaustive).
     assert!(debug.contains("Retry"));
@@ -223,8 +200,7 @@ fn sync_retry_builder_debug_format() {
 
 #[test]
 fn sync_retry_builder_with_stats_debug_format() {
-    let builder = (|| Ok::<i32, &str>(1))
-        .retry()
+    let builder = retry(|_| Ok::<i32, &str>(1))
         .clock(VirtualClock::new())
         .with_stats();
     let debug = format!("{builder:?}");
@@ -240,13 +216,14 @@ mod async_tests {
     use core::task::{Context, Poll, Waker};
 
     use super::*;
+    use relentless::retry_async;
 
     #[test]
-    fn async_retry_ext_retries_until_success() {
+    fn retry_async_retries_until_success() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
 
-        let future = (move || {
+        let future = retry_async(move |_| {
             attempts_ref.set(attempts_ref.get().saturating_add(1));
             if attempts_ref.get() < ARBITRARY_ATTEMPTS {
                 ready(Err(ARBITRARY_ERROR))
@@ -254,7 +231,6 @@ mod async_tests {
                 ready(Ok(ARBITRARY_VALUE))
             }
         })
-        .retry_async()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::from_millis(1)))
         .clock(ReadyClock)
@@ -266,17 +242,16 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_uses_default_policy_when_not_overridden() {
+    fn retry_async_uses_default_policy_when_not_overridden() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
         let clock = Recording::new(VirtualClock::new());
 
         let result = block_on(
-            (move || {
+            retry_async(move |_| {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR))
             })
-            .retry_async()
             .clock(&clock)
             .call(),
         );
@@ -287,9 +262,8 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_with_stats_reports_attempts() {
-        let future = (|| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
-            .retry_async()
+    fn retry_async_with_stats_reports_attempts() {
+        let future = retry_async(|_| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
             .stop(stop::attempts(2))
             .when(|_: &&str| true)
             .clock(ReadyClock)
@@ -302,17 +276,16 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_stateful_stop_and_wait_work() {
+    fn retry_async_stateful_stop_and_wait_work() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
         let clock = Recording::new(VirtualClock::new());
 
         let result = block_on(
-            (move || {
+            retry_async(move |_| {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR))
             })
-            .retry_async()
             .stop(StatefulStop {
                 consultations: Cell::new(0),
                 threshold: STATEFUL_STOP_THRESHOLD,
@@ -330,10 +303,9 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_repoll_after_completion_panics() {
+    fn retry_async_repoll_after_completion_panics() {
         let mut retry = Box::pin(
-            (|| ready(Ok::<i32, &str>(ARBITRARY_VALUE)))
-                .retry_async()
+            retry_async(|_| ready(Ok::<i32, &str>(ARBITRARY_VALUE)))
                 .stop(stop::attempts(1))
                 .clock(ReadyClock)
                 .call(),
@@ -368,16 +340,15 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_until_retries_until_predicate_fires() {
+    fn retry_async_until_retries_until_predicate_fires() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
 
         let result = block_on(
-            (move || {
+            retry_async(move |_| {
                 attempts_ref.set(attempts_ref.get().saturating_add(1));
                 ready(Ok::<u32, &str>(attempts_ref.get()))
             })
-            .retry_async()
             .stop(stop::attempts(5))
             .until(move |v: &u32| *v >= UNTIL_TARGET)
             .clock(ReadyClock)
@@ -389,15 +360,14 @@ mod async_tests {
     }
 
     #[test]
-    fn async_retry_ext_timeout_stops_on_deadline() {
+    fn retry_async_timeout_stops_on_deadline() {
         let clock = VirtualClock::new();
 
         let result = block_on(
-            (|| {
+            retry_async(|_| {
                 clock.advance(Duration::from_millis(CLOCK_STEP_MILLIS));
                 ready(Err::<i32, &str>(ARBITRARY_ERROR))
             })
-            .retry_async()
             .stop(stop::attempts(100))
             .wait(wait::fixed(WAIT_DURATION))
             .clock(&clock)
@@ -410,9 +380,7 @@ mod async_tests {
 
     #[test]
     fn async_retry_builder_debug_format() {
-        let builder = (|| ready(Ok::<i32, &str>(1)))
-            .retry_async()
-            .clock(ReadyClock);
+        let builder = retry_async(|_| ready(Ok::<i32, &str>(1))).clock(ReadyClock);
         let debug = format!("{builder:?}");
         // The builder Debug is opaque (finish_non_exhaustive).
         assert!(debug.contains("AsyncRetry"));
@@ -420,8 +388,7 @@ mod async_tests {
 
     #[test]
     fn async_retry_builder_with_stats_debug_format() {
-        let builder = (|| ready(Ok::<i32, &str>(1)))
-            .retry_async()
+        let builder = retry_async(|_| ready(Ok::<i32, &str>(1)))
             .clock(ReadyClock)
             .with_stats();
         let debug = format!("{builder:?}");
@@ -431,8 +398,7 @@ mod async_tests {
 
 #[test]
 fn policy_and_extension_forms_are_equivalent_for_basic_case() {
-    let from_ext = (|| Err::<i32, &str>(ARBITRARY_ERROR))
-        .retry()
+    let from_ext = retry(|_| Err::<i32, &str>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .call();
 
@@ -457,39 +423,6 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
     ));
 }
 
-// Locks the equivalence documented on `RetryExt::retry`: `(|| op()).retry()`
 // behaves identically to the free `retry(|_| op())`, because the extension form
 // only discards the `RetryState`. Both must agree on the returned value and the
 // attempt count over a retry-then-succeed run under the shared defaults.
-#[test]
-fn free_fn_and_extension_forms_agree_when_state_is_ignored() {
-    const SUCCEED_ON_ATTEMPT: u32 = 3;
-
-    fn op(n: &Cell<u32>) -> Result<u32, &'static str> {
-        n.set(n.get().saturating_add(1));
-        if n.get() >= SUCCEED_ON_ATTEMPT {
-            Ok(n.get())
-        } else {
-            Err(ARBITRARY_ERROR)
-        }
-    }
-
-    let ext_n = Cell::new(0);
-    let (ext_result, ext_stats): (relentless::RetryResult<u32, &str>, RetryStats) = (|| op(&ext_n))
-        .retry()
-        .clock(VirtualClock::new())
-        .with_stats()
-        .call();
-
-    let free_n = Cell::new(0);
-    let (free_result, free_stats): (relentless::RetryResult<u32, &str>, RetryStats) =
-        retry(|_state: RetryState| op(&free_n))
-            .clock(VirtualClock::new())
-            .with_stats()
-            .call();
-
-    assert_eq!(ext_result, free_result);
-    assert_eq!(ext_stats.attempts, free_stats.attempts);
-    assert_eq!(ext_result, Ok(SUCCEED_ON_ATTEMPT));
-    assert_eq!(ext_stats.attempts, SUCCEED_ON_ATTEMPT);
-}

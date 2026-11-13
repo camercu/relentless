@@ -229,10 +229,6 @@ pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::tim
 impl<C: relentless::clock::AsyncClock + ?core::marker::Sized> relentless::clock::AsyncClock for &C
 pub type &C::Wait = <C as relentless::clock::AsyncClock>::Wait
 pub fn &C::wait_async(&self, dur: core::time::Duration) -> Self::Wait
-pub trait relentless::prelude::AsyncRetryExt<Fut, O> where Fut: core::future::future::Future<Output = O>: core::ops::function::FnMut() -> Fut + core::marker::Sized
-pub fn relentless::prelude::AsyncRetryExt::retry_async(self) -> relentless::AsyncRetry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
-impl<Fut, O, F> relentless::AsyncRetryExt<Fut, O> for F where F: core::ops::function::FnMut() -> Fut, Fut: core::future::future::Future<Output = O>
-pub fn F::retry_async(self) -> relentless::AsyncRetry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
 pub trait relentless::prelude::Clock
 pub fn relentless::prelude::Clock::now(&self) -> core::time::Duration
 impl relentless::clock::Clock for relentless::clock::EmbassyClock
@@ -249,10 +245,6 @@ impl<C: relentless::clock::Clock + ?core::marker::Sized> relentless::clock::Cloc
 pub fn &C::now(&self) -> core::time::Duration
 impl<C: relentless::clock::Clock> relentless::clock::Clock for relentless::clock::Recording<C>
 pub fn relentless::clock::Recording<C>::now(&self) -> core::time::Duration
-pub trait relentless::prelude::RetryExt<O>: core::ops::function::FnMut() -> O + core::marker::Sized
-pub fn relentless::prelude::RetryExt::retry(self) -> relentless::Retry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
-impl<O, F: core::ops::function::FnMut() -> O> relentless::RetryExt<O> for F
-pub fn F::retry(self) -> relentless::Retry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
 pub trait relentless::prelude::Stop
 pub fn relentless::prelude::Stop::and<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAll<Self, S> where Self: core::marker::Sized
 pub fn relentless::prelude::Stop::or<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAny<Self, S> where Self: core::marker::Sized
@@ -1151,22 +1143,6 @@ impl<F, C, S, W, Cl> core::marker::Unpin for relentless::RetryWithStats<F, C, S,
 impl<F, C, S, W, Cl> core::marker::UnsafeUnpin for relentless::RetryWithStats<F, C, S, W, Cl> where F: core::marker::UnsafeUnpin, Cl: core::marker::UnsafeUnpin, S: core::marker::UnsafeUnpin, W: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin
 impl<F, C, S, W, Cl> core::panic::unwind_safe::RefUnwindSafe for relentless::RetryWithStats<F, C, S, W, Cl> where F: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe
 impl<F, C, S, W, Cl> core::panic::unwind_safe::UnwindSafe for relentless::RetryWithStats<F, C, S, W, Cl> where F: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::StatelessOp<F>(_)
-impl<F: core::clone::Clone> core::clone::Clone for relentless::StatelessOp<F>
-pub fn relentless::StatelessOp<F>::clone(&self) -> relentless::StatelessOp<F>
-impl<F: core::fmt::Debug> core::fmt::Debug for relentless::StatelessOp<F>
-pub fn relentless::StatelessOp<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<M, R, F> relentless::Operation<M> for relentless::StatelessOp<F> where F: core::ops::function::FnMut() -> R, R: relentless::Attempt<M>
-pub type relentless::StatelessOp<F>::Call = R
-pub type relentless::StatelessOp<F>::Output = <R as relentless::Attempt<M>>::Output
-pub fn relentless::StatelessOp<F>::call_op(&mut self, _state: relentless::RetryState) -> R
-impl<F> core::marker::Freeze for relentless::StatelessOp<F> where F: core::marker::Freeze
-impl<F> core::marker::Send for relentless::StatelessOp<F> where F: core::marker::Send
-impl<F> core::marker::Sync for relentless::StatelessOp<F> where F: core::marker::Sync
-impl<F> core::marker::Unpin for relentless::StatelessOp<F> where F: core::marker::Unpin
-impl<F> core::marker::UnsafeUnpin for relentless::StatelessOp<F> where F: core::marker::UnsafeUnpin
-impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::StatelessOp<F> where F: core::panic::unwind_safe::RefUnwindSafe
-impl<F> core::panic::unwind_safe::UnwindSafe for relentless::StatelessOp<F> where F: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::Until<F>(_)
 impl<F: core::clone::Clone> core::clone::Clone for relentless::Until<F>
 pub fn relentless::Until<F>::clone(&self) -> relentless::Until<F>
@@ -1228,10 +1204,6 @@ pub fn &'clock relentless::clock::VirtualClock::wait_async(&self, dur: core::tim
 impl<C: relentless::clock::AsyncClock + ?core::marker::Sized> relentless::clock::AsyncClock for &C
 pub type &C::Wait = <C as relentless::clock::AsyncClock>::Wait
 pub fn &C::wait_async(&self, dur: core::time::Duration) -> Self::Wait
-pub trait relentless::AsyncRetryExt<Fut, O> where Fut: core::future::future::Future<Output = O>: core::ops::function::FnMut() -> Fut + core::marker::Sized
-pub fn relentless::AsyncRetryExt::retry_async(self) -> relentless::AsyncRetry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
-impl<Fut, O, F> relentless::AsyncRetryExt<Fut, O> for F where F: core::ops::function::FnMut() -> Fut, Fut: core::future::future::Future<Output = O>
-pub fn F::retry_async(self) -> relentless::AsyncRetry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
 pub trait relentless::Attempt<M>: relentless::engine::op::sealed::Sealed<M>
 pub type relentless::Attempt::Output
 pub fn relentless::Attempt::poll_attempt(self: core::pin::Pin<&mut Self>, cx: &mut core::task::wake::Context<'_>, token: <M as relentless::engine::op::sealed::Mode>::Token) -> core::task::poll::Poll<Self::Output> where M: relentless::engine::op::sealed::Mode
@@ -1301,10 +1273,6 @@ impl<M, R, F> relentless::Operation<M> for F where F: core::ops::function::FnMut
 pub type F::Call = R
 pub type F::Output = <R as relentless::Attempt<M>>::Output
 pub fn F::call_op(&mut self, state: relentless::RetryState) -> R
-impl<M, R, F> relentless::Operation<M> for relentless::StatelessOp<F> where F: core::ops::function::FnMut() -> R, R: relentless::Attempt<M>
-pub type relentless::StatelessOp<F>::Call = R
-pub type relentless::StatelessOp<F>::Output = <R as relentless::Attempt<M>>::Output
-pub fn relentless::StatelessOp<F>::call_op(&mut self, _state: relentless::RetryState) -> R
 pub trait relentless::Outcome: core::marker::Sized
 pub type relentless::Outcome::Abort
 pub type relentless::Outcome::Return
@@ -1321,10 +1289,6 @@ impl<T> relentless::Outcome for core::option::Option<T>
 pub type core::option::Option<T>::Abort = core::convert::Infallible
 pub type core::option::Option<T>::Return = T
 pub fn core::option::Option<T>::classify(self) -> relentless::Verdict<T, core::convert::Infallible, core::option::Option<T>>
-pub trait relentless::RetryExt<O>: core::ops::function::FnMut() -> O + core::marker::Sized
-pub fn relentless::RetryExt::retry(self) -> relentless::Retry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
-impl<O, F: core::ops::function::FnMut() -> O> relentless::RetryExt<O> for F
-pub fn F::retry(self) -> relentless::Retry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
 pub trait relentless::Stop
 pub fn relentless::Stop::and<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAll<Self, S> where Self: core::marker::Sized
 pub fn relentless::Stop::or<S: relentless::stop::Stop>(self, other: S) -> relentless::stop::StopAny<Self, S> where Self: core::marker::Sized

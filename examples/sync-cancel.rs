@@ -25,7 +25,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
-use relentless::{RetryError, RetryExt, retry, stop, wait};
+use relentless::{RetryError, retry, stop, wait};
 use std::sync::Arc;
 
 fn main() {
@@ -46,8 +46,7 @@ fn main() {
     // 100 ms sleep = ~100 ms per cycle, so the deadline fires at the
     // attempt boundary after the third attempt, with the final sleep clamped.
 
-    let result = (|| -> Result<&str, &str> { Err("service unavailable") })
-        .retry()
+    let result = retry(|_| -> Result<&str, &str> { Err("service unavailable") })
         .stop(stop::attempts(100))
         .wait(wait::fixed(Duration::from_millis(100)))
         .timeout(Duration::from_millis(250))

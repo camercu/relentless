@@ -10,7 +10,7 @@
 //! phases exist only because an async attempt or sleep can span multiple polls.
 
 use super::elapsed::Elapsed;
-use super::op::{Async, Attempt, Operation, StatelessOp};
+use super::op::{Async, Attempt, Operation};
 use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
@@ -59,7 +59,7 @@ where
     AsyncRetry::from_op(op)
 }
 
-/// Default async builder returned by [`retry_async`] and [`AsyncRetryExt::retry_async`].
+/// Default async builder returned by [`retry_async`].
 type DefaultAsyncRetry<F> =
     AsyncRetry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock>;
 
@@ -81,30 +81,6 @@ impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock> {
             policy,
             clock: SystemClock,
         }
-    }
-}
-
-/// Starts an async retry directly from a no-argument closure or function.
-///
-/// The async twin of [`RetryExt`](super::RetryExt): `(|| op()).retry_async()`
-/// behaves identically to `retry_async(|_| op())`, discarding the
-/// [`RetryState`]. Use the free [`retry_async`] when the operation needs that
-/// state; the switch changes only the closure's argument.
-pub trait AsyncRetryExt<Fut, O>: FnMut() -> Fut + Sized
-where
-    Fut: Future<Output = O>,
-{
-    /// Begins an owned async retry builder from this closure.
-    fn retry_async(self) -> DefaultAsyncRetry<StatelessOp<Self>>;
-}
-
-impl<Fut, O, F> AsyncRetryExt<Fut, O> for F
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = O>,
-{
-    fn retry_async(self) -> DefaultAsyncRetry<StatelessOp<Self>> {
-        AsyncRetry::from_op(StatelessOp(self))
     }
 }
 

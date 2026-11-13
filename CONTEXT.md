@@ -122,7 +122,7 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 |---|---|---|---|
 | Configure a retry policy | | tenacity `Retrying(...)`; Polly `ResiliencePipeline` | `RetryPolicy::new`, `RetryPolicy::{stop, wait, timeout, when, until, decide}` |
 | Erase policy strategy types | | | `RetryPolicy::{boxed, boxed_local}` |
-| Bind an operation | | tenacity `@retry`; backon `.retry()` | `retry`, `retry_async`, `RetryExt::retry`, `AsyncRetryExt::retry_async`, `RetryPolicy::{retry, retry_async}` |
+| Bind an operation | | tenacity `@retry`; backon `.retry()` | `retry`, `retry_async`, `RetryPolicy::{retry, retry_async}` |
 | Set the classifier | | tenacity `retry=`, `retry_if_exception`, `retry_if_result` | `.decide`, `.when`, `.until` (builder and policy) |
 | Set the wait strategy | | tenacity `wait=`; backon `Backoff` | `.wait`, `wait::{fixed, linear, exponential, decorrelated_jitter}`, `WaitExponential::base` |
 | Compose wait strategies | | tenacity `wait_a + wait_b`, `wait_chain` | `Wait::{add, chain, cap}`, `+` |
@@ -161,7 +161,7 @@ Views:
 - **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy and wait strategy.
 - **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 

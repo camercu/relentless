@@ -1,17 +1,17 @@
-//! Acceptance tests for the sync builder (`retry(..)` and `RetryExt`).
+//! Acceptance tests for the sync builder (`retry(..)`).
 //!
 //! Each test drives one builder surface end to end under a virtual clock:
 //! the default classifier path, `.decide`/`.when`/`.until`, self-classifying
 //! outcomes, the three hook points, `.with_stats()` and `.timeout`.
 mod common;
 
-use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE};
+use common::ARBITRARY_ATTEMPTS;
 
 use core::cell::{Cell, RefCell};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
-use relentless::{Decision, Outcome, RetryError, RetryExt, StopReason, Verdict, retry, stop, wait};
+use relentless::{Decision, Outcome, RetryError, StopReason, Verdict, retry, stop, wait};
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
 /// drives it with no `.decide` at the call site.
@@ -188,14 +188,13 @@ fn owned_outcome_type_aborts_via_the_default_path() {
 }
 
 #[test]
-fn retry_ext_starts_from_a_no_arg_closure() {
+fn retry_starts_from_a_closure_ignoring_state() {
     let counter = Cell::new(0);
-    let result = (|| {
+    let result = retry(|_| {
         let n = counter.get() + 1;
         counter.set(n);
         if n >= 2 { Ok::<i32, &str>(5) } else { Err("x") }
     })
-    .retry()
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::ZERO))
     .clock(VirtualClock::new())
@@ -210,11 +209,10 @@ fn retry_ext_supports_the_classifier_surface() {
     // The stateless-ext builder still reaches `.until`, because the op slot
     // is unified behind `Operation` rather than a bare `FnMut`.
     let counter = Cell::new(0);
-    let result = (|| {
+    let result = retry(|_| {
         counter.set(counter.get() + 1);
         Ok::<i32, &str>(counter.get())
     })
-    .retry()
     .until(|v: &i32| *v >= 3)
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::ZERO))
@@ -275,31 +273,4 @@ fn free_function_retry_provides_retry_state_to_op() {
     .call();
 
     assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
-}
-
-/// 6.2.2
-#[test]
-fn retry_ext_closure_takes_no_retry_state() {
-    use relentless::RetryExt;
-    use std::rc::Rc;
-
-    // The closure passed to .retry() via RetryExt must have zero args.
-    let call_count = Rc::new(Cell::new(0_u32));
-    let call_count_clone = call_count.clone();
-    let result = (move || {
-        call_count_clone.set(call_count_clone.get().saturating_add(1));
-        if call_count_clone.get() < 3 {
-            Err("transient")
-        } else {
-            Ok(ARBITRARY_VALUE)
-        }
-    })
-    .retry()
-    .stop(stop::attempts(3))
-    .wait(wait::fixed(Duration::ZERO))
-    .clock(VirtualClock::new())
-    .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(call_count.get(), 3);
 }

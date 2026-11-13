@@ -2,11 +2,11 @@
 //!
 //! [`Retry`] pairs an operation with a classifier, stop and wait strategies and
 //! a clock; `.call()` runs the shared decision core in a blocking
-//! loop. [`RetryExt`] starts the same builder from a no-argument closure. The
+//! loop. The
 //! async twin lives in `async_engine`.
 
 use super::elapsed::Elapsed;
-use super::op::{Blocking, Operation, StatelessOp, ready_outcome};
+use super::op::{Blocking, Operation, ready_outcome};
 use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
@@ -17,7 +17,7 @@ use crate::state::RetryState;
 use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
 
-/// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
+/// Default builder returned by [`retry`].
 type DefaultRetry<F> = Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock>;
 
 /// A classifier-driven sync retry builder.
@@ -45,9 +45,8 @@ impl<F, C, S, W, Cl> core::fmt::Debug for RetryWithStats<F, C, S, W, Cl> {
 
 /// Begins a classifier-driven retry from an operation.
 ///
-/// The operation receives the [`RetryState`]; when it ignores that state, the
-/// [`RetryExt::retry`] extension form (`(|| op()).retry()`) is equivalent and
-/// drops the unused argument. Defaults: `stop::attempts(3)`,
+/// The operation receives the [`RetryState`] (attempt number, elapsed time,
+/// previous delay); ignore it with `|_|`. Defaults: `stop::attempts(3)`,
 /// `wait::exponential(100ms)`, the default classifier, and
 /// [`SystemClock`]. In non-`std` builds `.clock(...)` must be set before
 /// `.call()`.
@@ -79,27 +78,6 @@ impl<F, C, S, W> Retry<F, C, S, W, SystemClock> {
             policy,
             clock: SystemClock,
         }
-    }
-}
-
-/// Starts a sync retry directly from a no-argument closure or function.
-///
-/// This is the stateless twin of [`retry`]: `(|| op()).retry()` behaves
-/// identically to `retry(|_| op())` — the extension form simply discards the
-/// [`RetryState`]. Reach for the free [`retry`] when the operation needs that
-/// state (e.g. the attempt number); the switch is mechanical, changing only the
-/// closure's argument. Defaults match [`retry`]: `stop::attempts(3)`,
-/// `wait::exponential(100ms)`, retry on any `Err` (via the default classifier).
-/// A closure that returns a future starts with
-/// [`retry_async`](crate::AsyncRetryExt::retry_async) instead.
-pub trait RetryExt<O>: FnMut() -> O + Sized {
-    /// Begins an owned retry builder from this closure.
-    fn retry(self) -> DefaultRetry<StatelessOp<Self>>;
-}
-
-impl<O, F: FnMut() -> O> RetryExt<O> for F {
-    fn retry(self) -> DefaultRetry<StatelessOp<Self>> {
-        Retry::from_op(StatelessOp(self))
     }
 }
 

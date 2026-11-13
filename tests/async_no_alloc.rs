@@ -7,7 +7,7 @@ use core::cell::Cell;
 use core::future::ready;
 
 use relentless::clock::VirtualClock;
-use relentless::{AsyncRetryExt, RetryError, RetryPolicy, stop};
+use relentless::{RetryError, RetryPolicy, retry_async, stop};
 
 const SUCCESS_VALUE: i32 = 42;
 const ERROR_VALUE: &str = "fail";
@@ -43,7 +43,7 @@ fn async_retry_ext_remains_available_without_alloc() {
 
     let clock = VirtualClock::new();
     let result: Result<i32, RetryError<&str, Result<i32, &str>>> = block_on(
-        (|| {
+        retry_async(|_| {
             attempts.set(attempts.get().saturating_add(1));
             if attempts.get() < MAX_ATTEMPTS {
                 ready(Err(ERROR_VALUE))
@@ -51,7 +51,6 @@ fn async_retry_ext_remains_available_without_alloc() {
                 ready(Ok(SUCCESS_VALUE))
             }
         })
-        .retry_async()
         .stop(stop::attempts(MAX_ATTEMPTS))
         .clock(&clock)
         .call(),

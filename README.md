@@ -11,11 +11,10 @@ first-class support for polling workflows where `Ok(_)` doesn't always mean
 "done."
 
 ```rust,no_run
-use relentless::RetryExt;
+use relentless::retry;
 
 // Retry any `Err` with exponential backoff — three attempts by default.
-let body = (|| reqwest::blocking::get("https://api.example.com/data")?.text())
-    .retry()
+let body = retry(|_| reqwest::blocking::get("https://api.example.com/data")?.text())
     .call();
 ```
 
@@ -44,8 +43,7 @@ targets.
 
 Inspired by Python's [`tenacity`](https://github.com/jd/tenacity) (composable
 strategy algebra) and Rust's [`backon`](https://crates.io/crates/backon)
-(ergonomic retry builders and the `.retry()` extension trait — starting a retry
-directly from a function or closure).
+(ergonomic retry builders).
 
 ## Install
 
@@ -100,24 +98,23 @@ Sync `std` builds default to `clock::SystemClock` (wall time +
 
 ### 1) Retry with defaults
 
-The `.retry()` extension trait is the fastest way to add retries. Defaults: 3
-attempts, exponential backoff from 100 ms, retry on any `Err`.
+Wrap the operation in `retry` and call it. Defaults: 3 attempts, exponential
+backoff from 100 ms, retry on any `Err`.
 
 ```rust,no_run
-use relentless::RetryExt;
+use relentless::retry;
 
 fn fetch_job_output() -> Result<String, std::io::Error> {
     std::fs::read_to_string("/var/run/background_job.output")
 }
 
-let _output = fetch_job_output.retry().call();
+let _output = retry(|_| fetch_job_output()).call();
 ```
 
 ### 2) Customized retry
 
-The `retry` free function is equivalent to the extension trait, with the added
-ability to capture retry loop state. Both give full control over which outcomes
-to retry, how long to wait, and when to stop.
+The same builder configures which outcomes to retry, how long to wait, and when
+to stop. The closure receives the retry loop state.
 
 ```rust,no_run
 use core::time::Duration;

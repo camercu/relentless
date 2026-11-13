@@ -1,4 +1,4 @@
-//! Acceptance tests for the async builder (`retry_async(..)` and `AsyncRetryExt`).
+//! Acceptance tests for the async builder (`retry_async(..)`).
 //!
 //! Mirrors the sync builder scenarios in `builder.rs`, driven under a virtual
 //! clock and a no-op waker so no executor is needed.
@@ -11,21 +11,18 @@ use core::time::Duration;
 use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
-use relentless::{
-    AsyncRetryExt, Decision, RetryError, StopReason, Verdict, retry_async, stop, wait,
-};
+use relentless::{Decision, RetryError, StopReason, Verdict, retry_async, stop, wait};
 
 #[test]
-fn async_retry_ext_starts_from_a_no_arg_closure() {
+fn retry_async_starts_from_a_closure_ignoring_state() {
     let counter = Cell::new(0);
     let clock = VirtualClock::new();
     let result = block_on(
-        (|| {
+        retry_async(|_| {
             let n = counter.get() + 1;
             counter.set(n);
             async move { if n >= 2 { Ok::<i32, &str>(5) } else { Err("x") } }
         })
-        .retry_async()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .clock(&clock)
