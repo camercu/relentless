@@ -31,9 +31,7 @@ pub struct StopAny<A, B> {
 }
 
 impl<A, B> StopAny<A, B> {
-    /// Prefer the `|` operator or [`Stop::or`] method over this constructor.
-    #[must_use]
-    pub fn new(left: A, right: B) -> Self {
+    pub(crate) fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
 }
@@ -74,9 +72,7 @@ pub struct StopAll<A, B> {
 }
 
 impl<A, B> StopAll<A, B> {
-    /// Prefer the `&` operator or [`Stop::and`] method over this constructor.
-    #[must_use]
-    pub fn new(left: A, right: B) -> Self {
+    pub(crate) fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
 }

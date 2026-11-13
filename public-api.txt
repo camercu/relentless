@@ -510,8 +510,6 @@ impl core::marker::UnsafeUnpin for relentless::stop::StopAfterElapsed
 impl core::panic::unwind_safe::RefUnwindSafe for relentless::stop::StopAfterElapsed
 impl core::panic::unwind_safe::UnwindSafe for relentless::stop::StopAfterElapsed
 pub struct relentless::stop::StopAll<A, B>
-impl<A, B> relentless::stop::StopAll<A, B>
-pub fn relentless::stop::StopAll<A, B>::new(left: A, right: B) -> Self
 impl<A, B, Rhs> core::ops::bit::BitAnd<Rhs> for relentless::stop::StopAll<A, B>
 pub type relentless::stop::StopAll<A, B>::Output = relentless::stop::StopAll<relentless::stop::StopAll<A, B>, Rhs>
 pub fn relentless::stop::StopAll<A, B>::bitand(self, rhs: Rhs) -> Self::Output
@@ -534,8 +532,6 @@ impl<A, B> core::marker::UnsafeUnpin for relentless::stop::StopAll<A, B> where A
 impl<A, B> core::panic::unwind_safe::RefUnwindSafe for relentless::stop::StopAll<A, B> where A: core::panic::unwind_safe::RefUnwindSafe, B: core::panic::unwind_safe::RefUnwindSafe
 impl<A, B> core::panic::unwind_safe::UnwindSafe for relentless::stop::StopAll<A, B> where A: core::panic::unwind_safe::UnwindSafe, B: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::stop::StopAny<A, B>
-impl<A, B> relentless::stop::StopAny<A, B>
-pub fn relentless::stop::StopAny<A, B>::new(left: A, right: B) -> Self
 impl<A, B, Rhs> core::ops::bit::BitAnd<Rhs> for relentless::stop::StopAny<A, B>
 pub type relentless::stop::StopAny<A, B>::Output = relentless::stop::StopAll<relentless::stop::StopAny<A, B>, Rhs>
 pub fn relentless::stop::StopAny<A, B>::bitand(self, rhs: Rhs) -> Self::Output
@@ -670,8 +666,6 @@ impl<W> core::marker::UnsafeUnpin for relentless::wait::WaitCapped<W> where W: c
 impl<W> core::panic::unwind_safe::RefUnwindSafe for relentless::wait::WaitCapped<W> where W: core::panic::unwind_safe::RefUnwindSafe
 impl<W> core::panic::unwind_safe::UnwindSafe for relentless::wait::WaitCapped<W> where W: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::wait::WaitChain<A, B>
-impl<A, B> relentless::wait::WaitChain<A, B>
-pub fn relentless::wait::WaitChain<A, B>::new(first: A, second: B, after: u32) -> Self
 impl<A, B, Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitChain<A, B>
 pub type relentless::wait::WaitChain<A, B>::Output = relentless::wait::WaitCombine<relentless::wait::WaitChain<A, B>, Rhs>
 pub fn relentless::wait::WaitChain<A, B>::add(self, rhs: Rhs) -> Self::Output
@@ -695,8 +689,6 @@ impl<A, B> core::marker::UnsafeUnpin for relentless::wait::WaitChain<A, B> where
 impl<A, B> core::panic::unwind_safe::RefUnwindSafe for relentless::wait::WaitChain<A, B> where A: core::panic::unwind_safe::RefUnwindSafe, B: core::panic::unwind_safe::RefUnwindSafe
 impl<A, B> core::panic::unwind_safe::UnwindSafe for relentless::wait::WaitChain<A, B> where A: core::panic::unwind_safe::UnwindSafe, B: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::wait::WaitCombine<A, B>
-impl<A, B> relentless::wait::WaitCombine<A, B>
-pub fn relentless::wait::WaitCombine<A, B>::new(left: A, right: B) -> Self
 impl<A, B, Rhs> core::ops::arith::Add<Rhs> for relentless::wait::WaitCombine<A, B>
 pub type relentless::wait::WaitCombine<A, B>::Output = relentless::wait::WaitCombine<relentless::wait::WaitCombine<A, B>, Rhs>
 pub fn relentless::wait::WaitCombine<A, B>::add(self, rhs: Rhs) -> Self::Output

@@ -65,9 +65,7 @@ pub struct WaitCombine<A, B> {
 }
 
 impl<A, B> WaitCombine<A, B> {
-    /// Prefer the `+` operator or [`Wait::add`] over calling this directly.
-    #[must_use]
-    pub fn new(left: A, right: B) -> Self {
+    pub(crate) fn new(left: A, right: B) -> Self {
         Self { left, right }
     }
 }
@@ -113,9 +111,7 @@ pub struct WaitChain<A, B> {
 }
 
 impl<A, B> WaitChain<A, B> {
-    /// Prefer [`Wait::chain`] over calling this directly.
-    #[must_use]
-    pub fn new(first: A, second: B, after: u32) -> Self {
+    pub(crate) fn new(first: A, second: B, after: u32) -> Self {
         Self {
             first,
             second,
