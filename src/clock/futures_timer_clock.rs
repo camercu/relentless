@@ -1,5 +1,10 @@
 //! The `futures-timer`-backed async clock.
 
+#[cfg(os_clock)]
+use super::{AsyncClock, Clock};
+#[cfg(os_clock)]
+use crate::compat::Duration;
+
 /// An [`AsyncClock`](super::AsyncClock) backed by [`futures_timer::Delay`]
 /// and `std`'s monotonic [`std::time::Instant`].
 ///
@@ -12,42 +17,43 @@
 /// `GlooClock` (feature `gloo-timers-clock`).
 #[derive(Debug, Clone, Copy)]
 pub struct FuturesTimerClock {
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+    #[cfg_attr(not(os_clock), allow(dead_code))]
     origin: std::time::Instant,
 }
 
-with_os_clock! {
-    use super::{AsyncClock, Clock};
-    use crate::compat::Duration;
-
-    impl FuturesTimerClock {
-        /// Creates a clock anchored at the current instant.
-        #[must_use]
-        pub fn new() -> Self {
-            Self {
-                origin: std::time::Instant::now(),
-            }
+#[cfg(os_clock)]
+impl FuturesTimerClock {
+    /// Creates a clock anchored at the current instant.
+    #[must_use]
+    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    pub fn new() -> Self {
+        Self {
+            origin: std::time::Instant::now(),
         }
     }
+}
 
-    impl Default for FuturesTimerClock {
-        fn default() -> Self {
-            Self::new()
-        }
+#[cfg(os_clock)]
+impl Default for FuturesTimerClock {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    impl Clock for FuturesTimerClock {
-        fn now(&self) -> Duration {
-            self.origin.elapsed()
-        }
+#[cfg(os_clock)]
+impl Clock for FuturesTimerClock {
+    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
     }
+}
 
-    impl AsyncClock for FuturesTimerClock {
-        type Wait = futures_timer::Delay;
+#[cfg(os_clock)]
+impl AsyncClock for FuturesTimerClock {
+    type Wait = futures_timer::Delay;
 
-        fn wait_async(&self, dur: Duration) -> Self::Wait {
-            futures_timer::Delay::new(dur)
-        }
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        futures_timer::Delay::new(dur)
     }
 }
 

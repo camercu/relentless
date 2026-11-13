@@ -430,6 +430,10 @@ fn policy_resets_between_retry_invocations() {
 
 #[test]
 #[cfg(feature = "std")]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "tests run natively, where the OS clock exists"
+)]
 fn std_feature_provides_default_clock() {
     // Without the `std` feature there is no default clock, so `.call()` requires
     // an explicit `.clock(...)`. With `std` active the default `SystemClock`

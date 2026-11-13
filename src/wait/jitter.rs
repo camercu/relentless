@@ -130,11 +130,11 @@ enum JitterKind {
 /// The default PRNG seed is fixed, and each instance mixes in a per-instance
 /// nonce so that instances within a run are decorrelated. What that nonce is
 /// made of — and therefore whether the sequence repeats across process
-/// restarts — depends on the `std` feature:
+/// restarts — depends on the `std` feature and the target:
 ///
-/// - **without `std`** (no entropy source available) the nonce is a plain
-///   counter, so a default-seeded sequence is **deterministic across process
-///   restarts**. Call [`with_seed`](Self::with_seed) with a runtime-sourced
+/// - **without `std`, or on `wasm32-unknown-unknown`** (no wall clock) the
+///   nonce is a plain counter, so a default-seeded sequence is
+///   **deterministic across process restarts**. Call [`with_seed`](Self::with_seed) with a runtime-sourced
 ///   value if you need run-to-run variation.
 /// - **with `std`** the counter is mixed with the wall clock, so a
 ///   default-seeded sequence **varies between runs**. A test that needs a
@@ -361,10 +361,12 @@ fn random_duration_in(lower: Duration, upper: Duration, rng: &SplitMix64) -> Dur
 }
 
 #[cfg(target_has_atomic = "ptr")]
+#[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
 fn next_jitter_nonce() -> u64 {
     let counter = JITTER_NONCE_COUNTER.fetch_add(1, Ordering::Relaxed) as u64;
 
-    #[cfg(feature = "std")]
+    // `SystemTime::now` panics on targets with no OS clock (`os_clock` unset).
+    #[cfg(all(feature = "std", os_clock))]
     {
         use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
@@ -374,7 +376,7 @@ fn next_jitter_nonce() -> u64 {
         counter ^ (now.as_nanos() as u64)
     }
 
-    #[cfg(not(feature = "std"))]
+    #[cfg(not(all(feature = "std", os_clock)))]
     {
         counter
     }

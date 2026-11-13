@@ -40,6 +40,10 @@ fn parse_seed(raw_seed: &str) -> Result<u64, String> {
     parsed.map_err(|err| err.to_string())
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "tests run natively, where the OS clock exists"
+)]
 fn random_default_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()

@@ -1,5 +1,10 @@
 //! The Tokio-backed async clock.
 
+#[cfg(os_clock)]
+use super::{AsyncClock, Clock};
+#[cfg(os_clock)]
+use crate::compat::Duration;
+
 /// An [`AsyncClock`](super::AsyncClock) backed by the Tokio runtime's timer.
 ///
 /// `now()` reads [`tokio::time::Instant`] and `wait_async` is
@@ -27,45 +32,46 @@
 /// (feature `gloo-timers-clock`).
 #[derive(Debug, Clone, Copy)]
 pub struct TokioClock {
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+    #[cfg_attr(not(os_clock), allow(dead_code))]
     origin: tokio::time::Instant,
 }
 
-with_os_clock! {
-    use super::{AsyncClock, Clock};
-    use crate::compat::Duration;
-
-    impl TokioClock {
-        /// Creates a clock anchored at the current Tokio instant.
-        ///
-        /// Construction works outside a runtime; the waits (and paused-time
-        /// reads) must run within a Tokio runtime context.
-        #[must_use]
-        pub fn new() -> Self {
-            Self {
-                origin: tokio::time::Instant::now(),
-            }
+#[cfg(os_clock)]
+impl TokioClock {
+    /// Creates a clock anchored at the current Tokio instant.
+    ///
+    /// Construction works outside a runtime; the waits (and paused-time
+    /// reads) must run within a Tokio runtime context.
+    #[must_use]
+    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    pub fn new() -> Self {
+        Self {
+            origin: tokio::time::Instant::now(),
         }
     }
+}
 
-    impl Default for TokioClock {
-        fn default() -> Self {
-            Self::new()
-        }
+#[cfg(os_clock)]
+impl Default for TokioClock {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    impl Clock for TokioClock {
-        fn now(&self) -> Duration {
-            self.origin.elapsed()
-        }
+#[cfg(os_clock)]
+impl Clock for TokioClock {
+    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
     }
+}
 
-    impl AsyncClock for TokioClock {
-        type Wait = tokio::time::Sleep;
+#[cfg(os_clock)]
+impl AsyncClock for TokioClock {
+    type Wait = tokio::time::Sleep;
 
-        fn wait_async(&self, dur: Duration) -> Self::Wait {
-            tokio::time::sleep(dur)
-        }
+    fn wait_async(&self, dur: Duration) -> Self::Wait {
+        tokio::time::sleep(dur)
     }
 }
 

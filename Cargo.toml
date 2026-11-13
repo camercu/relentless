@@ -18,6 +18,7 @@ keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
 # an unanchored "README.md" matches that name at any depth and would sweep in
 # every vendored README under node_modules.
 include = [
+  "/build.rs",
   "/src/**/*.rs",
   "/examples/**/*.rs",
   "/tests/**/*.rs",

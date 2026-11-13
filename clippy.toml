@@ -1,0 +1,10 @@
+# Reading the OS clock panics on wasm32-unknown-unknown. Each read must sit
+# behind `cfg(os_clock)` (set by build.rs) and carry an explicit allow.
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "panics on wasm32-unknown-unknown: gate on cfg(os_clock), then allow" },
+  { path = "std::time::Instant::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "std::time::SystemTime::now", reason = "panics on wasm32-unknown-unknown: gate on cfg(os_clock), then allow" },
+  { path = "std::time::SystemTime::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::Instant::now", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::Instant::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+]

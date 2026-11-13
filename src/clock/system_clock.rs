@@ -1,5 +1,10 @@
 //! The default wall-time clock for synchronous execution.
 
+#[cfg(all(feature = "std", os_clock))]
+use super::{Clock, SyncClock};
+#[cfg(all(feature = "std", os_clock))]
+use crate::compat::Duration;
+
 /// The default wall-time clock for synchronous execution.
 ///
 /// With the `std` feature it reads a process-global monotonic anchor
@@ -16,28 +21,25 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SystemClock;
 
-#[cfg(feature = "std")]
-with_os_clock! {
-    use super::{Clock, SyncClock};
-    use crate::compat::Duration;
+#[cfg(all(feature = "std", os_clock))]
+impl Clock for SystemClock {
+    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    fn now(&self) -> Duration {
+        use std::sync::OnceLock;
+        use std::time::Instant;
 
-    impl Clock for SystemClock {
-        fn now(&self) -> Duration {
-            use std::sync::OnceLock;
-            use std::time::Instant;
-
-            // Process-global origin: `now()` values are only ever subtracted from
-            // a baseline read from the same clock, so the anchor point is
-            // arbitrary — it just has to be fixed.
-            static ANCHOR: OnceLock<Instant> = OnceLock::new();
-            ANCHOR.get_or_init(Instant::now).elapsed()
-        }
+        // Process-global origin: `now()` values are only ever subtracted from
+        // a baseline read from the same clock, so the anchor point is
+        // arbitrary — it just has to be fixed.
+        static ANCHOR: OnceLock<Instant> = OnceLock::new();
+        ANCHOR.get_or_init(Instant::now).elapsed()
     }
+}
 
-    impl SyncClock for SystemClock {
-        fn wait(&self, dur: Duration) {
-            std::thread::sleep(dur);
-        }
+#[cfg(all(feature = "std", os_clock))]
+impl SyncClock for SystemClock {
+    fn wait(&self, dur: Duration) {
+        std::thread::sleep(dur);
     }
 }
 

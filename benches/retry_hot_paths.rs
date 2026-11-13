@@ -1,3 +1,7 @@
+#![allow(
+    clippy::disallowed_methods,
+    reason = "benches run natively, where the OS clock exists"
+)]
 use core::time::Duration;
 use relentless::{RetryPolicy, Wait, stop, wait};
 use std::env;
