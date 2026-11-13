@@ -240,7 +240,7 @@
 //! attempt boundaries (a running operation or sleep is never interrupted
 //! mid-flight).
 //!
-//! - **Async:** the future returned by [`.call()`](AsyncRetry::call) is
+//! - **Async:** the future returned by an async `.call()` is
 //!   cancel-safe — drop it (e.g. via `tokio::time::timeout` or `select!`) to
 //!   stop at the next `.await`. Use `Drop` on your own types for guaranteed
 //!   cleanup. See the `async-cancel` example.
@@ -338,11 +338,11 @@ pub use decision::Decide;
 #[doc(hidden)]
 pub use decision::IntoDecision;
 pub use engine::{
-    AsyncRetry, Retry, RetryError, RetryResult, RetryStats, StopReason, retry, retry_async,
+    Retry, RetryError, RetryResult, RetryStats, StopReason, retry, retry_async,
 };
 // The builder's type-state plumbing. You never write these to *use* the
 // crate — you pass closures and `.await` or `.call()` the result — but they
-// stand in the `where` bounds and return types of `Retry`/`AsyncRetry`, so
+// stand in the `where` bounds and return types of `Retry`, so
 // storing a configured builder in a struct field, or returning one from a
 // helper, means writing them out. Unreachable names there would be a dead end,
 // and dead tokens on the crate's own entry-point pages.

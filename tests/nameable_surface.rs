@@ -10,15 +10,15 @@
 
 mod common;
 
-use common::{ARBITRARY_DELAY, ARBITRARY_VALUE, ReadyClock, block_on};
+use common::{ARBITRARY_ATTEMPTS, ARBITRARY_DELAY, ARBITRARY_VALUE, ReadyClock, block_on};
 use core::future::Future;
 
 use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
-use relentless::wait::WaitExponential;
+use relentless::wait::{WaitExponential, WaitFixed};
 use relentless::{
-    Async, AsyncClock, AsyncRetry, AsyncRun, Blocking, Decide, DefaultClassifier, DropStats,
-    Operation, Retry, RetryError, RetryPolicy, RetryState,
+    Async, AsyncClock, AsyncRun, Blocking, Decide, DefaultClassifier, DropStats, Operation, Retry,
+    RetryError, RetryPolicy, RetryState,
 };
 
 const SUCCESS_VALUE: u32 = 7;
@@ -27,7 +27,7 @@ const SUCCESS_VALUE: u32 = 7;
 /// Spelling the return type out is unavoidable, so every parameter in it must
 /// be nameable.
 type Preconfigured<F> =
-    Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, VirtualClock>;
+    Retry<Blocking, F, DefaultClassifier, StopAfterAttempts, WaitExponential, VirtualClock>;
 
 fn preconfigured<F>(op: F) -> Preconfigured<F>
 where
@@ -49,7 +49,7 @@ fn a_helper_can_return_a_preconfigured_builder() {
 #[test]
 fn code_can_be_generic_over_a_configured_builder() {
     fn drive<F, C, S, W, O>(
-        builder: Retry<F, C, S, W, VirtualClock>,
+        builder: Retry<Blocking, F, C, S, W, VirtualClock>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
         F: Operation<Blocking, Output = O>,
@@ -71,7 +71,7 @@ fn code_can_be_generic_over_a_configured_builder() {
 #[test]
 fn code_can_await_a_configured_async_builder_generically() {
     async fn drive<F, C, S, W, O>(
-        builder: AsyncRetry<F, C, S, W, ReadyClock>,
+        builder: Retry<Async, F, C, S, W, ReadyClock>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
         F: Operation<Async, Output = O>,
@@ -92,7 +92,7 @@ fn code_can_await_a_configured_async_builder_generically() {
 #[test]
 fn generic_async_code_can_require_a_send_retry_future() {
     fn spawnable<F, C, S, W, Cl, O>(
-        builder: AsyncRetry<F, C, S, W, Cl>,
+        builder: Retry<Async, F, C, S, W, Cl>,
     ) -> impl Future<Output = Result<C::R, RetryError<C::A, O>>> + Send
     where
         F: Operation<Async, Output = O, Call: Send> + Send,
@@ -132,23 +132,23 @@ fn a_struct_field_can_hold_the_async_retry_future() {
     assert_eq!(block_on(in_flight.future), Ok(SUCCESS_VALUE));
 }
 
-/// The builder a policy hands back is nameable as `Retry<..>`.
+/// The builder a policy hands back is nameable as `Retry<Blocking, ..>`.
 #[test]
 fn sync_retry_type_is_nameable_from_crate_root() {
     let policy = RetryPolicy::new().stop(relentless::stop::attempts(1));
     let retry = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new());
-    let typed: Retry<_, _, _, _, _> = retry;
+    let typed: Retry<Blocking, _, _, _, _, _> = retry;
     assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
 }
 
 /// The builder a policy hands back to the async engine is nameable as
-/// `AsyncRetry<..>`.
+/// `Retry<Async, ..>`.
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<F, C, S, W, Cl>(retry: AsyncRetry<F, C, S, W, Cl>) {
+    fn assert_nameable<F, C, S, W, Cl>(retry: Retry<Async, F, C, S, W, Cl>) {
         let _ = retry;
     }
 
@@ -166,4 +166,33 @@ fn async_retry_type_is_nameable_from_crate_root() {
             .call(),
     );
     assert_eq!(result, Ok(ARBITRARY_VALUE));
+}
+
+/// The setters are written once for both modes, so a helper generic over the
+/// mode configures a blocking and an async builder alike.
+#[test]
+fn a_helper_generic_over_the_mode_configures_either_builder() {
+    fn bounded<M, F, C, S, W, Cl>(
+        builder: Retry<M, F, C, S, W, Cl>,
+    ) -> Retry<M, F, C, StopAfterAttempts, WaitFixed, Cl> {
+        builder
+            .stop(relentless::stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(relentless::wait::fixed(ARBITRARY_DELAY))
+    }
+
+    let (_, blocking) = bounded(relentless::retry(|_| Err::<u32, &str>("down")))
+        .clock(VirtualClock::new())
+        .call_with_stats();
+    let (_, asynchronous) = block_on(
+        bounded(relentless::retry_async(|_| async {
+            Err::<u32, &str>("down")
+        }))
+        .clock(ReadyClock)
+        .call_with_stats(),
+    );
+
+    assert_eq!(
+        (blocking.attempts, asynchronous.attempts),
+        (ARBITRARY_ATTEMPTS, ARBITRARY_ATTEMPTS)
+    );
 }

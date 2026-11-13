@@ -153,7 +153,7 @@ impl<F: Future> Attempt<Async> for F {
 /// use relentless::{Blocking, Decide, Operation, Retry, RetryError, SyncClock, retry};
 ///
 /// fn finish<F, C, S, W, Cl, O>(
-///     builder: Retry<F, C, S, W, Cl>,
+///     builder: Retry<Blocking, F, C, S, W, Cl>,
 /// ) -> Result<C::R, RetryError<C::A, O>>
 /// where
 ///     F: Operation<Blocking, Output = O>,

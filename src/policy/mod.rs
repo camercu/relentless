@@ -12,7 +12,7 @@ use crate::clock::SystemClock;
 use crate::compat::Box;
 use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, DefaultClassifier, Until, When};
-use crate::engine::{AsyncRetry, Retry};
+use crate::engine::{Async, Blocking, Retry};
 use crate::state::RetryState;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;
@@ -219,7 +219,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// rejects it at compile time, and a `.decide` classifier sees an unrun
     /// future.
     #[allow(clippy::type_complexity)]
-    pub fn retry<F, O>(&self, op: F) -> Retry<F, &C, &S, &W, SystemClock>
+    pub fn retry<F, O>(&self, op: F) -> Retry<Blocking, F, &C, &S, &W, SystemClock>
     where
         F: FnMut(RetryState) -> O,
     {
@@ -228,11 +228,11 @@ impl<S, W, C> RetryPolicy<S, W, C> {
 
     /// Creates an asynchronous retry for `op`, borrowing this policy's parts.
     #[allow(clippy::type_complexity)]
-    pub fn retry_async<F, Fut, O>(&self, op: F) -> AsyncRetry<F, &C, &S, &W, SystemClock>
+    pub fn retry_async<F, Fut, O>(&self, op: F) -> Retry<Async, F, &C, &S, &W, SystemClock>
     where
         F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = O>,
     {
-        AsyncRetry::from_policy(op, self.borrowed())
+        Retry::from_policy(op, self.borrowed())
     }
 }

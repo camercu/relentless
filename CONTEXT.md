@@ -34,6 +34,10 @@ _Avoid_: config, retry rules
 The value that pairs one operation with a policy's settings and a clock, ready for `.call()`.
 _Avoid_: retry (as a noun)
 
+**Mode**:
+Whether an execution blocks the calling thread while it waits (`Blocking`) or is a future that awaits its waits (`Async`). The entry point fixes it; one builder type serves both.
+_Avoid_: flavor, sync/async engine (for the builder)
+
 ### Classification
 
 **Classifier**:
@@ -161,7 +165,7 @@ Views:
 - **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy and wait strategy.
 - **Retry stats** (`RetryStats`): read by the caller after `.call_with_stats()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `Attempt`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 

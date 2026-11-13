@@ -937,27 +937,6 @@ impl<R, A, O> core::marker::Unpin for relentless::Verdict<R, A, O> where R: core
 impl<R, A, O> core::marker::UnsafeUnpin for relentless::Verdict<R, A, O> where R: core::marker::UnsafeUnpin, O: core::marker::UnsafeUnpin, A: core::marker::UnsafeUnpin
 impl<R, A, O> core::panic::unwind_safe::RefUnwindSafe for relentless::Verdict<R, A, O> where R: core::panic::unwind_safe::RefUnwindSafe, O: core::panic::unwind_safe::RefUnwindSafe, A: core::panic::unwind_safe::RefUnwindSafe
 impl<R, A, O> core::panic::unwind_safe::UnwindSafe for relentless::Verdict<R, A, O> where R: core::panic::unwind_safe::UnwindSafe, O: core::panic::unwind_safe::UnwindSafe, A: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::AsyncRetry<F, C, S, W, Cl>
-impl<F, C, S, W, Cl, O> relentless::AsyncRetry<F, C, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::call(self) -> relentless::DropStats<relentless::AsyncRun<F, C, S, W, Cl>>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::call_with_stats(self) -> relentless::AsyncRun<F, C, S, W, Cl>
-impl<F, C, S, W, Cl> relentless::AsyncRetry<F, C, S, W, Cl>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::clock<NewClock>(self, clock: NewClock) -> relentless::AsyncRetry<F, C, S, W, NewClock>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::AsyncRetry<F, relentless::ClosureClassifier<NewC>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::IntoDecision<O>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::stop<NewStop>(self, stop: NewStop) -> relentless::AsyncRetry<F, C, NewStop, W, Cl>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::until<T, E, P>(self, done: P) -> relentless::AsyncRetry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&T) -> bool
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::wait<NewWait>(self, wait: NewWait) -> relentless::AsyncRetry<F, C, S, NewWait, Cl>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::when<T, E, P>(self, retryable: P) -> relentless::AsyncRetry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&E) -> bool
-impl<F, C, S, W, Cl> core::fmt::Debug for relentless::AsyncRetry<F, C, S, W, Cl>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<F, C, S, W, Cl> core::marker::Freeze for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::marker::Freeze, Cl: core::marker::Freeze, S: core::marker::Freeze, W: core::marker::Freeze, C: core::marker::Freeze
-impl<F, C, S, W, Cl> core::marker::Send for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::marker::Send, Cl: core::marker::Send, S: core::marker::Send, W: core::marker::Send, C: core::marker::Send
-impl<F, C, S, W, Cl> core::marker::Sync for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::marker::Sync, Cl: core::marker::Sync, S: core::marker::Sync, W: core::marker::Sync, C: core::marker::Sync
-impl<F, C, S, W, Cl> core::marker::Unpin for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::marker::Unpin, Cl: core::marker::Unpin, S: core::marker::Unpin, W: core::marker::Unpin, C: core::marker::Unpin
-impl<F, C, S, W, Cl> core::marker::UnsafeUnpin for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::marker::UnsafeUnpin, Cl: core::marker::UnsafeUnpin, S: core::marker::UnsafeUnpin, W: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin
-impl<F, C, S, W, Cl> core::panic::unwind_safe::RefUnwindSafe for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe
-impl<F, C, S, W, Cl> core::panic::unwind_safe::UnwindSafe for relentless::AsyncRetry<F, C, S, W, Cl> where F: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::AsyncRun<F, C, S, W, Cl> where F: relentless::Operation<relentless::Async>, Cl: relentless::clock::AsyncClock
 impl<'__pin, F, C, S, W, Cl> core::marker::Unpin for relentless::AsyncRun<F, C, S, W, Cl> where pin_project_lite::__private::PinnedFieldsOf<__Origin<'__pin, F, C, S, W, Cl>>: core::marker::Unpin, F: relentless::Operation<relentless::Async>, Cl: relentless::clock::AsyncClock
 impl<F, C, S, W, Cl, O> core::future::future::Future for relentless::AsyncRun<F, C, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock
@@ -1023,27 +1002,30 @@ impl<Inner> core::marker::Sync for relentless::DropStats<Inner> where Inner: cor
 impl<Inner> core::marker::UnsafeUnpin for relentless::DropStats<Inner> where Inner: core::marker::UnsafeUnpin
 impl<Inner> core::panic::unwind_safe::RefUnwindSafe for relentless::DropStats<Inner> where Inner: core::panic::unwind_safe::RefUnwindSafe
 impl<Inner> core::panic::unwind_safe::UnwindSafe for relentless::DropStats<Inner> where Inner: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::Retry<F, C, S, W, Cl>
-impl<F, C, S, W, Cl, O> relentless::Retry<F, C, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock
-pub fn relentless::Retry<F, C, S, W, Cl>::call(self) -> core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>
-pub fn relentless::Retry<F, C, S, W, Cl>::call_with_stats(self) -> (core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>, relentless::RetryStats)
-impl<F, C, S, W, Cl> relentless::Retry<F, C, S, W, Cl>
-pub fn relentless::Retry<F, C, S, W, Cl>::clock<NewClock>(self, clock: NewClock) -> relentless::Retry<F, C, S, W, NewClock>
-pub fn relentless::Retry<F, C, S, W, Cl>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::Retry<F, relentless::ClosureClassifier<NewC>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::IntoDecision<O>
-pub fn relentless::Retry<F, C, S, W, Cl>::stop<NewStop>(self, stop: NewStop) -> relentless::Retry<F, C, NewStop, W, Cl>
-pub fn relentless::Retry<F, C, S, W, Cl>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::Retry<F, C, S, W, Cl>::until<T, E, P>(self, done: P) -> relentless::Retry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&T) -> bool
-pub fn relentless::Retry<F, C, S, W, Cl>::wait<NewWait>(self, wait: NewWait) -> relentless::Retry<F, C, S, NewWait, Cl>
-pub fn relentless::Retry<F, C, S, W, Cl>::when<T, E, P>(self, retryable: P) -> relentless::Retry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&E) -> bool
-impl<F, C, S, W, Cl> core::fmt::Debug for relentless::Retry<F, C, S, W, Cl>
-pub fn relentless::Retry<F, C, S, W, Cl>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<F, C, S, W, Cl> core::marker::Freeze for relentless::Retry<F, C, S, W, Cl> where F: core::marker::Freeze, Cl: core::marker::Freeze, S: core::marker::Freeze, W: core::marker::Freeze, C: core::marker::Freeze
-impl<F, C, S, W, Cl> core::marker::Send for relentless::Retry<F, C, S, W, Cl> where F: core::marker::Send, Cl: core::marker::Send, S: core::marker::Send, W: core::marker::Send, C: core::marker::Send
-impl<F, C, S, W, Cl> core::marker::Sync for relentless::Retry<F, C, S, W, Cl> where F: core::marker::Sync, Cl: core::marker::Sync, S: core::marker::Sync, W: core::marker::Sync, C: core::marker::Sync
-impl<F, C, S, W, Cl> core::marker::Unpin for relentless::Retry<F, C, S, W, Cl> where F: core::marker::Unpin, Cl: core::marker::Unpin, S: core::marker::Unpin, W: core::marker::Unpin, C: core::marker::Unpin
-impl<F, C, S, W, Cl> core::marker::UnsafeUnpin for relentless::Retry<F, C, S, W, Cl> where F: core::marker::UnsafeUnpin, Cl: core::marker::UnsafeUnpin, S: core::marker::UnsafeUnpin, W: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin
-impl<F, C, S, W, Cl> core::panic::unwind_safe::RefUnwindSafe for relentless::Retry<F, C, S, W, Cl> where F: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe
-impl<F, C, S, W, Cl> core::panic::unwind_safe::UnwindSafe for relentless::Retry<F, C, S, W, Cl> where F: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe
+pub struct relentless::Retry<M, F, C, S, W, Cl>
+impl<F, C, S, W, Cl, O> relentless::Retry<relentless::Async, F, C, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::AsyncClock
+pub fn relentless::Retry<relentless::Async, F, C, S, W, Cl>::call(self) -> relentless::DropStats<relentless::AsyncRun<F, C, S, W, Cl>>
+pub fn relentless::Retry<relentless::Async, F, C, S, W, Cl>::call_with_stats(self) -> relentless::AsyncRun<F, C, S, W, Cl>
+impl<F, C, S, W, Cl, O> relentless::Retry<relentless::Blocking, F, C, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = O>, C: relentless::Decide<O>, S: relentless::stop::Stop, W: relentless::wait::Wait, Cl: relentless::clock::SyncClock
+pub fn relentless::Retry<relentless::Blocking, F, C, S, W, Cl>::call(self) -> core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>
+pub fn relentless::Retry<relentless::Blocking, F, C, S, W, Cl>::call_with_stats(self) -> (core::result::Result<<C as relentless::Decide>::R, relentless::RetryError<<C as relentless::Decide>::A, O>>, relentless::RetryStats)
+impl<M, F, C, S, W, Cl> relentless::Retry<M, F, C, S, W, Cl>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::clock<NewClock>(self, clock: NewClock) -> relentless::Retry<M, F, C, S, W, NewClock>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::Retry<M, F, relentless::ClosureClassifier<NewC>, S, W, Cl> where F: relentless::Operation<M, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::IntoDecision<O>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::stop<NewStop>(self, stop: NewStop) -> relentless::Retry<M, F, C, NewStop, W, Cl>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::timeout(self, dur: core::time::Duration) -> Self
+pub fn relentless::Retry<M, F, C, S, W, Cl>::until<T, E, P>(self, done: P) -> relentless::Retry<M, F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<M, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&T) -> bool
+pub fn relentless::Retry<M, F, C, S, W, Cl>::wait<NewWait>(self, wait: NewWait) -> relentless::Retry<M, F, C, S, NewWait, Cl>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::when<T, E, P>(self, retryable: P) -> relentless::Retry<M, F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<M, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&E) -> bool
+impl<M, F, C, S, W, Cl> core::fmt::Debug for relentless::Retry<M, F, C, S, W, Cl>
+pub fn relentless::Retry<M, F, C, S, W, Cl>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<M, F, C, S, W, Cl> core::marker::Freeze for relentless::Retry<M, F, C, S, W, Cl> where F: core::marker::Freeze, Cl: core::marker::Freeze, S: core::marker::Freeze, W: core::marker::Freeze, C: core::marker::Freeze
+impl<M, F, C, S, W, Cl> core::marker::Send for relentless::Retry<M, F, C, S, W, Cl> where F: core::marker::Send, Cl: core::marker::Send, S: core::marker::Send, W: core::marker::Send, C: core::marker::Send, M: core::marker::Send
+impl<M, F, C, S, W, Cl> core::marker::Sync for relentless::Retry<M, F, C, S, W, Cl> where F: core::marker::Sync, Cl: core::marker::Sync, S: core::marker::Sync, W: core::marker::Sync, C: core::marker::Sync, M: core::marker::Sync
+impl<M, F, C, S, W, Cl> core::marker::Unpin for relentless::Retry<M, F, C, S, W, Cl> where F: core::marker::Unpin, Cl: core::marker::Unpin, S: core::marker::Unpin, W: core::marker::Unpin, C: core::marker::Unpin, M: core::marker::Unpin
+impl<M, F, C, S, W, Cl> core::marker::UnsafeUnpin for relentless::Retry<M, F, C, S, W, Cl> where F: core::marker::UnsafeUnpin, Cl: core::marker::UnsafeUnpin, S: core::marker::UnsafeUnpin, W: core::marker::UnsafeUnpin, C: core::marker::UnsafeUnpin
+impl<M, F, C, S, W, Cl> core::panic::unwind_safe::RefUnwindSafe for relentless::Retry<M, F, C, S, W, Cl> where F: core::panic::unwind_safe::RefUnwindSafe, Cl: core::panic::unwind_safe::RefUnwindSafe, S: core::panic::unwind_safe::RefUnwindSafe, W: core::panic::unwind_safe::RefUnwindSafe, C: core::panic::unwind_safe::RefUnwindSafe, M: core::panic::unwind_safe::RefUnwindSafe
+impl<M, F, C, S, W, Cl> core::panic::unwind_safe::UnwindSafe for relentless::Retry<M, F, C, S, W, Cl> where F: core::panic::unwind_safe::UnwindSafe, Cl: core::panic::unwind_safe::UnwindSafe, S: core::panic::unwind_safe::UnwindSafe, W: core::panic::unwind_safe::UnwindSafe, C: core::panic::unwind_safe::UnwindSafe, M: core::panic::unwind_safe::UnwindSafe
 pub struct relentless::RetryPolicy<S, W, C>
 impl relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::DefaultClassifier>
 pub fn relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::DefaultClassifier>::new() -> Self
@@ -1051,8 +1033,8 @@ impl<S, W, C> relentless::RetryPolicy<S, W, C>
 pub fn relentless::RetryPolicy<S, W, C>::boxed(self) -> relentless::RetryPolicy<alloc::boxed::Box<(dyn relentless::stop::Stop + core::marker::Send + 'static)>, alloc::boxed::Box<(dyn relentless::wait::Wait + core::marker::Send + 'static)>, C> where S: relentless::stop::Stop + core::marker::Send + 'static, W: relentless::wait::Wait + core::marker::Send + 'static
 pub fn relentless::RetryPolicy<S, W, C>::boxed_local(self) -> relentless::RetryPolicy<alloc::boxed::Box<(dyn relentless::stop::Stop + 'static)>, alloc::boxed::Box<(dyn relentless::wait::Wait + 'static)>, C> where S: relentless::stop::Stop + 'static, W: relentless::wait::Wait + 'static
 pub fn relentless::RetryPolicy<S, W, C>::decide<NewC>(self, classifier: NewC) -> relentless::RetryPolicy<S, W, relentless::ClosureClassifier<NewC>>
-pub fn relentless::RetryPolicy<S, W, C>::retry<F, O>(&self, op: F) -> relentless::Retry<F, &C, &S, &W, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> O
-pub fn relentless::RetryPolicy<S, W, C>::retry_async<F, Fut, O>(&self, op: F) -> relentless::AsyncRetry<F, &C, &S, &W, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
+pub fn relentless::RetryPolicy<S, W, C>::retry<F, O>(&self, op: F) -> relentless::Retry<relentless::Blocking, F, &C, &S, &W, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> O
+pub fn relentless::RetryPolicy<S, W, C>::retry_async<F, Fut, O>(&self, op: F) -> relentless::Retry<relentless::Async, F, &C, &S, &W, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
 pub fn relentless::RetryPolicy<S, W, C>::stop<NewStop>(self, stop: NewStop) -> relentless::RetryPolicy<NewStop, W, C>
 pub fn relentless::RetryPolicy<S, W, C>::timeout(self, dur: core::time::Duration) -> Self
 pub fn relentless::RetryPolicy<S, W, C>::until<P>(self, done: P) -> relentless::RetryPolicy<S, W, relentless::Until<P>>
@@ -1387,6 +1369,6 @@ pub fn alloc::boxed::Box<W>::equal_jitter(self) -> relentless::wait::Jittered<Se
 pub fn alloc::boxed::Box<W>::full_jitter(self) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> relentless::wait::Jittered<Self> where Self: core::marker::Sized
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
-pub fn relentless::retry<F, O>(op: F) -> relentless::Retry<F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> O
-pub fn relentless::retry_async<F, Fut, O>(op: F) -> relentless::AsyncRetry<F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
+pub fn relentless::retry<F, O>(op: F) -> relentless::Retry<relentless::Blocking, F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> O
+pub fn relentless::retry_async<F, Fut, O>(op: F) -> relentless::Retry<relentless::Async, F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
 pub type relentless::RetryResult<T, E> = core::result::Result<T, relentless::RetryError<E, core::result::Result<T, E>>>

@@ -47,12 +47,14 @@ changing code.
   and returns either `Step::Done` (terminates) or `Step::Continue` (next
   backoff). All classify → stop → wait → exit transitions and stats accounting
   live here once, so this is where correctness changes belong.
-- Two thin drivers wrap that core and differ only in how they invoke the
+- One builder, `Retry<M, …>` in [src/engine/builder.rs](/src/engine/builder.rs),
+  holds every setter once for both modes (`M = Blocking | Async`). Two thin
+  drivers add the per-mode `.call()` and differ only in how they invoke the
   operation and how they sleep: [src/engine/sync_engine.rs](/src/engine/sync_engine.rs)
-  `Retry::run` (sync, blocks on `clock.wait`; entry point `retry`)
-  and [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
-  (async `Phase` state machine, polls a `wait_async` future;
-  entry point `retry_async`). When you touch driver-only concerns — the sleep, the poll
+  `Retry::run` (blocks on `clock.wait`; entry point `retry`) and
+  [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
+  (async `Phase` state machine, polls a `wait_async` future; entry point
+  `retry_async`). When you touch driver-only concerns — the sleep, the poll
   machine, when the clock is read — edit both in lockstep; core changes touch
   `step` alone.
 - The core and drivers share these building blocks:
@@ -67,8 +69,8 @@ changing code.
   [tests/parity.rs](/tests/parity.rs) (needs `alloc`, so it runs in any default
   or `alloc`-enabled run, including bare `just test`). When you change
   cancellation, stats, or type-state ergonomics, extend a parity scenario for
-  the new behavior and audit the builder methods in both driver files for
-  surface/docs drift the suite cannot see.
+  the new behavior and audit the two terminal-method blocks (`call`,
+  `call_with_stats`) for docs drift the suite cannot see.
 - Verify feature claims explicitly. Prefer the repo's `just` targets over ad hoc
   `cargo` commands. The fastest useful checks are `just test`,
   `just test-no-default`, `just check-no-std`, and `just check-wasm`.

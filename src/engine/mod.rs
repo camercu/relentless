@@ -6,10 +6,11 @@
 //! [`RetryState`](crate::RetryState), and drives retries with a
 //! [`Decide`](crate::Decide) classifier that consumes each outcome by value.
 //!
-//! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full
-//! classifier surface — `.decide`/`.when`/`.until`, stats, and timeout.
+//! One builder, [`Retry`], serves both modes; its [`Blocking`] or [`Async`]
+//! marker selects the sync or async `.call()`.
 
 mod async_engine;
+mod builder;
 mod elapsed;
 mod error;
 mod op;
@@ -18,9 +19,10 @@ mod step;
 mod sync_engine;
 mod termination;
 
-pub use async_engine::{AsyncRetry, AsyncRun, DropStats, retry_async};
+pub use async_engine::{AsyncRun, DropStats, retry_async};
+pub use builder::Retry;
 pub use error::{RetryError, RetryResult};
 pub use op::{Async, Attempt, Blocking, Operation};
 pub use stats::RetryStats;
-pub use sync_engine::{Retry, retry};
+pub use sync_engine::retry;
 pub use termination::StopReason;

@@ -706,15 +706,17 @@ story; it carries through every strategy combinator unchanged.
 
 ## 6. Execution model
 
-`RetryPolicy::retry(op)` borrows `&self` and returns a `Retry` builder that
-holds the policy's stop, wait, and classifier as shared references. The
-operation receives `RetryState` by value on each invocation.
-`RetryPolicy::retry_async(op)` is the async twin, returning an `AsyncRetry`
-builder whose operation returns a future.
+`RetryPolicy::retry(op)` borrows `&self` and returns a `Retry<Blocking, …>`
+builder that holds the policy's stop, wait, and classifier as shared
+references. The operation receives `RetryState` by value on each invocation.
+`RetryPolicy::retry_async(op)` is the async twin, returning a
+`Retry<Async, …>` builder whose operation returns a future.
 
-`Retry` and `AsyncRetry` are the single builder types for every entry path: the
-policy path starts from borrowed strategies, and the free-function path owns
-them. Both expose the full surface — strategy overrides
+`Retry<M, F, C, S, W, Cl>` is the single builder type for every entry path and
+both modes. The mode marker `M` (`Blocking` or `Async`) is fixed by the entry
+point and selects which `.call()` exists. The policy path starts from borrowed
+strategies, and the free-function path owns them. Every builder exposes the
+full surface — strategy overrides
 (`.stop`/`.wait`/`.when`/`.until`/`.decide`), `.clock`, `.timeout`,
 `.call`, and `.call_with_stats`. A strategy override on a policy-borrowed builder
 replaces the borrowed slot for that call only, leaving the policy unchanged.
@@ -735,11 +737,11 @@ classifier (retry on any `Err`).
 ```rust
 /// Sync retry with default configuration; the operation may return any
 /// outcome `O` (the default classifier requires `O: Outcome` at `.call()`).
-pub fn retry<F, O>(op: F) -> Retry<...>
+pub fn retry<F, O>(op: F) -> Retry<Blocking, ...>
 where F: FnMut(RetryState) -> O;
 
 /// Async retry with default configuration.
-pub fn retry_async<F, Fut, O>(op: F) -> AsyncRetry<...>
+pub fn retry_async<F, Fut, O>(op: F) -> Retry<Async, ...>
 where F: FnMut(RetryState) -> Fut, Fut: Future<Output = O>;
 ```
 
@@ -755,13 +757,14 @@ no-argument operation ignores the state: `retry(|_| op())`,
 
 ### 6.3 Builder method signatures
 
-The `Retry` and `AsyncRetry` builders are generic over the operation `F`, the
-classifier `C`, `S: Stop`, `W: Wait`, and a clock (`SyncClock` for sync, `AsyncClock` for async). At `.call()` the classifier
+The `Retry` builder is generic over the mode `M`, the operation `F`, the
+classifier `C`, `S: Stop`, `W: Wait`, and a clock (`SyncClock` for `Blocking`,
+`AsyncClock` for `Async`). Each setter is defined once for both modes. At `.call()` the classifier
 must satisfy `C: Decide<O>` for the operation's outcome type `O`.
 
 #### Strategy overrides
 
-**6.3.1** Strategy overrides are available on every `Retry` / `AsyncRetry`
+**6.3.1** Strategy overrides are available on every `Retry`
 builder, whether it owns its strategies (free-function path) or
 borrows them from a policy. On a policy-borrowed builder an override replaces
 the borrowed slot with an owned value for that call only.
@@ -842,10 +845,10 @@ nowhere, so the bound rejects it at compile time).
 
 Terminal execution:
 
-- **6.5.2** `AsyncRetry::call` consumes the builder and returns a future with
+- **6.5.2** The async `Retry::call` consumes the builder and returns a future with
   `Output = Result<R, RetryError<A, O>>` (`RetryResult<T, E>` on the `Result`
   path). The builder itself does not implement `Future`/`IntoFuture`.
-- **6.5.3** `AsyncRetry::call_with_stats` returns a future with
+- **6.5.3** The async `Retry::call_with_stats` returns a future with
   `Output = (Result<R, RetryError<A, O>>, RetryStats)`.
 
 **6.5.4** Both are terminal: they consume the builder.
@@ -983,7 +986,7 @@ e.is_transient())`, non-transient cancel errors terminate immediately as
 
 ## 10. Thread safety
 
-Async execution types (`AsyncRetry`, `AsyncRun`) are `Send` when all of the
+Async execution types (`Retry<Async, …>`, `AsyncRun`) are `Send` when all of the
 following are `Send`:
 
 - the operation closure
@@ -1010,8 +1013,8 @@ bound is required on any execution type because execution is driven by a single
 owner (`.call()` for sync, `Future::poll()` for async).
 
 **10.3** The crate includes compile-time tests asserting that `RetryPolicy` with default
-type parameters is `Send + Sync`, that `AsyncRetry` is `Send` when all
-components are `Send`, and that `Retry` is `Send` when all
+type parameters is `Send + Sync`, that `Retry<Async, …>` is `Send` when all
+components are `Send`, and that `Retry<Blocking, …>` is `Send` when all
 components are `Send`.
 
 **10.4** `Jittered<W>` is `Send + Sync` when `W` is: its PRNG state is a single
@@ -1265,7 +1268,7 @@ Types:
 - `RetryError`, `RetryResult`
 - `RetryStats`, `StopReason`
 - `RetryState`
-- `Retry` (sync builder), `AsyncRetry` (async builder), `AsyncRun`,
+- `Retry` (the builder, both modes), `AsyncRun`,
   `DropStats` (the async builder futures)
 - classifier vocabulary: `Decision`, `Verdict`, `DefaultClassifier`,
   `ClosureClassifier`, `When`, `Until`
@@ -1386,9 +1389,9 @@ enforced by `clippy::missing_panics_doc` (the crate runs clippy pedantic under
 `-D warnings`); the lint ignores `debug_assert!` and does not look below the
 public function, so 15.2, 15.3 and 15.4 are all maintained by hand — verified by
 deleting each section and confirming the lint stays silent. Their sections live
-on `RetryState::for_attempt` (15.3); on `AsyncRetry::call`,
-`AsyncRetry::call_with_stats` and `AsyncRun` (15.2); and on `Retry::call`,
-`Retry::call_with_stats`, both async terminal methods and `AsyncRun` (15.4).
+on `RetryState::for_attempt` (15.3); on the async `Retry::call`,
+`Retry::call_with_stats` and `AsyncRun` (15.2); and on all four terminal
+methods (blocking and async `call`, `call_with_stats`) and `AsyncRun` (15.4).
 
 ## 16. Compatibility guarantees
 

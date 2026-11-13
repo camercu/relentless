@@ -372,7 +372,7 @@ mod async_tests {
         let builder = retry_async(|_| ready(Ok::<i32, &str>(1))).clock(ReadyClock);
         let debug = format!("{builder:?}");
         // The builder Debug is opaque (finish_non_exhaustive).
-        assert!(debug.contains("AsyncRetry"));
+        assert!(debug.contains("Retry"));
     }
 }
 
