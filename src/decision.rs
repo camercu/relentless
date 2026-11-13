@@ -173,10 +173,10 @@ pub trait Decide<O>: sealed::SealedDecide {
     fn decide(&self, outcome: O) -> Verdict<Self::R, Self::A, O>;
 }
 
-/// A shared reference to a classifier is itself one, so a builder can borrow a
-/// classifier stored in a reusable [`RetryPolicy`](crate::RetryPolicy).
 impl<C: sealed::SealedDecide + ?Sized> sealed::SealedDecide for &C {}
 
+/// A shared reference to a classifier is itself one, so a builder can borrow a
+/// classifier stored in a reusable [`RetryPolicy`](crate::RetryPolicy).
 impl<O, C: Decide<O> + ?Sized> Decide<O> for &C {
     type R = C::R;
     type A = C::A;
