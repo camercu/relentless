@@ -859,9 +859,9 @@ the borrowed slot with an owned value for that call only.
 
 - **6.3.2** `.clock(c)` — injects the clock that supplies both elapsed time
   and the inter-attempt wait; bound `impl SyncClock` on sync builders and
-  `impl AsyncClock` on async builders. Available only while the builder still
-  carries the default clock type, so the clock cannot be set twice. Always
-  available, including `no_std` without `alloc`.
+  `impl AsyncClock` on async builders. Setting it again replaces the earlier
+  clock: the last call wins. Always available, including `no_std` without
+  `alloc`.
 - **6.3.3** (retired — the boxed-closure elapsed clock was superseded by
   `.clock(...)`; number retained as a tombstone so later numbering is stable)
 - `.timeout(dur: Duration)` — sets a wall-clock deadline for the entire retry
