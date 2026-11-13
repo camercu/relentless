@@ -668,7 +668,7 @@ Builder methods:
 
 **5.4** `.when(p)`, `.until(p)`, and `.decide(c)` all set the classifier slot
 (last-wins; they do not compose). `.when(p)` stores `When<P>`; `.until(p)` stores
-`Until<P>` (the inverse); `.decide(c)` stores `ClosureClassifier<C>`.
+`Until<P>`; `.decide(c)` stores `ClosureClassifier<C>`.
 
 > This follows the same type-level composition pattern as `StopAny`,
 > `WaitCapped`, and other combinator types. `When`/`Until`/`ClosureClassifier`
