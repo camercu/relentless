@@ -98,8 +98,9 @@ pub trait Clock {
     message = "`{Self}` cannot drive the synchronous retry engine",
     label = "not a `SyncClock`",
     note = "supply a clock with `.clock(...)` before `.call()` — e.g. \
-            `clock::VirtualClock` for tests; under `std` the default \
-            `SystemClock` already satisfies this"
+            `clock::VirtualClock` for tests; under `std` (except on \
+            `wasm32-unknown-unknown`) the default `SystemClock` already \
+            satisfies this"
 )]
 pub trait SyncClock: Clock {
     /// Waits for `dur`: blocks the thread on a real clock, or advances virtual

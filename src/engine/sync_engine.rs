@@ -25,8 +25,8 @@ type DefaultRetry<F> =
 /// The operation receives the [`RetryState`] (attempt number, elapsed time,
 /// previous delay); ignore it with `|_|`. Defaults: `stop::attempts(3)`,
 /// `wait::exponential(100ms)`, the default classifier, and
-/// [`SystemClock`]. In non-`std` builds `.clock(...)` must be set before
-/// `.call()`.
+/// [`SystemClock`]. Without `std`, and on `wasm32-unknown-unknown` (no OS
+/// clock), `.clock(...)` must be set before `.call()`.
 ///
 /// For an operation that returns a future, use
 /// [`retry_async`](crate::retry_async). Passed here, the future itself becomes

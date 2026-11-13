@@ -58,8 +58,9 @@ reference](https://docs.rs/relentless/latest/relentless/#feature-flags) for the
 full list. Async retry does not require `alloc`.
 
 A `no_std` **sync** retry supplies its own clock instead: none of those four
-adapters implements `SyncClock`, and `SystemClock` is `std`-gated, so an
-embedded caller implements `Clock + SyncClock` over its own tick source — a
+adapters implements `SyncClock`, and `SystemClock` needs `std` and an OS
+clock, so an embedded caller implements `Clock + SyncClock` over its own tick
+source — a
 delay source is board-specific and the crate does not guess. See [*Implementing
 your own
 clock*](https://docs.rs/relentless/latest/relentless/clock/index.html) for the
@@ -94,7 +95,8 @@ For full docs, see <https://docs.rs/relentless>. Behavior spec:
 [`examples/`](./examples).
 
 Sync `std` builds default to `clock::SystemClock` (wall time +
-`std::thread::sleep`), so the sync examples below omit `.clock(...)`.
+`std::thread::sleep`), so the sync examples below omit `.clock(...)`. The
+exception is `wasm32-unknown-unknown`, which has no OS clock: pass one there.
 
 ### 1) Retry with defaults
 
