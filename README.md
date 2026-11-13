@@ -77,8 +77,9 @@ The engine's one big idea: every completed outcome is sorted into a **verdict** 
   knob.
 - `.until(|v| …)` — retry until an `Ok` value satisfies the closure; every other
   outcome, `Err` included, retries. The polling knob.
-- Both closures take their parameter from the operation's output, so they need
-  no type annotation.
+- On `retry(op)`, both closures take their parameter from the operation's
+  output, so they need no type annotation. A standalone `RetryPolicy` has no
+  operation to infer from, so its closures do: `|e: &io::Error| …`.
 - `.decide(closure)` — the general three-way form. You return `Return` / `Retry`
   / `Abort` yourself, so *any* outcome type — a poll enum, a search state, a
   sought-after error — drives the loop directly, independent of `Result`.
