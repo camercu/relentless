@@ -162,6 +162,28 @@
 //! assert_eq!(result, Ok(()));
 //! ```
 //!
+//! Bound such a loop with [`stop::attempts`] only. With zero waits on a
+//! `VirtualClock`, elapsed time stays at zero, so [`stop::elapsed`] and
+//! [`.timeout()`](Retry::timeout) never fire and a loop bounded by them alone
+//! never ends.
+//!
+//! The async form borrows the clock, because `&VirtualClock` is the
+//! [`AsyncClock`]:
+//!
+//! ```
+//! # use core::time::Duration;
+//! # use relentless::clock::VirtualClock;
+//! # use relentless::{retry_async, stop, wait};
+//! # let poll = || async { Ok::<(), &str>(()) };
+//! let clock = VirtualClock::new();
+//! let future = retry_async(|_| poll())
+//!     .stop(stop::attempts(64))
+//!     .wait(wait::fixed(Duration::ZERO))
+//!     .clock(&clock)
+//!     .call();
+//! # drop(future);
+//! ```
+//!
 //! # Observing retries
 //!
 //! There are no hook callbacks: the operation and the result already carry
