@@ -338,7 +338,7 @@
 //! | `tokio-clock` | `clock::TokioClock` async clock adapter |
 //! | `embassy-clock` | `clock::EmbassyClock` async clock adapter |
 //! | `gloo-timers-clock` | `clock::GlooClock` async clock adapter (wasm32; needs a caller-supplied now-source) |
-//! | `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter |
+//! | `futures-timer-clock` | `clock::FuturesTimerClock` async clock adapter (not on `wasm32-unknown-unknown`) |
 //!
 //! Async retry does not require `alloc`. Sync `std` builds default to
 //! [`clock::SystemClock`], so `.clock(...)` is optional there.

@@ -12,7 +12,7 @@ unexport GIT_INDEX_FILE
 toml_files := "Cargo.toml deny.toml"
 no_std_target := "thumbv7m-none-eabi"
 wasm_target := "wasm32-unknown-unknown"
-wasm_features := "alloc,gloo-timers-clock"
+wasm_features := "alloc,gloo-timers-clock,futures-timer-clock"
 benchmark_target := "retry_hot_paths"
 warnings := "-D warnings"
 stable_toolchain := "+stable"

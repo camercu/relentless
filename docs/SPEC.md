@@ -1158,7 +1158,9 @@ each pairing a coherent `now()` source with that runtime's timer:
   any `Fn() -> Duration` including capturing closures), because wasm has no
   `std::time::Instant`
 - `clock::FuturesTimerClock` with `futures-timer-clock` —
-  `std::time::Instant` + `futures_timer::Delay`
+  `std::time::Instant` + `futures_timer::Delay`. Not on
+  `wasm32-unknown-unknown`, where `Instant::now` panics: there the type has
+  no constructor and implements no clock trait, so using it fails to compile
 
 All are constructed with `new()` (and `Default`) except `GlooClock`, whose
 now-source is explicit. Callers may always implement the clock traits for
