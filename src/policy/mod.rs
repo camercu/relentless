@@ -12,7 +12,6 @@ use crate::clock::SystemClock;
 use crate::compat::Box;
 use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, DefaultClassifier};
-use crate::defaults;
 use crate::engine::{AsyncRetry, Retry};
 use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
@@ -23,6 +22,12 @@ use crate::stop::StopAfterAttempts;
 use crate::wait::Wait;
 use crate::wait::WaitExponential;
 use core::future::Future;
+
+/// Attempts allowed by the default stop strategy.
+const DEFAULT_MAX_ATTEMPTS: u32 = 3;
+
+/// First inter-attempt delay of the default exponential backoff.
+const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
 
 /// Reusable retry configuration: a stop strategy, a wait strategy, and a
 /// classifier.
@@ -59,8 +64,8 @@ impl RetryPolicy<StopAfterAttempts, WaitExponential, DefaultClassifier> {
     #[must_use]
     pub fn new() -> Self {
         RetryPolicy {
-            stop: defaults::stop(),
-            wait: defaults::wait(),
+            stop: crate::stop::attempts(DEFAULT_MAX_ATTEMPTS),
+            wait: crate::wait::exponential(DEFAULT_INITIAL_WAIT),
             classifier: DefaultClassifier,
             timeout: None,
         }

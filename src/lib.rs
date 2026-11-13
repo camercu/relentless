@@ -304,7 +304,6 @@ extern crate alloc;
 extern crate std;
 
 mod compat;
-mod defaults;
 
 pub mod clock;
 mod decision;
