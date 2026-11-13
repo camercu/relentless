@@ -207,85 +207,6 @@ impl<C: relentless::clock::SyncClock + ?core::marker::Sized> relentless::clock::
 pub fn &C::wait(&self, dur: core::time::Duration)
 impl<C: relentless::clock::SyncClock> relentless::clock::SyncClock for relentless::clock::Recording<C>
 pub fn relentless::clock::Recording<C>::wait(&self, dur: core::time::Duration)
-pub mod relentless::predicate
-pub struct relentless::predicate::PredicateAnyError
-impl core::clone::Clone for relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::PredicateAnyError::clone(&self) -> relentless::predicate::PredicateAnyError
-impl core::fmt::Debug for relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::PredicateAnyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T, E> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::PredicateAnyError::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl core::marker::Freeze for relentless::predicate::PredicateAnyError
-impl core::marker::Send for relentless::predicate::PredicateAnyError
-impl core::marker::Sync for relentless::predicate::PredicateAnyError
-impl core::marker::Unpin for relentless::predicate::PredicateAnyError
-impl core::marker::UnsafeUnpin for relentless::predicate::PredicateAnyError
-impl core::panic::unwind_safe::RefUnwindSafe for relentless::predicate::PredicateAnyError
-impl core::panic::unwind_safe::UnwindSafe for relentless::predicate::PredicateAnyError
-pub struct relentless::predicate::PredicateError<F>
-impl<F: core::clone::Clone> core::clone::Clone for relentless::predicate::PredicateError<F>
-pub fn relentless::predicate::PredicateError<F>::clone(&self) -> relentless::predicate::PredicateError<F>
-impl<F: core::fmt::Debug> core::fmt::Debug for relentless::predicate::PredicateError<F>
-pub fn relentless::predicate::PredicateError<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateError<F> where F: core::ops::function::Fn(&E) -> bool
-pub fn relentless::predicate::PredicateError<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<F> core::marker::Freeze for relentless::predicate::PredicateError<F> where F: core::marker::Freeze
-impl<F> core::marker::Send for relentless::predicate::PredicateError<F> where F: core::marker::Send
-impl<F> core::marker::Sync for relentless::predicate::PredicateError<F> where F: core::marker::Sync
-impl<F> core::marker::Unpin for relentless::predicate::PredicateError<F> where F: core::marker::Unpin
-impl<F> core::marker::UnsafeUnpin for relentless::predicate::PredicateError<F> where F: core::marker::UnsafeUnpin
-impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::predicate::PredicateError<F> where F: core::panic::unwind_safe::RefUnwindSafe
-impl<F> core::panic::unwind_safe::UnwindSafe for relentless::predicate::PredicateError<F> where F: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::predicate::PredicateOk<F>
-impl<F: core::clone::Clone> core::clone::Clone for relentless::predicate::PredicateOk<F>
-pub fn relentless::predicate::PredicateOk<F>::clone(&self) -> relentless::predicate::PredicateOk<F>
-impl<F: core::fmt::Debug> core::fmt::Debug for relentless::predicate::PredicateOk<F>
-pub fn relentless::predicate::PredicateOk<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateOk<F> where F: core::ops::function::Fn(&T) -> bool
-pub fn relentless::predicate::PredicateOk<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<F> core::marker::Freeze for relentless::predicate::PredicateOk<F> where F: core::marker::Freeze
-impl<F> core::marker::Send for relentless::predicate::PredicateOk<F> where F: core::marker::Send
-impl<F> core::marker::Sync for relentless::predicate::PredicateOk<F> where F: core::marker::Sync
-impl<F> core::marker::Unpin for relentless::predicate::PredicateOk<F> where F: core::marker::Unpin
-impl<F> core::marker::UnsafeUnpin for relentless::predicate::PredicateOk<F> where F: core::marker::UnsafeUnpin
-impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::predicate::PredicateOk<F> where F: core::panic::unwind_safe::RefUnwindSafe
-impl<F> core::panic::unwind_safe::UnwindSafe for relentless::predicate::PredicateOk<F> where F: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::predicate::PredicateResult<F>
-impl<F: core::clone::Clone> core::clone::Clone for relentless::predicate::PredicateResult<F>
-pub fn relentless::predicate::PredicateResult<F>::clone(&self) -> relentless::predicate::PredicateResult<F>
-impl<F: core::fmt::Debug> core::fmt::Debug for relentless::predicate::PredicateResult<F>
-pub fn relentless::predicate::PredicateResult<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateResult<F> where F: core::ops::function::Fn(&core::result::Result<T, E>) -> bool
-pub fn relentless::predicate::PredicateResult<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<F> core::marker::Freeze for relentless::predicate::PredicateResult<F> where F: core::marker::Freeze
-impl<F> core::marker::Send for relentless::predicate::PredicateResult<F> where F: core::marker::Send
-impl<F> core::marker::Sync for relentless::predicate::PredicateResult<F> where F: core::marker::Sync
-impl<F> core::marker::Unpin for relentless::predicate::PredicateResult<F> where F: core::marker::Unpin
-impl<F> core::marker::UnsafeUnpin for relentless::predicate::PredicateResult<F> where F: core::marker::UnsafeUnpin
-impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::predicate::PredicateResult<F> where F: core::panic::unwind_safe::RefUnwindSafe
-impl<F> core::panic::unwind_safe::UnwindSafe for relentless::predicate::PredicateResult<F> where F: core::panic::unwind_safe::UnwindSafe
-pub trait relentless::predicate::Predicate<T, E>
-pub fn relentless::predicate::Predicate::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for F where F: core::ops::function::Fn(&core::result::Result<T, E>) -> bool
-pub fn F::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateError<F> where F: core::ops::function::Fn(&E) -> bool
-pub fn relentless::predicate::PredicateError<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateOk<F> where F: core::ops::function::Fn(&T) -> bool
-pub fn relentless::predicate::PredicateOk<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateResult<F> where F: core::ops::function::Fn(&core::result::Result<T, E>) -> bool
-pub fn relentless::predicate::PredicateResult<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + core::marker::Sync + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + core::marker::Sync + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::PredicateAnyError::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-pub fn relentless::predicate::any_error() -> relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::error<F>(matcher: F) -> relentless::predicate::PredicateError<F>
-pub fn relentless::predicate::ok<F>(matcher: F) -> relentless::predicate::PredicateOk<F>
-pub fn relentless::predicate::result<F>(matcher: F) -> relentless::predicate::PredicateResult<F>
 pub mod relentless::prelude
 pub trait relentless::prelude::AsyncClock: relentless::clock::Clock
 pub type relentless::prelude::AsyncClock::Wait: core::future::future::Future<Output = ()>
@@ -1032,9 +953,9 @@ pub fn relentless::AsyncRetry<F, C, S, W, Cl>::clock<NewClock>(self, clock: NewC
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::AsyncRetry<F, relentless::ClosureClassifier<NewC>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::IntoDecision<O>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::stop<NewStop>(self, stop: NewStop) -> relentless::AsyncRetry<F, C, NewStop, W, Cl>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::until<T, E, P>(self, predicate: P) -> relentless::AsyncRetry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
+pub fn relentless::AsyncRetry<F, C, S, W, Cl>::until<T, E, P>(self, done: P) -> relentless::AsyncRetry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&T) -> bool
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::wait<NewWait>(self, wait: NewWait) -> relentless::AsyncRetry<F, C, S, NewWait, Cl>
-pub fn relentless::AsyncRetry<F, C, S, W, Cl>::when<T, E, P>(self, predicate: P) -> relentless::AsyncRetry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
+pub fn relentless::AsyncRetry<F, C, S, W, Cl>::when<T, E, P>(self, retryable: P) -> relentless::AsyncRetry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Async, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&E) -> bool
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::with_stats(self) -> relentless::AsyncRetryWithStats<F, C, S, W, Cl>
 impl<F, C, S, W, Cl> core::fmt::Debug for relentless::AsyncRetry<F, C, S, W, Cl>
 pub fn relentless::AsyncRetry<F, C, S, W, Cl>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1130,9 +1051,9 @@ pub fn relentless::Retry<F, C, S, W, Cl>::clock<NewClock>(self, clock: NewClock)
 pub fn relentless::Retry<F, C, S, W, Cl>::decide<O, D, NewC>(self, classifier: NewC) -> relentless::Retry<F, relentless::ClosureClassifier<NewC>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = O>, NewC: core::ops::function::Fn(O) -> D, D: relentless::IntoDecision<O>
 pub fn relentless::Retry<F, C, S, W, Cl>::stop<NewStop>(self, stop: NewStop) -> relentless::Retry<F, C, NewStop, W, Cl>
 pub fn relentless::Retry<F, C, S, W, Cl>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::Retry<F, C, S, W, Cl>::until<T, E, P>(self, predicate: P) -> relentless::Retry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
+pub fn relentless::Retry<F, C, S, W, Cl>::until<T, E, P>(self, done: P) -> relentless::Retry<F, relentless::Until<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&T) -> bool
 pub fn relentless::Retry<F, C, S, W, Cl>::wait<NewWait>(self, wait: NewWait) -> relentless::Retry<F, C, S, NewWait, Cl>
-pub fn relentless::Retry<F, C, S, W, Cl>::when<T, E, P>(self, predicate: P) -> relentless::Retry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: relentless::predicate::Predicate<T, E>
+pub fn relentless::Retry<F, C, S, W, Cl>::when<T, E, P>(self, retryable: P) -> relentless::Retry<F, relentless::When<P>, S, W, Cl> where F: relentless::Operation<relentless::Blocking, Output = core::result::Result<T, E>>, P: core::ops::function::Fn(&E) -> bool
 pub fn relentless::Retry<F, C, S, W, Cl>::with_stats(self) -> relentless::RetryWithStats<F, C, S, W, Cl>
 impl<F, C, S, W, Cl> core::fmt::Debug for relentless::Retry<F, C, S, W, Cl>
 pub fn relentless::Retry<F, C, S, W, Cl>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1154,9 +1075,9 @@ pub fn relentless::RetryPolicy<S, W, C>::retry<F, O>(&self, op: F) -> relentless
 pub fn relentless::RetryPolicy<S, W, C>::retry_async<F, Fut, O>(&self, op: F) -> relentless::AsyncRetry<F, &C, &S, &W, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
 pub fn relentless::RetryPolicy<S, W, C>::stop<NewStop>(self, stop: NewStop) -> relentless::RetryPolicy<NewStop, W, C>
 pub fn relentless::RetryPolicy<S, W, C>::timeout(self, dur: core::time::Duration) -> Self
-pub fn relentless::RetryPolicy<S, W, C>::until<P>(self, predicate: P) -> relentless::RetryPolicy<S, W, relentless::Until<P>>
+pub fn relentless::RetryPolicy<S, W, C>::until<P>(self, done: P) -> relentless::RetryPolicy<S, W, relentless::Until<P>>
 pub fn relentless::RetryPolicy<S, W, C>::wait<NewWait>(self, wait: NewWait) -> relentless::RetryPolicy<S, NewWait, C>
-pub fn relentless::RetryPolicy<S, W, C>::when<P>(self, predicate: P) -> relentless::RetryPolicy<S, W, relentless::When<P>>
+pub fn relentless::RetryPolicy<S, W, C>::when<P>(self, retryable: P) -> relentless::RetryPolicy<S, W, relentless::When<P>>
 impl core::default::Default for relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::DefaultClassifier>
 pub fn relentless::RetryPolicy<relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::DefaultClassifier>::default() -> Self
 impl<S, W, C> core::marker::StructuralPartialEq for relentless::RetryPolicy<S, W, C>
@@ -1246,46 +1167,46 @@ impl<F> core::marker::Unpin for relentless::StatelessOp<F> where F: core::marker
 impl<F> core::marker::UnsafeUnpin for relentless::StatelessOp<F> where F: core::marker::UnsafeUnpin
 impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::StatelessOp<F> where F: core::panic::unwind_safe::RefUnwindSafe
 impl<F> core::panic::unwind_safe::UnwindSafe for relentless::StatelessOp<F> where F: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::Until<P>(_)
-impl<P: core::clone::Clone> core::clone::Clone for relentless::Until<P>
-pub fn relentless::Until<P>::clone(&self) -> relentless::Until<P>
-impl<P: core::cmp::Eq> core::cmp::Eq for relentless::Until<P>
-impl<P: core::cmp::PartialEq> core::cmp::PartialEq for relentless::Until<P>
-pub fn relentless::Until<P>::eq(&self, other: &relentless::Until<P>) -> bool
-impl<P: core::fmt::Debug> core::fmt::Debug for relentless::Until<P>
-pub fn relentless::Until<P>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<P> core::marker::StructuralPartialEq for relentless::Until<P>
-impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::Until<P> where P: relentless::predicate::Predicate<T, E>
-pub type relentless::Until<P>::A = E
-pub type relentless::Until<P>::R = T
-pub fn relentless::Until<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
-impl<P> core::marker::Freeze for relentless::Until<P> where P: core::marker::Freeze
-impl<P> core::marker::Send for relentless::Until<P> where P: core::marker::Send
-impl<P> core::marker::Sync for relentless::Until<P> where P: core::marker::Sync
-impl<P> core::marker::Unpin for relentless::Until<P> where P: core::marker::Unpin
-impl<P> core::marker::UnsafeUnpin for relentless::Until<P> where P: core::marker::UnsafeUnpin
-impl<P> core::panic::unwind_safe::RefUnwindSafe for relentless::Until<P> where P: core::panic::unwind_safe::RefUnwindSafe
-impl<P> core::panic::unwind_safe::UnwindSafe for relentless::Until<P> where P: core::panic::unwind_safe::UnwindSafe
-pub struct relentless::When<P>(_)
-impl<P: core::clone::Clone> core::clone::Clone for relentless::When<P>
-pub fn relentless::When<P>::clone(&self) -> relentless::When<P>
-impl<P: core::cmp::Eq> core::cmp::Eq for relentless::When<P>
-impl<P: core::cmp::PartialEq> core::cmp::PartialEq for relentless::When<P>
-pub fn relentless::When<P>::eq(&self, other: &relentless::When<P>) -> bool
-impl<P: core::fmt::Debug> core::fmt::Debug for relentless::When<P>
-pub fn relentless::When<P>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<P> core::marker::StructuralPartialEq for relentless::When<P>
-impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::When<P> where P: relentless::predicate::Predicate<T, E>
-pub type relentless::When<P>::A = E
-pub type relentless::When<P>::R = T
-pub fn relentless::When<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
-impl<P> core::marker::Freeze for relentless::When<P> where P: core::marker::Freeze
-impl<P> core::marker::Send for relentless::When<P> where P: core::marker::Send
-impl<P> core::marker::Sync for relentless::When<P> where P: core::marker::Sync
-impl<P> core::marker::Unpin for relentless::When<P> where P: core::marker::Unpin
-impl<P> core::marker::UnsafeUnpin for relentless::When<P> where P: core::marker::UnsafeUnpin
-impl<P> core::panic::unwind_safe::RefUnwindSafe for relentless::When<P> where P: core::panic::unwind_safe::RefUnwindSafe
-impl<P> core::panic::unwind_safe::UnwindSafe for relentless::When<P> where P: core::panic::unwind_safe::UnwindSafe
+pub struct relentless::Until<F>(_)
+impl<F: core::clone::Clone> core::clone::Clone for relentless::Until<F>
+pub fn relentless::Until<F>::clone(&self) -> relentless::Until<F>
+impl<F: core::cmp::Eq> core::cmp::Eq for relentless::Until<F>
+impl<F: core::cmp::PartialEq> core::cmp::PartialEq for relentless::Until<F>
+pub fn relentless::Until<F>::eq(&self, other: &relentless::Until<F>) -> bool
+impl<F: core::fmt::Debug> core::fmt::Debug for relentless::Until<F>
+pub fn relentless::Until<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<F> core::marker::StructuralPartialEq for relentless::Until<F>
+impl<T, E, F> relentless::Decide<core::result::Result<T, E>> for relentless::Until<F> where F: core::ops::function::Fn(&T) -> bool
+pub type relentless::Until<F>::A = E
+pub type relentless::Until<F>::R = T
+pub fn relentless::Until<F>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
+impl<F> core::marker::Freeze for relentless::Until<F> where F: core::marker::Freeze
+impl<F> core::marker::Send for relentless::Until<F> where F: core::marker::Send
+impl<F> core::marker::Sync for relentless::Until<F> where F: core::marker::Sync
+impl<F> core::marker::Unpin for relentless::Until<F> where F: core::marker::Unpin
+impl<F> core::marker::UnsafeUnpin for relentless::Until<F> where F: core::marker::UnsafeUnpin
+impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::Until<F> where F: core::panic::unwind_safe::RefUnwindSafe
+impl<F> core::panic::unwind_safe::UnwindSafe for relentless::Until<F> where F: core::panic::unwind_safe::UnwindSafe
+pub struct relentless::When<F>(_)
+impl<F: core::clone::Clone> core::clone::Clone for relentless::When<F>
+pub fn relentless::When<F>::clone(&self) -> relentless::When<F>
+impl<F: core::cmp::Eq> core::cmp::Eq for relentless::When<F>
+impl<F: core::cmp::PartialEq> core::cmp::PartialEq for relentless::When<F>
+pub fn relentless::When<F>::eq(&self, other: &relentless::When<F>) -> bool
+impl<F: core::fmt::Debug> core::fmt::Debug for relentless::When<F>
+pub fn relentless::When<F>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<F> core::marker::StructuralPartialEq for relentless::When<F>
+impl<T, E, F> relentless::Decide<core::result::Result<T, E>> for relentless::When<F> where F: core::ops::function::Fn(&E) -> bool
+pub type relentless::When<F>::A = E
+pub type relentless::When<F>::R = T
+pub fn relentless::When<F>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
+impl<F> core::marker::Freeze for relentless::When<F> where F: core::marker::Freeze
+impl<F> core::marker::Send for relentless::When<F> where F: core::marker::Send
+impl<F> core::marker::Sync for relentless::When<F> where F: core::marker::Sync
+impl<F> core::marker::Unpin for relentless::When<F> where F: core::marker::Unpin
+impl<F> core::marker::UnsafeUnpin for relentless::When<F> where F: core::marker::UnsafeUnpin
+impl<F> core::panic::unwind_safe::RefUnwindSafe for relentless::When<F> where F: core::panic::unwind_safe::RefUnwindSafe
+impl<F> core::panic::unwind_safe::UnwindSafe for relentless::When<F> where F: core::panic::unwind_safe::UnwindSafe
 pub trait relentless::AsyncClock: relentless::clock::Clock
 pub type relentless::AsyncClock::Wait: core::future::future::Future<Output = ()>
 pub fn relentless::AsyncClock::wait_async(&self, dur: core::time::Duration) -> Self::Wait
@@ -1352,14 +1273,14 @@ impl<O: relentless::Outcome> relentless::Decide<O> for relentless::DefaultClassi
 pub type relentless::DefaultClassifier::A = <O as relentless::Outcome>::Abort
 pub type relentless::DefaultClassifier::R = <O as relentless::Outcome>::Return
 pub fn relentless::DefaultClassifier::decide(&self, outcome: O) -> relentless::Verdict<<O as relentless::Outcome>::Return, <O as relentless::Outcome>::Abort, O>
-impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::Until<P> where P: relentless::predicate::Predicate<T, E>
-pub type relentless::Until<P>::A = E
-pub type relentless::Until<P>::R = T
-pub fn relentless::Until<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
-impl<T, E, P> relentless::Decide<core::result::Result<T, E>> for relentless::When<P> where P: relentless::predicate::Predicate<T, E>
-pub type relentless::When<P>::A = E
-pub type relentless::When<P>::R = T
-pub fn relentless::When<P>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
+impl<T, E, F> relentless::Decide<core::result::Result<T, E>> for relentless::Until<F> where F: core::ops::function::Fn(&T) -> bool
+pub type relentless::Until<F>::A = E
+pub type relentless::Until<F>::R = T
+pub fn relentless::Until<F>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
+impl<T, E, F> relentless::Decide<core::result::Result<T, E>> for relentless::When<F> where F: core::ops::function::Fn(&E) -> bool
+pub type relentless::When<F>::A = E
+pub type relentless::When<F>::R = T
+pub fn relentless::When<F>::decide(&self, outcome: core::result::Result<T, E>) -> relentless::Verdict<T, E, core::result::Result<T, E>>
 pub trait relentless::IntoDecision<O>: relentless::decision::sealed::Sealed
 pub type relentless::IntoDecision::A
 pub type relentless::IntoDecision::R
@@ -1400,24 +1321,6 @@ impl<T> relentless::Outcome for core::option::Option<T>
 pub type core::option::Option<T>::Abort = core::convert::Infallible
 pub type core::option::Option<T>::Return = T
 pub fn core::option::Option<T>::classify(self) -> relentless::Verdict<T, core::convert::Infallible, core::option::Option<T>>
-pub trait relentless::Predicate<T, E>
-pub fn relentless::Predicate::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for F where F: core::ops::function::Fn(&core::result::Result<T, E>) -> bool
-pub fn F::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateError<F> where F: core::ops::function::Fn(&E) -> bool
-pub fn relentless::predicate::PredicateError<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateOk<F> where F: core::ops::function::Fn(&T) -> bool
-pub fn relentless::predicate::PredicateOk<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E, F> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateResult<F> where F: core::ops::function::Fn(&core::result::Result<T, E>) -> bool
-pub fn relentless::predicate::PredicateResult<F>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + core::marker::Sync + '_)>
-pub fn alloc::boxed::Box<(dyn relentless::predicate::Predicate<T, E> + core::marker::Send + core::marker::Sync + '_)>::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
-impl<T, E> relentless::predicate::Predicate<T, E> for relentless::predicate::PredicateAnyError
-pub fn relentless::predicate::PredicateAnyError::should_retry(&self, outcome: &core::result::Result<T, E>) -> bool
 pub trait relentless::RetryExt<O>: core::ops::function::FnMut() -> O + core::marker::Sized
 pub fn relentless::RetryExt::retry(self) -> relentless::Retry<relentless::StatelessOp<Self>, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock>
 impl<O, F: core::ops::function::FnMut() -> O> relentless::RetryExt<O> for F

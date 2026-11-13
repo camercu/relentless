@@ -24,8 +24,8 @@ use std::rc::Rc;
 use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
 use relentless::{
-    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, Wait,
-    predicate, retry, stop, wait,
+    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, Wait, retry,
+    stop, wait,
 };
 
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
@@ -166,7 +166,7 @@ fn retry_ext_condition_not_met_for_ok_exhaustion() {
     let result = (|| Ok::<i32, &str>(-1))
         .retry()
         .stop(stop::attempts(2))
-        .when(predicate::ok(|_value: &i32| true))
+        .until(|_value: &i32| false)
         .clock(VirtualClock::new())
         .call();
 
@@ -181,7 +181,7 @@ fn retry_ext_non_retryable_error_returns_immediately() {
     let result = (|| Err::<i32, &str>(ARBITRARY_ERROR))
         .retry()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|err: &&str| *err == "retryable"))
+        .when(|err: &&str| *err == "retryable")
         .clock(VirtualClock::new())
         .call();
 
@@ -205,7 +205,7 @@ fn retry_ext_until_retries_until_predicate_fires() {
     })
     .retry()
     .stop(stop::attempts(5))
-    .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
+    .until(move |v: &u32| *v >= UNTIL_TARGET)
     .clock(VirtualClock::new())
     .call();
 
@@ -291,7 +291,7 @@ mod async_tests {
         let future = (|| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
             .retry_async()
             .stop(stop::attempts(2))
-            .when(predicate::any_error())
+            .when(|_: &&str| true)
             .clock(ReadyClock)
             .with_stats()
             .call();
@@ -379,7 +379,7 @@ mod async_tests {
             })
             .retry_async()
             .stop(stop::attempts(5))
-            .until(predicate::ok(move |v: &u32| *v >= UNTIL_TARGET))
+            .until(move |v: &u32| *v >= UNTIL_TARGET)
             .clock(ReadyClock)
             .call(),
         );

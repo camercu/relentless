@@ -15,8 +15,8 @@ use common::RecordingClock;
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
-use relentless::{RetryError, RetryPolicy};
-use relentless::{predicate, stop, wait};
+use relentless::{RetryError, RetryPolicy, Verdict};
+use relentless::{stop, wait};
 
 const DEFAULT_POLICY_MAX_ATTEMPTS: u32 = 3;
 const DEFAULT_POLICY_INITIAL_WAIT: Duration = Duration::from_millis(100);
@@ -96,7 +96,7 @@ fn wait_builder_configures_wait_strategy() {
 fn when_builder_configures_predicate() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|e: &&str| *e == "retryable"));
+        .when(|e: &&str| *e == "retryable");
 
     // Retryable error: should retry until exhausted.
     let call_count = Cell::new(0_u32);
@@ -219,7 +219,7 @@ fn retry_predicate_evaluated_before_stop() {
     // remain — stop::attempts is never reached.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0));
+        .until(|v: &i32| *v >= 0);
 
     let result = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
@@ -494,12 +494,12 @@ fn retry_succeeds_on_first_attempt() {
 
 #[test]
 fn exhausted_returned_for_ok_predicate_exhaustion() {
-    // predicate::ok retries while the Ok value satisfies the condition. When stop
+    // `.until` retries while the Ok value fails the condition. When stop
     // fires with an Ok value still being rejected, the error variant must be
     // Exhausted with last=Ok(_), not Aborted (which `.when` yields only for Err).
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0));
+        .until(|v: &i32| *v >= 0);
 
     let result = policy
         .retry(|_| Ok::<_, &str>(-1_i32))
@@ -519,9 +519,12 @@ fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(predicate::result(|o: &Result<i32, &str>| {
-            matches!(o, Err("transient")) || matches!(o, Ok(v) if *v < ARBITRARY_VALUE)
-        }));
+        .decide(|o: Result<i32, &'static str>| match o {
+            Err("transient") => Verdict::Retry(Err("transient")),
+            Ok(v) if v < ARBITRARY_VALUE => Verdict::Retry(Ok(v)),
+            Ok(v) => Verdict::Return(v),
+            Err(e) => Verdict::Abort(e),
+        });
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -546,11 +549,11 @@ fn until_ok_retries_through_transient_errors_while_polling() {
     // `.until(ok(is_ready))` retries on everything except a matching `Ok`, so a
     // poll that errors keeps polling rather than surfacing the error. This locks
     // the semantics documented on `.until` (retry on everything except the match)
-    // and on `predicate::ok`: under `.until`, `Err` is retried, not terminal.
+    // and under `.until`, `Err` is retried, not terminal.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .until(predicate::ok(|v: &i32| *v >= ARBITRARY_VALUE));
+        .until(|v: &i32| *v >= ARBITRARY_VALUE);
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -579,7 +582,7 @@ fn predicate_rejects_err_means_immediate_return() {
     // RetryError::Aborted rather than waiting for the stop strategy to fire.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|e: &&str| *e == "retryable"));
+        .when(|e: &&str| *e == "retryable");
 
     let call_count = Cell::new(0_u32);
     let result = policy
@@ -664,7 +667,7 @@ fn call_returns_retry_result_type() {
 fn predicate_accepted_before_stop_fires() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
-        .when(predicate::ok(|v: &i32| *v < 0));
+        .until(|v: &i32| *v >= 0);
 
     let result = policy
         .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
@@ -686,8 +689,8 @@ fn when_and_until_last_call_wins() {
     let result = RetryPolicy::new()
         .stop(stop::attempts(5))
         .wait(wait::fixed(Duration::ZERO))
-        .when(predicate::error(|_e: &&str| false)) // would reject everything (no retries)
-        .until(predicate::ok(|v: &i32| *v >= 3)) // last call wins: retry until Ok >= 3
+        .when(|_e: &&str| false) // would reject everything (no retries)
+        .until(|v: &i32| *v >= 3) // last call wins: retry until Ok >= 3
         .retry(|_| {
             let n = call_count.get() + 1;
             call_count.set(n);
@@ -739,8 +742,8 @@ fn builder_methods_return_typed_policy() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::ZERO))
-        .when(predicate::any_error())
-        .until(predicate::ok(|_: &i32| true));
+        .when(|_: &&str| true)
+        .until(|_: &i32| true);
 
     let result = policy
         .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))

@@ -18,16 +18,17 @@ The classifier consumes each outcome **by value** and returns a three-way
 [`Verdict`](#34-classifier), so the retry decision is independent of `Result`
 semantics — a sought-after `Err`, a non-`Result` poll enum, or a search state
 can each drive the loop directly. The common `Result` case retries on any `Err`
-by default; `.decide(...)` installs a custom classifier, and `.when(p)` /
-`.until(p)` are `Result`-shaped predicate sugar over it.
+by default; `.decide(...)` installs a custom classifier, and `.when(f)` /
+`.until(f)` are `Result`-shaped shortcuts over it.
 
 The same model applies to sync and async execution. Policies are reusable, the clock
 and stats are configured per execution, and the crate supports `std`,
 `no_std`, `wasm32`, and embedded-oriented environments.
 
-Polling for a condition is expressed with `.until(p)` ("retry until `p` holds")
-or its inverse `.when(p)` ("retry while `p` holds"); both accept a `Predicate`
-and set the classifier slot. See Classifier for details.
+Polling for a condition is expressed with `.until(f)` ("retry until the `Ok`
+value satisfies `f`"); retrying selected errors with `.when(f)` ("retry the
+error while `f` holds"). Both set the classifier slot. See Classifier for
+details.
 
 ## 2. Support matrix
 
@@ -58,8 +59,8 @@ gates only `Recording`, the wait recorder (see 12.5).
 ## 3. Core abstractions
 
 The public model centers on the classifier plus the `Stop`, `Wait`, and clock
-traits, and a reusable policy type. The strategy traits (`Stop`, `Wait`,
-`Predicate`, and the clock family) use `&self` receivers; the engine-facing
+traits, and a reusable policy type. The strategy traits (`Stop`, `Wait`, and
+the clock family) use `&self` receivers; the engine-facing
 classifier trait (`Decide`) also uses `&self`, so one classifier serves every
 attempt. Strategies that need internal mutation use interior mutability
 (`Cell`, `AtomicUsize`).
@@ -345,49 +346,32 @@ pub trait Outcome { type Return; type Abort; fn classify(self) -> Verdict<..>; }
   `Decision` or `Verdict`). On the op-first builders the bound is op-anchored,
   so an inline closure's parameter infers with no annotation; policy-first
   `.decide` defers the bound and needs one parameter annotation.
-- **3.4.5** `.when(p)` / `.until(p)` — `Result`-shaped `Predicate` sugar (below).
+- **3.4.5** `.when(f)` / `.until(f)` — `Result`-shaped shortcuts (below).
 
-**Predicate (`.when` / `.until`).** `Predicate<T, E>` is retained as `Result`-shaped
-sugar; it is a single method, blanket-implemented for any
-`Fn(&Result<T, E>) -> bool`, so the built-in factories and plain closures both
-work.
+**Shortcuts (`.when` / `.until`).** Each takes a plain closure over one side of
+a `Result<T, E>` outcome. On the op-first builders the bound is op-anchored, so
+the closure's parameter infers with no annotation; policy-first shortcuts need
+one, as policy-first `.decide` does.
 
-```rust
-pub trait Predicate<T, E> {
-    fn should_retry(&self, outcome: &Result<T, E>) -> bool;
-}
-```
+- **3.4.6** `.when(f: Fn(&E) -> bool)` tests the error. `Ok(v)` → `Return(v)`;
+  `Err(e)` with `f(&e)` → `Retry`; any other `Err(e)` → `Abort(e)` (the bare
+  error).
+- **3.4.7** `.until(f: Fn(&T) -> bool)` tests the `Ok` value. `Ok(v)` with
+  `f(&v)` → `Return(v)`; any other outcome, every `Err` included, → `Retry`. It
+  never aborts. Its abort type stays `E`, so both shortcuts yield
+  `RetryResult<T, E>`.
+- **3.4.8** Rules over the whole outcome — a fatal error during polling, a
+  sought-after error, a retried `Ok` — use `.decide`.
 
-- **3.4.6** `.when(p)` retries while `p.should_retry()` is `true`; otherwise it
-  accepts — `Ok(v)` → `Return(v)`, `Err(e)` → `Abort(e)` (the bare error).
-- **3.4.7** `.until(p)` is the inverse: retry until `p.should_retry()` is `true`,
-  then accept with the same `Ok`→return / `Err`→abort mapping.
-- **3.4.8** Predicates carry no composition algebra. Compose boolean conditions
-  inside a `result` closure — `.when(result(|o| a(o) || b(o)))` — or drop to
-  `.decide` for full return / retry / abort control.
+`.when(|e| e.is_transient())` reads "retry when transient";
+`.until(|s| s.is_ready())` reads "retry until ready."
 
-`.when(error(|e| e.is_transient()))` reads "retry when transient error";
-`.until(ok(|s| s.is_ready()))` reads "retry until ready."
+- **3.4.9**–**3.4.13** (retired with the `Predicate` trait and its factories;
+  numbers retained as tombstones so later numbering is stable)
 
-**3.4.9** With `.until(ok(f))`, errors are retried by default (`ok(f)` is `false`
-for any `Err`, which `until` inverts to retry). Make errors terminal with a
-`result` closure — `.until(result(|o| is_ready(o) || is_fatal(o)))` — or with
-`.decide`.
-
-Built-in predicate constructors (`should_retry` semantics):
-
-- **3.4.10** `predicate::any_error() -> PredicateAnyError`: `true` for any `Err`,
-  `false` for any `Ok`.
-- **3.4.11** `predicate::error(f) -> PredicateError<F>`: `true` for `Err(e)` when
-  `f(&e)`; `false` for any `Ok` and for `Err(e)` when `!f(&e)`.
-- **3.4.12** `predicate::ok(f) -> PredicateOk<F>`: `true` for `Ok(v)` when `f(&v)`;
-  `false` for any `Err`.
-- **3.4.13** `predicate::result(f) -> PredicateResult<F>`: `true` when `f(&outcome)`.
-
-**3.4.14** `Predicate` is blanket-implemented for `Fn(&Result<T, E>) -> bool`;
-the named types have dedicated `impl Predicate<T, E>` blocks. The engine-facing
-`Decide<O>` trait (the installed classifier) is sealed — users never implement
-it; `Outcome` is the user-implementable trait for owned outcome types.
+**3.4.14** The engine-facing `Decide<O>` trait (the installed classifier) is
+sealed — users never implement it; `Outcome` is the user-implementable trait for
+owned outcome types.
 
 ### 3.5 Clock
 
@@ -661,8 +645,10 @@ by `new()` — they are inferred at the call site when the operation is provided
 
 Builder methods:
 
-- `.when(p: impl Predicate<T, E>) -> RetryPolicy<S, W, When<P>>`
-- `.until(p: impl Predicate<T, E>) -> RetryPolicy<S, W, Until<P>>`
+- `.when(f) -> RetryPolicy<S, W, When<F>>`, with `When<F>: Decide<Result<T, E>>`
+  when `F: Fn(&E) -> bool`
+- `.until(f) -> RetryPolicy<S, W, Until<F>>`, with `Until<F>: Decide<Result<T, E>>`
+  when `F: Fn(&T) -> bool`
 - `.decide(c) -> RetryPolicy<S, W, ClosureClassifier<C>>` — policy-first, so the
   closure's parameter needs one annotation (no op to anchor inference on)
 - `.wait(w: impl Wait) -> RetryPolicy<S, W2, C>`
@@ -792,14 +778,13 @@ Usage:
 use relentless::{retry, retry_async, RetryExt, AsyncRetryExt};
 use relentless::clock::TokioClock;
 use relentless::{stop, wait};
-use relentless::predicate::{any_error, error, ok};
 
 // Ext: one-shot retry with zero config
 (|| fetch_data()).retry().call()?;
 
 // Ext: one-shot with builder config
 (|| fetch_data()).retry()
-    .when(error(|e| e.is_transient()))
+    .when(|e| e.is_transient())
     .wait(wait::exponential(Duration::from_millis(200)))
     .stop(stop::attempts(5))
     .call()?;
@@ -848,8 +833,8 @@ builder, whether it owns its strategies (ext-trait / free-function path) or
 borrows them from a policy. On a policy-borrowed builder an override replaces
 the borrowed slot with an owned value for that call only.
 
-- `.when(p: impl Predicate<T, E>) -> Retry<F, When<P>, S, W, ...>`
-- `.until(p: impl Predicate<T, E>) -> Retry<F, Until<P>, S, W, ...>`
+- `.when(f: Fn(&E) -> bool) -> Retry<F, When<F2>, S, W, ...>` — op-anchored
+- `.until(f: Fn(&T) -> bool) -> Retry<F, Until<F2>, S, W, ...>` — op-anchored
 - `.decide(c) -> Retry<F, ClosureClassifier<C>, S, W, ...>` — op-anchored, so an
   inline closure infers with no annotation
 - `.wait(w: impl Wait) -> Retry<F, C, S, W2, ...>`
@@ -1055,10 +1040,10 @@ retry(|_| {
 ```
 
 This provides cancellation at attempt boundaries. The cancel error flows
-through the normal predicate: with the default `any_error()`, it is retried
-like any other error, so the flag must remain set. With a selective predicate
-like `.when(error(|e| e.is_transient()))`, non-transient cancel errors
-terminate immediately as `RetryError::Aborted`.
+through the normal classifier: with the default, it is retried like any other
+error, so the flag must remain set. With a selective `.when(|e|
+e.is_transient())`, non-transient cancel errors terminate immediately as
+`RetryError::Aborted`.
 
 > The crate does not interrupt operations or sleeps mid-execution. Sync sleep
 > (`std::thread::sleep`) is inherently uninterruptible. The maximum latency
@@ -1086,7 +1071,7 @@ is `Sync`, so on that path those three must be `Sync`.
 
 **10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
-`Predicate`, `Clock`, `SyncClock`, `AsyncClock`). Concrete execution types
+`Clock`, `SyncClock`, `AsyncClock`). Concrete execution types
 derive `Send`/`Sync` from their components via standard auto-trait rules.
 
 Sync execution types are `Send` when their components are `Send`. No `Sync`
@@ -1270,16 +1255,16 @@ With `alloc`:
 `.boxed()` on `RetryPolicy` requires `S: Stop + Send + 'static`,
 `W: Wait + Send + 'static` and returns
 `RetryPolicy<Box<dyn Stop + Send + 'static>, Box<dyn Wait + Send + 'static>, P>`.
-Only stop and wait are erased; the predicate `P` is preserved so a
-default-predicate policy remains reusable across different `(T, E)`.
+Only stop and wait are erased; the classifier `P` is preserved so a
+default-classifier policy remains reusable across different `(T, E)`.
 
 `.boxed_local()` on `RetryPolicy` requires `S: Stop + 'static`,
 `W: Wait + 'static` (no `Send` bounds) and returns
 `RetryPolicy<Box<dyn Stop + 'static>, Box<dyn Wait + 'static>, P>`.
 Use this when the policy does not need to cross thread boundaries.
 
-> Object safety is satisfied because `Stop`, `Wait`, and `Predicate<T, E>`
-> (for fixed `T, E`) each have a single non-generic method with an `&self`
+> Object safety is satisfied because `Stop` and `Wait` each have a single
+> non-generic method with an `&self`
 > receiver. Composition methods are gated behind `where Self: Sized` and are
 > not available on trait objects, which is correct.
 
@@ -1363,7 +1348,6 @@ Traits:
 - `Stop` (includes `.or()`, `.and()` as provided methods)
 - `Wait` (includes `.cap()`, `.chain()`, `.add()`, `.jitter()`,
   `.full_jitter()`, `.equal_jitter()` as provided methods)
-- `Predicate` (single method, blanket-implemented for `Fn(&Result<T, E>) -> bool`)
 - `Outcome` (user-implementable for owned outcome types); `Decide`,
   `IntoDecision` (sealed engine-facing classifier traits, named only in bounds)
 - `Clock`, `SyncClock`, `AsyncClock` (re-exported from `clock`)
@@ -1396,12 +1380,6 @@ Free functions:
 - jitter: `decorrelated_jitter` constructor;
   `Jittered` type
 
-`predicate` module:
-
-- constructors: `any_error`, `error`, `ok`, `result`
-- types: `PredicateAnyError`, `PredicateError`, `PredicateOk`,
-  `PredicateResult`
-
 `clock` module:
 
 - traits: `Clock`, `SyncClock`, `AsyncClock`
@@ -1417,8 +1395,8 @@ Combinator and classifier-wrapper types (`StopAny`, `StopAll`, `WaitCapped`,
 classifier wrappers `When`, `Until`, `ClosureClassifier`) are **exposed but
 unstable**: they are `pub` for technical reasons (they appear in the return
 types of composition and classifier-installing methods), but users should not
-name them in function signatures. Use `impl Stop`, `impl Wait`,
-`impl Predicate<T, E>`, or the builder methods instead.
+name them in function signatures. Use `impl Stop`, `impl Wait`, or the
+builder methods instead.
 
 > Combinator type names and their generic parameters may change in minor
 > releases.
@@ -1437,7 +1415,6 @@ Composite types derive traits conditionally on their type parameters.
 |`RetryError<A,O>`      |A,O    |—     |A,O        |A,O |—     |—        |†         |
 |All stop strategy types|yes    |yes   |yes        |yes |—     |—        |—         |
 |All wait strategy types|yes    |yes   |yes        |*   |—     |—        |—         |
-|All predicate types    |F      |—     |—          |—   |—     |—        |—         |
 |Combinator types (A,B) |A,B    |—     |—          |—   |—     |—        |—         |
 
 Cells with type names (e.g. "T,E" or "F" or "A,B") indicate the trait is
@@ -1512,7 +1489,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/stop.rs` | §3.1 |
 | `tests/wait.rs` | §3.2 |
 | `tests/jitter.rs` | §3.3 |
-| `tests/predicate.rs` | §3.4 |
+| `tests/when_until.rs` | §3.4 |
 | `tests/clock.rs`, `tests/clock_adapters.rs` | §3.5, §12.1, §12.4 |
 | `tests/state.rs` | §3.6 |
 | `tests/error.rs` | §4.1, §4.2 |

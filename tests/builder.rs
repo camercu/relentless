@@ -11,9 +11,7 @@ use core::cell::{Cell, RefCell};
 use core::time::Duration;
 
 use relentless::clock::VirtualClock;
-use relentless::{
-    Decision, Outcome, RetryError, RetryExt, StopReason, Verdict, predicate, retry, stop, wait,
-};
+use relentless::{Decision, Outcome, RetryError, RetryExt, StopReason, Verdict, retry, stop, wait};
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
 /// drives it with no `.decide` at the call site.
@@ -133,7 +131,7 @@ fn until_polls_a_result_until_ready() {
             Status::Pending
         })
     })
-    .until(predicate::ok(|s: &Status| *s == Status::Done))
+    .until(|s: &Status| *s == Status::Done)
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::ZERO))
     .clock(VirtualClock::new())
@@ -148,7 +146,7 @@ fn when_aborts_on_a_rejected_error() {
     // Retry only "transient"; any other error is non-retryable and aborts
     // with the bare error payload.
     let result = retry(|_| Err::<i32, &str>("fatal"))
-        .when(predicate::error(|e: &&str| *e == "transient"))
+        .when(|e: &&str| *e == "transient")
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .clock(VirtualClock::new())
@@ -217,7 +215,7 @@ fn retry_ext_supports_the_classifier_surface() {
         Ok::<i32, &str>(counter.get())
     })
     .retry()
-    .until(predicate::ok(|v: &i32| *v >= 3))
+    .until(|v: &i32| *v >= 3)
     .stop(stop::attempts(ARBITRARY_ATTEMPTS))
     .wait(wait::fixed(Duration::ZERO))
     .clock(VirtualClock::new())

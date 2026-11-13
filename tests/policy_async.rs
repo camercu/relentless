@@ -18,7 +18,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use relentless::{RetryError, RetryPolicy};
-use relentless::{predicate, stop, wait};
+use relentless::{Verdict, stop, wait};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -127,7 +127,7 @@ fn async_retry_returns_exhausted_on_persistent_errors() {
 fn async_retry_returns_exhausted_for_ok_exhaustion() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|value: &i32| *value < 0));
+        .until(|value: &i32| *value >= 0);
     let clock = RecordingClock::new();
 
     let result = block_on(
@@ -150,10 +150,12 @@ fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_value
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
-        .when(predicate::result(|o: &Result<i32, &str>| {
-            matches!(o, Err(e) if *e == ARBITRARY_ERROR)
-                || matches!(o, Ok(v) if *v < ARBITRARY_VALUE)
-        }));
+        .decide(|o: Result<i32, &'static str>| match o {
+            Err(e) if e == ARBITRARY_ERROR => Verdict::Retry(Err(e)),
+            Ok(v) if v < ARBITRARY_VALUE => Verdict::Retry(Ok(v)),
+            Ok(v) => Verdict::Return(v),
+            Err(e) => Verdict::Abort(e),
+        });
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
 
@@ -207,7 +209,7 @@ fn async_predicate_is_evaluated_before_stop() {
     // value satisfies the predicate, the result is returned without stopping.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
-        .when(predicate::ok(|value: &i32| *value < 0));
+        .until(|value: &i32| *value >= 0);
     let clock = RecordingClock::new();
 
     let result = block_on(

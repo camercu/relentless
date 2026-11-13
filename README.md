@@ -73,10 +73,13 @@ The engine's one big idea: every completed outcome is sorted into a **verdict** 
 **return** it to the caller (`Ok`), **retry** it, or **abort** with a payload
 (`Err`). Three builder methods set that policy, at increasing power:
 
-- `.when(pred)` — retry *while* a `Result` predicate matches; otherwise accept an
-  `Ok` and abort an `Err`. The classic "retry these errors" knob.
-- `.until(pred)` — the inverse: retry *until* the predicate matches, then accept
-  an `Ok` and abort an `Err`, same as `.when`. The polling knob.
+- `.when(|e| …)` — retry an `Err` while the closure says it is worth retrying;
+  any other `Err` aborts, and an `Ok` returns. The classic "retry these errors"
+  knob.
+- `.until(|v| …)` — retry until an `Ok` value satisfies the closure; every other
+  outcome, `Err` included, retries. The polling knob.
+- Both closures take their parameter from the operation's output, so they need
+  no type annotation.
 - `.decide(closure)` — the general three-way form. You return `Return` / `Retry`
   / `Abort` yourself, so *any* outcome type — a poll enum, a search state, a
   sought-after error — drives the loop directly, independent of `Result`.
@@ -118,13 +121,13 @@ to retry, how long to wait, and when to stop.
 
 ```rust,no_run
 use core::time::Duration;
-use relentless::{Wait, retry, predicate, stop, wait};
+use relentless::{Wait, retry, stop, wait};
 
 let body = retry(|state| {
     println!("attempt {}", state.attempt);
     reqwest::blocking::get("https://api.example.com/data")?.text()
 })
-.when(predicate::error(|e: &reqwest::Error| e.is_timeout()))
+.when(|e| e.is_timeout())
 .wait(
     wait::exponential(Duration::from_millis(200))
         .full_jitter()
@@ -137,12 +140,12 @@ let body = retry(|state| {
 
 ### 3) Poll for a condition
 
-Use `.until(predicate)` to keep retrying until a success condition is met.
-Unlike `.when()`, which retries on matching outcomes, `.until()` retries on
-everything *except* the matching outcome.
+Use `.until(|v| …)` to keep retrying until an `Ok` value meets a condition.
+Where `.when()` tests the error, `.until()` tests the value and retries
+everything else.
 
 ```rust,no_run
-use relentless::{retry, predicate};
+use relentless::retry;
 
 #[derive(Debug, PartialEq)]
 enum Status { Pending, Done }
@@ -150,12 +153,12 @@ enum Status { Pending, Done }
 fn poll_status() -> Result<Status, std::io::Error> { todo!() }
 
 let result = retry(|_| poll_status())
-    .until(predicate::ok(|s: &Status| *s == Status::Done))
+    .until(|s| *s == Status::Done)
     .call();
 ```
 
 When the probe is a plain two-state "ready yet?" with no error to carry, return
-`Option` and skip the predicate entirely — `Option` classifies itself, so `None`
+`Option` and skip the classifier entirely — `Option` classifies itself, so `None`
 retries and `Some(v)` delivers `v`:
 
 ```rust,no_run
@@ -205,35 +208,12 @@ let report = retry(|_| poll_job())
 // attempts as `Err(Exhausted { last: Ok(Job::Pending) })`.
 ```
 
-With `.until(ok(f))` errors keep the loop going, because `ok(f)` is `false` for
-any `Err` and `.until` inverts that. To give up on a fatal error instead, match
-the whole outcome with `predicate::result`:
-
-```rust,no_run
-use relentless::{predicate, retry, stop};
-
-#[derive(Debug)]
-enum Job {
-    Pending,
-    Done(String),
-}
-
-fn poll_job() -> Result<Job, std::io::Error> { todo!() }
-
-let report = retry(|_| poll_job())
-    .until(predicate::result(|o: &Result<Job, std::io::Error>| {
-        // Stop on either: the job finished, or the API failed for good.
-        matches!(o, Ok(Job::Done(_))) || matches!(o, Err(e) if e.kind() == std::io::ErrorKind::NotFound)
-    }))
-    .stop(stop::attempts(20))
-    .call();
-```
-
-That stops on either, and — because a matched `Err` aborts — the fatal error
-arrives as `Err(RetryError::Aborted { .. })`. To deliver a sought-after error as
-the `Ok` value instead, you need the *inverted probe*: return
-`Verdict::Return(e)` (or the two-way `Decision::Return(e)`) from `.decide` for
-the error you were hunting. `.until` alone cannot do it.
+`.until` retries every `Err`. To give up on a fatal error instead, use
+`.decide` as above: return `Verdict::Abort(e)` for the error that should end the
+loop, and it arrives as `Err(RetryError::Aborted { .. })`. To deliver a
+sought-after error as the `Ok` value, return `Verdict::Return(e)` (or the
+two-way `Decision::Return(e)`) for the error you were hunting — the *inverted
+probe*.
 
 ### 5) Reuse a policy across call sites
 
@@ -343,7 +323,7 @@ with runnable versions in [`examples/`](./examples):
 
 ## How the builders fit together
 
-The full API surface — every strategy, predicate, and type — lives on
+The full API surface — every strategy, classifier, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
 **Reading order.** Chains read best as **when/until/decide** → **wait** →

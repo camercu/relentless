@@ -14,10 +14,10 @@
 //!    (e.g., a signal handler or a watchdog). The flag is checked inside
 //!    the operation on each attempt.
 //!
-//!    **Predicate footgun:** with the default `any_error()` predicate, the
+//!    **Classifier footgun:** with the default classifier the
 //!    cancel error returned by the operation is treated as a transient error
 //!    and retried — the loop keeps running even after the flag is set.
-//!    Use `.when(error(|e| e.is_transient()))` (or equivalent) so the cancel
+//!    Use `.when(|e| e.is_transient())` (or equivalent) so the cancel
 //!    error is non-retryable and terminates the loop immediately as
 //!    `RetryError::Aborted`.
 //!
@@ -25,7 +25,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
-use relentless::{RetryError, RetryExt, predicate, retry, stop, wait};
+use relentless::{RetryError, RetryExt, retry, stop, wait};
 use std::sync::Arc;
 
 fn main() {
@@ -67,9 +67,9 @@ fn main() {
     // The operation checks the flag on every attempt and returns a
     // distinguishable cancel error when it is set.
     //
-    // ⚠ Predicate footgun: if the predicate retries all errors (the default),
+    // ⚠ Classifier footgun: if every error is retried (the default),
     // the cancel error is retried like any other transient failure — the flag
-    // being set does not stop the loop. The fix is a selective predicate that
+    // being set does not stop the loop. The fix is a selective `.when` that
     // treats the cancel error as non-retryable. The example below uses an
     // enum error type to make the distinction explicit.
 
@@ -107,9 +107,7 @@ fn main() {
     .wait(wait::fixed(Duration::ZERO)) // no sleep so the example runs instantly
     // ↓ Only retry transient errors; treat Cancelled as terminal.
     //   Without this, the cancel error would be retried indefinitely.
-    .when(predicate::error(|e: &ServiceError| {
-        matches!(e, ServiceError::Transient(_))
-    }))
+    .when(|e: &ServiceError| matches!(e, ServiceError::Transient(_)))
     .call();
 
     match result {

@@ -11,10 +11,8 @@ use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, When};
 use crate::policy::RetryPolicy;
-use crate::predicate::Predicate;
-use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
@@ -155,53 +153,33 @@ impl<F, C, S, W, Cl> Retry<F, C, S, W, Cl> {
         self.with_classifier(ClosureClassifier(classifier))
     }
 
-    /// Retries while `predicate` wants to; otherwise accepts the outcome
-    /// (`Ok` returns, a rejected `Err` aborts with the bare error).
+    /// Retries an error while `retryable` returns `true` for it.
     ///
-    /// `Result`-only sugar over [`decide`](Self::decide). The predicate's
-    /// `&Result<T, E>` parameter infers from the operation's output.
+    /// An `Ok` returns. An `Err(e)` retries when `retryable(&e)` holds and
+    /// otherwise aborts with the bare error. The closure's `&E` parameter
+    /// infers from the operation's output, so it needs no annotation. For
+    /// rules over the whole outcome, use [`decide`](Self::decide).
     #[must_use]
-    pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl>
+    pub fn when<T, E, P>(self, retryable: P) -> Retry<F, When<P>, S, W, Cl>
     where
         F: Operation<Blocking, Output = Result<T, E>>,
-        P: Predicate<T, E>,
+        P: Fn(&E) -> bool,
     {
-        self.with_classifier(When(predicate))
+        self.with_classifier(When(retryable))
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts the outcome
-    /// (`Ok` returns, a matched `Err` aborts with the bare error). The inverse
-    /// of [`when`](Self::when); natural for polling (`.until(ok(is_ready))`).
+    /// Retries until an `Ok` value satisfies `done`.
     ///
-    /// With `.until(ok(f))` errors are retried, because `ok(f)` is `false` for
-    /// any `Err` and `until` inverts that. To make a fatal error terminate the
-    /// loop instead, match on the whole outcome with
-    /// [`result`](crate::predicate::result):
-    ///
-    /// ```
-    /// use relentless::clock::VirtualClock;
-    /// use relentless::{predicate, retry, stop, RetryError};
-    ///
-    /// // Poll until ready, but give up immediately on a fatal error.
-    /// let outcome = retry(|_| Err::<&str, &str>("fatal"))
-    ///     .until(predicate::result(|o: &Result<&str, &str>| {
-    ///         matches!(o, Ok("ready") | Err("fatal"))
-    ///     }))
-    ///     .stop(stop::attempts(5))
-    ///     .clock(VirtualClock::new())
-    ///     .call();
-    ///
-    /// // The predicate matched an `Err`, so the loop aborts with the bare error
-    /// // rather than returning it as `Ok`.
-    /// assert_eq!(outcome, Err(RetryError::Aborted { last: "fatal" }));
-    /// ```
+    /// An `Ok(v)` returns when `done(&v)` holds and retries otherwise; every
+    /// `Err` retries too, so the loop never aborts. Natural for polling. To
+    /// stop on a fatal error instead, use [`decide`](Self::decide).
     #[must_use]
-    pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl>
+    pub fn until<T, E, P>(self, done: P) -> Retry<F, Until<P>, S, W, Cl>
     where
         F: Operation<Blocking, Output = Result<T, E>>,
-        P: Predicate<T, E>,
+        P: Fn(&T) -> bool,
     {
-        self.with_classifier(Until(predicate))
+        self.with_classifier(Until(done))
     }
 
     /// Sets a wall-clock budget for the whole execution.

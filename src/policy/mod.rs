@@ -11,9 +11,8 @@ use crate::clock::SystemClock;
 #[cfg(feature = "alloc")]
 use crate::compat::Box;
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, DefaultClassifier};
+use crate::decision::{ClosureClassifier, DefaultClassifier, Until, When};
 use crate::engine::{AsyncRetry, Retry};
-use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 #[cfg(feature = "alloc")]
 use crate::stop::Stop;
@@ -120,20 +119,23 @@ impl<S, W, C> RetryPolicy<S, W, C> {
         self
     }
 
-    /// Retries while `predicate` wants to; otherwise accepts (an `Err` aborts
-    /// with the bare error). Replaces the classifier slot.
+    /// Retries an error while `retryable` returns `true` for it; an `Ok`
+    /// returns and any other `Err` aborts with the bare error. Replaces the
+    /// classifier slot.
+    ///
+    /// With no operation to infer from, the closure's parameter needs a type:
+    /// `.when(|e: &MyError| e.is_transient())`.
     #[must_use]
-    pub fn when<P>(self, predicate: P) -> RetryPolicy<S, W, When<P>> {
-        self.with_classifier(When::new(predicate))
+    pub fn when<P>(self, retryable: P) -> RetryPolicy<S, W, When<P>> {
+        self.with_classifier(When(retryable))
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts the outcome
-    /// (`Ok` returns, a matched `Err` aborts with the bare error). Replaces the
-    /// classifier slot; natural for polling (`.until(ok(is_ready))`). See
-    /// [`Retry::until`](crate::Retry::until) for the fatal-error recipe.
+    /// Retries until an `Ok` value satisfies `done`; every `Err` retries too.
+    /// Replaces the classifier slot. Like [`when`](Self::when), the closure's
+    /// parameter needs a type.
     #[must_use]
-    pub fn until<P>(self, predicate: P) -> RetryPolicy<S, W, Until<P>> {
-        self.with_classifier(Until::new(predicate))
+    pub fn until<P>(self, done: P) -> RetryPolicy<S, W, Until<P>> {
+        self.with_classifier(Until(done))
     }
 
     /// Installs a classifier closure, replacing the classifier slot.

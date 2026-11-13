@@ -22,7 +22,7 @@ use proptest::prelude::{Strategy, any, prop_assert_eq, proptest};
 #[cfg(feature = "alloc")]
 use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
-use relentless::{RetryStats, predicate, retry, retry_async, stop, wait};
+use relentless::{RetryStats, retry, retry_async, stop, wait};
 
 const ARBITRARY_ERROR: &str = "boom";
 
@@ -118,13 +118,10 @@ fn run_sync(scenario: &Scenario) -> Trace {
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
             (Some(rejected), None) => exec
-                .when(predicate::error(move |e: &&str| *e != rejected))
+                .when(move |e: &&str| *e != rejected)
                 .with_stats()
                 .call(),
-            (None, Some(target)) => exec
-                .until(predicate::ok(move |v: &u32| *v == target))
-                .with_stats()
-                .call(),
+            (None, Some(target)) => exec.until(move |v: &u32| *v == target).with_stats().call(),
             (None, None) => match scenario.timeout {
                 Some(dur) => exec.timeout(dur).with_stats().call(),
                 None => exec.with_stats().call(),
@@ -158,15 +155,13 @@ fn run_async(scenario: &Scenario) -> Trace {
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
             (Some(rejected), None) => block_on(
-                exec.when(predicate::error(move |e: &&str| *e != rejected))
+                exec.when(move |e: &&str| *e != rejected)
                     .with_stats()
                     .call(),
             ),
-            (None, Some(target)) => block_on(
-                exec.until(predicate::ok(move |v: &u32| *v == target))
-                    .with_stats()
-                    .call(),
-            ),
+            (None, Some(target)) => {
+                block_on(exec.until(move |v: &u32| *v == target).with_stats().call())
+            }
             (None, None) => match scenario.timeout {
                 Some(dur) => block_on(exec.timeout(dur).with_stats().call()),
                 None => block_on(exec.with_stats().call()),

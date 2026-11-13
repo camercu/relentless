@@ -16,7 +16,7 @@ use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryPolicy};
-use relentless::{RetryStats, StopReason, predicate, stop, wait};
+use relentless::{RetryStats, StopReason, stop, wait};
 use std::rc::Rc;
 
 #[test]
@@ -170,7 +170,7 @@ fn sync_stop_reason_exhausted_on_exhaustion() {
 fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|value: &i32| *value < 0));
+        .until(|value: &i32| *value >= 0);
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
@@ -188,7 +188,7 @@ fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
 fn sync_stop_reason_returned_for_result_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::result(|r: &Result<i32, &str>| r.is_err()));
+        .when(|_: &&str| true);
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
@@ -205,7 +205,7 @@ fn sync_stop_reason_returned_for_result_predicate_on_ok() {
 fn sync_stop_reason_returned_for_error_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|e: &&str| *e == "retryable"));
+        .when(|e: &&str| *e == "retryable");
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
@@ -224,7 +224,7 @@ fn sync_stop_reason_aborted_for_non_retryable_error() {
     // to retry), not Exhausted — the stop strategy never fired.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|e: &&str| *e == "retryable"));
+        .when(|e: &&str| *e == "retryable");
 
     let (result, stats) = policy
         .retry(|_| Err::<i32, _>("fatal"))
@@ -241,7 +241,7 @@ fn sync_stop_reason_aborted_for_non_retryable_error() {
 fn sync_stop_reason_exhausted_on_condition_not_met() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0));
+        .until(|v: &i32| *v >= 0);
 
     let (result, stats) = policy
         .retry(|_| Ok::<_, &str>(-1_i32))
@@ -303,7 +303,7 @@ fn async_first_attempt_success_has_minimal_stats() {
 fn async_stop_reason_condition_not_met() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|v: &i32| *v < 0));
+        .until(|v: &i32| *v >= 0);
 
     let (result, stats) = block_on(
         policy
@@ -325,7 +325,7 @@ fn async_stop_reason_condition_not_met() {
 fn async_stop_reason_returned_for_custom_predicate_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::ok(|value: &i32| *value < 0));
+        .until(|value: &i32| *value >= 0);
 
     let (result, stats) = block_on(
         policy
@@ -521,7 +521,7 @@ fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
     // Aborted Err (predicate does not match — Aborted)
     let policy2 = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(predicate::error(|e: &&str| *e == "retryable"));
+        .when(|e: &&str| *e == "retryable");
     let (_, stats2) = policy2
         .retry(|_| Err::<i32, _>("fatal"))
         .clock(VirtualClock::new())

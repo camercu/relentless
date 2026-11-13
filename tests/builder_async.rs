@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
 use relentless::{
-    AsyncRetryExt, Decision, RetryError, StopReason, Verdict, predicate, retry_async, stop, wait,
+    AsyncRetryExt, Decision, RetryError, StopReason, Verdict, retry_async, stop, wait,
 };
 
 #[test]
@@ -111,7 +111,7 @@ fn async_until_polls_a_result() {
             counter.set(n);
             async move { Ok::<i32, &str>(n) }
         })
-        .until(predicate::ok(|v: &i32| *v >= 3))
+        .until(|v: &i32| *v >= 3)
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
         .clock(&clock)

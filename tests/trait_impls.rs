@@ -1,8 +1,8 @@
 //! Derive coverage that spans the strategy and value types: `Copy`, `Debug`
-//! and `PartialEq` on the public wait/stop/predicate/state types.
+//! and `PartialEq` on the public wait/stop/state types.
 //!
 //! Each type's own behavior tests live with its concept (`error.rs`,
-//! `stats.rs`, `state.rs`, `predicate.rs`, `jitter.rs`, `policy_sync.rs`).
+//! `stats.rs`, `state.rs`, `when_until.rs`, `jitter.rs`, `policy_sync.rs`).
 
 #[test]
 fn value_types_implement_copy() {
@@ -23,7 +23,7 @@ fn value_types_implement_copy() {
 #[test]
 fn all_strategy_types_implement_debug() {
     use core::time::Duration;
-    use relentless::{predicate, stop, wait};
+    use relentless::{stop, wait};
 
     let _ = format!("{:?}", stop::attempts(3));
     let _ = format!("{:?}", stop::elapsed(Duration::from_secs(10)));
@@ -37,12 +37,6 @@ fn all_strategy_types_implement_debug() {
         wait::linear(Duration::from_millis(10), Duration::from_millis(5))
     );
     let _ = format!("{:?}", wait::exponential(Duration::from_millis(10)));
-
-    // Predicate concrete types implement Debug. Closures inside don't derive Debug,
-    // but the wrapper structs do. Verify the named container types are Debug:
-    fn assert_debug<T: core::fmt::Debug>(_: &T) {}
-    assert_debug(&predicate::any_error());
-    let _ = format!("{:?}", predicate::any_error());
 }
 
 /// §14

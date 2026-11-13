@@ -5,7 +5,7 @@
 use core::cell::Cell;
 use core::time::Duration;
 use relentless::clock::TokioClock;
-use relentless::{RetryPolicy, predicate, stop, wait};
+use relentless::{RetryPolicy, stop, wait};
 
 #[tokio::main]
 async fn main() {
@@ -22,12 +22,12 @@ async fn main() {
         async move { Ok::<_, &str>(status) }
     };
 
-    // `.until()` inverts the predicate: retry while the Ok value does NOT match.
-    // This is more readable than `.when(predicate::ok(|s| *s != "ready"))`.
+    // `.until()` tests the Ok value: retry until it matches. A policy has no
+    // operation to infer from, so the closure names its parameter type.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(10))
         .wait(wait::fixed(Duration::from_millis(25)))
-        .until(predicate::ok(|status: &&str| *status == "ready"));
+        .until(|status: &&str| *status == "ready");
 
     let result = policy
         .retry_async(check_deploy_status)

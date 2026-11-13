@@ -4,9 +4,9 @@
 //! [`Verdict`]: return it to the caller, retry it, or abort with a projected
 //! payload. The retry decision is therefore independent of `Result<T, E>`
 //! semantics. A sought-after `Err`, a non-`Result` poll enum, or a search state
-//! can each drive the loop directly. A boolean [`Predicate`](crate::Predicate)
-//! is one way to build a classifier (via `.when`/`.until`), not the engine's own
-//! currency.
+//! can each drive the loop directly. `.when` (a test on the error) and `.until`
+//! (a test on the `Ok` value) are shortcuts that build a classifier for the
+//! common `Result` cases.
 //!
 //! This module is the vocabulary; the engine that consumes it lives in
 //! [`crate::engine`].
@@ -293,5 +293,58 @@ where
 
     fn decide(&self, outcome: O) -> Verdict<D::R, D::A, O> {
         (self.0)(outcome).into_verdict()
+    }
+}
+
+/// Classifier from `.when(f)`: retry an error while `f` says it is worth
+/// retrying.
+///
+/// An `Ok` returns. An `Err(e)` retries when `f(&e)` is `true` and otherwise
+/// aborts with the bare error, which the caller receives as
+/// `RetryError::Aborted { last: e }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct When<F>(pub(crate) F);
+
+impl<F> sealed::SealedDecide for When<F> {}
+
+impl<T, E, F> Decide<Result<T, E>> for When<F>
+where
+    F: Fn(&E) -> bool,
+{
+    type R = T;
+    type A = E;
+
+    fn decide(&self, outcome: Result<T, E>) -> Verdict<T, E, Result<T, E>> {
+        match outcome {
+            Ok(value) => Verdict::Return(value),
+            Err(error) if (self.0)(&error) => Verdict::Retry(Err(error)),
+            Err(error) => Verdict::Abort(error),
+        }
+    }
+}
+
+/// Classifier from `.until(f)`: retry until an `Ok` value satisfies `f`.
+///
+/// An `Ok(v)` returns when `f(&v)` is `true` and retries otherwise. Every
+/// `Err` retries, so the loop never aborts. Its abort type stays `E`, so both
+/// setters return the same [`RetryResult`](crate::RetryResult) shape and the
+/// `Result` helpers such as `last_error` apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Until<F>(pub(crate) F);
+
+impl<F> sealed::SealedDecide for Until<F> {}
+
+impl<T, E, F> Decide<Result<T, E>> for Until<F>
+where
+    F: Fn(&T) -> bool,
+{
+    type R = T;
+    type A = E;
+
+    fn decide(&self, outcome: Result<T, E>) -> Verdict<T, E, Result<T, E>> {
+        match outcome {
+            Ok(value) if (self.0)(&value) => Verdict::Return(value),
+            other => Verdict::Retry(other),
+        }
     }
 }

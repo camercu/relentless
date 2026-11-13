@@ -15,10 +15,8 @@ use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
 use crate::compat::Duration;
-use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision};
+use crate::decision::{ClosureClassifier, Decide, DefaultClassifier, IntoDecision, Until, When};
 use crate::policy::RetryPolicy;
-use crate::predicate::Predicate;
-use crate::predicate::classifier::{Until, When};
 use crate::state::RetryState;
 use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
@@ -158,29 +156,33 @@ impl<F, C, S, W, Cl> AsyncRetry<F, C, S, W, Cl> {
         self.with_classifier(ClosureClassifier(classifier))
     }
 
-    /// Retries while `predicate` wants to; otherwise accepts the outcome
-    /// (`Ok` returns, a rejected `Err` aborts with the bare error).
-    /// `Result`-only sugar over [`decide`](Self::decide).
+    /// Retries an error while `retryable` returns `true` for it.
+    ///
+    /// An `Ok` returns. An `Err(e)` retries when `retryable(&e)` holds and
+    /// otherwise aborts with the bare error. The closure's `&E` parameter
+    /// infers from the operation's output, so it needs no annotation. For
+    /// rules over the whole outcome, use [`decide`](Self::decide).
     #[must_use]
-    pub fn when<T, E, P>(self, predicate: P) -> AsyncRetry<F, When<P>, S, W, Cl>
+    pub fn when<T, E, P>(self, retryable: P) -> AsyncRetry<F, When<P>, S, W, Cl>
     where
         F: Operation<Async, Output = Result<T, E>>,
-        P: Predicate<T, E>,
+        P: Fn(&E) -> bool,
     {
-        self.with_classifier(When(predicate))
+        self.with_classifier(When(retryable))
     }
 
-    /// Retries *until* `predicate` is satisfied, then accepts the outcome
-    /// (`Ok` returns, a matched `Err` aborts with the bare error). The inverse
-    /// of [`when`](Self::when); see [`Retry::until`](super::Retry::until) for
-    /// the fatal-error recipe.
+    /// Retries until an `Ok` value satisfies `done`.
+    ///
+    /// An `Ok(v)` returns when `done(&v)` holds and retries otherwise; every
+    /// `Err` retries too, so the loop never aborts. Natural for polling. To
+    /// stop on a fatal error instead, use [`decide`](Self::decide).
     #[must_use]
-    pub fn until<T, E, P>(self, predicate: P) -> AsyncRetry<F, Until<P>, S, W, Cl>
+    pub fn until<T, E, P>(self, done: P) -> AsyncRetry<F, Until<P>, S, W, Cl>
     where
         F: Operation<Async, Output = Result<T, E>>,
-        P: Predicate<T, E>,
+        P: Fn(&T) -> bool,
     {
-        self.with_classifier(Until(predicate))
+        self.with_classifier(Until(done))
     }
 
     /// Sets a wall-clock budget for the whole execution (boundary check between

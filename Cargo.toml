@@ -42,7 +42,7 @@ default = ["std"]
 std = ["alloc", "embassy-time?/std"]
 
 # alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
-#        Box<dyn Predicate>, type-erased policy storage, and clock::Recording.
+#        type-erased policy storage, and clock::Recording.
 #        Async retry itself does not require it.
 alloc = []
 

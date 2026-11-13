@@ -38,7 +38,7 @@ _Avoid_: retry (as a noun)
 
 **Classifier**:
 The rule that sorts each outcome into a verdict.
-_Avoid_: decider, predicate (a predicate is one input to a classifier)
+_Avoid_: decider, predicate
 
 **Verdict**:
 A classifier's three-way judgment on one outcome: return, retry or abort.
@@ -64,9 +64,9 @@ _Avoid_: reject, fail, fatal (as a noun)
 The value an abort verdict projects for the caller; the bare error on the `Result` path.
 _Avoid_: last (see Flagged ambiguities)
 
-**Predicate**:
-A boolean test on a `Result` outcome that `.when` or `.until` turns into a classifier.
-_Avoid_: condition, filter
+**Shortcut** (`.when` / `.until`):
+A boolean test on one side of a `Result` outcome that builds a classifier: `.when` tests the error, `.until` tests the `Ok` value.
+_Avoid_: predicate (the retired trait), condition, filter
 
 **Self-classifying outcome**:
 An outcome type that implements `Outcome` and so needs no classifier at the call site.
@@ -123,8 +123,7 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | Configure a retry policy | | tenacity `Retrying(...)`; Polly `ResiliencePipeline` | `RetryPolicy::new`, `RetryPolicy::{stop, wait, timeout, when, until, decide}` |
 | Erase policy strategy types | | | `RetryPolicy::{boxed, boxed_local}` |
 | Bind an operation | | tenacity `@retry`; backon `.retry()` | `retry`, `retry_async`, `RetryExt::retry`, `AsyncRetryExt::retry_async`, `RetryPolicy::{retry, retry_async}` |
-| Set the classifier | | tenacity `retry=` | `.decide`, `.when`, `.until` (builder and policy) |
-| Build a predicate | | tenacity `retry_if_exception`, `retry_if_result` | `predicate::{any_error, error, ok, result}` |
+| Set the classifier | | tenacity `retry=`, `retry_if_exception`, `retry_if_result` | `.decide`, `.when`, `.until` (builder and policy) |
 | Set the wait strategy | | tenacity `wait=`; backon `Backoff` | `.wait`, `wait::{fixed, linear, exponential, decorrelated_jitter}`, `WaitExponential::base` |
 | Compose wait strategies | | tenacity `wait_a + wait_b`, `wait_chain` | `Wait::{add, chain, cap}`, `+` |
 | Add jitter | | AWS "Full Jitter", "Equal Jitter", "Decorrelated Jitter" | `Wait::{jitter, full_jitter, equal_jitter}`, `Jittered::{with_seed, with_nonce}` |
@@ -136,7 +135,7 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | Run the execution | Execution started | | `.call()` (sync, async, `*WithStats`) |
 | | Attempt starting | tenacity `before` | `RetryState` |
 | Run an attempt | Attempt completed | tenacity `after` | `Operation::call_op` |
-| Classify the outcome | Outcome returned; outcome retried; outcome aborted | | `Outcome::classify`, `Predicate::should_retry`, `Verdict::{Return, Retry, Abort}`, `Decision::{Return, Retry}` |
+| Classify the outcome | Outcome returned; outcome retried; outcome aborted | | `Outcome::classify`, `When`, `Until`, `Verdict::{Return, Retry, Abort}`, `Decision::{Return, Retry}` |
 | Check the stop strategy | Stop strategy fired; timeout reached | tenacity `stop` | `Stop::should_stop` |
 | Compute the next delay | Delay computed; delay clamped to timeout | tenacity `wait` | `Wait::next_wait` |
 | Pause for the delay | Delay elapsed | | `SyncClock::wait`, `AsyncClock::wait_async` |
@@ -162,7 +161,7 @@ Views:
 - **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy and wait strategy.
 - **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 
@@ -199,5 +198,5 @@ Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifie
 7. **Hook names mix patterns.** Resolved: the hooks were removed (ADR-0012).
 8. **Two state views with unparallel names.** Resolved: `AttemptState` was removed with the hooks (ADR-0012); only `RetryState` remains.
 9. **Operation vs op vs probe.** Source and ADRs use all three. Resolved: **Operation**; "probe" stays only for the README "inverted probe" pattern.
-10. **Return vs accept vs success.** README and `Predicate` docs say "accept"; enums say `Return`. Resolved: **Return**.
+10. **Return vs accept vs success.** README and the old `Predicate` docs said "accept"; enums say `Return`. Resolved: **Return**.
 11. **Abort vs reject vs fatal.** `RetryError::Aborted` doc says "rejected an outcome as fatal". Resolved: **Abort**; ADR-0006 mentions a retired `RetryError::Rejected`.

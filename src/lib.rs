@@ -10,7 +10,7 @@
 //!   into *return*, *retry*, or *abort* ([`Verdict`]), so polling
 //!   (`Ok("pending")` means "keep going"), a sought-after `Err`, or a
 //!   non-`Result` poll enum can drive the loop directly. Use
-//!   [`.until(predicate)`](Retry::until) for polling and
+//!   [`.until(done)`](Retry::until) for polling and
 //!   [`.decide(closure)`](Retry::decide) for full control.
 //! - **Policy reuse**, where a single [`RetryPolicy`] captures your retry rules and
 //!   gets shared across multiple call sites — no duplicated builder chains.
@@ -60,10 +60,10 @@
 //! ```
 //! use core::time::Duration;
 //! use relentless::clock::VirtualClock;
-//! use relentless::{Wait, retry, predicate, stop, wait};
+//! use relentless::{Wait, retry, stop, wait};
 //!
 //! let result = retry(|_| Err::<(), &str>("boom"))
-//!     .when(predicate::error(|e: &&str| *e == "boom"))
+//!     .when(|e| *e == "boom")
 //!     .wait(
 //!         wait::exponential(Duration::from_millis(100))
 //!             .full_jitter()
@@ -116,21 +116,20 @@
 //!
 //! # Polling for a condition
 //!
-//! Use [`.until(predicate)`](Retry::until) to keep retrying until a
-//! success condition is met. Unlike [`.when()`](Retry::when), which
-//! retries on matching outcomes, `.until()` retries on everything *except* the
-//! matching outcome.
+//! Use [`.until(done)`](Retry::until) to keep retrying until an `Ok` value
+//! satisfies `done`. Where [`.when()`](Retry::when) tests the error,
+//! `.until()` tests the value, and retries everything else.
 //!
 //! ```
 //! use relentless::clock::VirtualClock;
-//! use relentless::{RetryPolicy, predicate};
+//! use relentless::RetryPolicy;
 //!
 //! #[derive(Debug, PartialEq)]
 //! enum Status { Pending, Done }
 //!
 //! let mut count = 0;
 //! let result = RetryPolicy::new()
-//!     .until(predicate::ok(|s: &Status| *s == Status::Done))
+//!     .until(|s: &Status| *s == Status::Done)
 //!     .retry(|_| {
 //!         count += 1;
 //!         Ok::<_, &str>(if count >= 2 { Status::Done } else { Status::Pending })
@@ -334,13 +333,12 @@ pub mod clock;
 mod decision;
 mod engine;
 mod policy;
-pub mod predicate;
 mod state;
 pub mod stop;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
-pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Verdict};
+pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Until, Verdict, When};
 // `Decide`/`IntoDecision` are sealed engine-facing classifier traits: users
 // never implement them. `Decide` is documented because code generic over a
 // configured builder names it in bounds (`C: Decide<O>`, `C::R`, `C::A`).
@@ -369,8 +367,6 @@ pub use engine::Attempt;
 #[doc(hidden)]
 pub use engine::{AsyncRun, DropStats};
 pub use policy::RetryPolicy;
-pub use predicate::Predicate;
-pub use predicate::classifier::{Until, When};
 pub use state::RetryState;
 pub use stop::Stop;
 pub use wait::Wait;

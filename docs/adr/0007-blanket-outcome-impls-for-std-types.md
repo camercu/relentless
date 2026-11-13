@@ -77,8 +77,8 @@ outcome type is a second-class citizen whose exhaustion error cannot be
   materialises.
 - **Transient-error classifier helpers for `io::Result` / `anyhow::Result`.**
   These are *already* `Outcome` via the `Result` blanket — nothing to add there.
-  The genuinely useful addition is a `Predicate` on the `.when` path (e.g.
-  `predicate::io_transient()` retrying `WouldBlock`/`Interrupted`/`TimedOut` and
+  The genuinely useful addition is a test for the `.when` path (e.g. a plain
+  `fn io_transient(&io::Error) -> bool` passed as `.when(io_transient)`, retrying `WouldBlock`/`Interrupted`/`TimedOut` and
   aborting `NotFound`/`PermissionDenied`), feature-gated so `io`/`anyhow` don't
   weigh on the core. That is a different mechanism, out of scope for this ADR,
   deferred until requested.
