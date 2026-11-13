@@ -213,7 +213,9 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     ///
     /// For an operation that returns a future, use
     /// [`retry_async`](Self::retry_async). Passed here, the future itself
-    /// becomes the outcome, which the policy's classifier cannot classify.
+    /// becomes the outcome and is never awaited: the default classifier
+    /// rejects it at compile time, and a `.decide` classifier sees an unrun
+    /// future.
     #[allow(clippy::type_complexity)]
     pub fn retry<F, O>(&self, op: F) -> Retry<F, &C, &S, &W, SystemClock, (), (), ()>
     where
