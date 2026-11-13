@@ -48,10 +48,11 @@ top of that base.
 
 Runtime clock adapters are feature-gated separately (see 12.1):
 
-- `tokio-clock`: `clock::TokioClock`
+- `tokio-clock`: `clock::TokioClock` (not on `wasm32-unknown-unknown`)
 - `embassy-clock`: `clock::EmbassyClock`
 - `gloo-timers-clock`: `clock::GlooClock` on `wasm32`
-- `futures-timer-clock`: `clock::FuturesTimerClock`
+- `futures-timer-clock`: `clock::FuturesTimerClock` (not on
+  `wasm32-unknown-unknown`)
 
 `alloc` is not required for async retry itself. Within the clock module it
 gates only `Recording`, the wait recorder (see 12.5).

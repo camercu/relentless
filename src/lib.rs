@@ -335,7 +335,7 @@
 //!
 //! | Flag | Purpose |
 //! |------|---------|
-//! | `std` (default) | [`clock::SystemClock`] default for sync retries, `std::error::Error` on `RetryError` |
+//! | `std` (default) | [`clock::SystemClock`] default for sync retries (not on `wasm32-unknown-unknown`), `std::error::Error` on `RetryError` |
 //! | `alloc` | Boxed policies, [`clock::Recording`] wait recorder |
 //! | `tokio-clock` | `clock::TokioClock` async clock adapter (not on `wasm32-unknown-unknown`) |
 //! | `embassy-clock` | `clock::EmbassyClock` async clock adapter |
