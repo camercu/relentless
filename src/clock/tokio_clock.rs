@@ -16,13 +16,14 @@ use crate::compat::Duration;
 ///
 /// A wait whose deadline overflows [`tokio::time::Instant`] completes at
 /// Tokio's far-future instant (multiple decades out) instead of the requested
-/// duration, so the [`Clock`](super::Clock) contract's "advance `now()` by at least the
-/// waited duration" does not hold above that ceiling. Nothing panics and
-/// nothing fires immediately; the wait is merely shorter than asked. This is
-/// reachable without absurd input — [`wait::exponential`](crate::wait::exponential)
-/// saturates to [`Duration::MAX`] under [`stop::never`](crate::stop::never).
-/// Bound the strategy with `.cap(...)` if a run must not depend on where that
-/// ceiling sits.
+/// duration, so the [`Clock`](super::Clock) contract's "advance `now()` by at
+/// least the waited duration" does not hold above that ceiling. Nothing panics
+/// and nothing fires immediately; the wait is merely shorter than asked. This
+/// is reachable without absurd input:
+/// [`wait::exponential`](crate::wait::exponential) saturates to
+/// [`Duration::MAX`](core::time::Duration::MAX) under
+/// [`stop::never`](crate::stop::never). Bound the strategy with `.cap(...)` if
+/// a run must not depend on where that ceiling sits.
 ///
 /// # Not on `wasm32-unknown-unknown`
 ///

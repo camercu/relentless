@@ -146,8 +146,9 @@ pub trait SyncClock: Clock {
     message = "`{Self}` cannot drive the asynchronous retry engine",
     label = "not an `AsyncClock`",
     note = "supply an async clock with `.clock(...)` before `.call()` — e.g. \
-            `clock::TokioClock` (feature `tokio-clock`) in production or \
-            `&VirtualClock` in tests; there is no async default"
+            `clock::TokioClock` (feature `tokio-clock`) in production, \
+            `clock::GlooClock` in a browser, or `&VirtualClock` in tests; \
+            there is no async default"
 )]
 pub trait AsyncClock: Clock {
     /// The concrete future returned by [`wait_async`](AsyncClock::wait_async) —
