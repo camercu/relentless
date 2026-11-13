@@ -12,7 +12,7 @@ unexport GIT_INDEX_FILE
 toml_files := "Cargo.toml deny.toml"
 no_std_target := "thumbv7m-none-eabi"
 wasm_target := "wasm32-unknown-unknown"
-wasm_features := "alloc,gloo-timers-clock,futures-timer-clock"
+wasm_features := "alloc,gloo-timers-clock"
 benchmark_target := "retry_hot_paths"
 warnings := "-D warnings"
 stable_toolchain := "+stable"
@@ -150,6 +150,7 @@ check-no-std:
 check-wasm:
     cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
     cargo check --target {{wasm_target}}
+    cargo check --target {{wasm_target}} --no-default-features --features futures-timer-clock
 
 check-embassy:
     cargo check --features embassy-clock
