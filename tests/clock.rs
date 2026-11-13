@@ -477,3 +477,60 @@ fn clock_receives_computed_delay() {
         assert_eq!(*d, ARBITRARY_DELAY);
     }
 }
+
+#[cfg(feature = "alloc")]
+mod recording {
+    use super::{ARBITRARY_DURATION, poll_once};
+    use core::pin::pin;
+    use core::time::Duration;
+    use relentless::clock::{AsyncClock, Clock, Recording, SyncClock, VirtualClock};
+
+    #[test]
+    fn a_sync_wait_is_recorded() {
+        let clock = Recording::new(VirtualClock::new());
+        clock.wait(ARBITRARY_DURATION);
+        assert_eq!(clock.waits(), vec![ARBITRARY_DURATION]);
+    }
+
+    #[test]
+    fn a_sync_wait_reaches_the_inner_clock() {
+        let clock = Recording::new(VirtualClock::new());
+        clock.wait(ARBITRARY_DURATION);
+        assert_eq!(clock.now(), ARBITRARY_DURATION);
+    }
+
+    #[test]
+    fn waits_are_recorded_in_request_order() {
+        let clock = Recording::new(VirtualClock::new());
+        clock.wait(Duration::from_millis(1));
+        clock.wait(Duration::from_millis(2));
+        assert_eq!(
+            clock.waits(),
+            vec![Duration::from_millis(1), Duration::from_millis(2)]
+        );
+    }
+
+    #[test]
+    fn an_unpolled_async_wait_is_not_recorded() {
+        let clock = Recording::new(VirtualClock::new());
+        drop((&clock).wait_async(ARBITRARY_DURATION));
+        assert_eq!(clock.waits(), Vec::new());
+    }
+
+    #[test]
+    fn a_completed_async_wait_is_recorded_once() {
+        let clock = Recording::new(VirtualClock::new());
+        let mut future = pin!((&clock).wait_async(ARBITRARY_DURATION));
+        assert!(poll_once(&mut future).is_ready());
+        assert!(poll_once(&mut future).is_ready());
+        assert_eq!(clock.waits(), vec![ARBITRARY_DURATION]);
+    }
+
+    #[test]
+    fn a_completed_async_wait_reaches_the_inner_clock() {
+        let clock = Recording::new(VirtualClock::new());
+        let mut future = pin!((&clock).wait_async(ARBITRARY_DURATION));
+        assert!(poll_once(&mut future).is_ready());
+        assert_eq!(clock.now(), ARBITRARY_DURATION);
+    }
+}

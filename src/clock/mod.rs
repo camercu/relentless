@@ -37,6 +37,8 @@
 use crate::compat::Duration;
 use core::future::Future;
 
+#[cfg(feature = "alloc")]
+mod recording;
 mod system_clock;
 mod virtual_clock;
 
@@ -49,6 +51,8 @@ mod gloo_clock;
 #[cfg(feature = "tokio-clock")]
 mod tokio_clock;
 
+#[cfg(feature = "alloc")]
+pub use recording::{Recording, RecordingWait};
 pub use system_clock::SystemClock;
 pub use virtual_clock::{VirtualClock, VirtualWait};
 

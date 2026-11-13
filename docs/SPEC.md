@@ -1382,6 +1382,22 @@ like any production clock.
   and dependency-free, and the hand-rolled pattern is small; revisit on real
   demand.)
 
+### 12.5 Recording waits
+
+`clock::Recording<C>` (feature `alloc`) wraps any clock and records each wait
+it performs, so a test can assert a backoff schedule against any clock.
+
+- **12.5.1** `Recording::new(inner)` starts with an empty record. `now()`
+  and waits pass through to `inner` unchanged; wrapping never alters timing.
+- **12.5.2** `Recording<C>` is a `SyncClock` when `C` is; a sync wait is
+  recorded after the inner wait returns.
+- **12.5.3** `&Recording<C>` is an `AsyncClock` when `&C` is. An async wait is
+  recorded once, when its future completes; a wait dropped before completion
+  is not recorded.
+- **12.5.4** `.waits()` returns the recorded waits in request order, as a
+  snapshot. The engine never waits for `Duration::ZERO`, so zero delays never
+  appear. `.inner()` returns the wrapped clock.
+
 ## 13. Public API surface
 
 The following items are part of the supported surface for new code.
@@ -1453,6 +1469,7 @@ Free functions:
 
 - traits: `Clock`, `SyncClock`, `AsyncClock`
 - types: `SystemClock`, `VirtualClock`, `VirtualWait`
+- `alloc`-gated types: `Recording`, `RecordingWait` (see 12.5)
 - feature-gated adapter types: `TokioClock`, `EmbassyClock`, `GlooClock`,
   `FuturesTimerClock` (see 12.1)
 
