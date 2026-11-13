@@ -37,6 +37,43 @@
 use crate::compat::Duration;
 use core::future::Future;
 
+/// Compiles each item only on targets with an OS clock.
+///
+/// `wasm32-unknown-unknown` has none: `std::time::Instant::now` builds there
+/// but panics. Clocks that read `Instant` wrap their constructors and clock
+/// impls in this, so on that target they fail to compile instead.
+// Unused in builds with no such clock (no `std`, no adapter feature).
+#[allow(unused_macros)]
+macro_rules! with_os_clock {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            $item
+        )*
+    };
+}
+
+/// Fails the build if `$clock` implements [`Clock`] on a target with no OS
+/// clock, so a clock gated by `with_os_clock!` cannot regain its runtime panic.
+///
+/// The probe is ambiguous (and so a compile error) exactly when `$clock:
+/// Clock` holds.
+macro_rules! assert_no_clock_without_os_clock {
+    ($clock:ty) => {
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        const _: () = {
+            use $crate::clock::Clock;
+            trait AmbiguousIfClock<A> {
+                fn check() {}
+            }
+            struct IsClock;
+            impl<T: ?Sized> AmbiguousIfClock<()> for T {}
+            impl<T: ?Sized + Clock> AmbiguousIfClock<IsClock> for T {}
+            let _ = <$clock as AmbiguousIfClock<_>>::check;
+        };
+    };
+}
+
 #[cfg(feature = "alloc")]
 mod recording;
 mod system_clock;

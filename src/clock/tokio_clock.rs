@@ -1,10 +1,5 @@
 //! The Tokio-backed async clock.
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use super::{AsyncClock, Clock};
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use crate::compat::Duration;
-
 /// An [`AsyncClock`](super::AsyncClock) backed by the Tokio runtime's timer.
 ///
 /// `now()` reads [`tokio::time::Instant`] and `wait_async` is
@@ -36,54 +31,42 @@ pub struct TokioClock {
     origin: tokio::time::Instant,
 }
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-impl TokioClock {
-    /// Creates a clock anchored at the current Tokio instant.
-    ///
-    /// Construction works outside a runtime; the waits (and paused-time
-    /// reads) must run within a Tokio runtime context.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            origin: tokio::time::Instant::now(),
+with_os_clock! {
+    use super::{AsyncClock, Clock};
+    use crate::compat::Duration;
+
+    impl TokioClock {
+        /// Creates a clock anchored at the current Tokio instant.
+        ///
+        /// Construction works outside a runtime; the waits (and paused-time
+        /// reads) must run within a Tokio runtime context.
+        #[must_use]
+        pub fn new() -> Self {
+            Self {
+                origin: tokio::time::Instant::now(),
+            }
+        }
+    }
+
+    impl Default for TokioClock {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Clock for TokioClock {
+        fn now(&self) -> Duration {
+            self.origin.elapsed()
+        }
+    }
+
+    impl AsyncClock for TokioClock {
+        type Wait = tokio::time::Sleep;
+
+        fn wait_async(&self, dur: Duration) -> Self::Wait {
+            tokio::time::sleep(dur)
         }
     }
 }
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-impl Default for TokioClock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-impl Clock for TokioClock {
-    fn now(&self) -> Duration {
-        self.origin.elapsed()
-    }
-}
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-impl AsyncClock for TokioClock {
-    type Wait = tokio::time::Sleep;
-
-    fn wait_async(&self, dur: Duration) -> Self::Wait {
-        tokio::time::sleep(dur)
-    }
-}
-
-// `tokio::time::Instant::now` compiles on wasm32-unknown-unknown but panics.
-// This fails to compile if `TokioClock` ever implements `Clock` on that
-// target, so the panic cannot return as a runtime surprise.
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-const _: () = {
-    use super::Clock;
-    trait AmbiguousIfClock<A> {
-        fn check() {}
-    }
-    struct IsClock;
-    impl<T: ?Sized> AmbiguousIfClock<()> for T {}
-    impl<T: ?Sized + Clock> AmbiguousIfClock<IsClock> for T {}
-    let _ = <TokioClock as AmbiguousIfClock<_>>::check;
-};
+assert_no_clock_without_os_clock!(TokioClock);
