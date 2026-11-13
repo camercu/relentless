@@ -140,6 +140,22 @@ pin_project! {
     /// timeout budget either way; the assertion exists to surface the broken
     /// clock in its implementor's own tests. No clock shipped with this crate
     /// can trigger it.
+    ///
+    /// # Must be polled
+    ///
+    /// Like every future, it does nothing until awaited, so discarding it
+    /// warns:
+    ///
+    /// ```compile_fail
+    /// #![deny(unused_must_use)]
+    /// use relentless::{clock::VirtualClock, retry_async};
+    ///
+    /// let clock = VirtualClock::new();
+    /// retry_async(|_| async { Ok::<u32, &str>(1) })
+    ///     .clock(&clock)
+    ///     .call_with_stats();
+    /// ```
+    #[must_use = "futures do nothing unless polled"]
     pub struct AsyncRun<F, C, S, W, Cl>
     where
         F: Operation<Async>,
@@ -256,6 +272,20 @@ where
 pin_project! {
     /// Adapts an [`AsyncRun`] future so it yields only the result, dropping the
     /// stats. Returned by the async `Retry::call`.
+    ///
+    /// Like every future, it does nothing until awaited, so discarding it
+    /// warns:
+    ///
+    /// ```compile_fail
+    /// #![deny(unused_must_use)]
+    /// use relentless::{clock::VirtualClock, retry_async};
+    ///
+    /// let clock = VirtualClock::new();
+    /// retry_async(|_| async { Ok::<u32, &str>(1) })
+    ///     .clock(&clock)
+    ///     .call();
+    /// ```
+    #[must_use = "futures do nothing unless polled"]
     pub struct DropStats<Inner> {
         #[pin]
         inner: Inner,
