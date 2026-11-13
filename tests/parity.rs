@@ -43,7 +43,7 @@ struct Scenario {
     max_attempts: u32,
     wait: WaitKind,
     timeout: Option<Duration>,
-    /// `Some(e)` marks error `e` non-retryable (predicate rejection).
+    /// `Some(e)` marks error `e` non-retryable (classifier abort).
     reject_error: Option<&'static str>,
     /// `Some(v)` polls until `Ok(v)` via `.until(...)` instead of `.when(...)`.
     until_ok: Option<u32>,
@@ -257,11 +257,11 @@ fn parity_zero_wait() {
     assert_parity(&scenario);
 }
 
-/// GIVEN a predicate rejecting a specific error on attempt 2
+/// GIVEN a classifier aborting on a specific error on attempt 2
 /// WHEN both engines terminate as Aborted
 /// THEN the traces are identical
 #[test]
-fn parity_aborted_by_predicate() {
+fn parity_aborted_by_classifier() {
     let mut scenario = Scenario::new(
         vec![Err("transient"), Err(ARBITRARY_ERROR)],
         5,
@@ -272,7 +272,7 @@ fn parity_aborted_by_predicate() {
     let trace = run_sync(&scenario);
     assert!(
         trace.result.contains("Aborted"),
-        "guard: predicate must abort; got {}",
+        "guard: classifier must abort; got {}",
         trace.result
     );
     assert_parity(&scenario);

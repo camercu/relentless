@@ -129,7 +129,7 @@ fn sync_stats_total_wait_accumulates_with_exponential() {
 }
 
 #[test]
-fn sync_stop_reason_returned_with_default_predicate() {
+fn sync_stop_reason_returned_with_default_classifier() {
     let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
 
     let (result, stats) = policy
@@ -161,7 +161,7 @@ fn sync_stop_reason_exhausted_on_exhaustion() {
 }
 
 #[test]
-fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
+fn sync_stop_reason_returned_for_until_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .until(|value: &i32| *value >= 0);
@@ -178,7 +178,7 @@ fn sync_stop_reason_returned_for_custom_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_returned_for_result_predicate_on_ok() {
+fn sync_stop_reason_returned_for_when_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(|_: &&str| true);
@@ -194,7 +194,7 @@ fn sync_stop_reason_returned_for_result_predicate_on_ok() {
 }
 
 #[test]
-fn sync_stop_reason_returned_for_error_predicate_on_ok() {
+fn sync_stop_reason_returned_for_selective_when_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(|e: &&str| *e == "retryable");
@@ -211,7 +211,7 @@ fn sync_stop_reason_returned_for_error_predicate_on_ok() {
 
 #[test]
 fn sync_stop_reason_aborted_for_non_retryable_error() {
-    // A non-retryable error exits immediately with Aborted (the predicate declined
+    // A non-retryable error exits immediately with Aborted (the classifier declined
     // to retry), not Exhausted — the stop strategy never fired.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
@@ -308,7 +308,7 @@ fn async_stop_reason_condition_not_met() {
 }
 
 #[test]
-fn async_stop_reason_returned_for_custom_predicate_on_ok() {
+fn async_stop_reason_returned_for_until_on_ok() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .until(|value: &i32| *value >= 0);
@@ -486,7 +486,7 @@ fn stats_total_wait_includes_zero_duration_delays() {
 
 /// 4.2.1
 #[test]
-fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
+fn stop_reason_returned_or_aborted_for_classified_outcomes() {
     // Returned Ok
     let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
     let (_, stats) = policy
@@ -495,7 +495,7 @@ fn stop_reason_returned_or_aborted_for_predicate_accepted_outcomes() {
         .call_with_stats();
     assert_eq!(stats.stop_reason, StopReason::Returned);
 
-    // Aborted Err (predicate does not match — Aborted)
+    // Aborted Err (`.when` rejects it — Aborted)
     let policy2 = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(|e: &&str| *e == "retryable");

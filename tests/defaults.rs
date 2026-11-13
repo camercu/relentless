@@ -172,7 +172,7 @@ fn retry_non_retryable_error_returns_immediately() {
 }
 
 #[test]
-fn retry_until_retries_until_predicate_fires() {
+fn retry_until_retries_until_the_value_is_done() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
@@ -329,7 +329,7 @@ mod async_tests {
     }
 
     #[test]
-    fn retry_async_until_retries_until_predicate_fires() {
+    fn retry_async_until_retries_until_the_value_is_done() {
         let attempts = Rc::new(Cell::new(0_u32));
         let attempts_ref = Rc::clone(&attempts);
 

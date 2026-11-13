@@ -410,7 +410,7 @@ fn aborted_error_has_no_last_outcome() {
 
 /// GIVEN a `Result` operation classified with a two-way `Decision`
 /// WHEN the retry is exhausted and the caller propagates the error with `?`
-/// THEN the error converts into `Box<dyn Error>` like a predicate-path error
+/// THEN the error converts into `Box<dyn Error>` like a `.when`-path error
 #[cfg(feature = "std")]
 #[test]
 fn a_decision_classified_error_propagates_with_question_mark() {

@@ -1,8 +1,8 @@
 //! Acceptance tests for the `RetryPolicy` builder and synchronous execution path.
 //!
 //! Each test exercises a single observable contract: builder type-state transitions,
-//! execution loop invariants (attempt counting, sleep timing, early exit on predicate
-//! rejection), reset across `.retry()` invocations, and the
+//! execution loop invariants (attempt counting, sleep timing, early exit on an
+//! abort), reset across `.retry()` invocations, and the
 //! `RetryPolicy::default()` safe-defaults guarantee. The test harness avoids real
 //! sleeps by injecting a `VirtualClock`, whose waits advance virtual time
 //! instead of blocking.
@@ -93,7 +93,7 @@ fn wait_builder_configures_wait_strategy() {
 }
 
 #[test]
-fn when_builder_configures_predicate() {
+fn when_builder_configures_classifier() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .when(|e: &&str| *e == "retryable");
@@ -213,9 +213,9 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 }
 
 #[test]
-fn retry_predicate_evaluated_before_stop() {
-    // The predicate is consulted before the stop strategy. A non-negative Ok value
-    // satisfies the predicate immediately, so the loop exits even though attempts
+fn retry_classifier_evaluated_before_stop() {
+    // The classifier is consulted before the stop strategy. A non-negative Ok value
+    // satisfies `.until` immediately, so the loop exits even though attempts
     // remain — stop::attempts is never reached.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
@@ -232,7 +232,7 @@ fn retry_predicate_evaluated_before_stop() {
 #[test]
 fn retry_with_never_stop_still_returns_on_ok() {
     // stop::never() will never fire, so the only exit is a successful outcome
-    // accepted by the predicate. Verifies the loop doesn't require a stop condition
+    // returned by the classifier. Verifies the loop doesn't require a stop condition
     // to terminate when Ok is returned.
     let policy = RetryPolicy::new().stop(stop::never());
 
@@ -287,7 +287,7 @@ fn exponential_wait_increases_sleep_durations() {
 #[cfg(feature = "alloc")]
 #[test]
 fn boxed_local_erases_policy_types() {
-    // `.boxed_local()` erases stop+wait only; the predicate keeps its concrete
+    // `.boxed_local()` erases stop+wait only; the classifier keeps its concrete
     // type (here the default `DefaultClassifier`, via the third defaulted param).
     let policy: RetryPolicy<
         Box<dyn relentless::stop::Stop + 'static>,
@@ -300,9 +300,9 @@ fn boxed_local_erases_policy_types() {
     assert!(result.is_err());
 }
 
-/// A boxed default-predicate policy is reusable across operations with
-/// different `Ok` types, because the predicate is left generic rather than
-/// pinned to one `(T, E)` via `Box<dyn Predicate<T, E>>`.
+/// A boxed default-classifier policy is reusable across operations with
+/// different `Ok` types, because only stop and wait are boxed: the
+/// classifier stays generic, not pinned to one outcome type.
 #[cfg(feature = "alloc")]
 #[test]
 fn boxed_policy_reuses_across_different_ok_types() {
@@ -493,7 +493,7 @@ fn retry_succeeds_on_first_attempt() {
 }
 
 #[test]
-fn exhausted_returned_for_ok_predicate_exhaustion() {
+fn exhausted_returned_when_until_never_holds() {
     // `.until` retries while the Ok value fails the condition. When stop
     // fires with an Ok value still being rejected, the error variant must be
     // Exhausted with last=Ok(_), not Aborted (which `.when` yields only for Err).
@@ -515,7 +515,7 @@ fn exhausted_returned_for_ok_predicate_exhaustion() {
 }
 
 #[test]
-fn composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
+fn composed_polling_classifier_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
@@ -577,8 +577,8 @@ fn until_ok_retries_through_transient_errors_while_polling() {
 }
 
 #[test]
-fn predicate_rejects_err_means_immediate_return() {
-    // When the predicate does not match an Err, the loop exits immediately with
+fn when_rejecting_an_err_aborts_immediately() {
+    // When `.when` rejects an Err, the loop exits immediately with
     // RetryError::Aborted rather than waiting for the stop strategy to fire.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
@@ -664,7 +664,7 @@ fn call_returns_retry_result_type() {
 
 /// 7.2.4
 #[test]
-fn predicate_accepted_before_stop_fires() {
+fn until_returns_before_stop_fires() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
         .until(|v: &i32| *v >= 0);
@@ -680,11 +680,8 @@ fn predicate_accepted_before_stop_fires() {
 /// 5.4
 #[test]
 fn when_and_until_last_call_wins() {
-    // Set .when(any_error()) then override with .until(ok(always_true)).
-    // until(ok(f)) retries while ok is false and stops when ok is true.
-    // Any Err stops immediately (ok returns false, until negates to true, then
-    // we wait — actually with until the logic is: until(ok(f)) retries errors automatically.
-    // The last predicate wins: .until() after .when() replaces it.
+    // `.until` after `.when` replaces the classifier: the last call wins.
+    // `.until` retries every Err and returns once the Ok value is done.
     let call_count = Cell::new(0_i32);
     let result = RetryPolicy::new()
         .stop(stop::attempts(5))

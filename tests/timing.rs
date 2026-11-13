@@ -2,7 +2,7 @@
 //!
 //! These tests run the actual `std::thread::sleep` to simulate operation latency.
 //! They are intentionally narrow: only elapsed-stop is verified here because all other
-//! stop/wait/predicate correctness is covered by deterministic tests in `composition.rs`
+//! stop/wait/classifier correctness is covered by deterministic tests in `composition.rs`
 //! and `policy_sync.rs`.
 #![cfg(feature = "std")]
 

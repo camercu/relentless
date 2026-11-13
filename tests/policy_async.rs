@@ -146,7 +146,7 @@ fn async_retry_returns_exhausted_for_ok_exhaustion() {
 }
 
 #[test]
-fn async_composed_polling_predicate_handles_transient_errors_and_not_ready_values() {
+fn async_composed_polling_classifier_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
         .wait(wait::fixed(Duration::ZERO))
@@ -203,10 +203,10 @@ fn async_clock_receives_wait_strategy_delays() {
 }
 
 #[test]
-fn async_predicate_is_evaluated_before_stop() {
-    // The predicate is consulted before the stop strategy. With stop::attempts(1),
+fn async_classifier_is_evaluated_before_stop() {
+    // The classifier is consulted before the stop strategy. With stop::attempts(1),
     // the stop would fire on the first call if checked first — but because the Ok
-    // value satisfies the predicate, the result is returned without stopping.
+    // value satisfies `.until`, the result is returned without stopping.
     let policy = RetryPolicy::new()
         .stop(stop::attempts(1))
         .until(|value: &i32| *value >= 0);
@@ -223,7 +223,7 @@ fn async_predicate_is_evaluated_before_stop() {
 }
 
 #[test]
-fn async_default_predicate_behaves_like_any_error() {
+fn async_default_classifier_behaves_like_any_error() {
     let policy = RetryPolicy::new().stop(stop::attempts(ARBITRARY_ATTEMPTS));
     let clock = RecordingClock::new();
     let call_count = Cell::new(0_u32);
