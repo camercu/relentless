@@ -273,6 +273,8 @@ pin_project! {
     /// Adapts an [`AsyncRun`] future so it yields only the result, dropping the
     /// stats. Returned by the async `Retry::call`.
     ///
+    /// # Must be polled
+    ///
     /// Like every future, it does nothing until awaited, so discarding it
     /// warns:
     ///

@@ -852,7 +852,9 @@ Terminal execution:
 - **6.5.3** The async `Retry::call_with_stats` returns a future with
   `Output = (Result<R, RetryError<A, O>>, RetryStats)`.
 
-**6.5.4** Both are terminal: they consume the builder.
+**6.5.4** Both are terminal: they consume the builder. Both returned futures
+are `#[must_use]`: discarding one without awaiting it warns, since the
+operation never runs.
 
 The async builder is terminated with `.call()`, which returns a single-use
 `Future`:
