@@ -196,14 +196,16 @@
 //! - **On exit**, match on what `.call()` returns.
 //!   [`.call_with_stats()`](Retry::call_with_stats) adds the attempt count, total wait and [`StopReason`].
 //! - **Before each sleep**, wrap the wait strategy. The engine consults it only
-//!   once a retry is certain, so it sees exactly the retries.
+//!   once a retry is certain, so it sees exactly the retries. It sees the
+//!   strategy's delay: with [`.timeout()`](Retry::timeout) set, the engine may
+//!   sleep less, clamped to the remaining budget.
 //!
 //! ```
 //! use core::time::Duration;
 //! use relentless::clock::VirtualClock;
 //! use relentless::{RetryState, Wait, retry, wait};
 //!
-//! /// Logs each delay before the engine sleeps for it.
+//! /// Logs the delay the strategy picks for each retry.
 //! struct Logged<W>(W);
 //!
 //! impl<W: Wait> Wait for Logged<W> {

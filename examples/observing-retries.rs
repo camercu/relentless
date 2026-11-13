@@ -6,8 +6,10 @@ use core::time::Duration;
 use relentless::clock::VirtualClock;
 use relentless::{RetryError, RetryState, Wait, retry, stop, wait};
 
-/// Logs each delay before the engine sleeps for it. The engine asks the wait
-/// strategy only once a retry is certain, so every line is a real retry.
+/// Logs the delay the strategy picks for each retry. The engine asks the wait
+/// strategy only once a retry is certain, so every line is a real retry. With
+/// `.timeout(...)` set, the engine may sleep less: it clamps the delay to the
+/// remaining budget.
 struct Logged<W>(W);
 
 impl<W: Wait> Wait for Logged<W> {

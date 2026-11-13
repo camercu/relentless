@@ -299,7 +299,7 @@ Full inline code for these lives in the [API docs](https://docs.rs/relentless),
 with runnable versions in [`examples/`](./examples):
 
 - **Observing retries** — there are no hook callbacks. Log each attempt inside
-  the operation, log each delay by wrapping the wait strategy, and read a
+  the operation, log each chosen delay by wrapping the wait strategy, and read a
   `RetryStats` summary via `.call_with_stats()`.
   ([`observing-retries.rs`](./examples/observing-retries.rs))
 - **Self-classifying outcomes** — implement `Outcome` for a domain type (a poll
