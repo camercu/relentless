@@ -1150,7 +1150,9 @@ The `clock` module exports one `AsyncClock` implementor per runtime feature,
 each pairing a coherent `now()` source with that runtime's timer:
 
 - `clock::TokioClock` with `tokio-clock` — `tokio::time::Instant` +
-  `tokio::time::sleep`; coherent under `tokio::time::pause`
+  `tokio::time::sleep`; coherent under `tokio::time::pause`. Not on
+  `wasm32-unknown-unknown`, where `Instant::now` panics: there the type has
+  no constructor and implements no clock trait, so using it fails to compile
 - `clock::EmbassyClock` with `embassy-clock` — `embassy_time::Instant` +
   `embassy_time::Timer` (requires a linked embassy time driver)
 - `clock::GlooClock` with `gloo-timers-clock` on `wasm32` — `gloo-timers`

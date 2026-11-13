@@ -151,6 +151,7 @@ check-wasm:
     cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
     cargo check --target {{wasm_target}}
     cargo check --target {{wasm_target}} --no-default-features --features futures-timer-clock
+    cargo check --target {{wasm_target}} --no-default-features --features tokio-clock
 
 check-embassy:
     cargo check --features embassy-clock
