@@ -60,9 +60,8 @@ full list. Async retry does not require `alloc`.
 A `no_std` **sync** retry supplies its own clock instead: none of those four
 adapters implements `SyncClock`, and `SystemClock` needs `std` and an OS
 clock, so an embedded caller implements `Clock + SyncClock` over its own tick
-source — a
-delay source is board-specific and the crate does not guess. See [*Implementing
-your own
+source — a delay source is board-specific and the crate does not guess. See
+[*Implementing your own
 clock*](https://docs.rs/relentless/latest/relentless/clock/index.html) for the
 two methods involved.
 
@@ -77,9 +76,10 @@ The engine's one big idea: every completed outcome is sorted into a **verdict** 
   knob.
 - `.until(|v| …)` — retry until an `Ok` value satisfies the closure; every other
   outcome, `Err` included, retries. The polling knob.
-- On `retry(op)`, both closures take their parameter from the operation's
-  output, so they need no type annotation. A standalone `RetryPolicy` has no
-  operation to infer from, so its closures do: `|e: &io::Error| …`.
+- On `retry(op)` and `retry_async(op)`, both closures take their parameter
+  from the operation's output, so they need no type annotation. A standalone
+  `RetryPolicy` has no operation to infer from, so its closures do:
+  `|e: &io::Error| …`.
 - `.decide(closure)` — the general three-way form. You return `Return` / `Retry`
   / `Abort` yourself, so *any* outcome type — a poll enum, a search state, a
   sought-after error — drives the loop directly, independent of `Result`.
