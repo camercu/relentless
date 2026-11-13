@@ -17,8 +17,8 @@
 //! - **Strategy composition**, where
 //!   `wait::fixed(50ms) + wait::exponential(100ms)` and
 //!   `stop::attempts(5) | stop::elapsed(2s)` express complex behavior in one line.
-//! - **Hooks and stats**, where you observe the retry lifecycle (logging, metrics)
-//!   without restructuring your retry logic.
+//! - **Stats**, where a run reports how many attempts it took, how long it
+//!   spent waiting, and why it stopped.
 //!
 //! All of this works in sync and async code, across `std`, `no_std`, and `wasm`
 //! targets.
@@ -141,28 +141,54 @@
 //! assert_eq!(result.unwrap(), Status::Done);
 //! ```
 //!
-//! # Hooks and stats
+//! # Observing retries
+//!
+//! There are no hook callbacks: the operation and the result already carry
+//! everything a hook would see.
+//!
+//! - **Before each attempt**, run code at the top of the operation. It receives
+//!   the same [`RetryState`] (attempt number, elapsed time, previous delay).
+//! - **After each attempt**, inspect the outcome in the operation before
+//!   returning it.
+//! - **On exit**, match on what `.call()` returns. [`.with_stats()`](Retry::with_stats)
+//!   adds the attempt count, total wait and [`StopReason`].
+//! - **Before each sleep**, wrap the wait strategy. The engine consults it only
+//!   once a retry is certain, so it sees exactly the retries.
 //!
 //! ```
-//! use relentless::retry;
+//! use core::time::Duration;
 //! use relentless::clock::VirtualClock;
+//! use relentless::{RetryState, Wait, retry, wait};
 //!
-//! let (result, stats) = retry(|_| Ok::<_, &str>("done"))
-//!     .before_attempt(|state| {
-//!         if state.attempt > 1 {
-//!             println!("retrying (attempt {})", state.attempt);
-//!         }
-//!     })
-//!     .after_attempt(|state| {
-//!         if let Err(e) = state.outcome {
-//!             eprintln!("attempt {} failed: {e}", state.attempt);
-//!         }
-//!     })
-//!     .clock(VirtualClock::new())
-//!     .with_stats()
-//!     .call();
+//! /// Logs each delay before the engine sleeps for it.
+//! struct Logged<W>(W);
 //!
-//! println!("attempts: {}, total wait: {:?}", stats.attempts, stats.total_wait);
+//! impl<W: Wait> Wait for Logged<W> {
+//!     fn next_wait(&self, state: &RetryState) -> Duration {
+//!         let delay = self.0.next_wait(state);
+//!         println!("attempt {} failed; retrying in {delay:?}", state.attempt);
+//!         delay
+//!     }
+//! }
+//!
+//! let (result, stats) = retry(|state| {
+//!     if state.attempt > 1 {
+//!         println!("attempt {}", state.attempt); // before the attempt
+//!     }
+//!     let outcome = if state.attempt < 3 { Err("busy") } else { Ok("done") };
+//!     if let Err(e) = &outcome {
+//!         eprintln!("attempt {} failed: {e}", state.attempt); // after it
+//!     }
+//!     outcome
+//! })
+//! .wait(Logged(wait::fixed(Duration::from_millis(10))))
+//! .clock(VirtualClock::new())
+//! .with_stats()
+//! .call();
+//!
+//! // On exit: the result and stats say how the run ended.
+//! assert_eq!(result, Ok("done"));
+//! assert_eq!(stats.attempts, 3);
 //! ```
 //!
 //! # Error handling
@@ -227,9 +253,8 @@
 //!
 //! - **Async:** the future returned by [`.call()`](AsyncRetry::call) is
 //!   cancel-safe — drop it (e.g. via `tokio::time::timeout` or `select!`) to
-//!   stop at the next `.await`. Note `on_exit` does **not** fire on drop; use
-//!   `Drop` on your own types for guaranteed cleanup. See the `async-cancel`
-//!   example.
+//!   stop at the next `.await`. Use `Drop` on your own types for guaranteed
+//!   cleanup. See the `async-cancel` example.
 //! - **Sync:** bound the wall-clock with [`.timeout()`](Retry::timeout),
 //!   or check a flag inside the operation and return a sentinel error. The
 //!   default classifier *retries* every `Err`, so make the sentinel terminal
@@ -325,8 +350,8 @@ pub use decision::Decide;
 #[doc(hidden)]
 pub use decision::IntoDecision;
 pub use engine::{
-    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AttemptState, Exit, Retry, RetryError,
-    RetryExt, RetryResult, RetryStats, RetryWithStats, StopReason, retry, retry_async,
+    AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, Retry, RetryError, RetryExt, RetryResult,
+    RetryStats, RetryWithStats, StopReason, retry, retry_async,
 };
 // The builder's type-state plumbing. You never write these to *use* the
 // crate — you pass closures and `.await` or `.call()` the result — but they
@@ -334,9 +359,7 @@ pub use engine::{
 // storing a configured builder in a struct field, or returning one from a
 // helper, means writing them out. Unreachable names there would be a dead end,
 // and dead tokens on the crate's own entry-point pages.
-pub use engine::{
-    Async, AttemptHook, BeforeAttemptHook, Blocking, ExitHook, HookChain, Operation, StatelessOp,
-};
+pub use engine::{Async, Blocking, Operation, StatelessOp};
 // Sealed: the item bound on `Operation::Call`. Reachable because that bound is
 // public, hidden because no consumer writes it.
 #[doc(hidden)]

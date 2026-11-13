@@ -1,5 +1,5 @@
-//! Tests for `RetryState`, the context passed to Stop and Wait strategies and
-//! to `before_attempt`.
+//! Tests for `RetryState`, the context passed to the operation and to Stop and
+//! Wait strategies.
 //!
 //! Verifies the public layout, the 1-indexed attempt numbers and the setters.
 
@@ -48,35 +48,6 @@ fn retry_state_attempts_are_one_indexed_in_execution() {
         .call();
 
     assert_eq!(*attempts_seen.borrow(), vec![1, 2, 3]);
-}
-
-/// 3.6.3
-#[test]
-fn before_attempt_and_op_see_same_attempt_as_stop_wait() {
-    use relentless::{RetryPolicy, stop};
-    use std::cell::RefCell;
-
-    let before_attempts: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let op_attempts: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(3))
-        .wait(relentless::wait::fixed(Duration::ZERO));
-
-    let _ = policy
-        .retry(|state| {
-            op_attempts.borrow_mut().push(state.attempt);
-            Err::<i32, &str>("fail")
-        })
-        .before_attempt(|state| {
-            before_attempts.borrow_mut().push(state.attempt);
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    // before_attempt and op both see 1, 2, 3 in order.
-    assert_eq!(*before_attempts.borrow(), vec![1, 2, 3]);
-    assert_eq!(*op_attempts.borrow(), vec![1, 2, 3]);
 }
 
 /// 3.6.1

@@ -12,11 +12,8 @@ use std::rc::Rc;
 
 use relentless::clock::VirtualClock;
 use relentless::{
-    AsyncRetryExt, Decision, Exit, RetryError, StopReason, Verdict, predicate, retry_async, stop,
-    wait,
+    AsyncRetryExt, Decision, RetryError, StopReason, Verdict, predicate, retry_async, stop, wait,
 };
-
-type IntResult = Result<i32, &'static str>;
 
 #[test]
 fn async_retry_ext_starts_from_a_no_arg_closure() {
@@ -126,12 +123,10 @@ fn async_until_polls_a_result() {
 }
 
 #[test]
-fn async_with_stats_and_on_exit_match_the_sync_engine() {
-    let reason = Cell::new(None);
+fn async_with_stats_matches_the_sync_engine() {
     let clock = VirtualClock::new();
     let (result, stats) = block_on(
         retry_async(|_| async { Err::<i32, &str>("boom") })
-            .on_exit(|e: &Exit<i32, &str, IntResult>| reason.set(Some(e.stop_reason())))
             .stop(stop::attempts(3))
             .wait(wait::fixed(Duration::from_millis(5)))
             .clock(&clock)
@@ -142,7 +137,7 @@ fn async_with_stats_and_on_exit_match_the_sync_engine() {
     assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
     assert_eq!(stats.attempts, 3);
     assert_eq!(stats.total_wait, Duration::from_millis(10));
-    assert_eq!(reason.get(), Some(StopReason::Exhausted));
+    assert_eq!(stats.stop_reason, StopReason::Exhausted);
 }
 
 /// Returns `Pending` on its first poll (waking the task) and `Ready` after.

@@ -4,7 +4,7 @@
 //! wrapping one shared state machine. This suite replaces the manual
 //! "audit all four paths for drift" rule with an executable check: every
 //! scenario runs through both engines on a `VirtualClock` and the full
-//! observable traces — result, hook firings (with timing fields), sleeps,
+//! observable traces — result, the state each attempt receives, sleeps,
 //! stats — must be identical.
 
 #![cfg(feature = "alloc")]
@@ -30,7 +30,7 @@ const ARBITRARY_ERROR: &str = "boom";
 #[derive(Debug, PartialEq)]
 struct Trace {
     result: String,
-    hooks: Vec<String>,
+    attempt_log: Vec<String>,
     sleeps: Vec<Duration>,
     stats: RetryStats,
 }
@@ -88,37 +88,32 @@ impl WaitKind {
     }
 }
 
-type HookLog = Arc<Mutex<Vec<String>>>;
+type StateLog = Arc<Mutex<Vec<String>>>;
 
-fn log(hooks: &HookLog, entry: String) {
-    hooks.lock().expect("hook log poisoned").push(entry);
+/// Records the `RetryState` an attempt receives.
+fn log(attempt_log: &StateLog, state: &relentless::RetryState) {
+    attempt_log
+        .lock()
+        .expect("state log poisoned")
+        .push(format!(
+            "{}:{:?}:{:?}",
+            state.attempt, state.elapsed, state.previous_delay
+        ));
 }
 
 fn run_sync(scenario: &Scenario) -> Trace {
     let clock = Recording::new(VirtualClock::new());
-    let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
-    let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
+    let attempt_log: StateLog = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&attempt_log);
 
     let scenario_run = scenario.clone();
-    let exec = retry(move |state| scenario_run.outcome_for(state.attempt))
-        .stop(stop::attempts(scenario.max_attempts))
-        .wait(scenario.wait.build())
-        .before_attempt(move |state| {
-            log(
-                &before,
-                format!(
-                    "before:{}:{:?}:{:?}",
-                    state.attempt, state.elapsed, state.previous_delay
-                ),
-            );
-        })
-        .after_attempt(move |state| {
-            log(&after, format!("after:{state:?}"));
-        })
-        .on_exit(move |state| {
-            log(&exit, format!("exit:{state:?}"));
-        })
-        .clock(&clock);
+    let exec = retry(move |state| {
+        log(&seen, &state);
+        scenario_run.outcome_for(state.attempt)
+    })
+    .stop(stop::attempts(scenario.max_attempts))
+    .wait(scenario.wait.build())
+    .clock(&clock);
 
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
@@ -139,7 +134,7 @@ fn run_sync(scenario: &Scenario) -> Trace {
 
     Trace {
         result: format!("{result:?}"),
-        hooks: hooks.lock().expect("hook log poisoned").clone(),
+        attempt_log: attempt_log.lock().expect("state log poisoned").clone(),
         sleeps: clock.waits(),
         stats,
     }
@@ -147,31 +142,17 @@ fn run_sync(scenario: &Scenario) -> Trace {
 
 fn run_async(scenario: &Scenario) -> Trace {
     let clock = Recording::new(VirtualClock::new());
-    let hooks: HookLog = Arc::new(Mutex::new(Vec::new()));
-    let (before, after, exit) = (Arc::clone(&hooks), Arc::clone(&hooks), Arc::clone(&hooks));
+    let attempt_log: StateLog = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&attempt_log);
 
     let scenario_run = scenario.clone();
     let exec = retry_async(move |state| {
+        log(&seen, &state);
         let outcome = scenario_run.outcome_for(state.attempt);
         core::future::ready(outcome)
     })
     .stop(stop::attempts(scenario.max_attempts))
     .wait(scenario.wait.build())
-    .before_attempt(move |state| {
-        log(
-            &before,
-            format!(
-                "before:{}:{:?}:{:?}",
-                state.attempt, state.elapsed, state.previous_delay
-            ),
-        );
-    })
-    .after_attempt(move |state| {
-        log(&after, format!("after:{state:?}"));
-    })
-    .on_exit(move |state| {
-        log(&exit, format!("exit:{state:?}"));
-    })
     .clock(&clock);
 
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
@@ -195,7 +176,7 @@ fn run_async(scenario: &Scenario) -> Trace {
 
     Trace {
         result: format!("{result:?}"),
-        hooks: hooks.lock().expect("hook log poisoned").clone(),
+        attempt_log: attempt_log.lock().expect("state log poisoned").clone(),
         sleeps: clock.waits(),
         stats,
     }
@@ -211,8 +192,8 @@ fn assert_parity(scenario: &Scenario) {
         "sync/async result diverged"
     );
     assert_eq!(
-        sync_trace.hooks, async_trace.hooks,
-        "sync/async hook traces diverged"
+        sync_trace.attempt_log, async_trace.attempt_log,
+        "sync/async attempt states diverged"
     );
     assert_eq!(
         sync_trace.sleeps, async_trace.sleeps,
@@ -226,7 +207,7 @@ fn assert_parity(scenario: &Scenario) {
 
 /// GIVEN an operation succeeding on attempt 3 with exponential backoff
 /// WHEN it runs through the sync and async engines on virtual clocks
-/// THEN the full traces (result, hooks, sleeps, stats) are identical
+/// THEN the full traces (result, attempt states, sleeps, stats) are identical
 #[test]
 fn parity_success_after_failures() {
     let scenario = Scenario::new(

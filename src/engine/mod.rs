@@ -9,12 +9,11 @@
 //! predicate over `Result`.
 //!
 //! Both the sync ([`Retry`]) and async ([`AsyncRetry`]) paths carry the full
-//! classifier surface — `.decide`/`.when`/`.until`, hooks, stats, and timeout.
+//! classifier surface — `.decide`/`.when`/`.until`, stats, and timeout.
 
 mod async_engine;
 mod elapsed;
 mod error;
-mod hooks;
 mod op;
 mod stats;
 mod step;
@@ -25,8 +24,7 @@ pub use async_engine::{
     AsyncRetry, AsyncRetryExt, AsyncRetryWithStats, AsyncRun, DropStats, retry_async,
 };
 pub use error::{RetryError, RetryResult};
-pub use hooks::{AttemptHook, AttemptState, BeforeAttemptHook, ExitHook, HookChain};
 pub use op::{Async, Attempt, Blocking, Operation, StatelessOp};
 pub use stats::RetryStats;
 pub use sync_engine::{Retry, RetryExt, RetryWithStats, retry};
-pub use termination::{Exit, StopReason};
+pub use termination::StopReason;

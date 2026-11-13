@@ -4,7 +4,8 @@ Date: 2026-07-15
 
 ## Status
 
-Accepted
+Superseded by [ADR-0012](0012-remove-observer-hooks.md) — the hooks were
+removed.
 
 Supersedes [ADR-0001](0001-no-macro-fold-non-alloc-hook-setters.md)
 

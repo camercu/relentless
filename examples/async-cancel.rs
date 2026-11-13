@@ -3,9 +3,8 @@
 //! Because `.call()` returns a plain `Future`, it is cancel-safe:
 //! dropping the future at any `.await` point stops the loop immediately,
 //! even mid-sleep or mid-operation. No in-flight state is left dangling.
-//! Note that `on_exit` does **not** fire when the future is dropped — only
-//! when it runs to a terminal result. Use `Drop` impls on your own types
-//! for guaranteed cleanup.
+//! Nothing further runs once the future is dropped. Use `Drop` impls on your
+//! own types for guaranteed cleanup.
 //!
 //! ## Why `tokio::time::timeout` instead of the crate's `.timeout()` method?
 //!
@@ -109,7 +108,7 @@ async fn main() {
             }
         }
         // token.cancelled() resolves once token.cancel() is called on any clone.
-        // The retry future is dropped here. on_exit does not fire.
+        // The retry future is dropped here; nothing further runs.
         () = token.cancelled() => {
             println!("pattern 2 — cancellation token fired (cancelled mid-sleep)");
         }
@@ -147,7 +146,7 @@ async fn main() {
             }
         }
         _ = shutdown_rx => {
-            // The retry future is dropped here. on_exit does not fire.
+            // The retry future is dropped here; nothing further runs.
             println!("pattern 3 — shutdown signal received (cancelled mid-sleep)");
         }
     }

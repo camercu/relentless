@@ -9,9 +9,8 @@
 //! `tests/parity.rs`.
 
 use super::error::RetryError;
-use super::hooks::{AttemptHook, AttemptState, ExecutionHooks, ExitHook};
 use super::stats::RetryStats;
-use super::termination::{Exit, StopReason};
+use super::termination::StopReason;
 use crate::compat::Duration;
 use crate::decision::{Decide, Verdict};
 use crate::policy::RetryPolicy;
@@ -36,7 +35,7 @@ pub(crate) struct Progress {
 
 /// What a completed attempt tells the driving loop to do next.
 pub(crate) enum Step<R, A, O> {
-    /// The loop terminates with this result and stats. `on_exit` has fired.
+    /// The loop terminates with this result and stats.
     Done {
         result: Result<R, RetryError<A, O>>,
         stats: RetryStats,
@@ -52,23 +51,20 @@ pub(crate) enum Step<R, A, O> {
 
 /// Processes one completed attempt's `outcome`.
 ///
-/// Fires `after_attempt`, classifies the outcome, and then either fires
-/// `on_exit` and returns [`Step::Done`] (on return, abort, or exhaustion) or
-/// computes the next backoff and returns [`Step::Continue`]. The caller supplies
-/// `before_attempt`, the operation call, and the sleep — the only parts that
-/// differ between the sync and async engines.
-pub(crate) fn step<C, S, W, BA, AA, OX, O>(
+/// Classifies the outcome, then either returns [`Step::Done`] (on return,
+/// abort, or exhaustion) or computes the next backoff and returns
+/// [`Step::Continue`]. A pure function of its arguments: it performs no I/O and
+/// reads no clock. The caller supplies the operation call and the sleep — the
+/// only parts that differ between the sync and async engines.
+pub(crate) fn step<C, S, W, O>(
     progress: Progress,
     outcome: O,
     policy: &RetryPolicy<S, W, C>,
-    hooks: &mut ExecutionHooks<BA, AA, OX>,
 ) -> Step<C::R, C::A, O>
 where
     C: Decide<O>,
     S: Stop,
     W: Wait,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     let RetryPolicy {
         stop,
@@ -84,13 +80,6 @@ where
         total_wait,
     } = progress;
 
-    // `after_attempt` fires before the classifier consumes the outcome, so the
-    // hook sees the raw outcome under a uniform contract.
-    {
-        let attempt_state = AttemptState::new(attempt, post_elapsed, &outcome);
-        hooks.after_attempt.call(&attempt_state);
-    }
-
     let state = RetryState::for_attempt(attempt)
         .with_elapsed(post_elapsed)
         .with_previous_delay(previous_delay);
@@ -103,36 +92,17 @@ where
     };
 
     match classifier.decide(outcome) {
-        Verdict::Return(value) => {
-            hooks.on_exit.call(&Exit::Returned {
-                attempt,
-                elapsed: post_elapsed,
-                value: &value,
-            });
-            Step::Done {
-                result: Ok(value),
-                stats: stats_for(StopReason::Returned),
-            }
-        }
-        Verdict::Abort(last) => {
-            hooks.on_exit.call(&Exit::Aborted {
-                attempt,
-                elapsed: post_elapsed,
-                last: &last,
-            });
-            Step::Done {
-                result: Err(RetryError::Aborted { last }),
-                stats: stats_for(StopReason::Aborted),
-            }
-        }
+        Verdict::Return(value) => Step::Done {
+            result: Ok(value),
+            stats: stats_for(StopReason::Returned),
+        },
+        Verdict::Abort(last) => Step::Done {
+            result: Err(RetryError::Aborted { last }),
+            stats: stats_for(StopReason::Aborted),
+        },
         Verdict::Retry(last) => {
             let timeout_exceeded = timeout.is_some_and(|t| post_elapsed >= t);
             if stop.should_stop(&state) || timeout_exceeded {
-                hooks.on_exit.call(&Exit::Exhausted {
-                    attempt,
-                    elapsed: post_elapsed,
-                    last: &last,
-                });
                 return Step::Done {
                     result: Err(RetryError::Exhausted { last }),
                     stats: stats_for(StopReason::Exhausted),
@@ -163,10 +133,6 @@ mod tests {
     const DELAY: Duration = Duration::from_millis(10);
     type Res = Result<i32, &'static str>;
 
-    fn no_hooks() -> ExecutionHooks<(), (), ()> {
-        ExecutionHooks::new()
-    }
-
     fn policy<C, S, W>(
         classifier: C,
         stop: S,
@@ -195,7 +161,6 @@ mod tests {
 
     #[test]
     fn return_terminates_with_returned_stats() {
-        let mut hooks = no_hooks();
         let step = step(
             Progress {
                 attempt: 1,
@@ -210,7 +175,6 @@ mod tests {
                 wait::fixed(DELAY),
                 None,
             ),
-            &mut hooks,
         );
         match step {
             Step::Done { result, stats } => {
@@ -225,7 +189,6 @@ mod tests {
 
     #[test]
     fn abort_terminates_with_aborted_stats() {
-        let mut hooks = no_hooks();
         let step = step(
             Progress {
                 attempt: 2,
@@ -235,7 +198,6 @@ mod tests {
             },
             Err::<i32, &str>("fatal"),
             &policy(AlwaysAbort, stop::attempts(5), wait::fixed(DELAY), None),
-            &mut hooks,
         );
         match step {
             Step::Done { result, stats } => {
@@ -251,7 +213,6 @@ mod tests {
 
     #[test]
     fn retry_continues_and_adds_delay_to_total_wait() {
-        let mut hooks = no_hooks();
         let step = step(
             Progress {
                 attempt: 2,
@@ -266,7 +227,6 @@ mod tests {
                 wait::fixed(DELAY),
                 None,
             ),
-            &mut hooks,
         );
         match step {
             Step::Continue { delay, total_wait } => {
@@ -279,7 +239,6 @@ mod tests {
 
     #[test]
     fn retry_exhausts_when_stop_fires() {
-        let mut hooks = no_hooks();
         let step = step(
             Progress {
                 attempt: 1,
@@ -294,7 +253,6 @@ mod tests {
                 wait::fixed(DELAY),
                 None,
             ),
-            &mut hooks,
         );
         match step {
             Step::Done { result, stats } => {
@@ -311,7 +269,6 @@ mod tests {
 
     #[test]
     fn retry_clamps_delay_to_remaining_timeout_budget() {
-        let mut hooks = no_hooks();
         let elapsed = Duration::from_millis(5);
         let step = step(
             Progress {
@@ -327,7 +284,6 @@ mod tests {
                 wait::fixed(DELAY), // 10ms, larger than the 3ms budget below
                 Some(Duration::from_millis(8)),
             ),
-            &mut hooks,
         );
         match step {
             Step::Continue { delay, total_wait } => {

@@ -21,8 +21,8 @@ can each drive the loop directly. The common `Result` case retries on any `Err`
 by default; `.decide(...)` installs a custom classifier, and `.when(p)` /
 `.until(p)` are `Result`-shaped predicate sugar over it.
 
-The same model applies to sync and async execution. Policies are reusable, hook
-callbacks are configured per execution, and the crate supports `std`,
+The same model applies to sync and async execution. Policies are reusable, the clock
+and stats are configured per execution, and the crate supports `std`,
 `no_std`, `wasm32`, and embedded-oriented environments.
 
 Polling for a condition is expressed with `.until(p)` ("retry until `p` holds")
@@ -41,7 +41,6 @@ top of that base.
 |Sync retry with the default `SystemClock`|no        |no     |yes  |
 |Async retry with explicit `.clock(...)` |yes        |yes    |yes  |
 |Free functions and extension traits     |yes        |yes    |yes  |
-|Hooks (multiple per hook point)         |yes        |yes    |yes  |
 |`VirtualClock`                          |yes        |yes    |yes  |
 |`Recording` (wait recorder)             |no         |yes    |yes  |
 |`std::error::Error` on `RetryError`     |no         |no     |yes  |
@@ -171,7 +170,7 @@ Built-in wait semantics:
 (or any other mechanism reduces the delay to zero), sleep is skipped entirely —
 no sleep call is made, and no clock wait is recorded. This makes
 `wait::fixed(Duration::ZERO)` a valid "no delay" strategy for tight polling
-loops. All other loop behavior (hooks, stop checks) proceeds normally. This
+loops. All other loop behavior (classification, stop checks) proceeds normally. This
 rule is referenced by the Timeout section and the loop pseudocode (step 8).
 
 **3.2.8.1** The sync engine simply proceeds to the next attempt. The async
@@ -441,15 +440,12 @@ not advance time.
 
 ### 3.6 State types
 
-The crate exposes read-only state passed to strategies and hooks.
+The crate exposes read-only state passed to the operation and strategies.
 
-**3.6.1** `RetryState` (for `Stop`, `Wait`, the operation, and `before_attempt`)
-and `AttemptState` (for `after_attempt`) are `#[non_exhaustive]` structs with
-public fields for read access. `RetryState::for_attempt(attempt)` (plus `with_*`
-setters) constructs one for tests and custom strategies, and `debug_assert!`s
-`attempt >= 1`. `AttemptState` and `Exit` (for `on_exit`) are produced only by
-the engine — `AttemptState` read by field access, `Exit` by matching — and are
-not constructed externally.
+**3.6.1** `RetryState` (for `Stop`, `Wait` and the operation) is a
+`#[non_exhaustive]` struct with public fields for read access.
+`RetryState::for_attempt(attempt)` (plus `with_*` setters) constructs one for
+tests and custom strategies, and `debug_assert!`s `attempt >= 1`.
 
 > Public fields on `#[non_exhaustive]` structs are a deliberate choice for
 > ergonomic read access. `#[non_exhaustive]` prevents construction outside the
@@ -457,10 +453,10 @@ not constructed externally.
 > stable API surface.
 
 ```rust
-/// Shared state for Stop, Wait, the operation, and the before_attempt hook.
+/// Shared state for Stop, Wait, and the operation.
 pub struct RetryState {
-    /// 1-indexed attempt number. For the operation and `before_attempt`,
-    /// this is the attempt about to start. For `Stop` and `Wait`, this
+    /// 1-indexed attempt number. For the operation, this is the attempt
+    /// about to start. For `Stop` and `Wait`, this
     /// is the just-completed attempt.
     pub attempt: u32,
     /// Wall-clock time since retry execution started, read from the
@@ -472,43 +468,6 @@ pub struct RetryState {
     pub previous_delay: Option<Duration>,
 }
 ```
-
-```rust
-/// State passed to the after_attempt hook, over the whole outcome type `O`.
-pub struct AttemptState<'a, O> {
-    /// 1-indexed attempt number just completed.
-    pub attempt: u32,
-    /// Wall-clock time since retry execution started.
-    pub elapsed: Duration,
-    /// The raw outcome, borrowed BEFORE classification.
-    pub outcome: &'a O,
-}
-```
-
-**3.6.2** `after_attempt` fires once per attempt *before* the classifier
-consumes the outcome, so it observes every outcome — including the terminal one
-— under a uniform contract. `AttemptState` carries no next-delay field (removed
-in the classifier engine); the applied delay reappears as the next attempt's
-`RetryState.previous_delay`.
-
-```rust
-/// View passed to the on_exit hook: exactly what the caller receives.
-pub enum Exit<'a, R, A, O> {
-    Returned  { attempt: u32, elapsed: Duration, value: &'a R },
-    Aborted   { attempt: u32, elapsed: Duration, last:  &'a A },
-    Exhausted { attempt: u32, elapsed: Duration, last:  &'a O },
-}
-
-impl<'a, R, A, O> Exit<'a, R, A, O> {
-    pub fn attempt(&self) -> u32;
-    pub fn elapsed(&self) -> Duration;
-    pub fn stop_reason(&self) -> StopReason; // derived from the variant
-}
-```
-
-**3.6.3** `Exit` is a borrowed view of exactly what the caller receives on this
-termination; its variant is the single source of truth for `stop_reason()`
-(`Returned`/`Aborted`/`Exhausted`).
 
 Constructor signatures:
 
@@ -527,12 +486,11 @@ impl RetryState {
 |Context              |`attempt`             |`elapsed`|`previous_delay`                     |
 |---------------------|----------------------|---------|-------------------------------------|
 |User operation       |about-to-start attempt|available|delay before this attempt (`None` on first)|
-|`before_attempt` hook|about-to-start attempt|available|delay before this attempt (`None` on first)|
 |`Wait::next_wait`    |just-completed attempt|available|delay before the just-completed attempt|
 |`Stop::should_stop`  |just-completed attempt|available|delay before the just-completed attempt|
 
 **3.6.4** The operation receives `RetryState` by value (it is `Copy`). **3.6.5**
-The numeric value of `attempt` is the same across all four contexts within a
+The numeric value of `attempt` is the same across all three contexts within a
 single loop iteration — the semantic distinction is whether the attempt has run
 yet.
 
@@ -545,9 +503,6 @@ Field meanings:
 - **3.6.6** `elapsed` is a plain `Duration`: the clock is mandatory, so the
   engines always supply a reading. Hand-constructed states (custom strategy
   tests) default it to zero until `with_elapsed` is called
-- **3.6.7** `Exit::attempt()` is always the number of completed attempts; the
-  variant's outcome field (`value`/`last`) is always the final attempt's
-  return value, abort payload, or whole outcome respectively
 
 ## 4. Error types
 
@@ -770,7 +725,7 @@ builder whose operation returns a future.
 `Retry` and `AsyncRetry` are the single builder types for every entry path: the
 policy path starts from borrowed strategies, and the free-function / ext-trait
 path owns them. Both expose the full surface — strategy overrides
-(`.stop`/`.wait`/`.when`/`.until`/`.decide`), hooks, `.clock`, `.timeout`,
+(`.stop`/`.wait`/`.when`/`.until`/`.decide`), `.clock`, `.timeout`,
 `.with_stats`, and `.call`. A strategy override on a policy-borrowed builder
 replaces the borrowed slot for that call only, leaving the policy unchanged.
 
@@ -879,8 +834,7 @@ retry_async(|state| async move {
 ### 6.3 Builder method signatures
 
 The `Retry` and `AsyncRetry` builders are generic over the operation `F`, the
-classifier `C`, `S: Stop`, `W: Wait`, a clock (`SyncClock` for sync,
-`AsyncClock` for async), and the three hook slots. At `.call()` the classifier
+classifier `C`, `S: Stop`, `W: Wait`, and a clock (`SyncClock` for sync, `AsyncClock` for async). At `.call()` the classifier
 must satisfy `C: Decide<O>` for the operation's outcome type `O`.
 
 #### Strategy overrides
@@ -911,15 +865,6 @@ the borrowed slot with an owned value for that call only.
 
 See Elapsed time and Timeout for detailed semantics.
 
-#### Hooks
-
-- `.before_attempt(f: impl FnMut(&RetryState))`
-- `.after_attempt(f: impl FnMut(&AttemptState<'_, O>))`
-- `.on_exit(f: impl FnMut(&Exit<'_, R, A, O>))`
-
-Hook methods do not change the strategy type parameters. See Hooks for timing,
-ordering, and panic behavior.
-
 ### 6.4 Sync execution
 
 **6.4.1** Calling `.clock(...)` on sync builders is:
@@ -940,7 +885,7 @@ Terminal execution:
 
 **6.4.4** `RetryWithStats` and `AsyncRetryWithStats` expose only terminal
 execution (`.call()` for both; the async `.call()` returns a future). They do
-not expose hook or clock configuration methods. Configure everything before
+not expose clock or strategy configuration methods. Configure everything before
 calling `.with_stats()`.
 
 The sync loop performs these steps:
@@ -948,25 +893,24 @@ The sync loop performs these steps:
 ```text
 attempt = 1
 loop:
-    1.  Fire `before_attempt` with RetryState { attempt, elapsed, previous_delay }.
-    2.  Call the user operation with that RetryState; it yields an outcome O.
-    3.  Fire `after_attempt` with AttemptState { attempt, elapsed, outcome: &O }
-        — BEFORE classification, so it observes every outcome (including the
-        terminal one) under a uniform contract.
+    1.  (retired: the before-attempt hook was removed)
+    2.  Call the user operation with RetryState { attempt, elapsed,
+        previous_delay }; it yields an outcome O.
+    3.  (retired: the after-attempt hook was removed)
     4.  Classify the outcome into a Verdict:
-          Return(r) → fire `on_exit` (Returned), return Ok(r).
-          Abort(a)  → fire `on_exit` (Aborted),  return Err(Aborted { last: a }).
+          Return(r) → return Ok(r).
+          Abort(a)  → return Err(Aborted { last: a }).
           Retry(o)  → continue below.
     5.  Evaluate the stop strategy; a configured timeout whose deadline the
         elapsed time has met or exceeded also counts as a stop. (See Timeout.)
-        If it fires: fire `on_exit` (Exhausted), return Err(Exhausted { last: o }).
+        If it fires: return Err(Exhausted { last: o }).
     6.  Compute the next wait via Wait::next_wait — only now that a retry is
         certain (never on the terminal attempt).
     7.  If a timeout is configured, clamp delay to max(0, timeout - elapsed).
     8.  If delay > zero, wait for it via the clock; if it is zero, skip the
         clock (and, on the async path, yield cooperatively) per 3.2.8. Feed
         the applied delay forward as the next attempt's `previous_delay`.
-    9.  attempt += 1, continue to step 1.
+    9.  attempt += 1, continue to step 2.
 ```
 
 ### 6.5 Async execution
@@ -1005,8 +949,6 @@ Statistics are accessed via:
 
 - `.with_stats().call()` (sync) or `.with_stats().call().await` (async): returns
   the result paired with `RetryStats`
-- the `on_exit` hook, which receives an `Exit` view exposing `attempt()`,
-  `elapsed()`, and `stop_reason()`
 
 ## 7. Termination semantics
 
@@ -1014,61 +956,39 @@ Retry termination is defined by the classifier's verdict and the stop strategy.
 
 ### 7.1 Termination table
 
-|Final condition           |Return value                 |`StopReason`|`Exit` variant  |
-|--------------------------|-----------------------------|------------|----------------|
-|Classifier returns `Return`|`Ok(r)`                     |`Returned`  |`Returned{value}`|
-|Classifier returns `Abort`|`Err(RetryError::Aborted)`   |`Aborted`   |`Aborted{last}` |
-|`Retry` cut short by stop |`Err(RetryError::Exhausted)` |`Exhausted` |`Exhausted{last}`|
+|Final condition           |Return value                 |`StopReason`|
+|--------------------------|-----------------------------|------------|
+|Classifier returns `Return`|`Ok(r)`                     |`Returned`  |
+|Classifier returns `Abort`|`Err(RetryError::Aborted)`   |`Aborted`   |
+|`Retry` cut short by stop |`Err(RetryError::Exhausted)` |`Exhausted` |
 
 ### 7.2 Additional guarantees
 
-- **7.2.1** `after_attempt` fires after every completed attempt, including the final one
-- **7.2.2** `after_attempt` fires *before* the classifier consumes the outcome, so
-  it observes every raw outcome (including the terminal one)
+- **7.2.1**, **7.2.2** (retired with the after-attempt hook; numbers retained
+  as tombstones so later numbering is stable)
 - **7.2.3** classification always happens before stop evaluation
 - **7.2.4** the wait strategy is consulted only once a retry is certain (after the
   stop check passes), never on the terminal attempt
 - **7.2.5** `Exhausted` carries `last: O` — on the `Result` path callers match on
   the inner `Result` to distinguish exhausted-error from unmet-condition cases
 - `RetryResult<T, E>` is `Result<T, RetryError<E, Result<T, E>>>`
-- **7.2.6** `Exit::attempt()` is always the number of completed attempts (>= 1)
+- **7.2.6** `RetryStats::attempts` is always the number of completed attempts (>= 1)
 
-## 8. Hooks
+## 8. Observing retries
 
-Hooks are configured on execution builders, not on `RetryPolicy`.
+**8.1** The crate has no hook callbacks. Every observation a hook would make is
+available without one:
 
-Timing guarantees:
+- before an attempt: the operation receives its `RetryState` (§3.6)
+- after an attempt: the operation holds the outcome before returning it
+- on exit: `.call()` returns the result, and `.with_stats()` adds `RetryStats`
+  (§6.6)
+- before a sleep: a user `Wait` wrapper sees each delay, because the engine
+  consults the wait strategy only once a retry is certain (7.2.4); the delay
+  it logs precedes the timeout clamp (11.4)
 
-- **8.1** `before_attempt` fires before the user operation starts, receiving a
-  `RetryState`
-- **8.2** `after_attempt` fires after every completed attempt (including the final
-  one) *before* the classifier consumes the outcome, receiving an
-  `AttemptState` that borrows the raw outcome
-- **8.3** `on_exit` fires exactly once for each non-panicking terminal path,
-  receiving an `Exit` view of the result
-
-Ordering guarantees:
-
-- **8.4** hooks of the same kind fire in registration order
-- **8.5** multiple hooks of the same kind may be registered on one execution
-  builder and all fire in registration order; this holds in every feature
-  configuration (no `alloc` required) and storage is an implementation detail
-- **8.6** (folded into 8.5; retained as a tombstone so later numbering is
-  stable)
-
-**8.7** Hook panics propagate normally. The crate does not catch them.
-
-Panic behavior:
-
-- **8.8** if the operation or any hook panics, retry execution aborts immediately
-- once a panic starts unwinding, remaining hooks for that execution are not run
-  (including `on_exit`)
-- if a hook panics, the operation's return value for that attempt, if any, is
-  dropped during unwinding and is not recoverable by the caller
-- a panic inside `on_exit` propagates normally; `on_exit` is not re-invoked or
-  wrapped in a catch guard
-- if a panic is caught by the caller via `catch_unwind`, `RetryStats` and
-  `on_exit` are not recoverable; the execution is in an indeterminate state
+**8.2**–**8.8** (retired with the hooks; numbers retained as tombstones so
+later numbering is stable)
 
 ## 9. Cancellation guidance
 
@@ -1098,10 +1018,9 @@ tokio::select! {
 }
 ```
 
-When the retry future is dropped, `on_exit` does not fire. This is the same
-behavior as panics and is consistent with the Rust async cancellation model.
-Callers who need guaranteed cleanup should use `Drop` impls on their own types,
-not retry hooks.
+When the retry future is dropped, nothing further runs: there is no
+completion callback. Callers who need guaranteed cleanup should use `Drop`
+impls on their own types, held by the operation or its caller.
 
 ### 9.2 Sync cancellation
 
@@ -1151,7 +1070,6 @@ following are `Send`:
 - the operation's returned `Future`
 - the classifier, the stop strategy, and the wait strategy
 - the clock and its `AsyncClock::Wait` future
-- all registered hooks
 
 The outcome type is not on the list: the retry future never holds an outcome
 across a wait, so a `!Send` `T` or `E` does not make it `!Send`.
@@ -1160,7 +1078,7 @@ A builder from `RetryPolicy::retry_async` borrows the policy's classifier, stop
 strategy, and wait strategy. A shared reference is `Send` only when its target
 is `Sync`, so on that path those three must be `Sync`.
 
-**10.1** Async execution types are `Send` when the operation, its future, the classifier, the stop and wait strategies, the clock, its `AsyncClock::Wait`, and all hooks are `Send`. When the classifier and strategies are borrowed from a `RetryPolicy`, each must be `Sync`.
+**10.1** Async execution types are `Send` when the operation, its future, the classifier, the stop and wait strategies, and the clock and its `AsyncClock::Wait` are `Send`. When the classifier and strategies are borrowed from a `RetryPolicy`, each must be `Sync`.
 
 **10.2** Async execution types are `!Send` otherwise. The crate never adds
 unconditional `Send` bounds on public trait definitions (`Stop`, `Wait`,
@@ -1426,7 +1344,7 @@ Types:
 - `RetryPolicy`
 - `RetryError`, `RetryResult`
 - `RetryStats`, `StopReason`
-- `RetryState`, `AttemptState`, `Exit`
+- `RetryState`
 - `Retry`, `RetryWithStats` (sync builders), `AsyncRetry`,
   `AsyncRetryWithStats` (async builders), `AsyncRun`, `DropStats` (the async
   builder futures)
@@ -1434,7 +1352,7 @@ Types:
   `ClosureClassifier`, `When`, `Until`
 - builder type-state plumbing, named only when spelling out a configured
   builder's type or bounds: `Blocking`, `Async` (mode markers),
-  `StatelessOp`, `HookChain`
+  `StatelessOp`
 
 Traits:
 
@@ -1449,8 +1367,6 @@ Traits:
   only in bounds as `Operation<Blocking, Output = O>` or
   `Operation<Async, Output = O>`); `Attempt<M>` (sealed, hidden, the item
   bound on `Operation::Call`)
-- `BeforeAttemptHook`, `AttemptHook`, `ExitHook` (blanket-implemented for
-  closures, named only in bounds)
 - `RetryExt` (blanket-implemented for `FnMut() -> O`)
 - `AsyncRetryExt` (blanket-implemented for
   `FnMut() -> Fut where Fut: Future<Output = O>`)
@@ -1512,8 +1428,6 @@ Composite types derive traits conditionally on their type parameters.
 |Type                   |`Clone`|`Copy`|`PartialEq`|`Eq`|`Hash`|`Default`|`Display` |
 |-----------------------|-------|------|-----------|----|------|---------|----------|
 |`RetryState`           |yes    |yes   |yes        |—   |—     |—        |—         |
-|`AttemptState<'a,O>`   |yes    |yes   |—          |—   |—     |—        |—         |
-|`Exit<'a,R,A,O>`       |yes    |yes   |—          |—   |—     |—        |—         |
 |`RetryStats`           |yes    |yes   |yes        |yes |—     |—        |—         |
 |`StopReason`           |yes    |yes   |yes        |yes |yes   |—        |yes       |
 |`RetryError<A,O>`      |A,O    |—     |A,O        |A,O |—     |—        |†         |
@@ -1605,7 +1519,6 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/outcome.rs`, `tests/outcome_async.rs` | §3.4 |
 | `tests/elapsed.rs`, `tests/elapsed_async.rs` | §11.1 |
 | `tests/timeout.rs`, `tests/timeout_async.rs` | §11.1, §11.4 |
-| `tests/hooks.rs`, `tests/hooks_async.rs` | §3.6 (`Exit` view), §6.4, §7.2, §8 |
 | `tests/nameable_surface.rs` | §13 |
 | `tests/ext.rs` | §6.2 |
 | `tests/allocation.rs` | §12.3 |

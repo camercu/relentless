@@ -31,7 +31,7 @@ A reusable set of stop strategy, wait strategy, classifier and timeout, without 
 _Avoid_: config, retry rules
 
 **Builder**:
-The value that pairs one operation with a policy's settings plus hooks, ready for `.call()`.
+The value that pairs one operation with a policy's settings and a clock, ready for `.call()`.
 _Avoid_: retry (as a noun)
 
 ### Classification
@@ -104,15 +104,11 @@ _Avoid_: sleeper, timer
 
 **Termination**:
 The end of an execution: returned, aborted or exhausted.
-_Avoid_: stop (reserved for the stop strategy), exit (reserved for the hook view)
+_Avoid_: stop (reserved for the stop strategy), exit
 
 **Exhaustion**:
 Termination because the stop strategy or timeout fired while the classifier still wanted to retry.
 _Avoid_: giving up, timed out
-
-**Hook**:
-A caller callback that observes the execution at a fixed point without changing it.
-_Avoid_: listener, callback, observer
 
 **Retry stats**:
 The summary of one execution: attempts, total elapsed time, total delay and termination reason.
@@ -120,7 +116,7 @@ _Avoid_: metrics
 
 ## Event model
 
-Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wait, `.timeout(30s)`, `before_attempt`, `after_attempt` and `on_exit` hooks. A second scenario walked the `RetryPolicy` reuse path.
+Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wait, `.timeout(30s)` and `.with_stats()`. (The hooks this walk once covered were removed, ADR-0012.) A second scenario walked the `RetryPolicy` reuse path.
 
 | Command | Events | Standard name | Code |
 |---|---|---|---|
@@ -136,22 +132,22 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | Compose stop strategies | | tenacity `stop_a \| stop_b` | `Stop::{or, and}`, `\|`, `&` |
 | Set a timeout | | tenacity `stop_after_delay` (partial) | `.timeout` |
 | Inject a clock | | | `.clock`, `TokioClock::new`, `EmbassyClock::new`, `FuturesTimerClock::new`, `GlooClock::with_now`, `VirtualClock::new` |
-| Register a hook | | tenacity `before=`, `after=`, `retry_error_callback` | `.before_attempt`, `.after_attempt`, `.on_exit` |
 | Request stats | | tenacity `.statistics` | `.with_stats` |
 | Run the execution | Execution started | | `.call()` (sync, async, `*WithStats`) |
-| | Attempt starting | tenacity `before` | `BeforeAttemptHook`, `RetryState` |
-| Run an attempt | Attempt completed | tenacity `after` | `Operation::call_op`, `AttemptHook`, `AttemptState` |
+| | Attempt starting | tenacity `before` | `RetryState` |
+| Run an attempt | Attempt completed | tenacity `after` | `Operation::call_op` |
 | Classify the outcome | Outcome returned; outcome retried; outcome aborted | | `Outcome::classify`, `Predicate::should_retry`, `Verdict::{Return, Retry, Abort}`, `Decision::{Return, Retry}` |
 | Check the stop strategy | Stop strategy fired; timeout reached | tenacity `stop` | `Stop::should_stop` |
 | Compute the next delay | Delay computed; delay clamped to timeout | tenacity `wait` | `Wait::next_wait` |
 | Pause for the delay | Delay elapsed | | `SyncClock::wait`, `AsyncClock::wait_async` |
 | Read elapsed time | | | `Clock::now` |
-| | Execution returned | | `Exit::Returned`, `StopReason::Returned`, `Ok(R)` |
-| | Execution aborted | | `Exit::Aborted`, `StopReason::Aborted`, `RetryError::Aborted` |
-| | Execution exhausted | tenacity `RetryError` | `Exit::Exhausted`, `StopReason::Exhausted`, `RetryError::Exhausted` |
-| | Execution terminated (any) | tenacity `retry_error_callback` | `ExitHook`, `Exit::{attempt, elapsed, stop_reason}` |
+| | Execution returned | | `StopReason::Returned`, `Ok(R)` |
+| | Execution aborted | | `StopReason::Aborted`, `RetryError::Aborted` |
+| | Execution exhausted | tenacity `RetryError` | `StopReason::Exhausted`, `RetryError::Exhausted` |
+| | Execution terminated (any) | tenacity `retry_error_callback` | `.with_stats()`, `RetryStats::{attempts, total_elapsed, stop_reason}` |
 | Inspect the failure | | | `RetryError::{stop_reason, last, into_last, last_error, into_last_error}` |
-| Advance a virtual clock | Virtual time advanced | | `VirtualClock::{advance, waits}` |
+| Advance a virtual clock | Virtual time advanced | | `VirtualClock::advance` |
+| Record the delays | Delay recorded | | `Recording::{new, waits, inner}` |
 | Build a test state | | | `RetryState::{for_attempt, with_elapsed, with_previous_delay}` |
 
 Automations (event → command):
@@ -160,22 +156,19 @@ Automations (event → command):
 - Outcome retried → check the stop strategy.
 - Stop strategy not fired → compute the next delay → pause for the delay → run an attempt.
 - Timeout reached → clamp the delay to the remaining timeout; the stop check then fires on the next completed attempt.
-- Execution returned / aborted / exhausted → fire `on_exit` hooks.
 
 Views:
 
-- **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy, wait strategy and `before_attempt`.
-- **Attempt state** (`AttemptState`): attempt number, elapsed time, borrowed outcome; read by `after_attempt`.
-- **Exit** (`Exit`): what the caller receives plus counters; read by `on_exit`.
+- **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy and wait strategy.
 - **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
 
-Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `HookChain`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
+Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `StatelessOp`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs, `Predicate*` structs), `RetryResult`, `SystemClock`, `prelude`.
 
 ## Relationships
 
 - A **Retry policy** holds exactly one **Stop strategy**, one **Wait strategy**, one **Classifier** and at most one **Timeout**.
 - A **Retry policy** configures zero or more **Builders**; each **Builder** binds exactly one **Operation**.
-- A **Builder** holds exactly one **Clock** and zero or more **Hooks** per hook point.
+- A **Builder** holds exactly one **Clock**.
 - A **Retry execution** runs one or more **Attempts**; each **Attempt** produces exactly one **Outcome**.
 - The **Classifier** turns each **Outcome** into exactly one **Verdict**.
 - A **Retry** verdict leads to either another **Attempt** (after one **Delay**) or **Exhaustion**.
@@ -203,8 +196,8 @@ Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifie
 4. **`StopReason` covers non-stop terminations.** `StopReason::Returned` names a success, which the stop strategy never decided. "Stop" means both the stop strategy and any termination. Proposed: **Termination** for the concept; consider `TerminationReason` or `ExitReason`. Open.
 5. **Timeout vs deadline vs budget.** SPEC and source use all three for one value. Resolved in this glossary: **Timeout**. Prose fix only.
 6. **Timeout exhaustion is indistinguishable from attempt exhaustion** (SPEC 11.4.4). Not a naming problem, but the model has a "Timeout reached" event the code does not surface. Open: add `StopReason::TimedOut`?
-7. **Hook names mix patterns.** `before_attempt` / `after_attempt` / `on_exit`; traits `BeforeAttemptHook` / `AttemptHook` / `ExitHook`. `AttemptHook` drops "After". Proposed: `AfterAttemptHook`. Open.
-8. **Two state views with unparallel names.** `RetryState` (pre-attempt) and `AttemptState` (post-attempt, with outcome). Both describe an attempt. Resolved in glossary as **Retry state** / **Attempt state**; rename not proposed.
+7. **Hook names mix patterns.** Resolved: the hooks were removed (ADR-0012).
+8. **Two state views with unparallel names.** Resolved: `AttemptState` was removed with the hooks (ADR-0012); only `RetryState` remains.
 9. **Operation vs op vs probe.** Source and ADRs use all three. Resolved: **Operation**; "probe" stays only for the README "inverted probe" pattern.
 10. **Return vs accept vs success.** README and `Predicate` docs say "accept"; enums say `Return`. Resolved: **Return**.
 11. **Abort vs reject vs fatal.** `RetryError::Aborted` doc says "rejected an outcome as fatal". Resolved: **Abort**; ADR-0006 mentions a retired `RetryError::Rejected`.

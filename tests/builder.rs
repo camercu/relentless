@@ -12,8 +12,7 @@ use core::time::Duration;
 
 use relentless::clock::VirtualClock;
 use relentless::{
-    AttemptState, Decision, Exit, Outcome, RetryError, RetryExt, StopReason, Verdict, predicate,
-    retry, stop, wait,
+    Decision, Outcome, RetryError, RetryExt, StopReason, Verdict, predicate, retry, stop, wait,
 };
 
 /// A non-`Result` poll outcome that classifies itself, so the default path
@@ -188,87 +187,6 @@ fn owned_outcome_type_aborts_via_the_default_path() {
         .call();
 
     assert_eq!(result, Err(RetryError::Aborted { last: "io" }));
-}
-
-type IntResult = Result<i32, &'static str>;
-
-#[test]
-fn after_attempt_fires_before_classification_on_every_attempt() {
-    // `after_attempt` observes the raw outcome for every attempt, including
-    // the terminal `Ok` — proving it fires before the classifier consumes it.
-    let before = Cell::new(0u32);
-    let after = Cell::new(0u32);
-    let last_after_ok = Cell::new(false);
-
-    let counter = Cell::new(0);
-    let result = retry(|_| {
-        let n = counter.get() + 1;
-        counter.set(n);
-        if n >= 2 { Ok::<i32, &str>(7) } else { Err("x") }
-    })
-    .before_attempt(|_| before.set(before.get() + 1))
-    .after_attempt(|s: &AttemptState<IntResult>| {
-        after.set(after.get() + 1);
-        last_after_ok.set(s.outcome.is_ok());
-    })
-    .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-    .wait(wait::fixed(Duration::ZERO))
-    .clock(VirtualClock::new())
-    .call();
-
-    assert_eq!(result, Ok(7));
-    assert_eq!(before.get(), 2);
-    assert_eq!(after.get(), 2);
-    assert!(last_after_ok.get(), "after_attempt saw the terminal Ok");
-}
-
-#[test]
-fn on_exit_reports_returned_with_the_final_attempt_count() {
-    let seen = Cell::new(None);
-    let _ = retry(|_| Ok::<i32, &str>(1))
-        .on_exit(|e: &Exit<i32, &str, IntResult>| {
-            seen.set(Some((e.stop_reason(), e.attempt())));
-        })
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(Duration::ZERO))
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(seen.get(), Some((StopReason::Returned, 1)));
-}
-
-#[test]
-fn on_exit_reports_aborted_from_a_rejected_error() {
-    let reason = Cell::new(None);
-    let _ = retry(|_| Err::<i32, &str>("fatal"))
-        .when(predicate::error(|e: &&str| *e == "transient"))
-        .on_exit(|e: &Exit<i32, &str, IntResult>| reason.set(Some(e.stop_reason())))
-        .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::ZERO))
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(reason.get(), Some(StopReason::Aborted));
-}
-
-#[test]
-fn on_exit_reports_exhausted_after_the_full_stop_budget() {
-    let reason = Cell::new(None);
-    let after = Cell::new(0u32);
-    let _ = retry(|_| Err::<i32, &str>("boom"))
-        .after_attempt(|_: &AttemptState<IntResult>| after.set(after.get() + 1))
-        .on_exit(|e: &Exit<i32, &str, IntResult>| reason.set(Some(e.stop_reason())))
-        .stop(stop::attempts(3))
-        .wait(wait::fixed(Duration::ZERO))
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(reason.get(), Some(StopReason::Exhausted));
-    assert_eq!(
-        after.get(),
-        3,
-        "after_attempt fires on the terminal attempt too"
-    );
 }
 
 #[test]

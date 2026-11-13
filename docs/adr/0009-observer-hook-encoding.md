@@ -4,7 +4,10 @@ Date: 2026-09-14
 
 ## Status
 
-**Proposed, deferred on YAGNI.** The shape is established and measured; nothing
+Superseded by [ADR-0012](0012-remove-observer-hooks.md): the hooks were
+removed, so there is nothing to encode.
+
+**Was: proposed, deferred on YAGNI.** The shape is established and measured; nothing
 is implemented. The trigger for revisiting is a real request for a new hook
 event — see [ADR-0008](0008-async-cancellation-semantics.md), which deferred
 `on_cancel` on a cost this encoding removes. Until someone asks, the current

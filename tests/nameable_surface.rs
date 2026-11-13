@@ -17,36 +17,23 @@ use relentless::clock::VirtualClock;
 use relentless::stop::StopAfterAttempts;
 use relentless::wait::WaitExponential;
 use relentless::{
-    Async, AsyncClock, AsyncRetry, AsyncRetryExt, AsyncRun, AttemptHook, BeforeAttemptHook,
-    Blocking, Decide, DefaultClassifier, DropStats, ExitHook, HookChain, Operation, Retry,
-    RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, StatelessOp,
+    Async, AsyncClock, AsyncRetry, AsyncRetryExt, AsyncRun, Blocking, Decide, DefaultClassifier,
+    DropStats, Operation, Retry, RetryError, RetryExt, RetryPolicy, RetryStats, StatelessOp,
 };
 
 const SUCCESS_VALUE: u32 = 7;
 
-/// Sharing a retry shape by returning a preconfigured builder — the
-/// alternative to `RetryPolicy` when the hooks matter. Spelling the return
-/// type out is unavoidable, so every parameter in it must be nameable.
-type Preconfigured<F> = Retry<
-    StatelessOp<F>,
-    DefaultClassifier,
-    StopAfterAttempts,
-    WaitExponential,
-    VirtualClock,
-    HookChain<(), fn(&RetryState)>,
-    (),
-    (),
->;
+/// Sharing a retry shape by returning a preconfigured builder, clock included.
+/// Spelling the return type out is unavoidable, so every parameter in it must
+/// be nameable.
+type Preconfigured<F> =
+    Retry<StatelessOp<F>, DefaultClassifier, StopAfterAttempts, WaitExponential, VirtualClock>;
 
 fn preconfigured<F>(op: F) -> Preconfigured<F>
 where
     F: FnMut() -> Result<u32, &'static str>,
 {
-    fn note(_state: &RetryState) {}
-
-    relentless::RetryExt::retry(op)
-        .before_attempt(note as fn(&RetryState))
-        .clock(VirtualClock::new())
+    relentless::RetryExt::retry(op).clock(VirtualClock::new())
 }
 
 #[test]
@@ -58,20 +45,17 @@ fn a_helper_can_return_a_preconfigured_builder() {
 }
 
 /// Code generic over *any* configured builder needs the bounds `.call()`
-/// carries, which names the operation trait and all three hook traits.
+/// carries, which names the operation trait.
 #[test]
 fn code_can_be_generic_over_a_configured_builder() {
-    fn drive<F, C, S, W, BA, AA, OX, O>(
-        builder: Retry<F, C, S, W, VirtualClock, BA, AA, OX>,
+    fn drive<F, C, S, W, O>(
+        builder: Retry<F, C, S, W, VirtualClock>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
         F: Operation<Blocking, Output = O>,
         C: Decide<O>,
         S: relentless::stop::Stop,
         W: relentless::wait::Wait,
-        BA: BeforeAttemptHook,
-        AA: AttemptHook<O>,
-        OX: ExitHook<C::R, C::A, O>,
     {
         builder.call()
     }
@@ -86,17 +70,14 @@ fn code_can_be_generic_over_a_configured_builder() {
 /// one does: no bound names the future the operation returns.
 #[test]
 fn code_can_await_a_configured_async_builder_generically() {
-    async fn drive<F, C, S, W, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, ReadyClock, BA, AA, OX>,
+    async fn drive<F, C, S, W, O>(
+        builder: AsyncRetry<F, C, S, W, ReadyClock>,
     ) -> Result<C::R, RetryError<C::A, O>>
     where
         F: Operation<Async, Output = O>,
         C: Decide<O>,
         S: relentless::stop::Stop,
         W: relentless::wait::Wait,
-        BA: BeforeAttemptHook,
-        AA: AttemptHook<O>,
-        OX: ExitHook<C::R, C::A, O>,
     {
         builder.timeout(ARBITRARY_DELAY).call().await
     }
@@ -110,8 +91,8 @@ fn code_can_await_a_configured_async_builder_generically() {
 /// requires `Send` through `Call: Send`, without naming the future type.
 #[test]
 fn generic_async_code_can_require_a_send_retry_future() {
-    fn spawnable<F, C, S, W, Cl, BA, AA, OX, O>(
-        builder: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
+    fn spawnable<F, C, S, W, Cl, O>(
+        builder: AsyncRetry<F, C, S, W, Cl>,
     ) -> impl Future<Output = Result<C::R, RetryError<C::A, O>>> + Send
     where
         F: Operation<Async, Output = O, Call: Send> + Send,
@@ -119,9 +100,6 @@ fn generic_async_code_can_require_a_send_retry_future() {
         S: relentless::stop::Stop + Send,
         W: relentless::wait::Wait + Send,
         Cl: AsyncClock<Wait: Send> + Send,
-        BA: BeforeAttemptHook + Send,
-        AA: AttemptHook<O> + Send,
-        OX: ExitHook<C::R, C::A, O> + Send,
     {
         builder.call()
     }
@@ -134,14 +112,14 @@ fn generic_async_code_can_require_a_send_retry_future() {
 /// An in-flight retry stored in a struct field, as a hand-written future or
 /// a connection pool would hold it. The field restates only the bounds the
 /// future type itself declares.
-struct InFlight<F, C, S, W, Cl, BA, AA, OX>
+struct InFlight<F, C, S, W, Cl>
 where
     F: Operation<Async>,
     Cl: AsyncClock,
 {
     // Spelling the full type out is what this test checks.
     #[allow(clippy::type_complexity)]
-    future: DropStats<AsyncRun<F, C, S, W, Cl, BA, AA, OX>>,
+    future: DropStats<AsyncRun<F, C, S, W, Cl>>,
 }
 
 #[test]
@@ -161,7 +139,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
     let retry = policy
         .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
         .clock(VirtualClock::new());
-    let typed: Retry<_, _, _, _, _, (), (), ()> = retry;
+    let typed: Retry<_, _, _, _, _> = retry;
     assert_eq!(typed.call(), Ok(ARBITRARY_VALUE));
 }
 
@@ -170,7 +148,7 @@ fn sync_retry_type_is_nameable_from_crate_root() {
 #[test]
 fn async_retry_type_is_nameable_from_crate_root() {
     #[allow(clippy::type_complexity, clippy::needless_pass_by_value)]
-    fn assert_nameable<F, C, S, W, Cl, BA, AA, OX>(retry: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>) {
+    fn assert_nameable<F, C, S, W, Cl>(retry: AsyncRetry<F, C, S, W, Cl>) {
         let _ = retry;
     }
 

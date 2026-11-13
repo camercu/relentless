@@ -10,12 +10,8 @@
 //! phases exist only because an async attempt or sleep can span multiple polls.
 
 use super::elapsed::Elapsed;
-use super::hooks::{
-    AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
-};
 use super::op::{Async, Attempt, Operation, StatelessOp};
 use super::step::{Progress, Step, step};
-use super::termination::Exit;
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
 use crate::compat::Duration;
@@ -33,22 +29,19 @@ use pin_project_lite::pin_project;
 
 /// A classifier-driven async retry builder — the async twin of
 /// [`Retry`](super::Retry).
-pub struct AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
+pub struct AsyncRetry<F, C, S, W, Cl> {
     op: F,
     policy: RetryPolicy<S, W, C>,
     clock: Cl,
-    hooks: ExecutionHooks<BA, AA, OX>,
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
+impl<F, C, S, W, Cl> core::fmt::Debug for AsyncRetry<F, C, S, W, Cl> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AsyncRetry").finish_non_exhaustive()
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug
-    for AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
-{
+impl<F, C, S, W, Cl> core::fmt::Debug for AsyncRetryWithStats<F, C, S, W, Cl> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AsyncRetryWithStats")
             .finish_non_exhaustive()
@@ -58,7 +51,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug
 /// Begins a classifier-driven async retry from an operation.
 ///
 /// Defaults mirror [`retry`](super::retry): `stop::attempts(3)`,
-/// `wait::exponential(100ms)`, the default classifier, and no hooks. There is no
+/// `wait::exponential(100ms)`, the default classifier. There is no
 /// default async clock — set one with `.clock(...)` before `.call()`.
 pub fn retry_async<F, Fut, O>(op: F) -> DefaultAsyncRetry<F>
 where
@@ -70,7 +63,7 @@ where
 
 /// Default async builder returned by [`retry_async`] and [`AsyncRetryExt::retry_async`].
 type DefaultAsyncRetry<F> =
-    AsyncRetry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock, (), (), ()>;
+    AsyncRetry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock>;
 
 impl<F> DefaultAsyncRetry<F> {
     /// Builds a default-configured async retry around an operation.
@@ -79,9 +72,9 @@ impl<F> DefaultAsyncRetry<F> {
     }
 }
 
-impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
+impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock> {
     /// Assembles an async retry from an operation and a policy, with the
-    /// default clock and no hooks. Used by
+    /// default clock. Used by
     /// [`RetryPolicy::retry_async`](crate::RetryPolicy::retry_async) to borrow a
     /// reusable policy.
     pub(crate) fn from_policy(op: F, policy: RetryPolicy<S, W, C>) -> Self {
@@ -89,7 +82,6 @@ impl<F, C, S, W> AsyncRetry<F, C, S, W, SystemClock, (), (), ()> {
             op,
             policy,
             clock: SystemClock,
-            hooks: ExecutionHooks::new(),
         }
     }
 }
@@ -118,37 +110,34 @@ where
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
+impl<F, C, S, W, Cl> AsyncRetry<F, C, S, W, Cl> {
     /// Sets the stop strategy.
     #[must_use]
-    pub fn stop<NewStop>(self, stop: NewStop) -> AsyncRetry<F, C, NewStop, W, Cl, BA, AA, OX> {
+    pub fn stop<NewStop>(self, stop: NewStop) -> AsyncRetry<F, C, NewStop, W, Cl> {
         AsyncRetry {
             op: self.op,
             policy: self.policy.stop(stop),
             clock: self.clock,
-            hooks: self.hooks,
         }
     }
 
     /// Sets the wait strategy used between attempts.
     #[must_use]
-    pub fn wait<NewWait>(self, wait: NewWait) -> AsyncRetry<F, C, S, NewWait, Cl, BA, AA, OX> {
+    pub fn wait<NewWait>(self, wait: NewWait) -> AsyncRetry<F, C, S, NewWait, Cl> {
         AsyncRetry {
             op: self.op,
             policy: self.policy.wait(wait),
             clock: self.clock,
-            hooks: self.hooks,
         }
     }
 
     /// Sets the async clock that supplies elapsed time and performs waits.
     #[must_use]
-    pub fn clock<NewClock>(self, clock: NewClock) -> AsyncRetry<F, C, S, W, NewClock, BA, AA, OX> {
+    pub fn clock<NewClock>(self, clock: NewClock) -> AsyncRetry<F, C, S, W, NewClock> {
         AsyncRetry {
             op: self.op,
             policy: self.policy,
             clock,
-            hooks: self.hooks,
         }
     }
 
@@ -160,7 +149,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     pub fn decide<O, D, NewC>(
         self,
         classifier: NewC,
-    ) -> AsyncRetry<F, ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX>
+    ) -> AsyncRetry<F, ClosureClassifier<NewC>, S, W, Cl>
     where
         F: Operation<Async, Output = O>,
         NewC: Fn(O) -> D,
@@ -173,7 +162,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     /// (`Ok` returns, a rejected `Err` aborts with the bare error).
     /// `Result`-only sugar over [`decide`](Self::decide).
     #[must_use]
-    pub fn when<T, E, P>(self, predicate: P) -> AsyncRetry<F, When<P>, S, W, Cl, BA, AA, OX>
+    pub fn when<T, E, P>(self, predicate: P) -> AsyncRetry<F, When<P>, S, W, Cl>
     where
         F: Operation<Async, Output = Result<T, E>>,
         P: Predicate<T, E>,
@@ -186,7 +175,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
     /// of [`when`](Self::when); see [`Retry::until`](super::Retry::until) for
     /// the fatal-error recipe.
     #[must_use]
-    pub fn until<T, E, P>(self, predicate: P) -> AsyncRetry<F, Until<P>, S, W, Cl, BA, AA, OX>
+    pub fn until<T, E, P>(self, predicate: P) -> AsyncRetry<F, Until<P>, S, W, Cl>
     where
         F: Operation<Async, Output = Result<T, E>>,
         P: Predicate<T, E>,
@@ -204,102 +193,31 @@ impl<F, C, S, W, Cl, BA, AA, OX> AsyncRetry<F, C, S, W, Cl, BA, AA, OX> {
 
     /// Wraps this execution so its future also yields [`RetryStats`].
     #[must_use]
-    pub fn with_stats(self) -> AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+    pub fn with_stats(self) -> AsyncRetryWithStats<F, C, S, W, Cl> {
         AsyncRetryWithStats { inner: self }
     }
 
-    fn with_classifier<NewC>(self, classifier: NewC) -> AsyncRetry<F, NewC, S, W, Cl, BA, AA, OX> {
+    fn with_classifier<NewC>(self, classifier: NewC) -> AsyncRetry<F, NewC, S, W, Cl> {
         AsyncRetry {
             op: self.op,
             policy: self.policy.with_classifier(classifier),
             clock: self.clock,
-            hooks: self.hooks,
-        }
-    }
-
-    /// Registers a hook that runs before each attempt.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetry<F, C, S, W, Cl, HookChain<BA, Hook>, AA, OX>
-    where
-        Hook: FnMut(&RetryState),
-    {
-        AsyncRetry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_before_attempt(hook),
-        }
-    }
-
-    /// Registers a hook that runs after each attempt, before classification.
-    #[must_use]
-    pub fn after_attempt<O, Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetry<F, C, S, W, Cl, BA, HookChain<AA, Hook>, OX>
-    where
-        F: Operation<Async, Output = O>,
-        Hook: for<'a> FnMut(&AttemptState<'a, O>),
-    {
-        AsyncRetry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_after_attempt(hook),
-        }
-    }
-
-    /// Registers a hook that runs once when the retry loop exits normally.
-    ///
-    /// It does **not** run on either abnormal exit:
-    ///
-    /// - **Cancellation.** Dropping the retry future — `tokio::select!`, a
-    ///   `timeout` that fires, an aborted task — skips the hook entirely, and
-    ///   that is the ordinary lifecycle of an async future, not an edge case.
-    /// - **Panic.** Once a panic starts unwinding, the remaining hooks for
-    ///   that execution do not run.
-    ///
-    /// So an `on_exit` that releases a semaphore permit, decrements an
-    /// in-flight gauge, or closes a span leaks on every cancelled retry. Put
-    /// cleanup that must happen in a `Drop` impl on your own type, which both
-    /// paths honour, and keep `on_exit` for reporting the outcome.
-    #[must_use]
-    pub fn on_exit<O, Hook>(
-        self,
-        hook: Hook,
-    ) -> AsyncRetry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
-    where
-        F: Operation<Async, Output = O>,
-        C: Decide<O>,
-        Hook: for<'a> FnMut(&Exit<'a, C::R, C::A, O>),
-    {
-        AsyncRetry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_on_exit(hook),
         }
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX, O> AsyncRetry<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, O> AsyncRetry<F, C, S, W, Cl>
 where
     F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
     Cl: AsyncClock,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     /// Drives the async retry loop to completion.
     ///
     /// The returned future is cancel-safe: dropping it stops the loop at the
-    /// next `.await` (`on_exit` does not fire on drop).
+    /// next `.await`.
     ///
     /// # Panics
     ///
@@ -321,18 +239,17 @@ where
     /// [`Clock`](crate::clock::Clock) reports an elapsed reading below one it
     /// already reported — see [`Retry::call`](super::Retry::call).
     #[allow(clippy::type_complexity)]
-    pub fn call(self) -> DropStats<AsyncRun<F, C, S, W, Cl, BA, AA, OX>> {
+    pub fn call(self) -> DropStats<AsyncRun<F, C, S, W, Cl>> {
         DropStats {
             inner: self.into_run(),
         }
     }
 
-    fn into_run(self) -> AsyncRun<F, C, S, W, Cl, BA, AA, OX> {
+    fn into_run(self) -> AsyncRun<F, C, S, W, Cl> {
         AsyncRun {
             op: self.op,
             policy: self.policy,
             clock: self.clock,
-            hooks: self.hooks,
             phase: Phase::ReadyToStart,
             attempt: 1,
             previous_delay: None,
@@ -344,20 +261,17 @@ where
 
 /// A [`AsyncRetry`] wrapper whose future also yields [`RetryStats`]. Created by
 /// [`AsyncRetry::with_stats`].
-pub struct AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
-    inner: AsyncRetry<F, C, S, W, Cl, BA, AA, OX>,
+pub struct AsyncRetryWithStats<F, C, S, W, Cl> {
+    inner: AsyncRetry<F, C, S, W, Cl>,
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX, O> AsyncRetryWithStats<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, O> AsyncRetryWithStats<F, C, S, W, Cl>
 where
     F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
     Cl: AsyncClock,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     /// Drives the async retry loop, yielding both the result and the stats.
     ///
@@ -368,7 +282,7 @@ where
     /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
     /// reading below one it already reported. See
     /// [`AsyncRetry::call`](AsyncRetry::call).
-    pub fn call(self) -> AsyncRun<F, C, S, W, Cl, BA, AA, OX> {
+    pub fn call(self) -> AsyncRun<F, C, S, W, Cl> {
         self.inner.into_run()
     }
 }
@@ -406,7 +320,7 @@ pin_project! {
     /// timeout budget either way; the assertion exists to surface the broken
     /// clock in its implementor's own tests. No clock shipped with this crate
     /// can trigger it.
-    pub struct AsyncRun<F, C, S, W, Cl, BA, AA, OX>
+    pub struct AsyncRun<F, C, S, W, Cl>
     where
         F: Operation<Async>,
         Cl: AsyncClock,
@@ -414,7 +328,6 @@ pin_project! {
         op: F,
         policy: RetryPolicy<S, W, C>,
         clock: Cl,
-        hooks: ExecutionHooks<BA, AA, OX>,
         #[pin]
         phase: Phase<F::Call, Cl::Wait>,
         attempt: u32,
@@ -424,16 +337,13 @@ pin_project! {
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX, O> Future for AsyncRun<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, O> Future for AsyncRun<F, C, S, W, Cl>
 where
     F: Operation<Async, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
     Cl: AsyncClock,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     type Output = (Result<C::R, RetryError<C::A, O>>, RetryStats);
 
@@ -452,7 +362,6 @@ where
                     let before_state = RetryState::for_attempt(*this.attempt)
                         .with_elapsed(elapsed.read(this.clock))
                         .with_previous_delay(*this.previous_delay);
-                    this.hooks.before_attempt.call(&before_state);
                     let op_future = this.op.call_op(before_state);
                     this.phase.set(Phase::Polling { op_future });
                 }
@@ -475,7 +384,6 @@ where
                         },
                         outcome,
                         this.policy,
-                        this.hooks,
                     ) {
                         Step::Done { result, stats } => {
                             this.phase.set(Phase::Done);

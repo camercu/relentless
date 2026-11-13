@@ -18,15 +18,14 @@ use common::block_on;
 
 use core::cell::Cell;
 use core::time::Duration;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 #[cfg(feature = "alloc")]
 use relentless::clock::Recording;
 use relentless::clock::VirtualClock;
 use relentless::{
-    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, StopReason,
-    Wait, predicate, retry, stop, wait,
+    AsyncRetryExt, RetryError, RetryExt, RetryPolicy, RetryState, RetryStats, Stop, Wait,
+    predicate, retry, stop, wait,
 };
 
 const DEFAULT_INITIAL_WAIT: Duration = Duration::from_millis(100);
@@ -163,41 +162,6 @@ fn retry_ext_stateful_stop_and_wait_work() {
 }
 
 #[test]
-fn retry_ext_hooks_match_policy_hook_points() {
-    let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-    let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
-
-    let _ = (|| Err::<i32, _>(ARBITRARY_ERROR))
-        .retry()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(WAIT_DURATION))
-        .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-        .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
-            after_calls.borrow_mut().push(state.attempt);
-        })
-        .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
-            let is_err = match exit {
-                relentless::Exit::Returned { .. } => false,
-                relentless::Exit::Exhausted { last, .. } => last.is_err(),
-                _ => true,
-            };
-            exit_calls
-                .borrow_mut()
-                .push((exit.attempt(), is_err, exit.stop_reason()));
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-    assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
-    assert_eq!(
-        *exit_calls.borrow(),
-        vec![(ARBITRARY_ATTEMPTS, true, StopReason::Exhausted)]
-    );
-}
-
-#[test]
 fn retry_ext_condition_not_met_for_ok_exhaustion() {
     let result = (|| Ok::<i32, &str>(-1))
         .retry()
@@ -320,43 +284,6 @@ mod async_tests {
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
         assert_eq!(attempts.get(), ARBITRARY_ATTEMPTS);
         assert_eq!(clock.waits(), DEFAULT_WAIT_SEQUENCE);
-    }
-
-    #[test]
-    fn async_retry_ext_hooks_match_policy_hook_points() {
-        let before_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-        let after_calls: RefCell<Vec<u32>> = RefCell::new(Vec::new());
-        let exit_calls: RefCell<Vec<(u32, bool, StopReason)>> = RefCell::new(Vec::new());
-
-        let future = (|| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
-            .retry_async()
-            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-            .wait(wait::fixed(WAIT_DURATION))
-            .before_attempt(|state| before_calls.borrow_mut().push(state.attempt))
-            .after_attempt(|state: &relentless::AttemptState<Result<i32, &str>>| {
-                after_calls.borrow_mut().push(state.attempt);
-            })
-            .on_exit(|exit: &relentless::Exit<i32, &str, Result<i32, &str>>| {
-                let is_err = match exit {
-                    relentless::Exit::Returned { .. } => false,
-                    relentless::Exit::Exhausted { last, .. } => last.is_err(),
-                    _ => true,
-                };
-                exit_calls
-                    .borrow_mut()
-                    .push((exit.attempt(), is_err, exit.stop_reason()));
-            })
-            .clock(ReadyClock)
-            .call();
-
-        let _ = block_on(future);
-
-        assert_eq!(*before_calls.borrow(), vec![1, 2, 3]);
-        assert_eq!(*after_calls.borrow(), vec![1, 2, 3]);
-        assert_eq!(
-            *exit_calls.borrow(),
-            vec![(ARBITRARY_ATTEMPTS, true, StopReason::Exhausted)]
-        );
     }
 
     #[test]

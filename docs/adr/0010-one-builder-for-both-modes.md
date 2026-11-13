@@ -5,10 +5,12 @@ Date: 2026-10-19
 ## Status
 
 Accepted. Decision 5 is refined by
-[ADR-0011](0011-bounded-call-type-on-operation.md).
+[ADR-0011](0011-bounded-call-type-on-operation.md). Amended by
+[ADR-0012](0012-remove-observer-hooks.md): the builder carries no hook
+parameters, so `Retry<M, F, C, S, W, Cl>` and the hook setters drop out of
+the plan below.
 
-Builds on [ADR-0004](0004-split-async-builder-from-state-machine.md). Leaves
-[ADR-0009](0009-observer-hook-encoding.md) deferred.
+Builds on [ADR-0004](0004-split-async-builder-from-state-machine.md).
 
 ## Context
 

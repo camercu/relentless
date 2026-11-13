@@ -449,33 +449,6 @@ fn sync_stats_are_fresh_after_policy_reuse() {
     assert_eq!(stats2.stop_reason, StopReason::Returned);
 }
 
-#[test]
-fn sync_stats_work_alongside_hooks() {
-    let hook_calls = Cell::new(0_u32);
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(ARBITRARY_DELAY));
-
-    let (result, stats) = policy
-        .retry(|_| {
-            if hook_calls.get() < ARBITRARY_ATTEMPTS {
-                Err::<i32, _>(ARBITRARY_ERROR)
-            } else {
-                Ok(ARBITRARY_VALUE)
-            }
-        })
-        .before_attempt(|_state| {
-            hook_calls.set(hook_calls.get().saturating_add(1));
-        })
-        .clock(VirtualClock::new())
-        .with_stats()
-        .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(stats.attempts, ARBITRARY_ATTEMPTS);
-    assert_eq!(hook_calls.get(), ARBITRARY_ATTEMPTS);
-}
-
 /// 4.3.1
 #[test]
 fn stats_attempts_always_at_least_one() {

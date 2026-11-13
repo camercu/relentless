@@ -4,7 +4,7 @@
 //! is reused across operations via [`RetryPolicy::retry`] and
 //! [`RetryPolicy::retry_async`], which borrow the policy by `&self`. An optional
 //! wall-clock [`timeout`](RetryPolicy::timeout) is also captured and seeds each
-//! built retry. Remaining per-call concerns (hooks, clock, stats) live on the
+//! built retry. Remaining per-call concerns (clock, stats) live on the
 //! returned builder, not on the policy.
 
 use crate::clock::SystemClock;
@@ -217,7 +217,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     /// rejects it at compile time, and a `.decide` classifier sees an unrun
     /// future.
     #[allow(clippy::type_complexity)]
-    pub fn retry<F, O>(&self, op: F) -> Retry<F, &C, &S, &W, SystemClock, (), (), ()>
+    pub fn retry<F, O>(&self, op: F) -> Retry<F, &C, &S, &W, SystemClock>
     where
         F: FnMut(RetryState) -> O,
     {
@@ -226,10 +226,7 @@ impl<S, W, C> RetryPolicy<S, W, C> {
 
     /// Creates an asynchronous retry for `op`, borrowing this policy's parts.
     #[allow(clippy::type_complexity)]
-    pub fn retry_async<F, Fut, O>(
-        &self,
-        op: F,
-    ) -> AsyncRetry<F, &C, &S, &W, SystemClock, (), (), ()>
+    pub fn retry_async<F, Fut, O>(&self, op: F) -> AsyncRetry<F, &C, &S, &W, SystemClock>
     where
         F: FnMut(RetryState) -> Fut,
         Fut: Future<Output = O>,

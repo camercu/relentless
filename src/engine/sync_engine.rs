@@ -1,17 +1,13 @@
 //! The synchronous classifier engine.
 //!
-//! [`Retry`] pairs an operation with a classifier, stop and wait strategies, a
-//! clock and hooks; `.call()` runs the shared decision core in a blocking
+//! [`Retry`] pairs an operation with a classifier, stop and wait strategies and
+//! a clock; `.call()` runs the shared decision core in a blocking
 //! loop. [`RetryExt`] starts the same builder from a no-argument closure. The
 //! async twin lives in `async_engine`.
 
 use super::elapsed::Elapsed;
-use super::hooks::{
-    AttemptHook, AttemptState, BeforeAttemptHook, ExecutionHooks, ExitHook, HookChain,
-};
 use super::op::{Blocking, Operation, StatelessOp, ready_outcome};
 use super::step::{Progress, Step, step};
-use super::termination::Exit;
 use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
 use crate::compat::Duration;
@@ -24,29 +20,26 @@ use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
 
 /// Default builder returned by [`retry`], [`RetryExt::retry`], and friends.
-type DefaultRetry<F> =
-    Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock, (), (), ()>;
+type DefaultRetry<F> = Retry<F, DefaultClassifier, StopAfterAttempts, WaitExponential, SystemClock>;
 
 /// A classifier-driven sync retry builder.
 ///
 /// Configure the classifier (`.decide`/`.when`/`.until`), stop and wait
-/// strategies, clock, and hooks, then call [`call`](Self::call). The classifier
-/// slot `C` defaults to [`DefaultClassifier`]; the hook slots `BA`/`AA`/`OX`
-/// default to `()` (no-op).
-pub struct Retry<F, C, S, W, Cl, BA, AA, OX> {
+/// strategies, and clock, then call [`call`](Self::call). The classifier slot
+/// `C` defaults to [`DefaultClassifier`].
+pub struct Retry<F, C, S, W, Cl> {
     op: F,
     policy: RetryPolicy<S, W, C>,
     clock: Cl,
-    hooks: ExecutionHooks<BA, AA, OX>,
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for Retry<F, C, S, W, Cl, BA, AA, OX> {
+impl<F, C, S, W, Cl> core::fmt::Debug for Retry<F, C, S, W, Cl> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Retry").finish_non_exhaustive()
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+impl<F, C, S, W, Cl> core::fmt::Debug for RetryWithStats<F, C, S, W, Cl> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("RetryWithStats").finish_non_exhaustive()
     }
@@ -57,7 +50,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> core::fmt::Debug for RetryWithStats<F, C, S, W,
 /// The operation receives the [`RetryState`]; when it ignores that state, the
 /// [`RetryExt::retry`] extension form (`(|| op()).retry()`) is equivalent and
 /// drops the unused argument. Defaults: `stop::attempts(3)`,
-/// `wait::exponential(100ms)`, the default classifier, no hooks, and
+/// `wait::exponential(100ms)`, the default classifier, and
 /// [`SystemClock`]. In non-`std` builds `.clock(...)` must be set before
 /// `.call()`.
 ///
@@ -78,16 +71,15 @@ impl<F> DefaultRetry<F> {
     }
 }
 
-impl<F, C, S, W> Retry<F, C, S, W, SystemClock, (), (), ()> {
-    /// Assembles a retry from an operation and a policy, with the default clock
-    /// and no hooks. Used by [`RetryPolicy::retry`](crate::RetryPolicy::retry)
+impl<F, C, S, W> Retry<F, C, S, W, SystemClock> {
+    /// Assembles a retry from an operation and a policy, with the default clock.
+    /// Used by [`RetryPolicy::retry`](crate::RetryPolicy::retry)
     /// to borrow a reusable policy.
     pub(crate) fn from_policy(op: F, policy: RetryPolicy<S, W, C>) -> Self {
         Retry {
             op,
             policy,
             clock: SystemClock,
-            hooks: ExecutionHooks::new(),
         }
     }
 }
@@ -113,37 +105,34 @@ impl<O, F: FnMut() -> O> RetryExt<O> for F {
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
+impl<F, C, S, W, Cl> Retry<F, C, S, W, Cl> {
     /// Sets the stop strategy.
     #[must_use]
-    pub fn stop<NewStop>(self, stop: NewStop) -> Retry<F, C, NewStop, W, Cl, BA, AA, OX> {
+    pub fn stop<NewStop>(self, stop: NewStop) -> Retry<F, C, NewStop, W, Cl> {
         Retry {
             op: self.op,
             policy: self.policy.stop(stop),
             clock: self.clock,
-            hooks: self.hooks,
         }
     }
 
     /// Sets the wait strategy used between attempts.
     #[must_use]
-    pub fn wait<NewWait>(self, wait: NewWait) -> Retry<F, C, S, NewWait, Cl, BA, AA, OX> {
+    pub fn wait<NewWait>(self, wait: NewWait) -> Retry<F, C, S, NewWait, Cl> {
         Retry {
             op: self.op,
             policy: self.policy.wait(wait),
             clock: self.clock,
-            hooks: self.hooks,
         }
     }
 
     /// Sets the clock that supplies elapsed time and performs waits.
     #[must_use]
-    pub fn clock<NewClock>(self, clock: NewClock) -> Retry<F, C, S, W, NewClock, BA, AA, OX> {
+    pub fn clock<NewClock>(self, clock: NewClock) -> Retry<F, C, S, W, NewClock> {
         Retry {
             op: self.op,
             policy: self.policy,
             clock,
-            hooks: self.hooks,
         }
     }
 
@@ -157,10 +146,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// `.call()`) lets the closure's parameter infer from the operation's
     /// output, so inline classifiers need no annotations.
     #[must_use]
-    pub fn decide<O, D, NewC>(
-        self,
-        classifier: NewC,
-    ) -> Retry<F, ClosureClassifier<NewC>, S, W, Cl, BA, AA, OX>
+    pub fn decide<O, D, NewC>(self, classifier: NewC) -> Retry<F, ClosureClassifier<NewC>, S, W, Cl>
     where
         F: Operation<Blocking, Output = O>,
         NewC: Fn(O) -> D,
@@ -175,7 +161,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// `Result`-only sugar over [`decide`](Self::decide). The predicate's
     /// `&Result<T, E>` parameter infers from the operation's output.
     #[must_use]
-    pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl, BA, AA, OX>
+    pub fn when<T, E, P>(self, predicate: P) -> Retry<F, When<P>, S, W, Cl>
     where
         F: Operation<Blocking, Output = Result<T, E>>,
         P: Predicate<T, E>,
@@ -210,7 +196,7 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// assert_eq!(outcome, Err(RetryError::Aborted { last: "fatal" }));
     /// ```
     #[must_use]
-    pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl, BA, AA, OX>
+    pub fn until<T, E, P>(self, predicate: P) -> Retry<F, Until<P>, S, W, Cl>
     where
         F: Operation<Blocking, Output = Result<T, E>>,
         P: Predicate<T, E>,
@@ -245,87 +231,26 @@ impl<F, C, S, W, Cl, BA, AA, OX> Retry<F, C, S, W, Cl, BA, AA, OX> {
     /// Wraps this execution so [`call`](RetryWithStats::call) also returns
     /// [`RetryStats`].
     #[must_use]
-    pub fn with_stats(self) -> RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
+    pub fn with_stats(self) -> RetryWithStats<F, C, S, W, Cl> {
         RetryWithStats { inner: self }
     }
 
-    fn with_classifier<NewC>(self, classifier: NewC) -> Retry<F, NewC, S, W, Cl, BA, AA, OX> {
+    fn with_classifier<NewC>(self, classifier: NewC) -> Retry<F, NewC, S, W, Cl> {
         Retry {
             op: self.op,
             policy: self.policy.with_classifier(classifier),
             clock: self.clock,
-            hooks: self.hooks,
-        }
-    }
-
-    /// Registers a hook that runs before each attempt.
-    #[must_use]
-    pub fn before_attempt<Hook>(
-        self,
-        hook: Hook,
-    ) -> Retry<F, C, S, W, Cl, HookChain<BA, Hook>, AA, OX>
-    where
-        Hook: FnMut(&RetryState),
-    {
-        Retry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_before_attempt(hook),
-        }
-    }
-
-    /// Registers a hook that runs after each attempt, before classification, so
-    /// it observes every raw outcome — including the terminal one.
-    #[must_use]
-    pub fn after_attempt<O, Hook>(
-        self,
-        hook: Hook,
-    ) -> Retry<F, C, S, W, Cl, BA, HookChain<AA, Hook>, OX>
-    where
-        F: Operation<Blocking, Output = O>,
-        Hook: for<'a> FnMut(&AttemptState<'a, O>),
-    {
-        Retry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_after_attempt(hook),
-        }
-    }
-
-    /// Registers a hook that runs once when the retry loop exits normally.
-    ///
-    /// It does not run if the operation or a hook panics: once a panic starts
-    /// unwinding, the remaining hooks for that execution are skipped. Cleanup
-    /// that must happen belongs in a `Drop` impl on your own type; keep
-    /// `on_exit` for reporting the outcome.
-    #[must_use]
-    pub fn on_exit<O, Hook>(self, hook: Hook) -> Retry<F, C, S, W, Cl, BA, AA, HookChain<OX, Hook>>
-    where
-        F: Operation<Blocking, Output = O>,
-        C: Decide<O>,
-        Hook: for<'a> FnMut(&Exit<'a, C::R, C::A, O>),
-    {
-        Retry {
-            op: self.op,
-            policy: self.policy,
-            clock: self.clock,
-            hooks: self.hooks.chain_on_exit(hook),
         }
     }
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX, O> Retry<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, O> Retry<F, C, S, W, Cl>
 where
     F: Operation<Blocking, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
     Cl: SyncClock,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     /// Drives the retry loop to completion.
     ///
@@ -369,11 +294,9 @@ where
             let before_state = RetryState::for_attempt(attempt)
                 .with_elapsed(elapsed.read(&self.clock))
                 .with_previous_delay(previous_delay);
-            self.hooks.before_attempt.call(&before_state);
             let outcome = ready_outcome(self.op.call_op(before_state));
 
-            // Elapsed is re-read after the operation so the post-attempt hooks
-            // and stop/wait see the time the attempt actually took.
+            // Elapsed is re-read after the operation so stop and wait see the time the attempt actually took.
             let post_elapsed = elapsed.read(&self.clock);
 
             match step(
@@ -385,7 +308,6 @@ where
                 },
                 outcome,
                 &self.policy,
-                &mut self.hooks,
             ) {
                 Step::Done { result, stats } => return (result, stats),
                 Step::Continue {
@@ -408,20 +330,17 @@ where
 
 /// A [`Retry`] wrapper whose [`call`](RetryWithStats::call) also returns
 /// [`RetryStats`]. Created by [`Retry::with_stats`].
-pub struct RetryWithStats<F, C, S, W, Cl, BA, AA, OX> {
-    inner: Retry<F, C, S, W, Cl, BA, AA, OX>,
+pub struct RetryWithStats<F, C, S, W, Cl> {
+    inner: Retry<F, C, S, W, Cl>,
 }
 
-impl<F, C, S, W, Cl, BA, AA, OX, O> RetryWithStats<F, C, S, W, Cl, BA, AA, OX>
+impl<F, C, S, W, Cl, O> RetryWithStats<F, C, S, W, Cl>
 where
     F: Operation<Blocking, Output = O>,
     C: Decide<O>,
     S: Stop,
     W: Wait,
     Cl: SyncClock,
-    BA: BeforeAttemptHook,
-    AA: AttemptHook<O>,
-    OX: ExitHook<C::R, C::A, O>,
 {
     /// Drives the retry loop and returns both the result and the stats.
     ///

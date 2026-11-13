@@ -42,24 +42,21 @@ changing code.
   The engine is classifier-driven (ADR-6): each outcome is consumed by value by
   a `Decide` classifier, not tested by a boolean predicate.
 - Treat [src/engine/step.rs](/src/engine/step.rs) `step` as the semantic center
-  of the crate. It is the shared decision core: given a completed attempt's
-  outcome it fires `after_attempt`, classifies, and returns either
-  `Step::Done` (fires `on_exit`, terminates) or `Step::Continue` (next backoff).
-  All classify → stop → wait → hook → exit transitions and stats accounting live
-  here once, so this is where correctness changes belong.
+  of the crate. It is the shared decision core, a pure function: given the
+  policy, the run's progress and a completed attempt's outcome, it classifies
+  and returns either `Step::Done` (terminates) or `Step::Continue` (next
+  backoff). All classify → stop → wait → exit transitions and stats accounting
+  live here once, so this is where correctness changes belong.
 - Two thin drivers wrap that core and differ only in how they invoke the
   operation and how they sleep: [src/engine/sync_engine.rs](/src/engine/sync_engine.rs)
   `Retry::run` (sync, blocks on `clock.wait`; entry points `retry`, `RetryExt`)
   and [src/engine/async_engine.rs](/src/engine/async_engine.rs) `AsyncRun::poll`
   (async `Phase` state machine, polls a `wait_async` future; `retry_async`,
   `AsyncRetryExt`). When you touch driver-only concerns — the sleep, the poll
-  machine, `before_attempt` timing — edit both in lockstep; core changes touch
+  machine, when the clock is read — edit both in lockstep; core changes touch
   `step` alone.
 - The core and drivers share these building blocks:
-  [src/engine/hooks.rs](/src/engine/hooks.rs) (`HookChain` type-state and the
-  `AttemptState` view),
-  [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason` and the
-  `Exit` view),
+  [src/engine/termination.rs](/src/engine/termination.rs) (`StopReason`),
   [src/engine/op.rs](/src/engine/op.rs)
   (`Operation<M>`), [src/engine/error.rs](/src/engine/error.rs)
   (`RetryError`), and [src/engine/stats.rs](/src/engine/stats.rs)
@@ -68,7 +65,7 @@ changing code.
 - `step` has direct unit tests; behavioral drift between the sync and async
   drivers is caught by the differential suite in
   [tests/parity.rs](/tests/parity.rs) (needs `alloc`, so it runs in any default
-  or `alloc`-enabled run, including bare `just test`). When you change hooks,
+  or `alloc`-enabled run, including bare `just test`). When you change
   cancellation, stats, or type-state ergonomics, extend a parity scenario for
   the new behavior and audit the builder methods in both driver files for
   surface/docs drift the suite cannot see.

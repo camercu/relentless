@@ -135,7 +135,7 @@ impl<F: Future> Attempt<Async> for F {
 ///
 /// To require a `Send` retry future, add `Call: Send` and bound every other
 /// builder parameter `Send` as well — the operation itself, the classifier,
-/// the stop and wait strategies, each hook, and the clock with its wait
+/// the stop and wait strategies, and the clock with its wait
 /// future: `F: Operation<Async, Output = O, Call: Send> + Send,
 /// C: Decide<O> + Send, Cl: AsyncClock<Wait: Send> + Send`, and so on.
 ///
@@ -153,13 +153,10 @@ impl<F: Future> Attempt<Async> for F {
 /// use relentless::clock::VirtualClock;
 /// use relentless::stop::Stop;
 /// use relentless::wait::Wait;
-/// use relentless::{
-///     AttemptHook, BeforeAttemptHook, Blocking, Decide, ExitHook, Operation, Retry, RetryError,
-///     SyncClock, retry,
-/// };
+/// use relentless::{Blocking, Decide, Operation, Retry, RetryError, SyncClock, retry};
 ///
-/// fn finish<F, C, S, W, Cl, BA, AA, OX, O>(
-///     builder: Retry<F, C, S, W, Cl, BA, AA, OX>,
+/// fn finish<F, C, S, W, Cl, O>(
+///     builder: Retry<F, C, S, W, Cl>,
 /// ) -> Result<C::R, RetryError<C::A, O>>
 /// where
 ///     F: Operation<Blocking, Output = O>,
@@ -167,9 +164,6 @@ impl<F: Future> Attempt<Async> for F {
 ///     S: Stop,
 ///     W: Wait,
 ///     Cl: SyncClock,
-///     BA: BeforeAttemptHook,
-///     AA: AttemptHook<O>,
-///     OX: ExitHook<C::R, C::A, O>,
 /// {
 ///     builder.call()
 /// }

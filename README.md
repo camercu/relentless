@@ -36,8 +36,8 @@ libraries make awkward:
 - **Strategy composition**, where `wait::fixed(50ms) + wait::exponential(100ms)`
   and `stop::attempts(5) | stop::elapsed(2s)` express complex behavior in one
   line.
-- **Hooks and stats**, where you observe the retry lifecycle (logging, metrics)
-  without restructuring your retry logic.
+- **Stats**, where a run reports how many attempts it took, how long it spent
+  waiting, and why it stopped.
 
 All of this works in sync and async code, across `std`, `no_std`, and `wasm`
 targets.
@@ -319,9 +319,10 @@ error can `?`-propagate just like a `Result`'s. `last()` / `into_last()` and
 Full inline code for these lives in the [API docs](https://docs.rs/relentless),
 with runnable versions in [`examples/`](./examples):
 
-- **Hooks & stats** — observe the retry lifecycle for logging or metrics with
-  `.before_attempt` / `.after_attempt`, and collect a `RetryStats` summary via
-  `.with_stats()`. ([`hooks-and-stats.rs`](./examples/hooks-and-stats.rs))
+- **Observing retries** — there are no hook callbacks. Log each attempt inside
+  the operation, log each delay by wrapping the wait strategy, and read a
+  `RetryStats` summary via `.with_stats()`.
+  ([`observing-retries.rs`](./examples/observing-retries.rs))
 - **Self-classifying outcomes** — implement `Outcome` for a domain type (a poll
   enum, a search state) so it sorts itself into return / retry / abort, and the
   default engine drives it with no `.decide` at the call site.
@@ -346,7 +347,7 @@ The full API surface — every strategy, predicate, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
 **Reading order.** Chains read best as **when/until/decide** → **wait** →
-**stop** → clock → hooks → stats → call. That is a convention, not a compiler
+**stop** → clock → stats → call. That is a convention, not a compiler
 contract: the types enforce only two structural rules — `.with_stats()` is
 terminal, so configure everything before it, and an async chain must set
 `.clock(...)` before it can be awaited (the default clock is synchronous). Order

@@ -1,9 +1,9 @@
-//! Retry state types — shared context for retry hooks and strategies.
+//! Retry state types — shared context for the operation and strategies.
 
 use crate::compat::Duration;
 
 /// Non-generic retry context passed to [`Stop::should_stop`](crate::Stop::should_stop),
-/// [`Wait::next_wait`](crate::Wait::next_wait), the operation, and the `before_attempt` hook.
+/// [`Wait::next_wait`](crate::Wait::next_wait), and the operation.
 ///
 /// This contains only the timing and counting fields that stop/wait strategies
 /// need. It deliberately excludes the operation's outcome, keeping `Stop` and
@@ -26,7 +26,7 @@ use crate::compat::Duration;
 pub struct RetryState {
     /// The 1-indexed attempt number.
     ///
-    /// For the operation and `before_attempt`, this is the attempt about to start.
+    /// For the operation, this is the attempt about to start.
     /// For `Stop` and `Wait`, this is the just-completed attempt.
     pub attempt: u32,
 
