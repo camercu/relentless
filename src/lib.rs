@@ -131,6 +131,37 @@
 //! assert_eq!(result.unwrap(), Status::Done);
 //! ```
 //!
+//! ## Attempt-only loops
+//!
+//! When each attempt blocks by itself (a bounded read, a poll with its own
+//! timeout), the loop needs no sleep and no wall clock: count the attempts,
+//! wait zero, and use [`VirtualClock`](clock::VirtualClock), which never sleeps
+//! and works on every target. For an outcome that is not a `Result`, return a
+//! [`Decision`]; it has no abort arm, so nothing needs
+//! annotating.
+//!
+//! ```
+//! use core::time::Duration;
+//! use relentless::clock::VirtualClock;
+//! use relentless::Decision;
+//! use relentless::{retry, stop, wait};
+//!
+//! const MAX_POLLS: u32 = 64;
+//!
+//! let mut ready_after = 3;
+//! let result = retry(|_| {
+//!     ready_after -= 1;
+//!     ready_after == 0 // one bounded poll: did the peer make progress?
+//! })
+//! .decide(|done| if done { Decision::Return(()) } else { Decision::Retry(done) })
+//! .stop(stop::attempts(MAX_POLLS))
+//! .wait(wait::fixed(Duration::ZERO))
+//! .clock(VirtualClock::new())
+//! .call();
+//!
+//! assert_eq!(result, Ok(()));
+//! ```
+//!
 //! # Observing retries
 //!
 //! There are no hook callbacks: the operation and the result already carry
@@ -337,9 +368,7 @@ pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Unti
 pub use decision::Decide;
 #[doc(hidden)]
 pub use decision::IntoDecision;
-pub use engine::{
-    Retry, RetryError, RetryResult, RetryStats, StopReason, retry, retry_async,
-};
+pub use engine::{Retry, RetryError, RetryResult, RetryStats, StopReason, retry, retry_async};
 // The builder's type-state plumbing. You never write these to *use* the
 // crate — you pass closures and `.await` or `.call()` the result — but they
 // stand in the `where` bounds and return types of `Retry`, so
