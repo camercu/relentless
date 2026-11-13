@@ -145,11 +145,10 @@ fn elapsed_baseline_starts_at_call_not_builder_construction() {
             clock.advance(Duration::from_millis(PER_ATTEMPT_MILLIS));
             Err::<i32, &str>("fail")
         })
-        .clock(&clock)
-        .with_stats();
+        .clock(&clock);
 
     clock.advance(Duration::from_millis(IDLE_BEFORE_CALL_MILLIS));
-    let (result, stats) = execution.call();
+    let (result, stats) = execution.call_with_stats();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(stats.attempts, 3);

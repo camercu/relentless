@@ -4,7 +4,8 @@ Date: 2026-11-13
 
 ## Status
 
-Accepted
+Accepted. Later the `with_stats` wrapper it keeps became the terminal
+`call_with_stats` method, removing `RetryWithStats` and `AsyncRetryWithStats`.
 
 Supersedes [ADR-0003](0003-ungate-multi-hook-from-alloc.md) and
 [ADR-0009](0009-observer-hook-encoding.md). Amends

@@ -713,10 +713,10 @@ operation receives `RetryState` by value on each invocation.
 builder whose operation returns a future.
 
 `Retry` and `AsyncRetry` are the single builder types for every entry path: the
-policy path starts from borrowed strategies, and the free-function / ext-trait
-path owns them. Both expose the full surface — strategy overrides
+policy path starts from borrowed strategies, and the free-function path owns
+them. Both expose the full surface — strategy overrides
 (`.stop`/`.wait`/`.when`/`.until`/`.decide`), `.clock`, `.timeout`,
-`.with_stats`, and `.call`. A strategy override on a policy-borrowed builder
+`.call`, and `.call_with_stats`. A strategy override on a policy-borrowed builder
 replaces the borrowed slot for that call only, leaving the policy unchanged.
 
 Because `Stop`, `Wait`, `Decide`, and the clocks all use `&self`, multiple
@@ -762,7 +762,7 @@ must satisfy `C: Decide<O>` for the operation's outcome type `O`.
 #### Strategy overrides
 
 **6.3.1** Strategy overrides are available on every `Retry` / `AsyncRetry`
-builder, whether it owns its strategies (ext-trait / free-function path) or
+builder, whether it owns its strategies (free-function path) or
 borrows them from a policy. On a policy-borrowed builder an override replaces
 the borrowed slot with an owned value for that call only.
 
@@ -802,13 +802,11 @@ Terminal execution:
 - **6.4.2** `.call() -> Result<R, RetryError<A, O>>`: executes the retry loop and
   returns the result. On the default / `.when` / `.until` path this is
   `RetryResult<T, E>`.
-- **6.4.3** `.with_stats()` changes the builder so that `.call()` returns
-  `(Result<R, RetryError<A, O>>, RetryStats)` instead
+- **6.4.3** `.call_with_stats() -> (Result<R, RetryError<A, O>>, RetryStats)`:
+  executes the same loop and returns the result paired with its stats.
 
-**6.4.4** `RetryWithStats` and `AsyncRetryWithStats` expose only terminal
-execution (`.call()` for both; the async `.call()` returns a future). They do
-not expose clock or strategy configuration methods. Configure everything before
-calling `.with_stats()`.
+**6.4.4** Both are terminal: they consume the builder, so configure everything
+before calling either.
 
 The sync loop performs these steps:
 
@@ -847,10 +845,10 @@ Terminal execution:
 - **6.5.2** `AsyncRetry::call` consumes the builder and returns a future with
   `Output = Result<R, RetryError<A, O>>` (`RetryResult<T, E>` on the `Result`
   path). The builder itself does not implement `Future`/`IntoFuture`.
-- **6.5.3** `.with_stats()` changes the builder so that `.call()` returns a
-  future with `Output = (Result<R, RetryError<A, O>>, RetryStats)` instead
+- **6.5.3** `AsyncRetry::call_with_stats` returns a future with
+  `Output = (Result<R, RetryError<A, O>>, RetryStats)`.
 
-**6.5.4** `AsyncRetryWithStats` exposes only terminal execution.
+**6.5.4** Both are terminal: they consume the builder.
 
 The async builder is terminated with `.call()`, which returns a single-use
 `Future`:
@@ -869,7 +867,7 @@ allocations or timing beyond what the chosen clock already provides.
 
 Statistics are accessed via:
 
-- `.with_stats().call()` (sync) or `.with_stats().call().await` (async): returns
+- `.call_with_stats()` (sync) or `.call_with_stats().await` (async): returns
   the result paired with `RetryStats`
 
 ## 7. Termination semantics
@@ -903,7 +901,7 @@ available without one:
 
 - before an attempt: the operation receives its `RetryState` (§3.6)
 - after an attempt: the operation holds the outcome before returning it
-- on exit: `.call()` returns the result, and `.with_stats()` adds `RetryStats`
+- on exit: `.call()` returns the result, and `.call_with_stats()` adds `RetryStats`
   (§6.6)
 - before a sleep: a user `Wait` wrapper sees each delay, because the engine
   consults the wait strategy only once a retry is certain (7.2.4); the delay
@@ -1267,9 +1265,8 @@ Types:
 - `RetryError`, `RetryResult`
 - `RetryStats`, `StopReason`
 - `RetryState`
-- `Retry`, `RetryWithStats` (sync builders), `AsyncRetry`,
-  `AsyncRetryWithStats` (async builders), `AsyncRun`, `DropStats` (the async
-  builder futures)
+- `Retry` (sync builder), `AsyncRetry` (async builder), `AsyncRun`,
+  `DropStats` (the async builder futures)
 - classifier vocabulary: `Decision`, `Verdict`, `DefaultClassifier`,
   `ClosureClassifier`, `When`, `Until`
 - builder type-state plumbing, named only when spelling out a configured
@@ -1390,8 +1387,8 @@ enforced by `clippy::missing_panics_doc` (the crate runs clippy pedantic under
 public function, so 15.2, 15.3 and 15.4 are all maintained by hand — verified by
 deleting each section and confirming the lint stays silent. Their sections live
 on `RetryState::for_attempt` (15.3); on `AsyncRetry::call`,
-`AsyncRetryWithStats::call` and `AsyncRun` (15.2); and on `Retry::call`,
-`RetryWithStats::call`, both async `call`s and `AsyncRun` (15.4).
+`AsyncRetry::call_with_stats` and `AsyncRun` (15.2); and on `Retry::call`,
+`Retry::call_with_stats`, both async terminal methods and `AsyncRun` (15.4).
 
 ## 16. Compatibility guarantees
 

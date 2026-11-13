@@ -2,7 +2,7 @@
 //!
 //! Each test drives one builder surface end to end under a virtual clock:
 //! the default classifier path, `.decide`/`.when`/`.until`, self-classifying
-//! outcomes, the three hook points, `.with_stats()` and `.timeout`.
+//! outcomes, `.call_with_stats()` and `.timeout`.
 mod common;
 
 use common::ARBITRARY_ATTEMPTS;
@@ -223,13 +223,12 @@ fn retry_ext_supports_the_classifier_surface() {
 }
 
 #[test]
-fn with_stats_reports_attempts_wait_elapsed_and_reason() {
+fn call_with_stats_reports_attempts_wait_elapsed_and_reason() {
     let (result, stats) = retry(|_| Err::<i32, &str>("boom"))
         .stop(stop::attempts(3))
         .wait(wait::fixed(Duration::from_millis(5)))
         .clock(VirtualClock::new())
-        .with_stats()
-        .call();
+        .call_with_stats();
 
     assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
     assert_eq!(stats.attempts, 3);

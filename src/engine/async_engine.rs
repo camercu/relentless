@@ -39,13 +39,6 @@ impl<F, C, S, W, Cl> core::fmt::Debug for AsyncRetry<F, C, S, W, Cl> {
     }
 }
 
-impl<F, C, S, W, Cl> core::fmt::Debug for AsyncRetryWithStats<F, C, S, W, Cl> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("AsyncRetryWithStats")
-            .finish_non_exhaustive()
-    }
-}
-
 /// Begins a classifier-driven async retry from an operation.
 ///
 /// Defaults mirror [`retry`](super::retry): `stop::attempts(3)`,
@@ -169,12 +162,6 @@ impl<F, C, S, W, Cl> AsyncRetry<F, C, S, W, Cl> {
         self
     }
 
-    /// Wraps this execution so its future also yields [`RetryStats`].
-    #[must_use]
-    pub fn with_stats(self) -> AsyncRetryWithStats<F, C, S, W, Cl> {
-        AsyncRetryWithStats { inner: self }
-    }
-
     fn with_classifier<NewC>(self, classifier: NewC) -> AsyncRetry<F, NewC, S, W, Cl> {
         AsyncRetry {
             op: self.op,
@@ -223,6 +210,19 @@ where
         }
     }
 
+    /// Drives the async retry loop, yielding both the result and the
+    /// [`RetryStats`].
+    ///
+    /// # Panics
+    ///
+    /// The returned future panics if it is polled again after it has returned
+    /// [`Poll::Ready`], and — in debug builds only —
+    /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
+    /// reading below one it already reported. See [`call`](Self::call).
+    pub fn call_with_stats(self) -> AsyncRun<F, C, S, W, Cl> {
+        self.into_run()
+    }
+
     fn into_run(self) -> AsyncRun<F, C, S, W, Cl> {
         AsyncRun {
             op: self.op,
@@ -234,34 +234,6 @@ where
             total_wait: Duration::ZERO,
             elapsed: None,
         }
-    }
-}
-
-/// A [`AsyncRetry`] wrapper whose future also yields [`RetryStats`]. Created by
-/// [`AsyncRetry::with_stats`].
-pub struct AsyncRetryWithStats<F, C, S, W, Cl> {
-    inner: AsyncRetry<F, C, S, W, Cl>,
-}
-
-impl<F, C, S, W, Cl, O> AsyncRetryWithStats<F, C, S, W, Cl>
-where
-    F: Operation<Async, Output = O>,
-    C: Decide<O>,
-    S: Stop,
-    W: Wait,
-    Cl: AsyncClock,
-{
-    /// Drives the async retry loop, yielding both the result and the stats.
-    ///
-    /// # Panics
-    ///
-    /// The returned future panics if it is polled again after it has returned
-    /// [`Poll::Ready`], and — in debug builds only —
-    /// if the injected [`Clock`](crate::clock::Clock) reports an elapsed
-    /// reading below one it already reported. See
-    /// [`AsyncRetry::call`](AsyncRetry::call).
-    pub fn call(self) -> AsyncRun<F, C, S, W, Cl> {
-        self.inner.into_run()
     }
 }
 

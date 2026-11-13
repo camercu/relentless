@@ -202,8 +202,7 @@ fn timeout_stop_reason_is_exhausted() {
         })
         .clock(&clock)
         .timeout(Duration::from_millis(5))
-        .with_stats()
-        .call();
+        .call_with_stats();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(stats.stop_reason, StopReason::Exhausted);
@@ -319,8 +318,7 @@ fn timeout_stops_the_loop_once_the_budget_is_exceeded() {
         .wait(wait::fixed(Duration::from_millis(10)))
         .timeout(Duration::from_millis(25))
         .clock(VirtualClock::new())
-        .with_stats()
-        .call();
+        .call_with_stats();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(stats.attempts, 4);

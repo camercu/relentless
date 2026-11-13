@@ -117,14 +117,11 @@ fn run_sync(scenario: &Scenario) -> Trace {
 
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
-            (Some(rejected), None) => exec
-                .when(move |e: &&str| *e != rejected)
-                .with_stats()
-                .call(),
-            (None, Some(target)) => exec.until(move |v: &u32| *v == target).with_stats().call(),
+            (Some(rejected), None) => exec.when(move |e: &&str| *e != rejected).call_with_stats(),
+            (None, Some(target)) => exec.until(move |v: &u32| *v == target).call_with_stats(),
             (None, None) => match scenario.timeout {
-                Some(dur) => exec.timeout(dur).with_stats().call(),
-                None => exec.with_stats().call(),
+                Some(dur) => exec.timeout(dur).call_with_stats(),
+                None => exec.call_with_stats(),
             },
             (Some(_), Some(_)) => unreachable!("scenarios use either reject or until, not both"),
         };
@@ -154,17 +151,15 @@ fn run_async(scenario: &Scenario) -> Trace {
 
     let (result, stats): (relentless::RetryResult<u32, &str>, RetryStats) =
         match (scenario.reject_error, scenario.until_ok) {
-            (Some(rejected), None) => block_on(
-                exec.when(move |e: &&str| *e != rejected)
-                    .with_stats()
-                    .call(),
-            ),
+            (Some(rejected), None) => {
+                block_on(exec.when(move |e: &&str| *e != rejected).call_with_stats())
+            }
             (None, Some(target)) => {
-                block_on(exec.until(move |v: &u32| *v == target).with_stats().call())
+                block_on(exec.until(move |v: &u32| *v == target).call_with_stats())
             }
             (None, None) => match scenario.timeout {
-                Some(dur) => block_on(exec.timeout(dur).with_stats().call()),
-                None => block_on(exec.with_stats().call()),
+                Some(dur) => block_on(exec.timeout(dur).call_with_stats()),
+                None => block_on(exec.call_with_stats()),
             },
             (Some(_), Some(_)) => unreachable!("scenarios use either reject or until, not both"),
         };

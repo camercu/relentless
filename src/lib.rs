@@ -140,8 +140,8 @@
 //!   the same [`RetryState`] (attempt number, elapsed time, previous delay).
 //! - **After each attempt**, inspect the outcome in the operation before
 //!   returning it.
-//! - **On exit**, match on what `.call()` returns. [`.with_stats()`](Retry::with_stats)
-//!   adds the attempt count, total wait and [`StopReason`].
+//! - **On exit**, match on what `.call()` returns.
+//!   [`.call_with_stats()`](Retry::call_with_stats) adds the attempt count, total wait and [`StopReason`].
 //! - **Before each sleep**, wrap the wait strategy. The engine consults it only
 //!   once a retry is certain, so it sees exactly the retries.
 //!
@@ -173,8 +173,7 @@
 //! })
 //! .wait(Logged(wait::fixed(Duration::from_millis(10))))
 //! .clock(VirtualClock::new())
-//! .with_stats()
-//! .call();
+//! .call_with_stats();
 //!
 //! // On exit: the result and stats say how the run ended.
 //! assert_eq!(result, Ok("done"));
@@ -339,8 +338,7 @@ pub use decision::Decide;
 #[doc(hidden)]
 pub use decision::IntoDecision;
 pub use engine::{
-    AsyncRetry, AsyncRetryWithStats, Retry, RetryError, RetryResult, RetryStats, RetryWithStats,
-    StopReason, retry, retry_async,
+    AsyncRetry, Retry, RetryError, RetryResult, RetryStats, StopReason, retry, retry_async,
 };
 // The builder's type-state plumbing. You never write these to *use* the
 // crate — you pass closures and `.await` or `.call()` the result — but they

@@ -1,5 +1,5 @@
 //! Observing a retry without hooks: log inside the operation, log each delay
-//! by wrapping the wait strategy, and read `.with_stats()` after the loop ends.
+//! by wrapping the wait strategy, and read `.call_with_stats()` after the loop ends.
 //!
 //! Run: `cargo run --example observing-retries`
 use core::time::Duration;
@@ -32,15 +32,14 @@ fn main() {
         outcome
     };
 
-    // `.with_stats()` wraps the builder so `.call()` returns (result, RetryStats):
+    // `.call_with_stats()` returns (result, RetryStats):
     // attempt count, total wait and stop reason, without a counter threaded
     // through the closure.
     let (result, stats) = retry(|_| observed_ping())
         .stop(stop::attempts(3))
         .wait(Logged(wait::fixed(Duration::from_millis(5))))
         .clock(VirtualClock::new())
-        .with_stats()
-        .call();
+        .call_with_stats();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(stats.attempts, 3);

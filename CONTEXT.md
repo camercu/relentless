@@ -116,7 +116,7 @@ _Avoid_: metrics
 
 ## Event model
 
-Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wait, `.timeout(30s)` and `.with_stats()`. (The hooks this walk once covered were removed, ADR-0012.) A second scenario walked the `RetryPolicy` reuse path.
+Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wait, `.timeout(30s)` and `.call_with_stats()`. (The hooks this walk once covered were removed, ADR-0012.) A second scenario walked the `RetryPolicy` reuse path.
 
 | Command | Events | Standard name | Code |
 |---|---|---|---|
@@ -131,8 +131,8 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | Compose stop strategies | | tenacity `stop_a \| stop_b` | `Stop::{or, and}`, `\|`, `&` |
 | Set a timeout | | tenacity `stop_after_delay` (partial) | `.timeout` |
 | Inject a clock | | | `.clock`, `TokioClock::new`, `EmbassyClock::new`, `FuturesTimerClock::new`, `GlooClock::with_now`, `VirtualClock::new` |
-| Request stats | | tenacity `.statistics` | `.with_stats` |
-| Run the execution | Execution started | | `.call()` (sync, async, `*WithStats`) |
+| Request stats | | tenacity `.statistics` | `.call_with_stats` |
+| Run the execution | Execution started | | `.call()`, `.call_with_stats()` (sync, async) |
 | | Attempt starting | tenacity `before` | `RetryState` |
 | Run an attempt | Attempt completed | tenacity `after` | `Operation::call_op` |
 | Classify the outcome | Outcome returned; outcome retried; outcome aborted | | `Outcome::classify`, `When`, `Until`, `Verdict::{Return, Retry, Abort}`, `Decision::{Return, Retry}` |
@@ -143,7 +143,7 @@ Scenario walked: poll a job with `.decide`, `stop::attempts(20)`, exponential wa
 | | Execution returned | | `StopReason::Returned`, `Ok(R)` |
 | | Execution aborted | | `StopReason::Aborted`, `RetryError::Aborted` |
 | | Execution exhausted | tenacity `RetryError` | `StopReason::Exhausted`, `RetryError::Exhausted` |
-| | Execution terminated (any) | tenacity `retry_error_callback` | `.with_stats()`, `RetryStats::{attempts, total_elapsed, stop_reason}` |
+| | Execution terminated (any) | tenacity `retry_error_callback` | `.call_with_stats()`, `RetryStats::{attempts, total_elapsed, stop_reason}` |
 | Inspect the failure | | | `RetryError::{stop_reason, last, into_last, last_error, into_last_error}` |
 | Advance a virtual clock | Virtual time advanced | | `VirtualClock::advance` |
 | Record the delays | Delay recorded | | `Recording::{new, waits, inner}` |
@@ -159,7 +159,7 @@ Automations (event → command):
 Views:
 
 - **Retry state** (`RetryState`): attempt number, elapsed time, previous delay; read by the operation, stop strategy and wait strategy.
-- **Retry stats** (`RetryStats`): read by the caller after `.with_stats().call()`.
+- **Retry stats** (`RetryStats`): read by the caller after `.call_with_stats()`.
 
 Unmapped (plumbing, no domain verb): `Decide`, `IntoDecision`, `DefaultClassifier`, `ClosureClassifier`, `When`, `Until`, `Attempt`, `Blocking`, `Async`, `AsyncRun`, `DropStats`, `VirtualWait`, `RecordingWait`, combinator structs (`WaitCapped`, `WaitChain`, `WaitCombine`, `StopAny`, `StopAll`, `Wait*`/`Stop*` strategy structs), `RetryResult`, `SystemClock`, `prelude`.
 

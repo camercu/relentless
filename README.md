@@ -298,7 +298,7 @@ with runnable versions in [`examples/`](./examples):
 
 - **Observing retries** — there are no hook callbacks. Log each attempt inside
   the operation, log each delay by wrapping the wait strategy, and read a
-  `RetryStats` summary via `.with_stats()`.
+  `RetryStats` summary via `.call_with_stats()`.
   ([`observing-retries.rs`](./examples/observing-retries.rs))
 - **Self-classifying outcomes** — implement `Outcome` for a domain type (a poll
   enum, a search state) so it sorts itself into return / retry / abort, and the
@@ -324,15 +324,14 @@ The full API surface — every strategy, classifier, and type — lives on
 [docs.rs](https://docs.rs/relentless). Two things worth knowing up front:
 
 **Reading order.** Chains read best as **when/until/decide** → **wait** →
-**stop** → clock → stats → call. That is a convention, not a compiler
-contract: the types enforce only two structural rules — `.with_stats()` is
-terminal, so configure everything before it, and an async chain must set
+**stop** → clock → call. That is a convention, not a compiler
+contract: the types enforce one structural rule — an async chain must set
 `.clock(...)` before it can be awaited (the default clock is synchronous). Order
 is otherwise free, and repeating a setter simply overrides the previous value —
 including `.clock(...)`, where the last one wins.
 
-**Where you start sets the defaults, not a ceiling.** The free-function and
-extension-trait builders begin from the default policy; a shared `RetryPolicy`
+**Where you start sets the defaults, not a ceiling.** The free-function
+builders begin from the default policy; a shared `RetryPolicy`
 (`policy.retry(...)`) begins from that policy's strategies instead. Either way
 you can still override `when`/`until`/`decide`/`wait`/`stop` on the resulting
 builder — an override on a policy-built retry shadows the policy for that one

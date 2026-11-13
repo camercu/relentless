@@ -18,9 +18,9 @@ mod step;
 mod sync_engine;
 mod termination;
 
-pub use async_engine::{AsyncRetry, AsyncRetryWithStats, AsyncRun, DropStats, retry_async};
+pub use async_engine::{AsyncRetry, AsyncRun, DropStats, retry_async};
 pub use error::{RetryError, RetryResult};
 pub use op::{Async, Attempt, Blocking, Operation};
 pub use stats::RetryStats;
-pub use sync_engine::{Retry, RetryWithStats, retry};
+pub use sync_engine::{Retry, retry};
 pub use termination::StopReason;

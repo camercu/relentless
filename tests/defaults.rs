@@ -97,7 +97,7 @@ fn retry_uses_default_policy_when_not_overridden() {
 }
 
 #[test]
-fn retry_with_stats_reports_attempts() {
+fn retry_call_with_stats_reports_attempts() {
     let attempts = Rc::new(Cell::new(0_u32));
     let attempts_ref = Rc::clone(&attempts);
 
@@ -108,8 +108,7 @@ fn retry_with_stats_reports_attempts() {
         })
         .stop(stop::attempts(2))
         .clock(VirtualClock::new())
-        .with_stats()
-        .call();
+        .call_with_stats();
 
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
     assert_eq!(stats.attempts, 2);
@@ -198,15 +197,6 @@ fn sync_retry_builder_debug_format() {
     assert!(debug.contains("Retry"));
 }
 
-#[test]
-fn sync_retry_builder_with_stats_debug_format() {
-    let builder = retry(|_| Ok::<i32, &str>(1))
-        .clock(VirtualClock::new())
-        .with_stats();
-    let debug = format!("{builder:?}");
-    assert!(debug.contains("RetryWithStats"));
-}
-
 #[cfg(feature = "alloc")]
 mod async_tests {
     use core::future::{Future, ready};
@@ -262,13 +252,12 @@ mod async_tests {
     }
 
     #[test]
-    fn retry_async_with_stats_reports_attempts() {
+    fn retry_async_call_with_stats_reports_attempts() {
         let future = retry_async(|_| ready::<Result<i32, &str>>(Err(ARBITRARY_ERROR)))
             .stop(stop::attempts(2))
             .when(|_: &&str| true)
             .clock(ReadyClock)
-            .with_stats()
-            .call();
+            .call_with_stats();
 
         let (result, stats) = block_on(future);
         assert!(matches!(result, Err(RetryError::Exhausted { .. })));
@@ -384,15 +373,6 @@ mod async_tests {
         let debug = format!("{builder:?}");
         // The builder Debug is opaque (finish_non_exhaustive).
         assert!(debug.contains("AsyncRetry"));
-    }
-
-    #[test]
-    fn async_retry_builder_with_stats_debug_format() {
-        let builder = retry_async(|_| ready(Ok::<i32, &str>(1)))
-            .clock(ReadyClock)
-            .with_stats();
-        let debug = format!("{builder:?}");
-        assert!(debug.contains("AsyncRetryWithStats"));
     }
 }
 

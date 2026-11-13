@@ -120,15 +120,14 @@ fn async_until_polls_a_result() {
 }
 
 #[test]
-fn async_with_stats_matches_the_sync_engine() {
+fn async_call_with_stats_matches_the_sync_engine() {
     let clock = VirtualClock::new();
     let (result, stats) = block_on(
         retry_async(|_| async { Err::<i32, &str>("boom") })
             .stop(stop::attempts(3))
             .wait(wait::fixed(Duration::from_millis(5)))
             .clock(&clock)
-            .with_stats()
-            .call(),
+            .call_with_stats(),
     );
 
     assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
@@ -180,8 +179,7 @@ fn a_pending_operation_future_is_repolled_not_restarted() {
             }
         })
         .clock(&clock)
-        .with_stats()
-        .call(),
+        .call_with_stats(),
     );
 
     assert_eq!(

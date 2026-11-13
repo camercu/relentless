@@ -37,12 +37,6 @@ impl<F, C, S, W, Cl> core::fmt::Debug for Retry<F, C, S, W, Cl> {
     }
 }
 
-impl<F, C, S, W, Cl> core::fmt::Debug for RetryWithStats<F, C, S, W, Cl> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("RetryWithStats").finish_non_exhaustive()
-    }
-}
-
 /// Begins a classifier-driven retry from an operation.
 ///
 /// The operation receives the [`RetryState`] (attempt number, elapsed time,
@@ -184,13 +178,6 @@ impl<F, C, S, W, Cl> Retry<F, C, S, W, Cl> {
         self
     }
 
-    /// Wraps this execution so [`call`](RetryWithStats::call) also returns
-    /// [`RetryStats`].
-    #[must_use]
-    pub fn with_stats(self) -> RetryWithStats<F, C, S, W, Cl> {
-        RetryWithStats { inner: self }
-    }
-
     fn with_classifier<NewC>(self, classifier: NewC) -> Retry<F, NewC, S, W, Cl> {
         Retry {
             op: self.op,
@@ -234,7 +221,25 @@ where
         self.run().0
     }
 
-    /// Shared driver for [`call`](Self::call) and the stats wrapper: runs the
+    /// Drives the retry loop and returns both the result and the
+    /// [`RetryStats`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RetryError`] on abort or exhaustion.
+    ///
+    /// # Panics
+    ///
+    /// Panics, in debug builds only, if the injected [`Clock`](crate::clock::Clock) reports an
+    /// elapsed reading below one it already reported — see
+    /// [`call`](Self::call).
+    #[allow(clippy::type_complexity)]
+    pub fn call_with_stats(self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
+        self.run()
+    }
+
+    /// Shared driver for [`call`](Self::call) and
+    /// [`call_with_stats`](Self::call_with_stats): runs the
     /// loop and always produces [`RetryStats`] (they are `Copy`, so collecting
     /// them unconditionally is free and keeps the loop allocation-free).
     #[allow(clippy::type_complexity)]
@@ -281,36 +286,5 @@ where
                 }
             }
         }
-    }
-}
-
-/// A [`Retry`] wrapper whose [`call`](RetryWithStats::call) also returns
-/// [`RetryStats`]. Created by [`Retry::with_stats`].
-pub struct RetryWithStats<F, C, S, W, Cl> {
-    inner: Retry<F, C, S, W, Cl>,
-}
-
-impl<F, C, S, W, Cl, O> RetryWithStats<F, C, S, W, Cl>
-where
-    F: Operation<Blocking, Output = O>,
-    C: Decide<O>,
-    S: Stop,
-    W: Wait,
-    Cl: SyncClock,
-{
-    /// Drives the retry loop and returns both the result and the stats.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RetryError`] on abort or exhaustion.
-    ///
-    /// # Panics
-    ///
-    /// Panics, in debug builds only, if the injected [`Clock`](crate::clock::Clock) reports an
-    /// elapsed reading below one it already reported — see
-    /// [`Retry::call`](Retry::call).
-    #[allow(clippy::type_complexity)]
-    pub fn call(self) -> (Result<C::R, RetryError<C::A, O>>, RetryStats) {
-        self.inner.run()
     }
 }

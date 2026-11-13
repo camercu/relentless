@@ -5,8 +5,7 @@ use crate::compat::Duration;
 
 /// Aggregate statistics for a completed retry execution.
 ///
-/// Returned alongside the result when the execution is wrapped with
-/// `.with_stats()`.
+/// Returned alongside the result by `.call_with_stats()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryStats {
     /// The total number of attempts executed.
