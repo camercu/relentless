@@ -159,7 +159,12 @@ jobs:
             cog check "${PR_BASE}..HEAD"
           elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
               || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            cog check "${PUSH_AFTER}^..${PUSH_AFTER}"
+            # A root commit has no parent to start a range from.
+            if git rev-parse -q --verify "${PUSH_AFTER}^" >/dev/null; then
+              cog check "${PUSH_AFTER}^..${PUSH_AFTER}"
+            else
+              cog check
+            fi
           else
             cog check "${PUSH_BEFORE}..${PUSH_AFTER}"
           fi
