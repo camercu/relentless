@@ -5,7 +5,8 @@
 # untracked files, minus ignored ones), seeds a tag, adds empty commits,
 # runs `just release`, and checks the tag it cuts, the bump commit, and
 # the refusals, from a 0.x and a 1.x version. Then runs the publish
-# scripts against stub `gh` and `cargo`. Uncommitted changes are what the test exercises, and a
+# scripts against stub `gh` and `cargo`, and the CI commit check against
+# each kind of push. Uncommitted changes are what the test exercises, and a
 # repository with no commits yet works.
 set -euo pipefail
 
@@ -291,6 +292,49 @@ elif grep -q '^cargo' "$work/stub.log" 2>/dev/null; then
 else
     pass "publish-crate version mismatch" refused
 fi
+
+# ci-check-commits.sh picks the commit range for each kind of push. The
+# history holds an old non-conventional commit, as relentless does, so a
+# whole-history check where a range was due fails.
+mkdir "$work/ci"
+(
+    cd "$work/ci"
+    git init -q -b main
+    git config user.name t
+    git config user.email t@example.invalid
+    git config commit.gpgsign false
+    git commit -q --allow-empty -m "chore: root"
+    git commit -q --allow-empty -m "legacy subject"
+    git commit -q --allow-empty -m "fix: a"
+    git update-ref refs/remotes/origin/main HEAD
+)
+zero=0000000000000000000000000000000000000000
+
+# ci_case <label> <want exit> <ref> <before> <after> [event]
+ci_case() {
+    local got=0
+    (cd "$work/ci" && EVENT_NAME="${6:-push}" REF="$3" PR_BASE=origin/main \
+        PUSH_BEFORE="$4" PUSH_AFTER="$5" "$repo/scripts/ci-check-commits.sh") \
+        >"$work/out.log" 2>&1 || got=$?
+    if [ "$got" = "$2" ]; then
+        pass "ci-check-commits $1" "exit $got"
+    else
+        fail "ci-check-commits $1" "want exit $2, got $got" "$work/out.log"
+    fi
+}
+ci_rev() { git -C "$work/ci" rev-parse "$1"; }
+
+tip=$(ci_rev HEAD)
+ci_case "push to main" 0 refs/heads/main "$(ci_rev HEAD~1)" "$tip"
+ci_case "tag at main tip" 0 refs/tags/v1.0.0 "$zero" "$tip"
+ci_case "new branch at a main commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD~1)"
+ci_case "first push of a repository" 1 refs/heads/main "$zero" "$tip"
+git -C "$work/ci" commit -q --allow-empty -m "feat: b"
+ci_case "new branch, good commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD)"
+git -C "$work/ci" commit -q --allow-empty -m "bad subject"
+ci_case "new branch, bad commit" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
+ci_case "push to main, bad commit" 1 refs/heads/main "$tip" "$(ci_rev HEAD)"
+ci_case "pull request, bad commit" 1 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
 
 if [ "$failures" -ne 0 ]; then
     echo "test-release: ${failures} failure(s)"

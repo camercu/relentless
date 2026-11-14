@@ -147,25 +147,10 @@ jobs:
       - name: Check commits against Conventional Commits
         env:
           # Repository-controlled context via the environment, never inlined
-          # into the shell. `github.event.before` is all-zeroes on the first
-          # push to a new branch and orphaned after a force-push; fall back to
-          # checking just the most-recent commit.
+          # into the shell.
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           PR_BASE: origin/${{ github.base_ref }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            cog check "${PR_BASE}..HEAD"
-          elif [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] \
-              && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            cog check "${PUSH_BEFORE}..${PUSH_AFTER}"
-          # A new branch, or a force-push that orphaned `before`: check what
-          # main lacks. With nothing to compare against (the first push of a
-          # repository, where main is this push), check the whole history.
-          elif base=$(git merge-base origin/main "$PUSH_AFTER" 2>/dev/null) \
-              && [ "$base" != "$PUSH_AFTER" ]; then
-            cog check "${base}..${PUSH_AFTER}"
-          else
-            cog check
-          fi
+        run: ./scripts/ci-check-commits.sh
