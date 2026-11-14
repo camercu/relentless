@@ -27,6 +27,9 @@
 //!    spawned task; generalises to `ctrl_c`, broadcast receivers, etc.
 //!
 //! Run: `cargo run --example async-cancel --features tokio-clock`
+// The crate lints OS-clock calls so its own code stays wasm-safe; this native
+// example uses them freely.
+#![allow(clippy::disallowed_methods)]
 
 use core::time::Duration;
 use relentless::clock::TokioClock;

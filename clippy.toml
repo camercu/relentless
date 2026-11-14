@@ -1,5 +1,7 @@
-# Reading the OS clock panics on wasm32-unknown-unknown. Each read must sit
-# behind `cfg(os_clock)` (set by build.rs) and carry an explicit allow.
+# Reading the OS clock or sleeping on it panics on wasm32-unknown-unknown.
+# Each call must sit behind `cfg(os_clock)` (set by build.rs) and carry
+# `cfg_attr(os_clock, allow(...))`. `check-wasm` runs clippy for that target,
+# where nothing is allowed, so a call missing the gate fails there.
 disallowed-methods = [
   { path = "std::time::Instant::now", reason = "panics on wasm32-unknown-unknown: gate on cfg(os_clock), then allow" },
   { path = "std::time::Instant::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
@@ -7,4 +9,8 @@ disallowed-methods = [
   { path = "std::time::SystemTime::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
   { path = "tokio::time::Instant::now", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
   { path = "tokio::time::Instant::elapsed", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "std::thread::sleep", reason = "panics on wasm32-unknown-unknown: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::sleep", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::timeout", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "futures_timer::Delay::new", reason = "needs a timer thread or OS clock: gate on cfg(os_clock), then allow" },
 ]

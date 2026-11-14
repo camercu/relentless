@@ -23,7 +23,10 @@ pub struct SystemClock;
 
 #[cfg(all(feature = "std", os_clock))]
 impl Clock for SystemClock {
-    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn now(&self) -> Duration {
         use std::sync::OnceLock;
         use std::time::Instant;
@@ -38,6 +41,10 @@ impl Clock for SystemClock {
 
 #[cfg(all(feature = "std", os_clock))]
 impl SyncClock for SystemClock {
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn wait(&self, dur: Duration) {
         std::thread::sleep(dur);
     }

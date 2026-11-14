@@ -16,6 +16,10 @@ const OPERATION_RUNTIME: Duration = Duration::from_millis(5);
 const ELAPSED_DEADLINE: Duration = Duration::from_millis(1);
 
 #[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "tests run natively, where the OS clock exists"
+)]
 fn elapsed_stop_counts_operation_runtime_with_real_sleep() {
     let policy = RetryPolicy::new().stop(stop::elapsed(ELAPSED_DEADLINE));
     let call_count = Cell::new(0_u32);

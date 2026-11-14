@@ -25,7 +25,10 @@ pub struct FuturesTimerClock {
 impl FuturesTimerClock {
     /// Creates a clock anchored at the current instant.
     #[must_use]
-    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     pub fn new() -> Self {
         Self {
             origin: std::time::Instant::now(),
@@ -42,7 +45,10 @@ impl Default for FuturesTimerClock {
 
 #[cfg(os_clock)]
 impl Clock for FuturesTimerClock {
-    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn now(&self) -> Duration {
         self.origin.elapsed()
     }
@@ -52,6 +58,10 @@ impl Clock for FuturesTimerClock {
 impl AsyncClock for FuturesTimerClock {
     type Wait = futures_timer::Delay;
 
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn wait_async(&self, dur: Duration) -> Self::Wait {
         futures_timer::Delay::new(dur)
     }

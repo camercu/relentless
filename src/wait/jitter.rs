@@ -361,7 +361,10 @@ fn random_duration_in(lower: Duration, upper: Duration, rng: &SplitMix64) -> Dur
 }
 
 #[cfg(target_has_atomic = "ptr")]
-#[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+#[cfg_attr(
+    os_clock,
+    allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+)]
 fn next_jitter_nonce() -> u64 {
     let counter = JITTER_NONCE_COUNTER.fetch_add(1, Ordering::Relaxed) as u64;
 

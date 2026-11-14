@@ -44,7 +44,10 @@ impl TokioClock {
     /// Construction works outside a runtime; the waits (and paused-time
     /// reads) must run within a Tokio runtime context.
     #[must_use]
-    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     pub fn new() -> Self {
         Self {
             origin: tokio::time::Instant::now(),
@@ -61,7 +64,10 @@ impl Default for TokioClock {
 
 #[cfg(os_clock)]
 impl Clock for TokioClock {
-    #[allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")]
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn now(&self) -> Duration {
         self.origin.elapsed()
     }
@@ -71,6 +77,10 @@ impl Clock for TokioClock {
 impl AsyncClock for TokioClock {
     type Wait = tokio::time::Sleep;
 
+    #[cfg_attr(
+        os_clock,
+        allow(clippy::disallowed_methods, reason = "gated on cfg(os_clock)")
+    )]
     fn wait_async(&self, dur: Duration) -> Self::Wait {
         tokio::time::sleep(dur)
     }

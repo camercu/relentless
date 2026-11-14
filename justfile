@@ -153,6 +153,9 @@ check-wasm:
     cargo check --target {{wasm_target}} --features gloo-timers-clock
     cargo check --target {{wasm_target}} --no-default-features --features futures-timer-clock
     cargo check --target {{wasm_target}} --no-default-features --features tokio-clock
+    cargo clippy --lib --target {{wasm_target}} -- -D warnings
+    cargo clippy --lib --target {{wasm_target}} --features gloo-timers-clock,futures-timer-clock,tokio-clock -- -D warnings
+    cargo clippy --lib --target {{wasm_target}} --no-default-features --features {{wasm_features}} -- -D warnings
 
 check-embassy:
     cargo check --features embassy-clock
