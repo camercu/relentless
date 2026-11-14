@@ -91,7 +91,8 @@ jobs:
           before=$(git rev-parse HEAD)
           nix-shell --run 'just release'
           if [ "$(git rev-parse HEAD)" != "$before" ]; then
-            echo "tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD)" >> "$GITHUB_OUTPUT"
+            tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD)
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           fi
 
       # Compares the bumped crate against the newest version on
@@ -100,6 +101,13 @@ jobs:
       - name: Check semver
         if: steps.bump.outputs.tag != ''
         run: nix-shell --run 'just semver-check'
+
+      # Builds the crate exactly as it will be uploaded. A file missing
+      # from the `include` list fails here, before the tag claims the
+      # version.
+      - name: Check the package
+        if: steps.bump.outputs.tag != ''
+        run: nix-shell --run 'cargo publish --dry-run --locked'
 
       # The push is not forced, so it fails if main moved after the
       # check above, and --atomic then leaves the tag unpushed too.
@@ -133,6 +141,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || needs.release.outputs.tag }}
+
+      # A dispatch can name any tag. Publish only tags on main, so a
+      # release holds only commits that went through main's checks.
+      - name: Check the tag is on main
+        run: git merge-base --is-ancestor "$TAG" origin/main
 
       - uses: cachix/install-nix-action@v31
 
