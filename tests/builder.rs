@@ -1,4 +1,5 @@
-//! Acceptance tests for the sync builder (`retry(..)`).
+//! Acceptance tests for the builder: `retry(..)` at top level, `retry_async(..)`
+//! in `async_tests`.
 //!
 //! Each test drives one builder surface end to end under a virtual clock:
 //! the default classifier path, `.decide`/`.when`/`.until`, self-classifying
@@ -272,4 +273,209 @@ fn free_function_retry_provides_retry_state_to_op() {
     .call();
 
     assert_eq!(*states_seen.borrow(), vec![1, 2, 3]);
+}
+
+mod async_tests {
+    //! Acceptance tests for the async builder (`retry_async(..)`).
+    //!
+    //! Mirrors the sync builder scenarios above, driven under a virtual
+    //! clock and a no-op waker so no executor is needed.
+
+    use super::common;
+
+    use common::{ARBITRARY_ATTEMPTS, ARBITRARY_VALUE, ReadyClock, block_on};
+    use core::cell::Cell;
+    use core::time::Duration;
+    use std::rc::Rc;
+
+    use relentless::clock::VirtualClock;
+    use relentless::{Decision, RetryError, StopReason, Verdict, retry_async, stop, wait};
+
+    #[test]
+    fn retry_async_starts_from_a_closure_ignoring_state() {
+        let counter = Cell::new(0);
+        let clock = VirtualClock::new();
+        let result = block_on(
+            retry_async(|_| {
+                let n = counter.get() + 1;
+                counter.set(n);
+                async move { if n >= 2 { Ok::<i32, &str>(5) } else { Err("x") } }
+            })
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(&clock)
+            .call(),
+        );
+
+        assert_eq!(result, Ok(5));
+        assert_eq!(counter.get(), 2);
+    }
+
+    #[test]
+    fn async_default_path_retries_then_returns_ok() {
+        let counter = Cell::new(0);
+        let clock = VirtualClock::new();
+        let result = block_on(
+            retry_async(|_| {
+                let n = counter.get() + 1;
+                counter.set(n);
+                async move { if n >= 2 { Ok::<i32, &str>(7) } else { Err("x") } }
+            })
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(&clock)
+            .call(),
+        );
+
+        assert_eq!(result, Ok(7));
+        assert_eq!(counter.get(), 2);
+    }
+
+    #[test]
+    fn async_decide_infers_through_the_operation_output() {
+        // Inline classifier with no annotations: the parameter is typed through
+        // `Operation::Output`.
+        let clock = VirtualClock::new();
+        let result = block_on(
+            retry_async(|_| async { Err::<i32, &str>("fatal") })
+                .decide(|o| match o {
+                    Ok(v) => Verdict::Return(v),
+                    Err("fatal") => Verdict::Abort("boom"),
+                    Err(_) => Verdict::Retry(o),
+                })
+                .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+                .wait(wait::fixed(Duration::ZERO))
+                .clock(&clock)
+                .call(),
+        );
+
+        assert_eq!(result, Err(RetryError::Aborted { last: "boom" }));
+    }
+
+    #[test]
+    fn async_decide_returns_sought_error_through_ok() {
+        let counter = Cell::new(0);
+        let clock = VirtualClock::new();
+        let result = block_on(
+            retry_async(|_| {
+                let n = counter.get() + 1;
+                counter.set(n);
+                async move { if n >= 3 { Err("crash") } else { Ok(()) } }
+            })
+            .decide(|o| match o {
+                Err(e) => Decision::Return(e),
+                Ok(()) => Decision::Retry(o),
+            })
+            .stop(stop::attempts(10))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(&clock)
+            .call(),
+        );
+
+        assert_eq!(result, Ok("crash"));
+        assert_eq!(counter.get(), 3);
+    }
+
+    #[test]
+    fn async_until_polls_a_result() {
+        let counter = Cell::new(0);
+        let clock = VirtualClock::new();
+        let result = block_on(
+            retry_async(|_| {
+                let n = counter.get() + 1;
+                counter.set(n);
+                async move { Ok::<i32, &str>(n) }
+            })
+            .until(|v: &i32| *v >= 3)
+            .stop(stop::attempts(ARBITRARY_ATTEMPTS))
+            .wait(wait::fixed(Duration::ZERO))
+            .clock(&clock)
+            .call(),
+        );
+
+        assert_eq!(result, Ok(3));
+        assert_eq!(counter.get(), 3);
+    }
+
+    #[test]
+    fn async_call_with_stats_matches_the_sync_engine() {
+        let clock = VirtualClock::new();
+        let (result, stats) = block_on(
+            retry_async(|_| async { Err::<i32, &str>("boom") })
+                .stop(stop::attempts(3))
+                .wait(wait::fixed(Duration::from_millis(5)))
+                .clock(&clock)
+                .call_with_stats(),
+        );
+
+        assert_eq!(result, Err(RetryError::Exhausted { last: Err("boom") }));
+        assert_eq!(stats.attempts, 3);
+        assert_eq!(stats.total_wait, Duration::from_millis(10));
+        assert_eq!(stats.stop_reason, StopReason::Exhausted);
+    }
+
+    /// Returns `Pending` on its first poll (waking the task) and `Ready` after.
+    struct YieldOnce {
+        yielded: bool,
+    }
+
+    impl core::future::Future for YieldOnce {
+        type Output = ();
+
+        fn poll(
+            mut self: core::pin::Pin<&mut Self>,
+            cx: &mut core::task::Context<'_>,
+        ) -> core::task::Poll<()> {
+            if self.yielded {
+                return core::task::Poll::Ready(());
+            }
+            self.yielded = true;
+            cx.waker().wake_by_ref();
+            core::task::Poll::Pending
+        }
+    }
+
+    /// GIVEN an operation whose future is pending before it resolves
+    /// WHEN the retry future is driven to completion
+    /// THEN the same future is polled again: the operation runs once and its
+    /// value is returned after one attempt.
+    #[test]
+    fn a_pending_operation_future_is_repolled_not_restarted() {
+        let calls = Cell::new(0);
+        let clock = VirtualClock::new();
+        let (result, stats) = block_on(
+            retry_async(|_| {
+                calls.set(calls.get() + 1);
+                // Only the first call's future yields, so a driver that restarted
+                // the operation on `Pending` would finish with two calls, not hang.
+                let first_call = calls.get() == 1;
+                async move {
+                    if first_call {
+                        YieldOnce { yielded: false }.await;
+                    }
+                    Ok::<i32, &str>(ARBITRARY_VALUE)
+                }
+            })
+            .clock(&clock)
+            .call_with_stats(),
+        );
+
+        assert_eq!(
+            (result, stats.attempts, calls.get()),
+            (Ok(ARBITRARY_VALUE), 1, 1)
+        );
+    }
+
+    /// §10.1 — the retry future never holds an outcome across a wait, so a `!Send`
+    /// outcome still yields a `Send` future when the operation's future is `Send`.
+    #[test]
+    fn a_non_send_outcome_still_gives_a_send_retry_future() {
+        fn assert_send<T: Send>(_: &T) {}
+
+        let future = retry_async(|_| async { Ok::<Rc<i32>, &str>(Rc::new(ARBITRARY_VALUE)) })
+            .clock(ReadyClock)
+            .call();
+        assert_send(&future);
+        assert_eq!(block_on(future).as_deref(), Ok(&ARBITRARY_VALUE));
+    }
 }

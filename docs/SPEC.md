@@ -1430,12 +1430,11 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/state.rs` | §3.6 |
 | `tests/error.rs` | §4.1, §4.2 |
 | `tests/stats.rs` | §4.3, §7 |
-| `tests/policy_sync.rs` | §5, §6.1–6.4, §11 |
-| `tests/policy_async.rs` | §6.5 |
-| `tests/builder.rs`, `tests/builder_async.rs` | §6.1–6.3, §6.6 |
-| `tests/outcome.rs`, `tests/outcome_async.rs` | §3.4 |
-| `tests/elapsed.rs`, `tests/elapsed_async.rs` | §11.1 |
-| `tests/timeout.rs`, `tests/timeout_async.rs` | §11.1, §11.4 |
+| `tests/policy.rs` | §5, §6.1–6.5, §11 |
+| `tests/builder.rs` | §6.1–6.3, §6.6 |
+| `tests/outcome.rs` | §3.4 |
+| `tests/elapsed.rs` | §11.1 |
+| `tests/timeout.rs` | §11.1, §11.4 |
 | `tests/nameable_surface.rs` | §13 |
 | `tests/defaults.rs` | §3.5.2, §6.1 |
 | `tests/allocation.rs` | §12.3 |

@@ -125,10 +125,10 @@ test-examples:
         done
 
 test-tokio-clock:
-    {{cargo}} nextest run --test policy_async --test clock_adapters --features tokio-clock
+    {{cargo}} nextest run --test policy --test clock_adapters --features tokio-clock
 
 test-futures-timer-clock:
-    {{cargo}} nextest run --test policy_async --test clock_adapters --features futures-timer-clock
+    {{cargo}} nextest run --test policy --test clock_adapters --features futures-timer-clock
 
 test-allocation:
     {{cargo}} nextest run --test allocation -j 1

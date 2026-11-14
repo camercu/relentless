@@ -2,7 +2,7 @@
 //! and `PartialEq` on the public wait/stop/state types.
 //!
 //! Each type's own behavior tests live with its concept (`error.rs`,
-//! `stats.rs`, `state.rs`, `when_until.rs`, `jitter.rs`, `policy_sync.rs`).
+//! `stats.rs`, `state.rs`, `when_until.rs`, `jitter.rs`, `policy.rs`).
 
 #[test]
 fn value_types_implement_copy() {
