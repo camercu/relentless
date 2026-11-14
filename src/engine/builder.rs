@@ -136,7 +136,10 @@ impl<M, F, C, S, W, Cl> Retry<M, F, C, S, W, Cl> {
     /// A boundary check, not a preemptive timeout: it is evaluated between
     /// attempts. The next inter-attempt wait is clamped to the remaining budget,
     /// and the loop stops (as `Exhausted`) once elapsed time meets or exceeds
-    /// `dur`. It cannot interrupt an operation or wait already in progress.
+    /// `dur`. It cannot interrupt an operation or wait already in progress. A
+    /// wait clamped to the last of the budget still ends with one final
+    /// attempt at the deadline, so total wall-clock time can exceed `dur` by
+    /// roughly that attempt's duration.
     ///
     /// `Duration::ZERO` therefore permits exactly one attempt: the boundary is
     /// met (`0 >= 0`) the instant that attempt completes. There is no "disabled"

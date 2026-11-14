@@ -96,7 +96,7 @@ For full docs, see <https://docs.rs/relentless>. Behavior spec:
 [`examples/`](./examples).
 
 Sync `std` builds default to `clock::SystemClock` (wall time +
-`std::thread::sleep`), so the sync examples below omit `.clock(...)`. The
+`std::thread::sleep`), so the sync example below omits `.clock(...)`. The
 exception is `wasm32-unknown-unknown`, which has no OS clock: pass one there.
 
 ### 1) Retry with defaults
@@ -114,137 +114,7 @@ fn fetch_job_output() -> Result<String, std::io::Error> {
 let _output = retry(|_| fetch_job_output()).call();
 ```
 
-### 2) Customized retry
-
-The same builder configures which outcomes to retry, how long to wait, and when
-to stop. The closure receives the retry loop state.
-
-```rust,no_run
-use core::time::Duration;
-use relentless::{Wait, retry, stop, wait};
-
-let body = retry(|state| {
-    println!("attempt {}", state.attempt);
-    reqwest::blocking::get("https://api.example.com/data")?.text()
-})
-.when(|e| e.is_timeout())
-.wait(
-    wait::exponential(Duration::from_millis(200))
-        .full_jitter()
-        .cap(Duration::from_secs(5)),
-)
-.stop(stop::attempts(10))
-.timeout(Duration::from_secs(30))
-.call();
-```
-
-Without `std`, and on `wasm32-unknown-unknown`, there is no wall clock to vary
-default jitter, so every run (in a browser, every page load) repeats the same
-sequence. If that matters, seed it from a runtime value: call `.with_seed(…)`
-directly after the jitter method, as in `.full_jitter().with_seed(seed)`.
-
-### 3) Poll for a condition
-
-Use `.until(|v| …)` to keep retrying until an `Ok` value meets a condition.
-Where `.when()` tests the error, `.until()` tests the value and retries
-everything else.
-
-```rust,no_run
-use relentless::retry;
-
-#[derive(Debug, PartialEq)]
-enum Status { Pending, Done }
-
-fn poll_status() -> Result<Status, std::io::Error> { todo!() }
-
-let result = retry(|_| poll_status())
-    .until(|s| *s == Status::Done)
-    .call();
-```
-
-When the probe is a plain two-state "ready yet?" with no error to carry, return
-`Option` and skip the classifier entirely — `Option` classifies itself, so `None`
-retries and `Some(v)` delivers `v`:
-
-```rust,no_run
-use relentless::retry;
-
-fn read_pidfile() -> Option<u32> { todo!() }
-
-let pid = retry(|_| read_pidfile()).call(); // Result<u32, RetryError<Infallible, Option<u32>>>
-```
-
-`ControlFlow<B, C>` classifies itself the same way when you prefer its naming:
-`Continue(_)` retries, `Break(b)` returns `b`.
-
-> **Note:** give a self-classifying op a concrete signature, as the examples
-> above do. An op that only ever produces one variant can leave a sibling type
-> parameter unpinned (`E0282`); the API docs for each type spell out which
-> parameters need fixing.
-
-### 4) Classify a custom outcome (all three verdicts)
-
-When an outcome has more than two meanings, `.decide(...)` sorts it directly.
-Here a job poll is three-way: `Done` is the success value, `Failed` aborts as
-fatal, and `Pending` retries — no need to encode "still working" as an error.
-
-```rust,no_run
-use relentless::{retry, stop, Verdict};
-
-#[derive(Debug)]
-enum Job {
-    Pending,
-    Done(String),   // the report we want
-    Failed(String), // a terminal failure
-}
-
-fn poll_job() -> Result<Job, std::io::Error> { todo!() }
-
-let report = retry(|_| poll_job())
-    .decide(|outcome| match outcome {
-        Ok(Job::Done(report)) => Verdict::Return(report),
-        Ok(Job::Failed(why)) => Verdict::Abort(why),
-        other => Verdict::Retry(other),
-    })
-    .stop(stop::attempts(20))
-    .call();
-// `report`: `Result<String, RetryError<String, Result<Job, std::io::Error>>>`
-// (type is inference-derived). A job stuck at `Pending` exhausts after 20
-// attempts as `Err(Exhausted { last: Ok(Job::Pending) })`.
-```
-
-`.until` retries every `Err`. To give up on a fatal error instead, use
-`.decide` as above: return `Verdict::Abort(e)` for the error that should end the
-loop, and it arrives as `Err(RetryError::Aborted { .. })`. To deliver a
-sought-after error as the `Ok` value, return `Verdict::Return(e)` (or the
-two-way `Decision::Return(e)`) for the error you were hunting — the *inverted
-probe*.
-
-### 5) Reuse a policy across call sites
-
-`RetryPolicy` captures retry rules once. Compose wait strategies with `+` and
-stop strategies with `|` or `&`.
-
-```rust,no_run
-use core::time::Duration;
-use relentless::{RetryPolicy, stop, wait};
-
-fn check_health() -> Result<String, std::io::Error> { todo!() }
-fn fetch_invoice(id: &str) -> Result<String, std::io::Error> { todo!() }
-
-let policy = RetryPolicy::new()
-    .wait(
-        wait::fixed(Duration::from_millis(50))
-            + wait::exponential(Duration::from_millis(100)),
-    )
-    .stop(stop::attempts(5) | stop::elapsed(Duration::from_secs(30)));
-
-// Same policy, different operations.
-let health = policy.retry(|_| check_health()).call();
-let invoice = policy.retry(|_| fetch_invoice("inv_123")).call();
-```
-
-### 6) Async retry
+### 2) Async retry
 
 Pass an async clock adapter — here via the `tokio-clock` feature.
 
@@ -266,61 +136,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Error handling
+## More recipes
 
-The retry loop returns `Ok(R)` — the value the classifier accepted — on success.
-On failure it returns a `RetryError` with two variants:
+The [API docs](https://docs.rs/relentless) hold the full recipes, each a
+tested example, with runnable programs in [`examples/`](./examples):
 
-- `Exhausted { last }` — the stop strategy (or the timeout) fired while the
-  classifier still wanted to retry. `last` is the final *whole* outcome (a
-  `Result<T, E>` on the default / `.when` / `.until` path, since polling can
-  exhaust on an unaccepted `Ok` — e.g. a job stuck at `Pending`).
-- `Aborted { last }` — the classifier rejected an outcome as fatal. `last` is the
-  payload the classifier projected on `Abort` — the bare error `E` on the
-  `.when` / `.until` path.
-
-```rust,no_run
-use relentless::{retry, RetryError};
-
-match retry(|_| Err::<(), _>("timeout")).call() {
-    Ok(val) => println!("success: {val:?}"),
-    Err(RetryError::Exhausted { last }) => println!("gave up: {last:?}"),
-    // Aborts only arise on the `.when`/`.until`/`.decide` path, not the default.
-    Err(RetryError::Aborted { last }) => println!("aborted: {last}"),
-    // `RetryError` is `#[non_exhaustive]`; match future variants here.
-    Err(_) => {}
-}
-```
-
-`RetryError` is `Result`-shaped by default, so it implements `Display` and
-`std::error::Error` (with the terminal error as its `source`) on that path. The
-`Option` poll error `RetryError<Infallible, Option<T>>` also implements both
-(`Display` renders `"retries exhausted"`; `Error` has no `source`), so a poll's
-error can `?`-propagate just like a `Result`'s. `last()` / `into_last()` and
-`stop_reason()` are outcome-agnostic — they work on every shape.
-
-## More
-
-Full inline code for these lives in the [API docs](https://docs.rs/relentless),
-with runnable versions in [`examples/`](./examples):
-
-- **Observing retries** — there are no hook callbacks. Log each attempt inside
-  the operation, log each chosen delay by wrapping the wait strategy, and read a
-  `RetryStats` summary via `.call_with_stats()`.
+- **[Customizing retry behavior](https://docs.rs/relentless/latest/relentless/#customizing-retry-behavior)** — choose
+  which errors to retry with `.when`, back off with jitter and a cap, stop
+  after N attempts, and bound the whole run with `.timeout`.
+- **[Polling for a condition](https://docs.rs/relentless/latest/relentless/#polling-for-a-condition)** — `.until` retries
+  until an `Ok` value is ready; an `Option` or `ControlFlow` probe classifies
+  itself with no `.until` at all.
+  ([`async-polling.rs`](./examples/async-polling.rs))
+- **[Classifying an outcome three ways](https://docs.rs/relentless/latest/relentless/#classifying-an-outcome-three-ways)**
+  — `.decide` returns `Verdict::Return`, `Retry` or `Abort` for a poll enum,
+  so "still working" need not be an error.
+- **[Retrying for a specific outcome](https://docs.rs/relentless/latest/relentless/#retrying-for-a-specific-outcome)** —
+  hunt for an error and deliver it through `Ok`.
+- **[Policy reuse](https://docs.rs/relentless/latest/relentless/#policy-reuse)** — one `RetryPolicy` shared across call
+  sites, with strategies composed by `+`, `|` and `&`.
+- **[Error handling](https://docs.rs/relentless/latest/relentless/#error-handling)** — what `RetryError::Exhausted` and
+  `Aborted` carry, and how to match them.
+- **[Observing retries](https://docs.rs/relentless/latest/relentless/#observing-retries)** — there are no hook
+  callbacks. Log each attempt inside the operation, log each chosen delay by
+  wrapping the wait strategy, and read a `RetryStats` summary via
+  `.call_with_stats()`.
   ([`observing-retries.rs`](./examples/observing-retries.rs))
-- **Self-classifying outcomes** — implement `Outcome` for a domain type (a poll
-  enum, a search state) so it sorts itself into return / retry / abort, and the
-  default engine drives it with no `.decide` at the call site.
+- **Self-classifying outcomes** — implement `Outcome` for a domain type so it
+  sorts itself into return / retry / abort with no `.decide` at the call site.
   ([`custom-outcome.rs`](./examples/custom-outcome.rs))
 - **Deterministic testing** — `clock::VirtualClock`, wrapped in
   `clock::Recording`, asserts the exact backoff schedule with zero wall-clock
-  time spent, so timeout and backoff tests stay
-  fast and non-flaky; one injected value drives both waits and elapsed time,
-  so the two can never disagree.
-  ([`testing-with-virtual-clock.rs`](./examples/testing-with-virtual-clock.rs))
-- **Cancellation** — there is no built-in cancel primitive; the loop observes
-  the cancellation your environment already provides (a dropped future, an
-  `AtomicBool`, `.timeout(...)`) at attempt boundaries.
+  time spent. ([`testing-with-virtual-clock.rs`](./examples/testing-with-virtual-clock.rs))
+- **[Cancellation](https://docs.rs/relentless/latest/relentless/#cancellation)** — the loop observes the cancellation
+  your environment already provides (a dropped future, an `AtomicBool`,
+  `.timeout(...)`) at attempt boundaries.
   ([`sync-cancel.rs`](./examples/sync-cancel.rs),
   [`async-cancel.rs`](./examples/async-cancel.rs))
 

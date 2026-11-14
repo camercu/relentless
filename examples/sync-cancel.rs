@@ -6,9 +6,8 @@
 //!
 //! Two cancellation patterns are shown:
 //!
-//! 1. `.timeout(dur)` — crate-native deadline that fires at attempt
-//!    boundaries and clamps inter-attempt sleep to the remaining budget.
-//!    Works without a runtime; internally uses `std::time::Instant`.
+//! 1. `.timeout(dur)` — the crate's own wall-clock deadline, observed at
+//!    attempt boundaries. Works without a runtime.
 //!
 //! 2. `AtomicBool` flag — cooperative cancellation from another thread
 //!    (e.g., a signal handler or a watchdog). The flag is checked inside
@@ -31,13 +30,8 @@ use std::sync::Arc;
 fn main() {
     // ── Pattern 1: .timeout(dur) ───────────────────────────────────────────
     //
-    // The crate's built-in deadline for sync execution. It combines two
-    // behaviours:
-    //   a) After each completed attempt, checks whether elapsed >= deadline
-    //      and stops if so (fires at attempt boundaries, not mid-sleep).
-    //   b) Before each inter-attempt sleep, clamps the delay to the remaining
-    //      budget so the loop does not overshoot the deadline by a full sleep
-    //      duration.
+    // The crate's built-in deadline for sync execution; `Retry::timeout`
+    // documents when it stops the loop and how it shortens the last sleep.
     //
     // This is the right pattern for sync contexts where you cannot race
     // futures. It requires no extra threads or signals.

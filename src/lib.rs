@@ -68,13 +68,9 @@
 //! ```
 //!
 //! To bound the **total** wall-clock time across all attempts and sleeps, add
-//! [`.timeout(dur)`](Retry::timeout). Between attempts it stops the loop once
-//! elapsed time reaches the deadline — alongside, not through, the stop strategy
-//! — and clamps each inter-attempt sleep to the remaining budget; it does not
-//! interrupt an attempt already running. A sleep clamped to
-//! the last of the budget still ends with one final attempt at the deadline, so
-//! total wall-clock time can exceed `dur` by roughly that attempt's duration.
-//! See [Cancellation] for the runtime-agnostic deadline pattern.
+//! [`.timeout(dur)`](Retry::timeout). It works alongside the stop strategy,
+//! not through it, and is checked between attempts, never during one. See
+//! [Cancellation] for the runtime-agnostic deadline pattern.
 //!
 //! [Cancellation]: #cancellation
 //!
@@ -130,6 +126,10 @@
 //!
 //! assert_eq!(result.unwrap(), Status::Done);
 //! ```
+//!
+//! A probe with no error to carry can return `Option` (`None` retries,
+//! `Some(v)` returns `v`) or `ControlFlow` (`Continue` retries, `Break(b)`
+//! returns `b`) and skip `.until`: both classify themselves. See [`Outcome`].
 //!
 //! ## Attempt-only loops
 //!
@@ -260,6 +260,44 @@
 //!     Err(_) => {}
 //! }
 //! ```
+//!
+//! # Classifying an outcome three ways
+//!
+//! When an outcome has more than two meanings, [`.decide()`](Retry::decide)
+//! sorts it directly into a [`Verdict`]. Here a job poll is three-way: `Done`
+//! is the success value, `Failed` aborts, and `Pending` retries — no need to
+//! encode "still working" as an error.
+//!
+//! ```
+//! use relentless::clock::VirtualClock;
+//! use relentless::{retry, stop, RetryError, Verdict};
+//!
+//! #[derive(Debug)]
+//! enum Job {
+//!     Pending,
+//!     Done(String),   // the report we want
+//!     Failed(String), // a terminal failure
+//! }
+//!
+//! let mut polls = 0;
+//! let report = retry(|_| {
+//!     polls += 1;
+//!     Ok::<_, &str>(if polls < 3 { Job::Pending } else { Job::Failed("disk full".into()) })
+//! })
+//! .decide(|outcome| match outcome {
+//!     Ok(Job::Done(report)) => Verdict::Return(report),
+//!     Ok(Job::Failed(why)) => Verdict::Abort(why),
+//!     other => Verdict::Retry(other),
+//! })
+//! .stop(stop::attempts(20))
+//! .clock(VirtualClock::new())
+//! .call();
+//!
+//! assert!(matches!(report, Err(RetryError::Aborted { last }) if last == "disk full"));
+//! ```
+//!
+//! A job stuck at `Pending` would exhaust after 20 attempts as
+//! `Err(Exhausted { last: Ok(Job::Pending) })`.
 //!
 //! # Retrying for a specific outcome
 //!
