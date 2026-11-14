@@ -4,8 +4,8 @@
 # Builds a scratch repository from this working tree (tracked and
 # untracked files, minus ignored ones), seeds a tag, adds empty commits,
 # runs `just release`, and checks the tag it cuts, the bump commit, and
-# the refusals. Then runs the publish scripts against stub `gh`, `curl`
-# and `cargo`. Uncommitted changes are what the test exercises, and a
+# the refusals, from a 0.x and a 1.x version. Then runs the publish
+# scripts against stub `gh` and `cargo`. Uncommitted changes are what the test exercises, and a
 # repository with no commits yet works.
 set -euo pipefail
 
@@ -37,17 +37,25 @@ git config commit.gpgsign false
 git config tag.gpgsign false
 git add -A
 git commit -q -m "chore: working tree under test"
-base=$(git rev-parse HEAD)
-seed="v$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -1)"
-IFS=. read -r major minor patch <<<"${seed#v}"
-if [ "$major" != "0" ]; then
-    echo "test-release: cases assume a 0.x crate version; rewrite them for ${seed}" >&2
-    exit 1
-fi
-next_patch="v${major}.${minor}.$((patch + 1))"
-next_minor="v${major}.$((minor + 1)).0"
+tree=$(git rev-parse HEAD)
 
 failures=0
+
+# use_version <x.y.z>
+# Commits the crate at that version, which later cases start from, and
+# sets seed and the next patch, minor and major tags.
+use_version() {
+    git reset -q --hard "$tree"
+    git tag -l | xargs -r git tag -d >/dev/null
+    just set-version "$1" >"$work/out.log" 2>&1
+    git commit -q -am "chore: crate at $1"
+    base=$(git rev-parse HEAD)
+    seed="v$1"
+    IFS=. read -r major minor patch <<<"$1"
+    next_patch="v${major}.${minor}.$((patch + 1))"
+    next_minor="v${major}.$((minor + 1)).0"
+    next_major="v$((major + 1)).0.0"
+}
 
 pass() { echo "ok   [$1]${2:+ -> $2}"; }
 
@@ -117,6 +125,7 @@ expect_refusal() {
     fi
 }
 
+use_version 0.4.2
 expect_tag "$next_patch" "fix: bug"
 expect_tag "$next_patch" "perf: faster"
 expect_tag "$next_patch" "revert: undo thing"
@@ -129,20 +138,34 @@ expect_tag "$next_minor" "feat!: thing"
 expect_tag "$next_minor" "fix!: bug"
 expect_tag "$next_minor" "refactor!: shape"
 expect_tag "$next_minor" "fix(core)!: bug"
+expect_tag "$next_minor" "Fix!: bug"
+expect_tag "$next_minor" "docs: words
+
+BREAKING CHANGE: the output differs"
 expect_tag "$next_minor" "fix: bug
 
 BREAKING CHANGE: the output differs"
 expect_tag "$next_minor" "fix: bug
 
 BREAKING-CHANGE: the output differs"
-# A log larger than a pipe buffer is what made a piped `grep -q` miss a
-# breaking commit: grep exits on the match and git dies of SIGPIPE.
+# A changelog larger than a pipe buffer is what makes a piped `grep -q`
+# miss a breaking commit: grep exits on the match and the writer dies of
+# SIGPIPE. The breaking commit comes last, so it is listed first.
 huge=$(head -c 2000000 /dev/zero | tr '\0' x)
-expect_tag "$next_minor" "chore: ${huge}" "fix!: bug"
+expect_tag "$next_minor" "fix: ${huge}" "fix!: bug"
 
 # A stale or missing tag must not lower the crate version.
 expect_refusal "no tag"
 expect_refusal "tag behind Cargo.toml" v0.0.1
+
+# From 1.0.0 on, a breaking change bumps the major version.
+use_version 1.4.2
+expect_tag "$next_patch" "fix: bug"
+expect_tag "$next_minor" "feat: thing"
+expect_tag "$next_major" "fix!: bug"
+expect_tag "$next_major" "refactor!: shape"
+expect_tag "$seed" "docs: words"
+use_version 0.4.2
 
 # The bump commit carries the version files and the changelog, is the
 # tagged commit, sets the package version and nothing else in Cargo.toml,
@@ -229,71 +252,45 @@ GH
     fi
 fi
 
-# publish-crate.sh against a stub crates.io index and a stub cargo.
-# STUB_INDEX is the index body curl returns; unset, curl fails.
-stub curl <<'CURL'
-#!/usr/bin/env bash
-printf 'curl %s\n' "${*: -1}" >>"$STUB_LOG"
-if [ -z "${STUB_INDEX+set}" ]; then exit 22; fi
-printf '%s\n' "$STUB_INDEX"
-CURL
+# publish-crate.sh against a stub cargo. STUB_PUBLISHED=1 makes
+# `cargo info` find the version on crates.io.
 stub cargo <<'CARGO'
 #!/usr/bin/env bash
 printf 'cargo %s\n' "$*" >>"$STUB_LOG"
+if [ "$1" = info ]; then [ "${STUB_PUBLISHED:-0}" = 1 ]; fi
 CARGO
 
-# crate_case <label> <crate name> <manifest version> <tag> <index body or "-">
+# crate_case <label> <manifest version> <tag> <published 0|1>
 # Runs publish-crate.sh in a directory holding only a Cargo.toml.
 crate_case() {
     local dir="$work/crate-$1"
     mkdir -p "$dir"
-    printf '[package]\nname = "%s"\nversion = "%s"\n' "$2" "$3" >"$dir/Cargo.toml"
+    printf '[package]\nname = "demo-crate"\nversion = "%s"\n' "$2" >"$dir/Cargo.toml"
     rm -f "$work/stub.log"
-    if [ "$5" = "-" ]; then
-        (cd "$dir" && unset STUB_INDEX && stubbed "$repo/scripts/publish-crate.sh" "$4")
-    else
-        (cd "$dir" && STUB_INDEX="$5" stubbed "$repo/scripts/publish-crate.sh" "$4")
-    fi
+    (cd "$dir" && STUB_PUBLISHED="$4" stubbed "$repo/scripts/publish-crate.sh" "$3")
 }
 
-published='{"name":"x","vers":"0.2.0"}'
-if crate_case skip relentless 0.2.0 v0.2.0 "$published" \
-    && ! grep -q '^cargo' "$work/stub.log" \
+if crate_case skip 0.2.0 v0.2.0 1 \
+    && grep -qx 'cargo info --registry crates-io demo-crate@0.2.0' "$work/stub.log" \
+    && ! grep -q '^cargo publish' "$work/stub.log" \
     && grep -qF "already on crates.io" "$work/out.log"; then
     pass "publish-crate already published"
 else
-    fail "publish-crate already published" "did not skip" "$work/stub.log"
+    fail "publish-crate already published" "did not ask crates.io and skip" "$work/stub.log"
 fi
-if crate_case new relentless 0.3.0 v0.3.0 "$published" \
+if crate_case new 0.3.0 v0.3.0 0 \
     && grep -qx 'cargo publish --locked' "$work/stub.log"; then
     pass "publish-crate new version"
 else
     fail "publish-crate new version" "did not run cargo publish --locked" "$work/stub.log"
 fi
-if crate_case offline relentless 0.3.0 v0.3.0 - \
-    && grep -qx 'cargo publish --locked' "$work/stub.log"; then
-    pass "publish-crate index unreachable"
-else
-    fail "publish-crate index unreachable" "did not fall through to cargo" "$work/stub.log"
-fi
-if crate_case mismatch relentless 0.2.0 v0.3.0 "$published"; then
+if crate_case mismatch 0.2.0 v0.3.0 0; then
     fail "publish-crate version mismatch" "succeeded"
 elif grep -q '^cargo' "$work/stub.log" 2>/dev/null; then
     fail "publish-crate version mismatch" "ran cargo" "$work/stub.log"
 else
     pass "publish-crate version mismatch" refused
 fi
-# The sparse index path depends on the lowercased name's length.
-for pair in a:1/a ab:2/ab abc:3/a/abc Serde_Json:se/rd/serde_json; do
-    name=${pair%%:*}
-    want="curl https://index.crates.io/${pair#*:}"
-    crate_case "path-$name" "$name" 0.2.0 v0.2.0 "$published" || true
-    if [ "$(grep '^curl' "$work/stub.log")" = "$want" ]; then
-        pass "publish-crate index path ${name}"
-    else
-        fail "publish-crate index path ${name}" "want '${want}'" "$work/stub.log"
-    fi
-done
 
 if [ "$failures" -ne 0 ]; then
     echo "test-release: ${failures} failure(s)"

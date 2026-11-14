@@ -16,18 +16,11 @@ if [ "$manifest_version" != "$version" ]; then
     exit 1
 fi
 
-# The sparse index lists every published version of a crate, one JSON
-# object per line, at a path built from the lowercased name's length and
-# letters.
-name=$(tr '[:upper:]' '[:lower:]' <<<"$crate")
-case "${#name}" in
-    1) index_path="1/${name}" ;;
-    2) index_path="2/${name}" ;;
-    3) index_path="3/${name:0:1}/${name}" ;;
-    *) index_path="${name:0:2}/${name:2:2}/${name}" ;;
-esac
-published=$(curl -fsSL "https://index.crates.io/${index_path}" || true)
-if grep -qF "\"vers\":\"${version}\"" <<<"$published"; then
+# `--registry` makes cargo ask crates.io. Without it, cargo answers from
+# this workspace, which always has the version. Exit 0 means published;
+# anything else, an unreachable registry included, falls through to the
+# upload, which then fails loudly if the version exists after all.
+if cargo info --registry crates-io "${crate}@${version}" >/dev/null 2>&1; then
     echo "publish-crate: ${crate} ${version} is already on crates.io"
     exit 0
 fi

@@ -376,32 +376,26 @@ release:
         echo "  hint: tag the commit that set this version as v${cargo_version}" >&2
         exit 1
     fi
-    # Read the log into variables first. `git log | grep -q` under pipefail
-    # fails when grep exits on an early match and git dies of SIGPIPE, which
-    # reads as "no breaking change" on a long history.
-    subjects=$(git log --format=%s "${last_tag}..HEAD")
-    bodies=$(git log --format=%b "${last_tag}..HEAD")
-    breaking=0
-    if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$subjects"; then
-        breaking=1
-    elif grep -qE '^BREAKING[ -]CHANGE:' <<<"$bodies"; then
-        breaking=1
-    fi
-    if [ "${cargo_version%%.*}" = "0" ] && [ "$breaking" -eq 1 ]; then
+    # Ask cog which commits are breaking, so the bump and the commit check
+    # share one parser: cog accepts `Fix!:`, which a hand-written pattern
+    # missed. Its changelog marks each breaking commit, omitted types
+    # included. Read it into a variable first: `cog changelog | grep -q`
+    # under pipefail fails when grep exits early and cog dies of SIGPIPE.
+    notes=$(cog changelog "${last_tag}..HEAD")
+    if [ "${cargo_version%%.*}" = "0" ] && grep -qF '>BREAKING<' <<<"$notes"; then
         cog bump --minor
     else
         cog bump --auto
     fi
 
-# Run `just release` against commit sequences in a throwaway clone and
-# assert the resulting tag.
+# Run `just release` against commit sequences in a scratch repository and
+# check the tags it cuts, then the publish scripts against stubs.
 test-release:
     ./scripts/test-release.sh
 
-# Set the crate version. The [package] table holds the only line that starts
-# with `version =`; dependency versions sit inline. `just test-release`
-# checks that the bump rewrites exactly that line.
+# Set the crate version: the `version` line of the [package] table only.
+# `just test-release` checks that the bump rewrites exactly that line.
 set-version version:
-    sed -i.bak -E 's/^version = ".*"/version = "{{version}}"/' Cargo.toml
+    sed -i.bak -E '/^\[package\]/,/^\[/ s/^version = ".*"/version = "{{version}}"/' Cargo.toml
     rm Cargo.toml.bak
     cargo update --workspace

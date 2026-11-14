@@ -174,12 +174,10 @@ workflow by hand with that tag. Each publish step skips what already exists.
 The workflow never reaches 1.0, because a breaking change before 1.0.0 bumps
 the minor version. Cut 1.0 by hand:
 
-1. Rewrite the cases in `scripts/test-release.sh` for a 1.x version. They
-   assume 0.x and fail `just ci` otherwise.
 1. With `main` checked out (under jj, `jj new main`, then
    `git checkout -B main`, since cocogitto bumps only on a branch named
    `main`), run `cog bump --version 1.0.0`, then
    `just semver-check`.
-1. Push the commit and the `v1.0.0` tag.
+1. Push the commit and the tag together: `git push --atomic origin main v1.0.0`.
 1. Run the Release workflow by hand (Actions → Release → Run workflow) with
    the tag `v1.0.0`.
