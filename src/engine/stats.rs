@@ -1,6 +1,6 @@
 //! What a completed execution reports: its statistics and why it ended.
 
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// Aggregate statistics for a completed retry execution.
 ///

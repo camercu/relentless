@@ -1,7 +1,7 @@
 //! Elapsed-time accounting shared by the sync and async drivers.
 
 use crate::clock::Clock;
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// Elapsed time since execution started, held to a non-decreasing sequence.
 ///

@@ -9,12 +9,12 @@ use super::op::{Blocking, Operation, ready_outcome};
 use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{SyncClock, SystemClock};
-use crate::compat::Duration;
 use crate::decision::{Decide, DefaultClassifier};
 use crate::policy::RetryPolicy;
 use crate::state::RetryState;
 use crate::stop::{Stop, StopAfterAttempts};
 use crate::wait::{Wait, WaitExponential};
+use core::time::Duration;
 
 /// Default builder returned by [`retry`].
 type DefaultRetry<F> =

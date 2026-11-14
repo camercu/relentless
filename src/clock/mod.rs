@@ -34,8 +34,8 @@
 //! clocks usually return the runtime's own owned timer future instead and
 //! implement [`AsyncClock`] directly.
 
-use crate::compat::Duration;
 use core::future::Future;
+use core::time::Duration;
 
 // `os_clock` comes from build.rs. Catch it being set where there is no OS clock.
 #[cfg(all(os_clock, target_family = "wasm", target_os = "unknown"))]

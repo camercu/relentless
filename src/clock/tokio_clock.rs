@@ -3,7 +3,7 @@
 #[cfg(os_clock)]
 use super::{AsyncClock, Clock};
 #[cfg(os_clock)]
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// An [`AsyncClock`](super::AsyncClock) backed by the Tokio runtime's timer.
 ///

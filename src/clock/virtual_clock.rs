@@ -1,11 +1,11 @@
 //! The deterministic test clock and its async wait future.
 
 use super::{AsyncClock, Clock, SyncClock};
-use crate::compat::Duration;
 use core::cell::Cell;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
 
 /// A clock that never sleeps and reads no wall time.
 ///

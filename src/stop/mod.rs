@@ -4,9 +4,9 @@
 //! with `|` and `&` operators, or via `.or()` and `.and()` methods on the
 //! [`Stop`] trait.
 
-#[cfg(feature = "alloc")]
-use crate::compat::Box;
 use crate::state::RetryState;
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 
 mod composition;
 mod strategies;

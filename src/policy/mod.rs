@@ -8,9 +8,6 @@
 //! returned builder, not on the policy.
 
 use crate::clock::SystemClock;
-#[cfg(feature = "alloc")]
-use crate::compat::Box;
-use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, DefaultClassifier, Until, When};
 use crate::engine::{Async, Blocking, Retry};
 use crate::state::RetryState;
@@ -20,7 +17,10 @@ use crate::stop::StopAfterAttempts;
 #[cfg(feature = "alloc")]
 use crate::wait::Wait;
 use crate::wait::WaitExponential;
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 use core::future::Future;
+use core::time::Duration;
 
 /// Attempts allowed by the default stop strategy.
 const DEFAULT_MAX_ATTEMPTS: u32 = 3;

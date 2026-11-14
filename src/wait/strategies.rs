@@ -1,5 +1,5 @@
-use crate::compat::Duration;
 use crate::state::RetryState;
+use core::time::Duration;
 
 use super::Wait;
 

@@ -1,6 +1,6 @@
 //! Retry state types — shared context for the operation and strategies.
 
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// Non-generic retry context passed to [`Stop::should_stop`](crate::Stop::should_stop),
 /// [`Wait::next_wait`](crate::Wait::next_wait), and the operation.

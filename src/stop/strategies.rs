@@ -1,6 +1,6 @@
 use super::Stop;
-use crate::compat::Duration;
 use crate::state::RetryState;
+use core::time::Duration;
 
 /// Stops after a fixed number of completed attempts.
 ///

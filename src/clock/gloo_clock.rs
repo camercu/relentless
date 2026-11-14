@@ -1,7 +1,7 @@
 //! The `gloo-timers`-backed async clock (wasm32 only).
 
 use super::{AsyncClock, Clock};
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// An [`AsyncClock`] pairing `gloo-timers` waits with a caller-supplied `now`
 /// source (wasm32 only).

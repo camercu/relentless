@@ -1,7 +1,7 @@
 //! The Embassy-backed async clock.
 
 use super::{AsyncClock, Clock};
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// An [`AsyncClock`] backed by [`embassy_time`]'s tick clock and timer.
 ///
@@ -62,7 +62,7 @@ fn to_embassy_duration(dur: Duration) -> embassy_time::Duration {
 #[cfg(test)]
 mod tests {
     use super::to_embassy_duration;
-    use crate::compat::Duration;
+    use core::time::Duration;
 
     const ARBITRARY_MICROS: u64 = 1_500;
 

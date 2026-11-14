@@ -1,11 +1,12 @@
 //! A clock wrapper that records every wait it performs.
 
 use super::{AsyncClock, Clock, SyncClock};
-use crate::compat::{Duration, Vec};
+use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
 use pin_project_lite::pin_project;
 
 /// Wraps a clock and records each wait the engine performs, in request order.

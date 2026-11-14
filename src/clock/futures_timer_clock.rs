@@ -3,7 +3,7 @@
 #[cfg(os_clock)]
 use super::{AsyncClock, Clock};
 #[cfg(os_clock)]
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// An [`AsyncClock`](super::AsyncClock) backed by [`futures_timer::Delay`]
 /// and `std`'s monotonic [`std::time::Instant`].

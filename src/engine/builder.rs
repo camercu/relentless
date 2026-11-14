@@ -8,10 +8,10 @@
 
 use super::op::Operation;
 use crate::clock::SystemClock;
-use crate::compat::Duration;
 use crate::decision::{ClosureClassifier, IntoDecision, Until, When};
 use crate::policy::RetryPolicy;
 use core::marker::PhantomData;
+use core::time::Duration;
 
 /// A classifier-driven retry builder.
 ///

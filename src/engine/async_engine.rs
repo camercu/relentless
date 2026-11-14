@@ -13,7 +13,6 @@ use super::op::{Async, Attempt, Operation};
 use super::step::{Progress, Step, step};
 use super::{RetryError, RetryStats};
 use crate::clock::{AsyncClock, SystemClock};
-use crate::compat::Duration;
 use crate::decision::{Decide, DefaultClassifier};
 use crate::policy::RetryPolicy;
 use crate::state::RetryState;
@@ -22,6 +21,7 @@ use crate::wait::{Wait, WaitExponential};
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
 use pin_project_lite::pin_project;
 
 /// Begins a classifier-driven async retry from an operation.

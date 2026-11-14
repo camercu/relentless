@@ -1,7 +1,7 @@
 use core::ops::Add;
 
-use crate::compat::Duration;
 use crate::state::RetryState;
+use core::time::Duration;
 
 use super::Jittered;
 use super::Wait;

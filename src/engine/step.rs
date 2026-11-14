@@ -11,12 +11,12 @@
 use super::error::RetryError;
 use super::stats::RetryStats;
 use super::stats::StopReason;
-use crate::compat::Duration;
 use crate::decision::{Decide, Verdict};
 use crate::policy::RetryPolicy;
 use crate::state::RetryState;
 use crate::stop::Stop;
 use crate::wait::Wait;
+use core::time::Duration;
 
 /// The loop's running cursor at the moment an attempt completes — the state
 /// each driver tracks across attempts. Bundled so [`step`] names these values at

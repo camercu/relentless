@@ -4,10 +4,10 @@
 //! with `+` or [`.add()`](Wait::add), and chain via
 //! [`.chain()`](Wait::chain).
 
-#[cfg(feature = "alloc")]
-use crate::compat::Box;
-use crate::compat::Duration;
 use crate::state::RetryState;
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+use core::time::Duration;
 
 mod composition;
 mod strategies;

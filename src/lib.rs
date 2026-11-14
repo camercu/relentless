@@ -374,8 +374,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod compat;
-
 pub mod clock;
 mod decision;
 mod engine;

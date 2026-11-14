@@ -3,7 +3,7 @@
 #[cfg(all(feature = "std", os_clock))]
 use super::{Clock, SyncClock};
 #[cfg(all(feature = "std", os_clock))]
-use crate::compat::Duration;
+use core::time::Duration;
 
 /// The default wall-time clock for synchronous execution.
 ///
