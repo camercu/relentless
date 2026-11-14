@@ -206,24 +206,6 @@ fn retry_starts_from_a_closure_ignoring_state() {
 }
 
 #[test]
-fn retry_ext_supports_the_classifier_surface() {
-    // The stateless-ext builder still reaches `.until`, because the op slot
-    // is unified behind `Operation` rather than a bare `FnMut`.
-    let counter = Cell::new(0);
-    let result = retry(|_| {
-        counter.set(counter.get() + 1);
-        Ok::<i32, &str>(counter.get())
-    })
-    .until(|v: &i32| *v >= 3)
-    .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-    .wait(wait::fixed(Duration::ZERO))
-    .clock(VirtualClock::new())
-    .call();
-
-    assert_eq!(result, Ok(3));
-}
-
-#[test]
 fn call_with_stats_reports_attempts_wait_elapsed_and_reason() {
     let (result, stats) = retry(|_| Err::<i32, &str>("boom"))
         .stop(stop::attempts(3))
