@@ -316,8 +316,7 @@ pre-push: check-commits
 # Check the commits not yet on the upstream branch against Conventional
 # Commits. The commit-msg hook misses some: `git revert` and `git
 # cherry-pick` skip it, and jj fires no git hooks at all. jj leaves HEAD
-# detached, with no upstream, so fall back to origin/main; with neither,
-# check the whole history.
+# detached, with no upstream, so fall back to origin/main.
 check-commits:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -325,7 +324,10 @@ check-commits:
         || upstream=$(git rev-parse -q --verify refs/remotes/origin/main); then
         cog check "${upstream}..HEAD"
     else
-        cog check
+        # Commits from before Conventional Commits fail a whole-history
+        # check, so name the missing ref instead.
+        echo "check-commits: no upstream branch and no origin/main to compare against" >&2
+        exit 1
     fi
 
 # ── CI ──────────────────────────────────────────────────────
