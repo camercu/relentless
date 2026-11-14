@@ -157,14 +157,15 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             cog check "${PR_BASE}..HEAD"
-          elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
-              || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            # A root commit has no parent to start a range from.
-            if git rev-parse -q --verify "${PUSH_AFTER}^" >/dev/null; then
-              cog check "${PUSH_AFTER}^..${PUSH_AFTER}"
-            else
-              cog check
-            fi
-          else
+          elif [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] \
+              && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
             cog check "${PUSH_BEFORE}..${PUSH_AFTER}"
+          # A new branch, or a force-push that orphaned `before`: check what
+          # main lacks. With nothing to compare against (the first push of a
+          # repository, where main is this push), check the whole history.
+          elif base=$(git merge-base origin/main "$PUSH_AFTER" 2>/dev/null) \
+              && [ "$base" != "$PUSH_AFTER" ]; then
+            cog check "${base}..${PUSH_AFTER}"
+          else
+            cog check
           fi
