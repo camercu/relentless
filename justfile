@@ -148,8 +148,6 @@ check-no-std:
     {{cargo}} build --target {{no_std_target}} --no-default-features
 
 check-wasm:
-    cargo check --target {{wasm_target}} --no-default-features --features {{wasm_features}}
-    cargo check --target {{wasm_target}}
     cargo check --target {{wasm_target}} --features gloo-timers-clock
     cargo check --target {{wasm_target}} --no-default-features --features futures-timer-clock
     cargo check --target {{wasm_target}} --no-default-features --features tokio-clock
