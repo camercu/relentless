@@ -134,9 +134,10 @@ enum JitterKind {
 ///
 /// - **without `std`, or on `wasm32-unknown-unknown`** (no wall clock) the
 ///   nonce is a plain counter, so a default-seeded sequence is
-///   **deterministic across process restarts**. Call [`with_seed`](Self::with_seed) with a runtime-sourced
+///   **deterministic across process restarts**: in a browser, every page load
+///   repeats it. Call [`with_seed`](Self::with_seed) with a runtime-sourced
 ///   value if you need run-to-run variation.
-/// - **with `std`** the counter is mixed with the wall clock, so a
+/// - **with `std`, on any other target**, the counter is mixed with the wall clock, so a
 ///   default-seeded sequence **varies between runs**. A test that needs a
 ///   reproducible sequence must call [`with_seed`](Self::with_seed), which
 ///   pins it fully on every target — asserting an exact default-jitter value
