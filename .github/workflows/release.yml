@@ -67,7 +67,8 @@ jobs:
             echo "::notice::main moved past the commit CI passed; the newer run releases it"
           fi
 
-      # Every step below runs in shell.nix, on the pinned toolchain and the
+      # Every tool step below (cog, cargo, the publish scripts) runs in
+      # shell.nix, on the pinned toolchain and the
       # pinned cocogitto and cargo-semver-checks. cargo-semver-checks parses
       # rustdoc JSON, whose format tracks the compiler, so an unpinned
       # rustdoc breaks it: that is what blocked v0.18.0.
@@ -88,7 +89,7 @@ jobs:
           before=$(git rev-parse HEAD)
           nix-shell --run 'just release'
           if [ "$(git rev-parse HEAD)" != "$before" ]; then
-            echo "tag=$(nix-shell --run 'cog get-version --tag' | tail -n 1)" >> "$GITHUB_OUTPUT"
+            echo "tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       # Compares the bumped crate against the newest version on
