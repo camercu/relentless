@@ -403,6 +403,47 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
     ));
 }
 
-// behaves identically to the free `retry(|_| op())`, because the extension form
-// only discards the `RetryState`. Both must agree on the returned value and the
-// attempt count over a retry-then-succeed run under the shared defaults.
+#[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "tests run natively, where the OS clock exists"
+)]
+fn std_feature_provides_default_clock() {
+    // Without the `std` feature there is no default clock, so `.call()` requires
+    // an explicit `.clock(...)`. With `std` active the default `SystemClock`
+    // waits with `std::thread::sleep`, so the chain must compile without `.clock()`.
+    const DEFAULT_SLEEP_WAIT: Duration = Duration::from_millis(1);
+
+    let policy = RetryPolicy::new()
+        .stop(stop::attempts(2))
+        .wait(wait::fixed(DEFAULT_SLEEP_WAIT));
+
+    let attempts = Cell::new(0_u32);
+    let started = std::time::Instant::now();
+    let result = policy
+        .retry(|_| {
+            attempts.set(attempts.get() + 1);
+            if attempts.get() == 1 {
+                Err("fail")
+            } else {
+                Ok(ARBITRARY_VALUE)
+            }
+        })
+        .call();
+
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+    // The default provider must actually block: thread::sleep guarantees at
+    // least the requested duration, so this lower bound is deterministic.
+    assert!(started.elapsed() >= DEFAULT_SLEEP_WAIT);
+}
+
+/// 3.5.2
+#[test]
+fn std_sync_retry_uses_thread_sleep_by_default() {
+    let result = RetryPolicy::new()
+        .stop(stop::attempts(1))
+        .wait(wait::fixed(Duration::ZERO))
+        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
+        .call();
+    assert_eq!(result, Ok(ARBITRARY_VALUE));
+}

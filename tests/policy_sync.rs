@@ -1,9 +1,10 @@
 //! Acceptance tests for the `RetryPolicy` builder and synchronous execution path.
 //!
 //! Each test exercises a single observable contract: builder type-state transitions,
-//! execution loop invariants (attempt counting, sleep timing, early exit on an
-//! abort), reset across `.retry()` invocations, and the
-//! `RetryPolicy::default()` safe-defaults guarantee. The test harness avoids real
+//! execution loop invariants through a policy (attempt counting, sleep timing),
+//! reset across `.retry()` invocations, and the `RetryPolicy::default()`
+//! safe-defaults guarantee. Classifier semantics live in `when_until.rs`, the
+//! default clock in `defaults.rs`. The test harness avoids real
 //! sleeps by injecting a `VirtualClock`, whose waits advance virtual time
 //! instead of blocking.
 
@@ -213,23 +214,6 @@ fn retry_returns_exhausted_when_all_attempts_fail() {
 }
 
 #[test]
-fn retry_classifier_evaluated_before_stop() {
-    // The classifier is consulted before the stop strategy. A non-negative Ok value
-    // satisfies `.until` immediately, so the loop exits even though attempts
-    // remain — stop::attempts is never reached.
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .until(|v: &i32| *v >= 0);
-
-    let result = policy
-        .retry(|_| Ok::<_, &str>(ARBITRARY_VALUE))
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-#[test]
 fn retry_with_never_stop_still_returns_on_ok() {
     // stop::never() will never fire, so the only exit is a successful outcome
     // returned by the classifier. Verifies the loop doesn't require a stop condition
@@ -429,41 +413,6 @@ fn policy_resets_between_retry_invocations() {
 }
 
 #[test]
-#[cfg(feature = "std")]
-#[allow(
-    clippy::disallowed_methods,
-    reason = "tests run natively, where the OS clock exists"
-)]
-fn std_feature_provides_default_clock() {
-    // Without the `std` feature there is no default clock, so `.call()` requires
-    // an explicit `.clock(...)`. With `std` active the default `SystemClock`
-    // waits with `std::thread::sleep`, so the chain must compile without `.clock()`.
-    const DEFAULT_SLEEP_WAIT: Duration = Duration::from_millis(1);
-
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(2))
-        .wait(wait::fixed(DEFAULT_SLEEP_WAIT));
-
-    let attempts = Cell::new(0_u32);
-    let started = std::time::Instant::now();
-    let result = policy
-        .retry(|_| {
-            attempts.set(attempts.get() + 1);
-            if attempts.get() == 1 {
-                Err("fail")
-            } else {
-                Ok(ARBITRARY_VALUE)
-            }
-        })
-        .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    // The default provider must actually block: thread::sleep guarantees at
-    // least the requested duration, so this lower bound is deterministic.
-    assert!(started.elapsed() >= DEFAULT_SLEEP_WAIT);
-}
-
-#[test]
 fn retry_with_single_attempt_calls_op_once() {
     let policy = RetryPolicy::new().stop(stop::attempts(1));
 
@@ -497,28 +446,6 @@ fn retry_succeeds_on_first_attempt() {
 }
 
 #[test]
-fn exhausted_returned_when_until_never_holds() {
-    // `.until` retries while the Ok value fails the condition. When stop
-    // fires with an Ok value still being rejected, the error variant must be
-    // Exhausted with last=Ok(_), not Aborted (which `.when` yields only for Err).
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .until(|v: &i32| *v >= 0);
-
-    let result = policy
-        .retry(|_| Ok::<_, &str>(-1_i32))
-        .clock(VirtualClock::new())
-        .call();
-
-    match result {
-        Err(RetryError::Exhausted { last }) => {
-            assert_eq!(last, Ok(-1));
-        }
-        other => panic!("expected Exhausted, got {other:?}"),
-    }
-}
-
-#[test]
 fn composed_polling_classifier_handles_transient_errors_and_not_ready_values() {
     let policy = RetryPolicy::new()
         .stop(stop::attempts(ARBITRARY_ATTEMPTS))
@@ -546,64 +473,6 @@ fn composed_polling_classifier_handles_transient_errors_and_not_ready_values() {
 
     assert_eq!(result, Ok(ARBITRARY_VALUE));
     assert_eq!(call_count.get(), 3);
-}
-
-#[test]
-fn until_ok_retries_through_transient_errors_while_polling() {
-    // `.until(ok(is_ready))` retries on everything except a matching `Ok`, so a
-    // poll that errors keeps polling rather than surfacing the error. This locks
-    // the semantics documented on `.until` (retry on everything except the match)
-    // and under `.until`, `Err` is retried, not terminal.
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .wait(wait::fixed(Duration::ZERO))
-        .until(|v: &i32| *v >= ARBITRARY_VALUE);
-
-    let call_count = Cell::new(0_u32);
-    let result = policy
-        .retry(|_| {
-            let next_call = call_count.get().saturating_add(1);
-            call_count.set(next_call);
-            match next_call {
-                1 | 2 => Err("transient"),
-                _ => Ok(ARBITRARY_VALUE),
-            }
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-    assert_eq!(
-        call_count.get(),
-        3,
-        "Err retries; only a matching Ok returns"
-    );
-}
-
-#[test]
-fn when_rejecting_an_err_aborts_immediately() {
-    // When `.when` rejects an Err, the loop exits immediately with
-    // RetryError::Aborted rather than waiting for the stop strategy to fire.
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(ARBITRARY_ATTEMPTS))
-        .when(|e: &&str| *e == "retryable");
-
-    let call_count = Cell::new(0_u32);
-    let result = policy
-        .retry(|_| {
-            call_count.set(call_count.get() + 1);
-            Err::<i32, _>("fatal")
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(call_count.get(), 1);
-    match result {
-        Err(RetryError::Aborted { last }) => {
-            assert_eq!(last, "fatal");
-        }
-        other => panic!("expected Aborted with last=\"fatal\", got {other:?}"),
-    }
 }
 
 /// §6
@@ -666,44 +535,6 @@ fn call_returns_retry_result_type() {
     assert!(matches!(result, Err(RetryError::Exhausted { .. })));
 }
 
-/// 7.2.4
-#[test]
-fn until_returns_before_stop_fires() {
-    let policy = RetryPolicy::new()
-        .stop(stop::attempts(1))
-        .until(|v: &i32| *v >= 0);
-
-    let result = policy
-        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-/// 5.4
-#[test]
-fn when_and_until_last_call_wins() {
-    // `.until` after `.when` replaces the classifier: the last call wins.
-    // `.until` retries every Err and returns once the Ok value is done.
-    let call_count = Cell::new(0_i32);
-    let result = RetryPolicy::new()
-        .stop(stop::attempts(5))
-        .wait(wait::fixed(Duration::ZERO))
-        .when(|_e: &&str| false) // would reject everything (no retries)
-        .until(|v: &i32| *v >= 3) // last call wins: retry until Ok >= 3
-        .retry(|_| {
-            let n = call_count.get() + 1;
-            call_count.set(n);
-            Ok::<i32, &str>(n)
-        })
-        .clock(VirtualClock::new())
-        .call();
-
-    assert_eq!(result, Ok(3));
-    assert_eq!(call_count.get(), 3);
-}
-
 /// 5.1, 5.2
 #[test]
 fn new_and_default_produce_same_policy() {
@@ -751,18 +582,6 @@ fn builder_methods_return_typed_policy() {
         .clock(VirtualClock::new())
         .call();
 
-    assert_eq!(result, Ok(ARBITRARY_VALUE));
-}
-
-/// 3.5.2
-#[test]
-#[cfg(feature = "std")]
-fn std_sync_retry_uses_thread_sleep_by_default() {
-    let result = RetryPolicy::new()
-        .stop(stop::attempts(1))
-        .wait(wait::fixed(Duration::ZERO))
-        .retry(|_| Ok::<i32, &str>(ARBITRARY_VALUE))
-        .call();
     assert_eq!(result, Ok(ARBITRARY_VALUE));
 }
 

@@ -1425,7 +1425,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/stop.rs` | §3.1 |
 | `tests/wait.rs` | §3.2 |
 | `tests/jitter.rs` | §3.3 |
-| `tests/when_until.rs` | §3.4 |
+| `tests/when_until.rs` | §3.4, §5.4, §7.2 |
 | `tests/clock.rs`, `tests/clock_adapters.rs` | §3.5, §12.1, §12.4 |
 | `tests/state.rs` | §3.6 |
 | `tests/error.rs` | §4.1, §4.2 |
@@ -1437,7 +1437,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/elapsed.rs`, `tests/elapsed_async.rs` | §11.1 |
 | `tests/timeout.rs`, `tests/timeout_async.rs` | §11.1, §11.4 |
 | `tests/nameable_surface.rs` | §13 |
-| `tests/defaults.rs` | §6.1 |
+| `tests/defaults.rs` | §3.5.2, §6.1 |
 | `tests/allocation.rs` | §12.3 |
 | `tests/trait_impls.rs` | §14 |
 | `tests/composition.rs` | §3.1–3.3 (seeded property tests) |
