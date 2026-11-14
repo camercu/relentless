@@ -12,5 +12,9 @@ disallowed-methods = [
   { path = "std::thread::sleep", reason = "panics on wasm32-unknown-unknown: gate on cfg(os_clock), then allow" },
   { path = "tokio::time::sleep", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
   { path = "tokio::time::timeout", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::timeout_at", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::sleep_until", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::interval", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
+  { path = "tokio::time::interval_at", reason = "reads the OS clock: gate on cfg(os_clock), then allow" },
   { path = "futures_timer::Delay::new", reason = "needs a timer thread or OS clock: gate on cfg(os_clock), then allow" },
 ]
