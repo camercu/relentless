@@ -66,7 +66,7 @@ jobs:
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             echo "current=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::main moved past the commit CI passed; the newer run releases it"
+            echo "::notice::main moved past the commit CI passed; the CI run of a later push releases it. A push without a CI run, such as a Dependabot merge, releases nothing until the next push that runs CI"
           fi
 
       # Every tool step below (cog, cargo, the publish scripts) runs in
