@@ -155,8 +155,9 @@ from the Conventional Commits since the last tag:
 - Before 1.0.0, a breaking change (`!` or a `BREAKING CHANGE:` footer) bumps
   the minor version, whatever its type.
 - Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
-  release nothing. Use `ci:` for a CI fix, not `fix(ci):`, which would cut a
-  patch release.
+  release nothing. `fix` is for the crate: use `ci:` for a CI fix and
+  `build:` for a release-tooling fix, since `fix(ci):` or `fix(release):`
+  would cut a patch release with no change to the crate.
 - `git revert` and `jj backout` write `Revert "…"` and `Back out "…"`
   subjects, which fail the commit check. Reword them as `revert: …`.
 
