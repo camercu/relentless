@@ -17,12 +17,10 @@ mod op;
 mod stats;
 mod step;
 mod sync_engine;
-mod termination;
 
 pub use async_engine::{AsyncRun, DropStats, retry_async};
 pub use builder::Retry;
 pub use error::{RetryError, RetryResult};
 pub use op::{Async, Attempt, Blocking, Operation};
-pub use stats::RetryStats;
+pub use stats::{RetryStats, StopReason};
 pub use sync_engine::retry;
-pub use termination::StopReason;

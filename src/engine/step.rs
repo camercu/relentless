@@ -10,7 +10,7 @@
 
 use super::error::RetryError;
 use super::stats::RetryStats;
-use super::termination::StopReason;
+use super::stats::StopReason;
 use crate::compat::Duration;
 use crate::decision::{Decide, Verdict};
 use crate::policy::RetryPolicy;
