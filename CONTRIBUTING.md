@@ -157,6 +157,8 @@ from the Conventional Commits since the last tag:
 - Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
   release nothing. Use `ci:` for a CI fix, not `fix(ci):`, which would cut a
   patch release.
+- `git revert` and `jj backout` write `Revert "…"` and `Back out "…"`
+  subjects, which fail the commit check. Reword them as `revert: …`.
 
 `just release` writes the new version into `Cargo.toml` and `Cargo.lock`,
 prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow then
@@ -174,7 +176,10 @@ the minor version. Cut 1.0 by hand:
 
 1. Rewrite the cases in `scripts/test-release.sh` for a 1.x version. They
    assume 0.x and fail `just ci` otherwise.
-1. On `main`, run `cog bump --version 1.0.0`, then `just semver-check`.
+1. With `main` checked out (under jj, `jj new main`, then
+   `git checkout -B main`, since cocogitto bumps only on a branch named
+   `main`), run `cog bump --version 1.0.0`, then
+   `just semver-check`.
 1. Push the commit and the `v1.0.0` tag.
 1. Run the Release workflow by hand (Actions → Release → Run workflow) with
    the tag `v1.0.0`.
