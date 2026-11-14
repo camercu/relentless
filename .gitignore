@@ -1,5 +1,4 @@
 /target
-/node_modules
 /mutants.out*
 .bacon-locations
 .claude/

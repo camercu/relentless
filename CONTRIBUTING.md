@@ -18,7 +18,8 @@ run the same checks with the same tool versions.
 - [rust-toolchain.toml](./rust-toolchain.toml) pins Rust `1.94.1`, `clippy`,
   `rustfmt`, and the required cross-compilation targets.
 - [shell.nix](./shell.nix) provides `just`, `pre-commit`, `taplo`, `typos`,
-  `cargo-deny`, `cargo-semver-checks`, `cargo-mutants`, and `cargo-llvm-cov`.
+  `cargo-deny`, `cargo-semver-checks`, `cargo-mutants`, `cargo-llvm-cov`, and
+  `cocogitto` (`cog`).
 
 To enter the pinned shell, run:
 
@@ -39,7 +40,8 @@ development.
 The script installs:
 
 - a `pre-commit` hook for formatting, typo, and compilation checks
-- a `pre-push` hook for clippy and test coverage
+- a `pre-push` hook for the commit check, clippy, and tests
+- a `commit-msg` hook that checks the message against Conventional Commits
 
 ## Daily workflow
 
@@ -80,13 +82,13 @@ changes early, but the pinned `just ci` gate remains the source of truth.
 ## Semver and MSRV checks
 
 `just semver-check` uses `cargo-semver-checks` to verify that changes do not
-accidentally break the public API. It runs automatically during release
-(semantic-release's `prepare` step, after the version is bumped), so an
-unintended break aborts the publish before it happens; run it manually any time
-to check early. It is deliberately **not** part of `just ci`: `cargo-semver-checks`
-compares against the published version, but semantic-release defers the version
-bump to release time, so an intentional breaking change would otherwise fail the
-pre-release gate and deadlock the release. `just check-msrv` compiles the crate
+accidentally break the public API. The release workflow runs it after the
+version bump and before anything is pushed, so an unintended break stops the
+release; run it manually any time to check early. It is deliberately **not**
+part of `just ci`: `cargo-semver-checks` compares against the published
+version, but the version bump happens only at release time, so an intentional
+breaking change would otherwise fail the gate and block the release.
+`just check-msrv` compiles the crate
 with the declared minimum supported Rust version and runs as part of `just ci`.
 
 `just mutants` runs a full `cargo-mutants` sweep — run it periodically to find
@@ -130,10 +132,49 @@ tools.
 The hooks currently do this:
 
 - `pre-commit`: `just pre-commit`
-- `pre-push`: `just pre-push`
+- `pre-push`: `just pre-push`, which starts with `just check-commits`
+- `commit-msg`: `cog verify`
+
+jj fires no Git hooks, so jj users run `just pre-commit` and `just pre-push`
+themselves before pushing.
 
 If you need to reinstall the hooks, run:
 
 ```bash
 ./scripts/setup-dev.sh
 ```
+
+## Releases
+
+Releases are automatic. After CI passes on a push to `main`, the release
+workflow runs `just release`, which uses cocogitto to pick the next version
+from the Conventional Commits since the last tag:
+
+- `fix`, `perf`, and `revert` bump the patch version.
+- `feat` bumps the minor version.
+- Before 1.0.0, a breaking change (`!` or a `BREAKING CHANGE:` footer) bumps
+  the minor version, whatever its type.
+- Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
+  release nothing. Use `ci:` for a CI fix, not `fix(ci):`, which would cut a
+  patch release.
+
+`just release` writes the new version into `Cargo.toml` and `Cargo.lock`,
+prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow then
+runs `just semver-check`, pushes the commit and tag, publishes the crate
+(`scripts/publish-crate.sh`), and creates the GitHub Release
+(`scripts/publish-release.sh`). `just test-release` exercises the version
+choice and the bump commit in a throwaway clone and runs as part of
+`just ci`.
+
+To retry a release that failed after its tag was pushed, run the Release
+workflow by hand with that tag. Each publish step skips what already exists.
+
+The workflow never reaches 1.0, because a breaking change before 1.0.0 bumps
+the minor version. Cut 1.0 by hand:
+
+1. Rewrite the cases in `scripts/test-release.sh` for a 1.x version. They
+   assume 0.x and fail `just ci` otherwise.
+1. On `main`, run `cog bump --version 1.0.0`, then `just semver-check`.
+1. Push the commit and the `v1.0.0` tag.
+1. Run the Release workflow by hand (Actions → Release → Run workflow) with
+   the tag `v1.0.0`.

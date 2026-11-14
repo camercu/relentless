@@ -178,8 +178,8 @@ semver-check:
     cargo semver-checks check-release
 
 # Remove run artifacts: build tree, cargo-mutants output, bacon locations.
-# Deliberately keeps node_modules (environment, restored by npm ci) and
-# proptest-regressions (committed corpus of past test failures).
+# Deliberately keeps proptest-regressions (committed corpus of past test
+# failures).
 clean:
     cargo clean
     rm -rf mutants.out mutants.out.old
@@ -276,6 +276,7 @@ check-tool-versions:
             markdownlint-cli2) actual=$(markdownlint-cli2 --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^v//') ;;
             actionlint) actual=$(actionlint --version | head -1) ;;
             nodejs)     actual=$(node --version | sed 's/^v//') ;;
+            cocogitto)  actual=$(cog --version | awk '{print $2}') ;;
             *)          continue ;;
         esac
         if [ "$actual" != "$version" ]; then
@@ -309,8 +310,23 @@ pre-commit: check-tool-versions fmt-check lint-typos
 # Includes test-no-default: the feature-gated surface is where changes to
 # examples and doctests break without any default-feature run noticing, and
 # that has reached CI twice.
-pre-push:
+pre-push: check-commits
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test test-no-default doc test-doc-no-default
+
+# Check the commits not yet on the upstream branch against Conventional
+# Commits. The commit-msg hook misses some: `git revert` and `git
+# cherry-pick` skip it, and jj fires no git hooks at all. jj leaves HEAD
+# detached, with no upstream, so fall back to origin/main; with neither,
+# check the whole history.
+check-commits:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if upstream=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
+        || upstream=$(git rev-parse -q --verify refs/remotes/origin/main); then
+        cog check "${upstream}..HEAD"
+    else
+        cog check
+    fi
 
 # ── CI ──────────────────────────────────────────────────────
 
@@ -325,7 +341,7 @@ ci:
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just \
         test test-all-features test-no-default test-alloc test-doc-no-default doc \
         check-no-std check-wasm check-embassy check-msrv \
-        test-readme test-examples \
+        test-readme test-examples test-release \
         test-tokio-clock test-futures-timer-clock test-allocation \
         bench-no-run
     -just coverage-text
@@ -334,13 +350,56 @@ ci-stable: build-stable test-stable lint-clippy-stable
 
 # ── Release ─────────────────────────────────────────────────
 
-# Checks that .releaserc.json's plugins still pick the right release type and
-# render commits into the notes. A preset/plugin major mismatch otherwise
-# publishes with an empty changelog and GitHub release body.
-check-release-config:
-    node scripts/check-release-config.mjs
-
+# Bump the version from the commits since the last tag, commit it with the
+# changelog, and tag it. Pushes and publishes nothing: .github/workflows/release.yml
+# runs this after a successful CI run on main, then `semver-check`, then pushes
+# and publishes. cocogitto reads cog.toml and calls `set-version` before its
+# bump commit. When no commit since the last tag needs a release, this leaves
+# HEAD alone and exits 0.
+#
+# Two cases where `cog bump --auto` alone is wrong, both pinned by
+# `just test-release`:
+# - Before 1.0.0 it bumps a breaking change by the commit's type, so `fix!`
+#   gives a patch release and `refactor!` gives none. A breaking change must
+#   bump the minor version.
+# - With no tag it starts from 0.0.0 and would lower the Cargo.toml version.
+#   The last tag must therefore match Cargo.toml before any bump.
 release:
-    npm ci
-    just check-release-config
-    npx semantic-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo_version=$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -1)
+    last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+    if [ "$last_tag" != "v${cargo_version}" ]; then
+        echo "release: last tag '${last_tag:-none}' does not match Cargo.toml version ${cargo_version}" >&2
+        echo "  hint: tag the commit that set this version as v${cargo_version}" >&2
+        exit 1
+    fi
+    # Read the log into variables first. `git log | grep -q` under pipefail
+    # fails when grep exits on an early match and git dies of SIGPIPE, which
+    # reads as "no breaking change" on a long history.
+    subjects=$(git log --format=%s "${last_tag}..HEAD")
+    bodies=$(git log --format=%b "${last_tag}..HEAD")
+    breaking=0
+    if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$subjects"; then
+        breaking=1
+    elif grep -qE '^BREAKING[ -]CHANGE:' <<<"$bodies"; then
+        breaking=1
+    fi
+    if [ "${cargo_version%%.*}" = "0" ] && [ "$breaking" -eq 1 ]; then
+        cog bump --minor
+    else
+        cog bump --auto
+    fi
+
+# Run `just release` against commit sequences in a throwaway clone and
+# assert the resulting tag.
+test-release:
+    ./scripts/test-release.sh
+
+# Set the crate version. The [package] table holds the only line that starts
+# with `version =`; dependency versions sit inline. `just test-release`
+# checks that the bump rewrites exactly that line.
+set-version version:
+    sed -i.bak -E 's/^version = ".*"/version = "{{version}}"/' Cargo.toml
+    rm Cargo.toml.bak
+    cargo update --workspace

@@ -1,11 +1,10 @@
 # Dependabot keeps every dependency surface (cargo, GitHub Actions,
-# npm devDependencies, pre-commit hooks) at supported versions
-# without manual cargo update / npm update / pre-commit autoupdate
-# chores. Weekly schedule trades freshness for review-fatigue floor.
+# pre-commit hooks) at supported versions without manual cargo update /
+# pre-commit autoupdate chores. Weekly schedule trades freshness for
+# review-fatigue floor.
 #
-# Conventional Commit type set to `chore(deps)` so semantic-release's
-# commit-analyzer skips them (the `chore` type has no release rule in
-# .releaserc.json, so Dependabot updates do not trigger releases).
+# Commit types `chore(deps)` and `ci(deps)` bump no version in cog.toml,
+# so Dependabot updates do not trigger releases.
 version: 2
 
 updates:
@@ -30,24 +29,6 @@ updates:
     groups:
       actions-deps:
         patterns: ["*"]
-
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore
-      include: scope
-    groups:
-      npm-deps:
-        patterns: ["*"]
-    ignore:
-      # Preset 10 targets conventional-changelog-writer 9, but
-      # @semantic-release/release-notes-generator 14 still uses writer 8, so
-      # 10 publishes empty release notes (`just check-release-config` fails).
-      # Drop this ignore once release-notes-generator moves to writer 9.
-      - dependency-name: conventional-changelog-conventionalcommits
-        versions: [">=10.0.0"]
 
   - package-ecosystem: pre-commit
     directory: /

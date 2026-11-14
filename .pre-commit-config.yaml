@@ -20,8 +20,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
-      - id: commitlint
-        name: commitlint
-        entry: npx --no-install commitlint --edit
+      - id: cog-verify
+        name: cog verify (Conventional Commits)
+        # pre-commit appends the message file path; nix-shell --run cannot
+        # take arguments, so bash passes it through as $1.
+        entry: bash -c 'exec nix-shell --run "cog verify --file \"$1\""' --
         language: system
         stages: [commit-msg]

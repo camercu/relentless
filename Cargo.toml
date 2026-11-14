@@ -16,7 +16,7 @@ keywords = ["retry", "backoff", "polling", "resilience", "no-std"]
 # config or dotfile stays out of the package by default.
 # Patterns are gitignore-style, so every entry is anchored with a leading `/`:
 # an unanchored "README.md" matches that name at any depth and would sweep in
-# every vendored README under node_modules.
+# every README below the root.
 include = [
   "/build.rs",
   "/src/**/*.rs",

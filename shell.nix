@@ -21,6 +21,7 @@ pkgs.mkShell {
     taplo
     markdownlint-cli2
     actionlint
+    cocogitto
     nodejs
   ];
 }

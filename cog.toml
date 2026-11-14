@@ -1,0 +1,21 @@
+# cocogitto configuration: commit checks, version bumps, changelog, tags.
+# Reference: https://docs.cocogitto.io/
+# `just release` chooses the bump: `cog bump --auto`, or `--minor` for a
+# breaking change before 1.0.0. Cut 1.0.0 by hand with
+# `cog bump --version 1.0.0`.
+tag_prefix = "v"
+branch_whitelist = ["main"]
+ignore_merge_commits = true
+pre_bump_hooks = ["just set-version {{version}}"]
+
+# Omitted types still list breaking changes, under these titles.
+[commit_types]
+perf = { changelog_title = "Performance Improvements", bump_patch = true }
+revert = { changelog_title = "Reverts", bump_patch = true }
+docs = { changelog_title = "Documentation", omit_from_changelog = true }
+style = { changelog_title = "Style", omit_from_changelog = true }
+chore = { changelog_title = "Miscellaneous Chores", omit_from_changelog = true }
+refactor = { changelog_title = "Refactoring", omit_from_changelog = true }
+test = { changelog_title = "Tests", omit_from_changelog = true }
+build = { changelog_title = "Build System", omit_from_changelog = true }
+ci = { changelog_title = "Continuous Integration", omit_from_changelog = true }

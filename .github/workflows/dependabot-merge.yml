@@ -5,7 +5,7 @@
 #
 # Merges with GITHUB_TOKEN, so the merge commit triggers no further
 # workflows (no CI rerun on main, no release). Dependabot commits are
-# `chore`/`ci`, which semantic-release would skip anyway.
+# `chore`/`ci`, which bump no version in cog.toml anyway.
 name: Dependabot merge
 
 on:

@@ -24,7 +24,7 @@ Global git principles hold, applied via jj:
 - Push only on user confirmation. Use `jj push` (aliased: runs `just pre-commit`
   then `jj git push`), never bare `jj git push`.
 
-jj does NOT fire git hooks (fmt-check, commitlint). So the local guard is manual:
+jj does NOT fire git hooks (fmt-check, cog verify). So the local guard is manual:
 `just pre-commit` before push (the `jj push` alias does this); CI is the real
 enforcement. Format changed lines with `jj fix` (rustfmt + taplo). Inspect with
 `jj st` / `jj log` / `jj diff`; reverse any jj op with `jj undo`.

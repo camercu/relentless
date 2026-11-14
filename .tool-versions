@@ -13,3 +13,4 @@ cargo-public-api 0.51.0
 markdownlint-cli2 0.21.0
 actionlint 1.7.12
 nodejs 24.14.0
+cocogitto 6.5.0

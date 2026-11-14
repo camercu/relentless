@@ -24,6 +24,7 @@ declare -A NIX_ATTR=(
     [cargo-public-api]="cargo-public-api"
     [typos-cli]="typos"
     [taplo-cli]="taplo"
+    [cocogitto]="cocogitto"
 )
 
 # ── Resolve latest nixpkgs-unstable commit ───────────────────

@@ -41,7 +41,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }}
+          tool: just@${{ steps.tools.outputs.just }},cargo-deny@${{ steps.tools.outputs.cargo_deny }},cargo-nextest@${{ steps.tools.outputs.cargo_nextest }},typos-cli@${{ steps.tools.outputs.typos_cli }},taplo-cli@${{ steps.tools.outputs.taplo_cli }},cargo-semver-checks@${{ steps.tools.outputs.cargo_semver_checks }},cargo-llvm-cov@${{ steps.tools.outputs.cargo_llvm_cov }},cocogitto@${{ steps.tools.outputs.cocogitto }}
       # `just lint` runs markdownlint-cli2 (npm) and actionlint (a Go binary),
       # which the cargo-centric install-action above can't provide. Locally
       # they come from nix-shell; here from npm and the pinned release tarball.
@@ -124,51 +124,42 @@ jobs:
           fi
           just mutants-diff "$base"
 
-  release-config:
-    # The Release workflow only runs after CI passes, so a dependency bump
-    # that breaks note rendering fails here, on its own PR, not at release.
-    name: Release config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: node scripts/check-release-config.mjs
-
-  commitlint:
+  commits:
     # Enforce Conventional Commits in CI, not only via the local commit-msg
-    # hook (which a --no-verify bypass or a non-nix contributor can skip).
-    # Runs on push too, so direct-to-main commits are linted regardless of
-    # merge path.
-    name: Commitlint
+    # hook (which a --no-verify bypass, a jj user, or a non-nix contributor
+    # can skip). Runs on push too, so direct-to-main commits are checked
+    # regardless of merge path.
+    name: Conventional commits
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - name: Parse .tool-versions
+        id: tools
+        run: |
+          while read -r name version; do
+            echo "${name//-/_}=${version}" >> "$GITHUB_OUTPUT"
+          done < <(grep -v '^#' .tool-versions | grep -v '^$')
+      - uses: taiki-e/install-action@v2
         with:
-          node-version-file: .tool-versions
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - name: Lint commits against Conventional Commits
+          tool: cocogitto@${{ steps.tools.outputs.cocogitto }}
+      - name: Check commits against Conventional Commits
         env:
           # Repository-controlled context via the environment, never inlined
           # into the shell. `github.event.before` is all-zeroes on the first
           # push to a new branch and orphaned after a force-push; fall back to
-          # linting just the most-recent commit.
+          # checking just the most-recent commit.
+          EVENT_NAME: ${{ github.event_name }}
           PR_BASE: origin/${{ github.base_ref }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            npx --no-install commitlint --from "$PR_BASE" --to HEAD --verbose
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            cog check "${PR_BASE}..HEAD"
           elif [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] \
               || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            npx --no-install commitlint --last --verbose
+            cog check "${PUSH_AFTER}^..${PUSH_AFTER}"
           else
-            npx --no-install commitlint --from "$PUSH_BEFORE" --to "$PUSH_AFTER" --verbose
+            cog check "${PUSH_BEFORE}..${PUSH_AFTER}"
           fi

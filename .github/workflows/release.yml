@@ -1,53 +1,149 @@
 name: Release
 
 on:
+  # Gate on CI: fire only after the CI workflow finishes against
+  # `main`, and skip the job body if CI did not conclude with success
+  # (see the `if:` on the release job below). Without this gate, a
+  # push to `main` would trigger ci.yml and release.yml in parallel
+  # and could cut a release even when canonical-gate was red.
   workflow_run:
-    workflows: ["CI"]
+    workflows: [CI]
     types: [completed]
     branches: [main]
+  # Publish a tag that already exists to crates.io and GitHub Releases.
+  # Retries a release run that failed after its tag push (each publish
+  # step skips what is already there), and cuts 1.0.0, because
+  # `just release` finds nothing to bump once that tag is pushed.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish, such as v1.0.0
+        required: true
+        type: string
 
 permissions:
   contents: write
-  # `@semantic-release/github`'s success step comments on the issues and
-  # PRs closed by the release; without these scopes that API call returns
-  # "Resource not accessible by integration" and the step fails after the
-  # release has already published.
-  issues: write
-  pull-requests: write
 
-# Serialize releases so two runs cannot race on the tag push;
-# `cancel-in-progress: false` lets an in-flight release finish.
+# Prevent two release runs from racing. `cancel-in-progress: false`
+# protects an in-flight release from being killed mid tag-push.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
   release:
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+    name: release
+    # The workflow_run trigger fires for every CI run whose head branch
+    # is named `main`, whatever its conclusion and wherever it ran. The
+    # conditions below are the actual gate:
+    # - CI succeeded.
+    # - CI ran for a push, not a pull request. A fork's pull request
+    #   from a branch named `main` passes the `branches` filter above.
+    # - The pushed branch belongs to this repository.
+    if: >-
+      ${{ github.event_name == 'workflow_run'
+          && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    steps:
+      # Check out the commit CI passed, not whatever `main` points at
+      # now, so a release never contains a commit without a green run.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # A newer push has its own CI run and its own release run, which
+      # covers these commits too.
+      - name: Skip when main has moved on
+        id: tip
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main moved past the commit CI passed; the newer run releases it"
+          fi
+
+      # Every step below runs in shell.nix, on the pinned toolchain and the
+      # pinned cocogitto and cargo-semver-checks. cargo-semver-checks parses
+      # rustdoc JSON, whose format tracks the compiler, so an unpinned
+      # rustdoc breaks it: that is what blocked v0.18.0.
+      - uses: cachix/install-nix-action@v31
+        if: steps.tip.outputs.current == 'true'
+
+      # `just release` commits and tags locally, or leaves HEAD alone
+      # when no commit since the last tag needs a release. cocogitto
+      # bumps only on the branch named in cog.toml, so the detached
+      # checkout becomes a local `main`.
+      - name: Bump version
+        if: steps.tip.outputs.current == 'true'
+        id: bump
+        run: |
+          git checkout -B main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          before=$(git rev-parse HEAD)
+          nix-shell --run 'just release'
+          if [ "$(git rev-parse HEAD)" != "$before" ]; then
+            echo "tag=$(nix-shell --run 'cog get-version --tag' | tail -n 1)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Compares the bumped crate against the newest version on
+      # crates.io. A break the bump does not allow stops the release
+      # here, before anything leaves the runner.
+      - name: Check semver
+        if: steps.bump.outputs.tag != ''
+        run: nix-shell --run 'just semver-check'
+
+      # The push is not forced, so it fails if main moved after the
+      # check above, and --atomic then leaves the tag unpushed too.
+      - name: Push the bump commit and tag
+        if: steps.bump.outputs.tag != ''
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: git push --atomic origin HEAD:refs/heads/main "$TAG"
+
+      - name: Publish to crates.io
+        if: steps.bump.outputs.tag != ''
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: nix-shell --run "./scripts/publish-crate.sh \"\$TAG\""
+
+      - name: Publish the GitHub Release
+        if: steps.bump.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: nix-shell --run "./scripts/publish-release.sh \"\$TAG\""
+
+  publish-tag:
+    name: publish existing tag
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
-
+    env:
+      # Through the environment, not inlined into the shell: the input
+      # is free text.
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          # `workflow_run` checks out the current tip of `main` by default.
-          # Pin to the commit CI validated, or a later red commit would ship
-          # on the strength of an earlier green run.
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.tag }}
 
       - uses: cachix/install-nix-action@v31
 
-      - name: Run semantic-release
+      - name: Publish to crates.io
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
-        # semantic-release's prepare step runs `just semver-check` against the
-        # freshly bumped version, on the toolchain shell.nix pins. It used to
-        # install a floating `stable` first, which paired an unpinned rustdoc
-        # with a pinned cargo-semver-checks and broke the v0.18.0 release with
-        # "unsupported rustdoc format v60".
-        run: nix-shell shell.nix --run 'just release'
+        run: nix-shell --run "./scripts/publish-crate.sh \"\$TAG\""
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix-shell --run "./scripts/publish-release.sh \"\$TAG\""

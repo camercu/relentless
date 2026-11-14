@@ -9,31 +9,18 @@ if ! command -v nix-shell >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "ERROR: node is not available. Run inside 'nix-shell'." >&2
-  exit 1
-fi
-
-if ! command -v pre-commit >/dev/null 2>&1; then
-  echo "ERROR: pre-commit is not available. Run inside 'nix-shell'." >&2
-  exit 1
-fi
-
-echo "==> Installing Node dependencies"
-if [ -f package-lock.json ]; then
-  npm ci
-else
-  npm install
-fi
+for tool in pre-commit cog; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: $tool is not available. Run inside 'nix-shell'." >&2
+    exit 1
+  fi
+done
 
 echo "==> Installing pre-commit hooks"
 pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
 
-echo "==> Verifying commitlint"
-npx commitlint --version
-
-echo "==> Verifying semantic-release"
-npx semantic-release --version
+echo "==> Verifying cocogitto"
+cog --version
 
 echo "==> Setup complete"
 echo "Use 'nix-shell' for the pinned tool environment."

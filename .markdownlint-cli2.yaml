@@ -13,7 +13,6 @@ config:
   MD024:
     siblings_only: true
 ignores:
-  - node_modules
   - target
   - CHANGELOG.md
   # Local Claude Code config and installed skills — agent tooling, not

@@ -1,3 +1,10 @@
+# Changelog
+
+All notable changes to this project are documented in this file. Entries
+from 0.19.0 back were written by semantic-release; later ones by
+cocogitto.
+
+- - -
 ## [0.19.0](https://github.com/camercu/relentless/compare/v0.18.5...v0.19.0) (2026-11-14)
 
 ### ⚠ BREAKING CHANGES
