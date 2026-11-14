@@ -39,7 +39,9 @@ use core::future::Future;
 
 // `os_clock` comes from build.rs. Catch it being set where there is no OS clock.
 #[cfg(all(os_clock, target_family = "wasm", target_os = "unknown"))]
-compile_error!("build.rs set cfg(os_clock) on a wasm*-unknown-unknown target, which has no OS clock");
+compile_error!(
+    "build.rs set cfg(os_clock) on a wasm*-unknown-unknown target, which has no OS clock"
+);
 
 /// Fails the build if `$clock` implements [`Clock`] on a target with no OS
 /// clock, so a clock gated on `os_clock` cannot regain its runtime panic.
@@ -147,8 +149,8 @@ pub trait SyncClock: Clock {
     label = "not an `AsyncClock`",
     note = "supply an async clock with `.clock(...)` before `.call()` — e.g. \
             `clock::TokioClock` (feature `tokio-clock`) in production, \
-            `clock::GlooClock` in a browser, or `&VirtualClock` in tests; \
-            there is no async default"
+            `clock::GlooClock` (feature `gloo-timers-clock`) in a browser, \
+            or `&VirtualClock` in tests; there is no async default"
 )]
 pub trait AsyncClock: Clock {
     /// The concrete future returned by [`wait_async`](AsyncClock::wait_async) —
