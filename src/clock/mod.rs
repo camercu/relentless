@@ -38,8 +38,8 @@ use crate::compat::Duration;
 use core::future::Future;
 
 // `os_clock` comes from build.rs. Catch it being set where there is no OS clock.
-#[cfg(all(os_clock, target_arch = "wasm32", target_os = "unknown"))]
-compile_error!("build.rs set cfg(os_clock) on wasm32-unknown-unknown, which has no OS clock");
+#[cfg(all(os_clock, target_family = "wasm", target_os = "unknown"))]
+compile_error!("build.rs set cfg(os_clock) on a wasm*-unknown-unknown target, which has no OS clock");
 
 /// Fails the build if `$clock` implements [`Clock`] on a target with no OS
 /// clock, so a clock gated on `os_clock` cannot regain its runtime panic.
