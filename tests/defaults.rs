@@ -377,8 +377,8 @@ mod async_tests {
 }
 
 #[test]
-fn policy_and_extension_forms_are_equivalent_for_basic_case() {
-    let from_ext = retry(|_| Err::<i32, &str>(ARBITRARY_ERROR))
+fn free_function_and_default_policy_are_equivalent_for_basic_case() {
+    let from_free_fn = retry(|_| Err::<i32, &str>(ARBITRARY_ERROR))
         .clock(VirtualClock::new())
         .call();
 
@@ -388,7 +388,7 @@ fn policy_and_extension_forms_are_equivalent_for_basic_case() {
         .call();
 
     assert!(matches!(
-        from_ext,
+        from_free_fn,
         Err(RetryError::Exhausted {
             last: Err(ARBITRARY_ERROR),
             ..

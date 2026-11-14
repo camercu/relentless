@@ -38,7 +38,7 @@ fn policy_async_retry_remains_available_without_alloc() {
 }
 
 #[test]
-fn async_retry_ext_remains_available_without_alloc() {
+fn retry_async_remains_available_without_alloc() {
     let attempts = Cell::new(0_u32);
 
     let clock = VirtualClock::new();

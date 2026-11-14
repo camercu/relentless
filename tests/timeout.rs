@@ -288,7 +288,7 @@ fn timeout_with_std_uses_instant_clock() {
 
 #[cfg(feature = "std")]
 #[test]
-fn retry_ext_timeout_stops_on_deadline() {
+fn free_function_timeout_stops_on_deadline() {
     // One attempt consumes twice the budget, so the timeout, not the 100-attempt
     // stop strategy, ends the execution after exactly one attempt.
     let clock = VirtualClock::new();

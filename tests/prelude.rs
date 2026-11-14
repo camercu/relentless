@@ -1,4 +1,4 @@
-//! Verifies that `use relentless::prelude::*` brings the extension/combinator
+//! Verifies that `use relentless::prelude::*` brings the combinator
 //! traits into scope so the builder DSL (`.cap()`, `.full_jitter()`, `.or()`,
 //! `.and()`) resolves without importing each trait by name.
 
