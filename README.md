@@ -138,6 +138,11 @@ let body = retry(|state| {
 .call();
 ```
 
+Without `std`, and on `wasm32-unknown-unknown`, there is no wall clock to vary
+default jitter, so every run (in a browser, every page load) repeats the same
+sequence. If that matters, seed it from a runtime value: call `.with_seed(…)`
+directly after the jitter method, as in `.full_jitter().with_seed(seed)`.
+
 ### 3) Poll for a condition
 
 Use `.until(|v| …)` to keep retrying until an `Ok` value meets a condition.
