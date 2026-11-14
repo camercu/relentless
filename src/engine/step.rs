@@ -9,8 +9,7 @@
 //! `tests/parity.rs`.
 
 use super::error::RetryError;
-use super::stats::RetryStats;
-use super::stats::StopReason;
+use super::stats::{RetryStats, StopReason};
 use crate::decision::{Decide, Verdict};
 use crate::policy::RetryPolicy;
 use crate::state::RetryState;
