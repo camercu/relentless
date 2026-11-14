@@ -9,8 +9,9 @@ set -euo pipefail
 tag="${1:?usage: publish-crate.sh <tag>}"
 version="${tag#v}"
 
-crate=$(sed -nE 's/^name = "(.*)"/\1/p' Cargo.toml | head -1)
-manifest_version=$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -1)
+# Read the [package] table only.
+crate=$(sed -nE '/^\[package\]/,/^\[/ s/^name = "(.*)"/\1/p' Cargo.toml)
+manifest_version=$(sed -nE '/^\[package\]/,/^\[/ s/^version = "(.*)"/\1/p' Cargo.toml)
 if [ "$manifest_version" != "$version" ]; then
     echo "publish-crate: Cargo.toml is at ${manifest_version}, not ${version}; check out ${tag}" >&2
     exit 1

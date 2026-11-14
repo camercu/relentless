@@ -369,7 +369,7 @@ ci-stable: build-stable test-stable lint-clippy-stable
 release:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo_version=$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -1)
+    cargo_version=$(sed -nE '/^\[package\]/,/^\[/ s/^version = "(.*)"/\1/p' Cargo.toml)
     last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
     if [ "$last_tag" != "v${cargo_version}" ]; then
         echo "release: last tag '${last_tag:-none}' does not match Cargo.toml version ${cargo_version}" >&2
