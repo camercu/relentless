@@ -23,9 +23,10 @@ use core::ops::ControlFlow;
 /// `.when`/`.until` paths — where the outcome is `Result<T, E>` and aborts
 /// carry the bare error — this is `RetryError<E, Result<T, E>>`, and the
 /// `Result`-shaped helpers below (`last_error`, `into_last_error`) also apply.
-/// `Display` and `Error` need only a `Result` outcome: any abort type that is
-/// itself `Display` (respectively an error type) keeps them, including the
-/// `Infallible` of a [`Decision`](crate::Decision) classifier.
+/// `Display` and `Error` hold for a `Result` outcome whose abort type is
+/// itself `Display` (respectively an error type), including the `Infallible`
+/// of a [`Decision`](crate::Decision) classifier, and for the `Option` and
+/// `ControlFlow` poll errors, so a poll's error can `?`-propagate too.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RetryError<A, O> {
