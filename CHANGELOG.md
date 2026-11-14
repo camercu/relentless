@@ -1,3 +1,98 @@
+## [0.19.0](https://github.com/camercu/relentless/compare/v0.18.5...v0.19.0) (2026-11-14)
+
+### ⚠ BREAKING CHANGES
+
+* **clock:** on wasm32-unknown-unknown, TokioClock::new, Default, Clock
+and AsyncClock are gone. Such code panicked on first use; use GlooClock in
+the browser.
+* **clock:** on wasm32-unknown-unknown, FuturesTimerClock::new,
+Default, Clock and AsyncClock are gone. Such code panicked on first use;
+use GlooClock in the browser.
+* **engine:** AsyncRetry is removed. Code that names the builder
+type gains the mode as its first parameter:
+
+| Before                         | After                                |
+|--------------------------------|--------------------------------------|
+| Retry<F, C, S, W, Cl>          | Retry<Blocking, F, C, S, W, Cl>      |
+| AsyncRetry<F, C, S, W, Cl>     | Retry<Async, F, C, S, W, Cl>         |
+
+Chained call sites are unaffected.
+* **engine:** Retry::with_stats, AsyncRetry::with_stats,
+RetryWithStats and AsyncRetryWithStats are removed. Replace
+.with_stats().call() with .call_with_stats(), and
+.with_stats().call().await with .call_with_stats().await.
+* **engine:** RetryExt, AsyncRetryExt and StatelessOp are removed,
+along with their prelude entries. Replace (|| op()).retry() with
+retry(|_| op()) and f.retry() with retry(|_| f()). Async forms use
+retry_async the same way.
+* **classifier:** the predicate module is removed and .when/.until take
+plain closures. Migrate:
+- .when(predicate::error(f)) -> .when(f)
+- .until(predicate::ok(f)) -> .until(f)
+- .when(predicate::any_error()) -> drop it (the default) or .when(|_| true)
+- .when(predicate::ok(f)), .until(predicate::error(f)), and any
+  predicate::result(f) -> .decide with a match returning Verdict
+Policy-first .when/.until closures need a parameter type, as
+policy-first .decide does.
+* **stop,wait:** StopAny::new, StopAll::new, WaitCombine::new and
+WaitChain::new are no longer public. Write a.or(b) or a | b, a.and(b)
+or a & b, a.add(b) or a + b, and a.chain(b, after) instead.
+* **engine:** the hook setters and types are gone, and builders
+take five type parameters (F, C, S, W, Cl) instead of eight. Move
+before_attempt code to the top of the operation. Move after_attempt
+code into the operation, after the attempt and before returning its
+outcome. Replace on_exit with a match on the value .call() returns,
+plus .with_stats() for the attempt count and stop reason. To log each
+delay before the sleep, wrap the wait strategy in a type implementing
+Wait. Drop BA, AA and OX, and their hook-trait bounds, from any type
+or helper that names a builder.
+* **clock:** on wasm32-unknown-unknown, a sync retry that relied on
+the default SystemClock no longer compiles. It panicked at runtime
+before. Pass a clock with .clock(...), e.g. VirtualClock for a loop
+that needs no timer.
+* **clock:** VirtualClock::waits() is removed. Wrap the clock to
+keep its waits: let clock = Recording::new(VirtualClock::new()), pass
+&clock as before, and read clock.waits(). Call .advance() through
+clock.inner(). Recording needs the alloc feature, as waits() did.
+* **decision:** Decide is sealed. It was exported doc(hidden) in 0.18,
+and an impl outside the crate compiled but could never be installed, so
+no working code relied on one. Delete any such impl and classify with
+.decide, .when or .until instead.
+* **engine:** RetryOp and AsyncRetryOp are removed. Bound
+operations as Operation<Blocking, Output = O> or Operation<Async,
+Output = O>; Operation is sealed and cannot be implemented outside
+the crate. Generic async code that needs a Send retry future adds
+Call: Send, as in Operation<Async, Output = O, Call: Send> + Send,
+and bounds the other builder parameters Send. AsyncRun drops its Fut
+and O parameters and requires F: Operation<Async>, so a struct field
+storing it repeats that bound.
+
+### Features
+
+* **classifier:** take plain closures in .when and .until ([e6df0f1](https://github.com/camercu/relentless/commit/e6df0f13825d679d6a485dc9d5b76efad2bc1207))
+* **clock:** add Recording to record the waits any clock performs ([078d1b4](https://github.com/camercu/relentless/commit/078d1b4af4249a753de7e317e4b9ae6e5691bc52))
+* **clock:** make VirtualClock a stateless no-sleep clock ([8f2a95b](https://github.com/camercu/relentless/commit/8f2a95b91714630dd0bd0b966bbe4f980f7029ee))
+* **engine:** remove the closure extension traits ([5c17593](https://github.com/camercu/relentless/commit/5c1759391cab89e177f3a8c209b8367d0203cf79))
+* **engine:** remove the observer hooks ([b61a4b2](https://github.com/camercu/relentless/commit/b61a4b2ebb3defc8758226b85a16aa8c8a845534))
+* **engine:** replace with_stats wrappers with call_with_stats ([e528031](https://github.com/camercu/relentless/commit/e528031e9ce6644871f3aeda85250efacdf747d7))
+* **stop,wait:** build leaf strategies in const items ([1219c45](https://github.com/camercu/relentless/commit/1219c45e30693070881fdda5bd49a8f31bd82ff8))
+
+### Bug Fixes
+
+* **async:** mark AsyncRun and DropStats must_use ([d473c97](https://github.com/camercu/relentless/commit/d473c977e09ef0036997b6031f7412f081991942))
+* **clock:** refuse FuturesTimerClock on wasm32-unknown-unknown ([4e17e5a](https://github.com/camercu/relentless/commit/4e17e5a57135e8991e5d66779126b67b267f1b76))
+* **clock:** refuse SystemClock as a clock on wasm32-unknown-unknown ([4685a59](https://github.com/camercu/relentless/commit/4685a5900e03762321840ea01bf3d9c8868ccd55))
+* **clock:** refuse TokioClock on wasm32-unknown-unknown ([07409cc](https://github.com/camercu/relentless/commit/07409cce1c30b4071ac53306cb743d43ee0c9cdf))
+* **decision:** seal Decide as the docs already claimed ([e7e25e9](https://github.com/camercu/relentless/commit/e7e25e997793bec4e53e8b5e04a8401713bab162))
+* **error:** keep Display and Error for any abort type on Result outcomes ([d24aab0](https://github.com/camercu/relentless/commit/d24aab09143dddc196ca4fffb737053316f7c7b0))
+* **wait:** stop reading the wall clock for jitter on wasm32 ([a4bbdff](https://github.com/camercu/relentless/commit/a4bbdff66f2b7943f6a65ce4dc81156acd21bc4d))
+
+### Code Refactoring
+
+* **engine:** merge Retry and AsyncRetry into one builder ([c952efc](https://github.com/camercu/relentless/commit/c952efca0cf114f9cddbb3df4fc215533361ce3b))
+* **engine:** replace RetryOp and AsyncRetryOp with Operation<M> ([9aa429c](https://github.com/camercu/relentless/commit/9aa429c9af445ac7de8f3024772cf67b308e7c94))
+* **stop,wait:** hide the combinator constructors ([37bdc5e](https://github.com/camercu/relentless/commit/37bdc5e77ebb060d2a199165657210fcd3b13a5e))
+
 ## [0.18.5](https://github.com/camercu/relentless/compare/v0.18.4...v0.18.5) (2026-11-08)
 
 ### Bug Fixes
