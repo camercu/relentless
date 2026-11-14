@@ -36,7 +36,7 @@ changing code.
 
 - Start behavior checks from [docs/SPEC.md](/docs/SPEC.md), then read
   [src/lib.rs](/src/lib.rs) for the public surface, then
-  [src/decision.rs](/src/decision.rs) for the classifier model
+  [src/decision/](/src/decision/mod.rs) for the classifier model
   (`Decide`/`Decision`/`Verdict`/`Outcome`) and
   [src/policy/mod.rs](/src/policy/mod.rs) for the reusable `RetryPolicy` config.
   The engine is classifier-driven (ADR-6): each outcome is consumed by value by
