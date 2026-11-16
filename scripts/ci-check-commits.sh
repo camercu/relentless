@@ -38,7 +38,7 @@ fi
 # Any other branch or tag: check what main lacks. A ref on a main commit
 # brings nothing new. Say so here: `cog check X..X` still checks X.
 if base=$(git merge-base origin/main "$PUSH_AFTER" 2>/dev/null); then
-    if [ "$base" = "$(git rev-parse "$PUSH_AFTER")" ]; then
+    if [ "$base" = "$(git rev-parse "${PUSH_AFTER}^{commit}")" ]; then
         echo "ci-check-commits: ${REF} adds no commits to main"
         exit 0
     fi
