@@ -313,22 +313,11 @@ pre-commit: check-tool-versions fmt-check lint-typos
 pre-push: check-commits
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just lint-clippy test test-no-default doc test-doc-no-default
 
-# Check the commits not yet on the upstream branch against Conventional
-# Commits. The commit-msg hook misses some: `git revert` and `git
-# cherry-pick` skip it, and jj fires no git hooks at all. jj leaves HEAD
-# detached, with no upstream, so fall back to origin/main.
+# Check the commits not yet on origin/main against Conventional Commits,
+# with the range rules CI uses. The commit-msg hook misses some: `git
+# revert` and `git cherry-pick` skip it, and jj fires no git hooks at all.
 check-commits:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if upstream=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
-        || upstream=$(git rev-parse -q --verify refs/remotes/origin/main); then
-        cog check "${upstream}..HEAD"
-    else
-        # Commits from before Conventional Commits fail a whole-history
-        # check, so name the missing ref instead.
-        echo "check-commits: no upstream branch and no origin/main to compare against" >&2
-        exit 1
-    fi
+    EVENT_NAME=push REF=HEAD PR_BASE= PUSH_BEFORE= PUSH_AFTER=HEAD ./scripts/ci-check-commits.sh
 
 # ── CI ──────────────────────────────────────────────────────
 

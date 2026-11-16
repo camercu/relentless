@@ -4,7 +4,8 @@
 #
 # Reads the GitHub event from the environment: EVENT_NAME, REF (the
 # pushed ref), PR_BASE (origin/<base branch> on a pull request),
-# PUSH_BEFORE and PUSH_AFTER. `just test-release` runs every branch.
+# PUSH_BEFORE and PUSH_AFTER. `just check-commits` runs it on HEAD as a
+# push of a ref other than main. `just test-release` runs every branch.
 set -euo pipefail
 
 zero=0000000000000000000000000000000000000000
@@ -32,4 +33,5 @@ if base=$(git merge-base origin/main "$PUSH_AFTER" 2>/dev/null); then
     fi
     exec cog check "${base}..${PUSH_AFTER}"
 fi
+echo "ci-check-commits: no origin/main to compare against; checking the whole history" >&2
 exec cog check
