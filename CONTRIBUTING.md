@@ -172,7 +172,9 @@ choice and the bump commit in a throwaway clone and runs as part of
 `just ci`.
 
 To retry a release that failed after its tag was pushed, run the Release
-workflow by hand with that tag. Each publish step skips what already exists.
+workflow by hand with that tag. Each publish step skips what already exists,
+and the publish scripts come from `main`, so a fix to one lands before the
+retry.
 
 The workflow never reaches 1.0, because a breaking change before 1.0.0 bumps
 the minor version. Cut 1.0 by hand:
