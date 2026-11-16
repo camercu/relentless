@@ -371,6 +371,18 @@ release:
         echo "release: no commits since ${last_tag}"
         exit 0
     fi
+    # Release only a change to the published crate. A commit that touches
+    # only CI, tooling or files outside the package releases nothing,
+    # whatever its type. Files cargo generates for the package (such as
+    # Cargo.toml.orig) do not exist here and are skipped.
+    packaged=()
+    while IFS= read -r f; do
+        if [ -e "$f" ]; then packaged+=("$f"); fi
+    done < <(cargo package --list --allow-dirty --quiet)
+    if git diff --quiet "$last_tag" HEAD -- "${packaged[@]}"; then
+        echo "release: no packaged file changed since ${last_tag}"
+        exit 0
+    fi
     # Ask cog which commits are breaking, so the bump and the commit check
     # share one parser: cog accepts `Fix!:`, which a hand-written pattern
     # missed. Its changelog marks each breaking commit, omitted types

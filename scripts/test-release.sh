@@ -5,8 +5,8 @@
 # untracked files, minus ignored ones), seeds a tag, adds empty commits,
 # runs `just release`, and checks the tag it cuts, the bump commit, and
 # the refusals, from a 0.x and a 1.x version. Then runs the publish
-# scripts against stub `gh` and `cargo`, and the CI commit check and the
-# tooling-fix rule against each kind of push. Uncommitted changes are what the test exercises, and a
+# scripts against stub `gh` and `cargo`, and the CI commit check against
+# each kind of push. Uncommitted changes are what the test exercises, and a
 # repository with no commits yet works.
 set -euo pipefail
 
@@ -39,6 +39,10 @@ git config tag.gpgsign false
 git add -A
 git commit -q -m "chore: working tree under test"
 tree=$(git rev-parse HEAD)
+# A release needs a change to a packaged file, so the cases commit one.
+# `unpackaged` is a tracked file the package leaves out, if there is one.
+packaged_file=src/lib.rs
+unpackaged=$(git ls-files | grep -vxF -f <(cargo package --list --allow-dirty --quiet) | head -n 1 || true)
 
 failures=0
 
@@ -77,7 +81,8 @@ newest_tag() {
 }
 
 # expect_tag <want> [commit message]...
-# Seeds the tag, adds one empty commit per message, releases, compares.
+# Seeds the tag, adds one commit per message that changes a packaged
+# file, releases, compares.
 # With want equal to the seed, HEAD must not move either. Sets `released`
 # to 1 on success, so a later check that builds on the release can tell.
 expect_tag() {
@@ -89,7 +94,8 @@ expect_tag() {
     reset
     git tag "$seed"
     for msg in "$@"; do
-        git commit -q --allow-empty -F - <<<"$msg"
+        echo "// ${#msg}" >>"$packaged_file"
+        git commit -q -a -F - <<<"$msg"
     done
     before=$(git rev-parse HEAD)
     if ! just release >"$work/out.log" 2>&1; then
@@ -154,6 +160,26 @@ BREAKING-CHANGE: the output differs"
 # SIGPIPE. The breaking commit comes last, so it is listed first.
 huge=$(head -c 2000000 /dev/zero | tr '\0' x)
 expect_tag "$next_minor" "fix: ${huge}" "fix!: bug"
+
+# A releasing commit that leaves the package alone releases nothing.
+label="fix outside the package"
+if [ -z "$unpackaged" ]; then
+    pass "$label" "skipped: every tracked file is packaged"
+else
+    reset
+    git tag "$seed"
+    echo "# change" >>"$unpackaged"
+    git commit -q -a -m "fix: tooling"
+    git commit -q --allow-empty -m "feat!: nothing packaged"
+    head=$(git rev-parse HEAD)
+    if ! just release >"$work/out.log" 2>&1; then
+        fail "$label" "just release exited non-zero" "$work/out.log"
+    elif [ "$(newest_tag)" != "$seed" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
+        fail "$label" "released $(newest_tag)"
+    else
+        pass "$label" "$seed"
+    fi
+fi
 
 # A tag set by hand on a releasing commit, with nothing after it, cuts
 # nothing: cog reads that empty range as the tagged commit.
@@ -347,28 +373,10 @@ ci_case "first push of a repository" 1 refs/heads/main "$zero" "$tip"
 git -C "$work/ci" commit -q --allow-empty -m "feat: b"
 ci_case "new branch, good commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD)"
 ci_case "pull request, good commit" 0 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
-git -C "$work/ci" commit -q --allow-empty -m "fix(ci): pin a tool"
-ci_case "new branch, tooling fix" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
-git -C "$work/ci" reset -q --hard HEAD~1
 git -C "$work/ci" commit -q --allow-empty -m "bad subject"
 ci_case "new branch, bad commit" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
 ci_case "push to main, bad commit" 1 refs/heads/main "$tip" "$(ci_rev HEAD)"
 ci_case "pull request, bad commit" 1 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
-
-# check-fix-scope.sh rejects only `fix` with a tooling scope.
-for pair in "1:fix(ci): pin a tool" "1:Fix(release)!: drop a step" "1:fix(deps): bump" \
-    "1:fix(build): path" "0:fix: bug" "0:fix(core): bug" "0:ci: pin a tool" \
-    "0:build(release): step"; do
-    want=${pair%%:*}
-    subject=${pair#*:}
-    got=0
-    "$repo/scripts/check-fix-scope.sh" <<<"$subject" >/dev/null 2>&1 || got=$?
-    if [ "$got" = "$want" ]; then
-        pass "check-fix-scope ${subject}" "exit $got"
-    else
-        fail "check-fix-scope ${subject}" "want exit $want, got $got"
-    fi
-done
 
 if [ "$failures" -ne 0 ]; then
     echo "test-release: ${failures} failure(s)"

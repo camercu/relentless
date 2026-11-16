@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # scripts/ci-check-commits.sh — check the commits a CI run brings in
-# against Conventional Commits and the repository's scope rule
-# (scripts/check-fix-scope.sh).
+# against Conventional Commits.
 #
 # Reads the GitHub event from the environment: EVENT_NAME, REF (the
 # pushed ref), PR_BASE (origin/<base branch> on a pull request),
@@ -10,12 +9,9 @@
 set -euo pipefail
 
 zero=0000000000000000000000000000000000000000
-here=$(cd "$(dirname "$0")" && pwd)
-
 # check [range] — no range means the whole history.
 check() {
     cog check "$@"
-    git log --no-merges --format=%s "${@:-HEAD}" | "$here/check-fix-scope.sh"
 }
 
 if [ "$EVENT_NAME" = "pull_request" ]; then

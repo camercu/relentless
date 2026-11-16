@@ -155,11 +155,11 @@ from the Conventional Commits since the last tag:
 - Before 1.0.0, a breaking change (`!` or a `BREAKING CHANGE:` footer) bumps
   the minor version, whatever its type.
 - Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
-  release nothing. `fix` is for the crate: use `ci:` for a CI fix and
-  `build:` for a release-tooling fix. The commit-msg hook,
-  `just check-commits` and CI reject `fix(ci):`, `fix(release):`,
-  `fix(build):` and `fix(deps):`, which would cut a patch release with no
-  change to the crate.
+  release nothing.
+- A release also needs a change to a file the crate ships
+  (`cargo package --list`). Commits that touch only CI, tooling or other
+  unpackaged files release nothing, whatever their type. Prefer `ci:` and
+  `build:` for those anyway, so the changelog stays about the crate.
 - `git revert` and `jj backout` write `Revert "…"` and `Back out "…"`
   subjects, which fail the commit check. Reword them as `revert: …`.
 
