@@ -26,7 +26,8 @@ repos:
         # take arguments, so bash passes it through as $1. Messages that git
         # writes for a later rebase or a merge are skipped: a fixup that
         # reaches a push still fails `just check-commits` and CI. The
-        # subject also goes through scripts/check-fix-scope.sh.
-        entry: bash -c 'case "$(head -n 1 "$1")" in "fixup! "*|"squash! "*|"amend! "*|"Merge "*) exit 0 ;; esac; head -n 1 "$1" | ./scripts/check-fix-scope.sh && exec nix-shell --run "cog verify --file \"$1\""' --
+        # subject (the first line that is neither blank nor a comment) also
+        # goes through scripts/check-fix-scope.sh.
+        entry: bash -c 'subject=$(sed -n "/^[^#[:space:]]/{p;q;}" "$1"); case "$subject" in "fixup! "*|"squash! "*|"amend! "*|"Merge "*) exit 0 ;; esac; printf "%s\n" "$subject" | ./scripts/check-fix-scope.sh && exec nix-shell --run "cog verify --file \"$1\""' --
         language: system
         stages: [commit-msg]
