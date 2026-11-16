@@ -5,8 +5,8 @@
 # untracked files, minus ignored ones), seeds a tag, adds empty commits,
 # runs `just release`, and checks the tag it cuts, the bump commit, and
 # the refusals, from a 0.x and a 1.x version. Then runs the publish
-# scripts against stub `gh` and `cargo`, and the CI commit check against
-# each kind of push. Uncommitted changes are what the test exercises, and a
+# scripts against stub `gh` and `cargo`, and the CI commit check and the
+# tooling-fix rule against each kind of push. Uncommitted changes are what the test exercises, and a
 # repository with no commits yet works.
 set -euo pipefail
 
@@ -347,10 +347,28 @@ ci_case "first push of a repository" 1 refs/heads/main "$zero" "$tip"
 git -C "$work/ci" commit -q --allow-empty -m "feat: b"
 ci_case "new branch, good commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD)"
 ci_case "pull request, good commit" 0 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
+git -C "$work/ci" commit -q --allow-empty -m "fix(ci): pin a tool"
+ci_case "new branch, tooling fix" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
+git -C "$work/ci" reset -q --hard HEAD~1
 git -C "$work/ci" commit -q --allow-empty -m "bad subject"
 ci_case "new branch, bad commit" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
 ci_case "push to main, bad commit" 1 refs/heads/main "$tip" "$(ci_rev HEAD)"
 ci_case "pull request, bad commit" 1 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
+
+# check-fix-scope.sh rejects only `fix` with a tooling scope.
+for pair in "1:fix(ci): pin a tool" "1:Fix(release)!: drop a step" "1:fix(deps): bump" \
+    "1:fix(build): path" "0:fix: bug" "0:fix(core): bug" "0:ci: pin a tool" \
+    "0:build(release): step"; do
+    want=${pair%%:*}
+    subject=${pair#*:}
+    got=0
+    "$repo/scripts/check-fix-scope.sh" <<<"$subject" >/dev/null 2>&1 || got=$?
+    if [ "$got" = "$want" ]; then
+        pass "check-fix-scope ${subject}" "exit $got"
+    else
+        fail "check-fix-scope ${subject}" "want exit $want, got $got"
+    fi
+done
 
 if [ "$failures" -ne 0 ]; then
     echo "test-release: ${failures} failure(s)"

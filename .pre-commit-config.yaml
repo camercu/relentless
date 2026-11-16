@@ -25,7 +25,8 @@ repos:
         # pre-commit appends the message file path; nix-shell --run cannot
         # take arguments, so bash passes it through as $1. Messages that git
         # writes for a later rebase or a merge are skipped: a fixup that
-        # reaches a push still fails `just check-commits` and CI.
-        entry: bash -c 'case "$(head -n 1 "$1")" in "fixup! "*|"squash! "*|"amend! "*|"Merge "*) exit 0 ;; esac; exec nix-shell --run "cog verify --file \"$1\""' --
+        # reaches a push still fails `just check-commits` and CI. The
+        # subject also goes through scripts/check-fix-scope.sh.
+        entry: bash -c 'case "$(head -n 1 "$1")" in "fixup! "*|"squash! "*|"amend! "*|"Merge "*) exit 0 ;; esac; head -n 1 "$1" | ./scripts/check-fix-scope.sh && exec nix-shell --run "cog verify --file \"$1\""' --
         language: system
         stages: [commit-msg]

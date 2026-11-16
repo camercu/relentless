@@ -156,8 +156,10 @@ from the Conventional Commits since the last tag:
   the minor version, whatever its type.
 - Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
   release nothing. `fix` is for the crate: use `ci:` for a CI fix and
-  `build:` for a release-tooling fix, since `fix(ci):` or `fix(release):`
-  would cut a patch release with no change to the crate.
+  `build:` for a release-tooling fix. The commit-msg hook,
+  `just check-commits` and CI reject `fix(ci):`, `fix(release):`,
+  `fix(build):` and `fix(deps):`, which would cut a patch release with no
+  change to the crate.
 - `git revert` and `jj backout` write `Revert "…"` and `Back out "…"`
   subjects, which fail the commit check. Reword them as `revert: …`.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/ci-check-commits.sh — check the commits a CI run brings in
-# against Conventional Commits.
+# against Conventional Commits and the repository's scope rule
+# (scripts/check-fix-scope.sh).
 #
 # Reads the GitHub event from the environment: EVENT_NAME, REF (the
 # pushed ref), PR_BASE (origin/<base branch> on a pull request),
@@ -9,19 +10,29 @@
 set -euo pipefail
 
 zero=0000000000000000000000000000000000000000
+here=$(cd "$(dirname "$0")" && pwd)
+
+# check [range] — no range means the whole history.
+check() {
+    cog check "$@"
+    git log --no-merges --format=%s "${@:-HEAD}" | "$here/check-fix-scope.sh"
+}
 
 if [ "$EVENT_NAME" = "pull_request" ]; then
-    exec cog check "${PR_BASE}..HEAD"
+    check "${PR_BASE}..HEAD"
+    exit
 fi
 
 if [ "$REF" = "refs/heads/main" ]; then
     if [ "$PUSH_BEFORE" != "$zero" ] \
         && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-        exec cog check "${PUSH_BEFORE}..${PUSH_AFTER}"
+        check "${PUSH_BEFORE}..${PUSH_AFTER}"
+        exit
     fi
     # The first push of the repository, or a force-push (which trunk
     # rules forbid): check the whole history.
-    exec cog check
+    check
+    exit
 fi
 
 # Any other branch or tag: check what main lacks. A ref on a main commit
@@ -31,7 +42,8 @@ if base=$(git merge-base origin/main "$PUSH_AFTER" 2>/dev/null); then
         echo "ci-check-commits: ${REF} adds no commits to main"
         exit 0
     fi
-    exec cog check "${base}..${PUSH_AFTER}"
+    check "${base}..${PUSH_AFTER}"
+    exit
 fi
 echo "ci-check-commits: no origin/main to compare against; checking the whole history" >&2
-exec cog check
+check
