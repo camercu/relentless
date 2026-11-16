@@ -155,6 +155,21 @@ BREAKING-CHANGE: the output differs"
 huge=$(head -c 2000000 /dev/zero | tr '\0' x)
 expect_tag "$next_minor" "fix: ${huge}" "fix!: bug"
 
+# A tag set by hand on a releasing commit, with nothing after it, cuts
+# nothing: cog reads that empty range as the tagged commit.
+label="tag on a feat commit at HEAD"
+reset
+git commit -q --allow-empty -m "feat: tagged by hand"
+git tag "$seed"
+head=$(git rev-parse HEAD)
+if ! just release >"$work/out.log" 2>&1; then
+    fail "$label" "just release exited non-zero" "$work/out.log"
+elif [ "$(newest_tag)" != "$seed" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
+    fail "$label" "released $(newest_tag)"
+else
+    pass "$label" "$seed"
+fi
+
 # A stale or missing tag must not lower the crate version.
 expect_refusal "no tag"
 expect_refusal "tag behind Cargo.toml" v0.0.1
@@ -331,6 +346,7 @@ ci_case "new branch at a main commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD~
 ci_case "first push of a repository" 1 refs/heads/main "$zero" "$tip"
 git -C "$work/ci" commit -q --allow-empty -m "feat: b"
 ci_case "new branch, good commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD)"
+ci_case "pull request, good commit" 0 refs/pull/1/merge "$zero" "$(ci_rev HEAD)" pull_request
 git -C "$work/ci" commit -q --allow-empty -m "bad subject"
 ci_case "new branch, bad commit" 1 refs/heads/topic "$zero" "$(ci_rev HEAD)"
 ci_case "push to main, bad commit" 1 refs/heads/main "$tip" "$(ci_rev HEAD)"

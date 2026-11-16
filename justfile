@@ -376,6 +376,12 @@ release:
         echo "  hint: tag the commit that set this version as v${cargo_version}" >&2
         exit 1
     fi
+    # A tag on HEAD itself, such as one set by hand, leaves nothing to
+    # release. cog would read an empty range as the tagged commit alone.
+    if [ -z "$(git rev-list "${last_tag}..HEAD")" ]; then
+        echo "release: no commits since ${last_tag}"
+        exit 0
+    fi
     # Ask cog which commits are breaking, so the bump and the commit check
     # share one parser: cog accepts `Fix!:`, which a hand-written pattern
     # missed. Its changelog marks each breaking commit, omitted types
