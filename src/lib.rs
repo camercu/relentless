@@ -135,56 +135,8 @@
 //!
 //! ## Attempt-only loops
 //!
-//! When each attempt blocks by itself (a bounded read, a poll with its own
-//! timeout), the loop needs no sleep and no wall clock: count the attempts,
-//! wait zero, and use [`VirtualClock`](clock::VirtualClock), which never sleeps
-//! and works on every target. For an outcome that is not a `Result`, return a
-//! [`Decision`]; it has no abort arm, so nothing needs
-//! annotating.
-//!
-//! ```
-//! use core::time::Duration;
-//! use relentless::clock::VirtualClock;
-//! use relentless::Decision;
-//! use relentless::{retry, stop, wait};
-//!
-//! const MAX_POLLS: u32 = 64;
-//!
-//! let mut ready_after = 3;
-//! let result = retry(|_| {
-//!     ready_after -= 1;
-//!     ready_after == 0 // one bounded poll: did the peer make progress?
-//! })
-//! .decide(|done| if done { Decision::Return(()) } else { Decision::Retry(done) })
-//! .stop(stop::attempts(MAX_POLLS))
-//! .wait(wait::fixed(Duration::ZERO))
-//! .clock(VirtualClock::new())
-//! .call();
-//!
-//! assert_eq!(result, Ok(()));
-//! ```
-//!
-//! Bound such a loop with [`stop::attempts`] only. With zero waits on a
-//! `VirtualClock`, elapsed time stays at zero, so [`stop::elapsed`] and
-//! [`.timeout()`](Retry::timeout) never fire and a loop bounded by them alone
-//! never ends.
-//!
-//! The async form borrows the clock, because `&VirtualClock` is the
-//! [`AsyncClock`]:
-//!
-//! ```
-//! # use core::time::Duration;
-//! # use relentless::clock::VirtualClock;
-//! # use relentless::{retry_async, stop, wait};
-//! # let poll = || async { Ok::<(), &str>(()) };
-//! let clock = VirtualClock::new();
-//! let future = retry_async(|_| poll())
-//!     .stop(stop::attempts(64))
-//!     .wait(wait::fixed(Duration::ZERO))
-//!     .clock(&clock)
-//!     .call();
-//! # drop(future);
-//! ```
+//! N back-to-back attempts with no wait between them need no retry library.
+//! Write a `for` loop.
 //!
 //! # Observing retries
 //!
@@ -389,8 +341,7 @@
 //!
 //! Every adapter above is an [`clock::AsyncClock`]. The only [`clock::SyncClock`]
 //! implementors are [`clock::SystemClock`] (`std` only, not on
-//! `wasm32-unknown-unknown`) and [`clock::VirtualClock`] (for tests and loops
-//! that never sleep), so a `no_std` *sync* retry implements
+//! `wasm32-unknown-unknown`) and [`clock::VirtualClock`] (for tests), so a `no_std` *sync* retry implements
 //! [`clock::Clock`] + [`clock::SyncClock`] over its own tick source — see the
 //! [`clock`] module docs.
 

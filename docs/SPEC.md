@@ -1070,7 +1070,7 @@ clock, its absolute origin is irrelevant. There is no async default clock.
 trait even with `std`: that target has no OS clock, and `Instant::now` panics
 there at runtime. A sync `.call()` that relies on the default therefore fails
 to compile on that target instead of panicking. Supply a clock explicitly
-(e.g. `VirtualClock` for a loop that needs no timer).
+(e.g. `VirtualClock` in tests).
 
 Because a clock is mandatory on every execution, elapsed time is always
 available: the engines never produce `elapsed = None`. Statistics do not force
@@ -1229,8 +1229,8 @@ name the type can write it explicitly or use `impl` return types.
 `clock::VirtualClock` never sleeps and reads no wall time. It is always
 available (no feature gate, `no_std`-clean, every target) and implements the
 clock traits directly, so it is injected via `.clock(...)` like any other
-clock. It serves two uses: deterministic tests, and loops whose attempts block
-by themselves and need no timer. Its state is one `Duration` and never grows.
+clock. It is for deterministic tests. Its state is one `Duration` and never
+grows.
 
 - **12.4.1** `VirtualClock::new()` is a `const fn` and starts at virtual time
   zero. `Default` is equivalent to `new()`.
@@ -1248,10 +1248,8 @@ by themselves and need no timer. Its state is one `Duration` and never grows.
   (simulates time passing inside an attempt). All time arithmetic saturates at
   `Duration::MAX`.
 - **12.4.5** Elapsed time under a `VirtualClock` counts the waits and any
-  `.advance` calls, never the time an attempt really took. A loop whose
-  attempts block by themselves is therefore bounded by `stop::attempts`, not
-  by `stop::elapsed` or `.timeout`. To assert a backoff schedule, wrap the
-  clock in `Recording` (12.5).
+  `.advance` calls, never the time an attempt really took. To assert a
+  backoff schedule, wrap the clock in `Recording` (12.5).
 - **12.4.6** All methods take `&self` via interior mutability (`Cell`); the
   clock is neither `Sync` nor intended to cross threads. Multi-threaded
   executors need a user-provided lock-based clock. (A lock-based `Sync`

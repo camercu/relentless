@@ -12,8 +12,7 @@ use core::time::Duration;
 /// and on `wasm32-unknown-unknown` (which has no OS clock), the type still
 /// exists — it is the builders' "no clock configured yet" default — but
 /// implements no clock capability, so `.call()` does not compile until a clock
-/// is supplied via `.clock(...)`. On that target, use
-/// [`VirtualClock`](super::VirtualClock) for loops that need no timer.
+/// is supplied via `.clock(...)`.
 ///
 /// `SystemClock` is deliberately sync-only: it does not implement
 /// [`AsyncClock`](super::AsyncClock), so the async engine rejects it at

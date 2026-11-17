@@ -14,17 +14,9 @@ use core::time::Duration;
 /// writer, so the read seam and the wait seam cannot drift even by an
 /// implementation bug.
 ///
-/// Two uses:
-///
-/// - **Tests.** Run a retry deterministically, with no real sleeping. Wrap it
-///   in [`Recording`](super::Recording) (feature `alloc`) to assert the
-///   backoff schedule.
-/// - **Loops that need no timer.** When each attempt blocks by itself (it
-///   waits on a socket or a channel with its own bound), the retry needs
-///   neither a sleep nor a wall clock. A `VirtualClock` supplies both seams on
-///   every target, including `no_std` and `wasm32-unknown-unknown`, and holds
-///   no growing state. Elapsed time then counts only the scheduled waits, so
-///   bound the loop with [`stop::attempts`](crate::stop::attempts).
+/// It is for tests: it runs a retry deterministically, with no real sleeping,
+/// on every target. Wrap it in [`Recording`](super::Recording) (feature
+/// `alloc`) to assert the backoff schedule.
 ///
 /// An owned `VirtualClock` is a [`SyncClock`]; a shared borrow
 /// (`&VirtualClock`) is additionally an [`AsyncClock`] whose wait future
