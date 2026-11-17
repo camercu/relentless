@@ -169,7 +169,16 @@ check-consumer-lock:
     trap 'rm -rf "$probe"' EXIT
     mkdir "$probe/src"
     : > "$probe/src/lib.rs"
-    printf '[package]\nname = "probe"\nversion = "0.0.0"\nedition = "2021"\n\n[dependencies]\nrelentless = { path = "%s" }\n' "$PWD" > "$probe/Cargo.toml"
+    # A TOML literal string keeps a `"` or `\` in the path verbatim.
+    cat > "$probe/Cargo.toml" <<TOML
+    [package]
+    name = "probe"
+    version = "0.0.0"
+    edition = "2021"
+
+    [dependencies]
+    relentless = { path = '$PWD' }
+    TOML
     cargo generate-lockfile --quiet --manifest-path "$probe/Cargo.toml"
     # Compare `name version` pairs: a weak feature can also lock a second
     # version of a crate the build already uses.
