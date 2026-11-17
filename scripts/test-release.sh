@@ -289,13 +289,13 @@ else
     want_commit=$(git rev-parse HEAD)
     want_tag_id=$(git rev-parse "refs/tags/$next_patch")
 
-    # unbundle_case <label> <want exit> <commit to expect>
+    # unbundle_case <label> <want exit> <commit to expect> <tag ref to expect>
     # Runs ci-unbundle.sh from the pre-bump state.
     unbundle_case() {
         local got=0
         git checkout -q --detach "$head"
         git tag -d "$next_patch" >/dev/null 2>&1 || true
-        WANT_TAG="$next_patch" WANT_COMMIT="$3" WANT_TAG_ID="$want_tag_id" \
+        WANT_TAG="$next_patch" WANT_COMMIT="$3" WANT_TAG_ID="$4" \
             "$repo/scripts/ci-unbundle.sh" "$bundle" >"$work/out.log" 2>&1 || got=$?
         if [ "$got" != "$2" ]; then
             fail "$1" "want exit $2, got $got" "$work/out.log"
@@ -309,8 +309,11 @@ else
             pass "$1" "exit $got"
         fi
     }
-    unbundle_case "ci-unbundle" 0 "$want_commit"
-    unbundle_case "ci-unbundle, bundle not the one bumped" 1 "$head"
+    unbundle_case "ci-unbundle" 0 "$want_commit" "$want_tag_id"
+    unbundle_case "ci-unbundle, commit not the one bumped" 1 "$head" "$want_tag_id"
+    # An annotated tag swapped in for the bumped one names the same
+    # commit; only the tag ref check catches it.
+    unbundle_case "ci-unbundle, tag ref not the one bumped" 1 "$want_commit" "$head"
     git checkout -q main
 fi
 
