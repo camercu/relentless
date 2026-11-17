@@ -176,8 +176,11 @@ check-consumer-lock:
     locked=$(awk -F'"' '/^name = "/{n=$2} /^version = "/{print n, $2}' "$probe/Cargo.lock" | sort -u)
     built=$(cargo tree --quiet --manifest-path "$probe/Cargo.toml" --target all --edges normal,build --prefix none --format '{p}' | awk '{sub(/^v/, "", $2); print $1, $2}' | sort -u)
     if [ "$locked" != "$built" ]; then
-        echo "check-consumer-lock: a default-feature consumer locks crates it never builds:" >&2
+        echo "check-consumer-lock: the consumer's lockfile and build differ" >&2
+        echo "locked, never built:" >&2
         comm -23 <(echo "$locked") <(echo "$built") >&2
+        echo "built, not locked:" >&2
+        comm -13 <(echo "$locked") <(echo "$built") >&2
         exit 1
     fi
 
