@@ -202,6 +202,8 @@ if PATH="$work/failpkg:$PATH" just release >"$work/out.log" 2>&1; then
     fail "$label" "just release succeeded" "$work/out.log"
 elif [ "$(newest_tag)" != "$seed" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
     fail "$label" "released $(newest_tag)"
+elif ! grep -qF "stub: package failed" "$work/out.log"; then
+    fail "$label" "refused for another reason" "$work/out.log"
 else
     pass "$label" refused
 fi
