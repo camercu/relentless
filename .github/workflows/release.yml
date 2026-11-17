@@ -125,9 +125,11 @@ jobs:
     needs: release
     # The release job is skipped on a dispatch, and `always()` keeps that
     # skip from skipping this job too.
+    # A dispatch must run from main, so main's copy of this workflow and
+    # its tag check apply.
     if: >-
       ${{ always()
-          && (github.event_name == 'workflow_dispatch'
+          && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
               || (needs.release.result == 'success' && needs.release.outputs.tag != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
