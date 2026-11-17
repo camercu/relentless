@@ -98,6 +98,8 @@ For full docs, see <https://docs.rs/relentless>. Behavior spec:
 Sync `std` builds default to `clock::SystemClock` (wall time +
 `std::thread::sleep`), so the sync example below omits `.clock(...)`. The
 exception is `wasm32-unknown-unknown`, which has no OS clock: pass one there.
+The `std` feature still builds on that target, so a workspace that also
+targets wasm can keep default features on; only the default clock is missing.
 
 ### 1) Retry with defaults
 

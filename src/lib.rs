@@ -382,7 +382,8 @@
 //!
 //! Async retry does not require `alloc`. Sync `std` builds default to
 //! [`clock::SystemClock`], so `.clock(...)` is optional there, except on
-//! `wasm32-unknown-unknown`, which has no OS clock.
+//! `wasm32-unknown-unknown`, which has no OS clock. `std` itself still builds
+//! on that target; pass a clock there and keep default features on.
 //!
 //! Every adapter above is an [`clock::AsyncClock`]. The only [`clock::SyncClock`]
 //! implementors are [`clock::SystemClock`] (`std` only, not on
