@@ -5,6 +5,14 @@ from 0.19.0 back were written by semantic-release; later ones by
 cocogitto.
 
 - - -
+## v0.20.0 - 2026-11-17
+#### Features
+- (**decision**) add some_or_abort for Result<Option<T>, E> polls - (c9ee6d3) - camercu
+#### Bug Fixes
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**clock**) stop std from adding embassy crates to consumer lockfiles - (21d8e40) - camercu
+
+- - -
+
 ## [0.19.0](https://github.com/camercu/relentless/compare/v0.18.5...v0.19.0) (2026-11-14)
 
 ### ⚠ BREAKING CHANGES
