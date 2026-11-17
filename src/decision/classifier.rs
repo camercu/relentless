@@ -162,8 +162,9 @@ where
 /// use relentless::clock::VirtualClock;
 /// use relentless::{RetryError, retry, some_or_abort};
 ///
-/// // A poll that is ready on its third attempt.
-/// let result = retry(|state| Ok::<_, &str>((state.attempt >= 3).then_some("ready")))
+/// const READY_ON_ATTEMPT: u32 = 3;
+///
+/// let result = retry(|state| Ok::<_, &str>((state.attempt >= READY_ON_ATTEMPT).then_some("ready")))
 ///     .decide(some_or_abort)
 ///     .clock(VirtualClock::new())
 ///     .call();
