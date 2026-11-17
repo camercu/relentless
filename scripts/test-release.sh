@@ -393,11 +393,12 @@ if crate_case skip 0.2.0 v0.2.0 1 \
 else
     fail "publish-crate already published" "did not ask crates.io and skip" "$work/stub.log"
 fi
+# The upload builds nothing: the crates.io token is in its environment.
 if crate_case new 0.3.0 v0.3.0 0 \
-    && grep -qx 'cargo publish --locked' "$work/stub.log"; then
+    && grep -qx 'cargo publish --locked --no-verify' "$work/stub.log"; then
     pass "publish-crate new version"
 else
-    fail "publish-crate new version" "did not run cargo publish --locked" "$work/stub.log"
+    fail "publish-crate new version" "did not run cargo publish --locked --no-verify" "$work/stub.log"
 fi
 if crate_case mismatch 0.2.0 v0.3.0 0; then
     fail "publish-crate version mismatch" "succeeded"

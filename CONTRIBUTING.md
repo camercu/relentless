@@ -175,7 +175,8 @@ code and holds write access:
 1. `push`, with write access: bumps again from the same commit without
    building, checks the result matches what `prepare` checked, and pushes
    the commit and tag.
-1. `crates-io`: publishes the crate (`scripts/publish-crate.sh`).
+1. `crates-io`, with the crates.io token: uploads the crate without
+   building it (`scripts/publish-crate.sh`).
 1. `github-release`, with write access: creates the GitHub Release
    (`scripts/publish-release.sh`) without building.
 
@@ -193,8 +194,9 @@ the minor version. Cut 1.0 by hand:
 
 1. With `main` checked out (under jj, `jj new main`, then
    `git checkout -B main`, since cocogitto bumps only on a branch named
-   `main`), run `cog bump --version 1.0.0`, then
-   `just semver-check`.
+   `main`), run `cog bump --version 1.0.0`, then `just semver-check` and
+   `cargo publish --dry-run --locked`. The workflow uploads without
+   building, so this is the build check for 1.0.0.
 1. Push the commit and the tag together: `git push --atomic origin main v1.0.0`.
 1. Run the Release workflow by hand (Actions → Release → Run workflow) with
    the tag `v1.0.0`.

@@ -4,6 +4,10 @@
 # Run from a checkout of the tag. Skips the upload when crates.io already
 # has that version, so a release run that failed after this step can be
 # retried. Needs CARGO_REGISTRY_TOKEN.
+#
+# Uploads without building (`--no-verify`): building runs dependency code,
+# which could read the token. The release workflow builds this exact
+# package with `cargo publish --dry-run` before the tag is pushed.
 set -euo pipefail
 
 tag="${1:?usage: publish-crate.sh <tag>}"
@@ -26,4 +30,4 @@ if cargo info --registry crates-io "${crate}@${version}" >/dev/null 2>&1; then
     exit 0
 fi
 
-cargo publish --locked
+cargo publish --locked --no-verify
