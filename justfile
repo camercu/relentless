@@ -343,8 +343,8 @@ ci-stable: build-stable test-stable lint-clippy-stable
 
 # Bump the version from the commits since the last tag, commit it with the
 # changelog, and tag it. Pushes and publishes nothing: .github/workflows/release.yml
-# runs this after a successful CI run on main, then `semver-check`, then pushes
-# and publishes. cocogitto reads cog.toml and calls `set-version` before its
+# runs this after a successful CI run on main, then `semver-check` and
+# `cargo publish --dry-run`, then pushes and publishes. cocogitto reads cog.toml and calls `set-version` before its
 # bump commit. When no commit since the last tag needs a release, this leaves
 # HEAD alone and exits 0.
 #
