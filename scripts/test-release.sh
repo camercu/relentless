@@ -4,10 +4,10 @@
 # Builds a scratch repository from this working tree (tracked and
 # untracked files, minus ignored ones), seeds a tag, adds empty commits,
 # runs `just release`, and checks the tag it cuts, the bump commit, and
-# the refusals, from a 0.x and a 1.x version. Then runs the publish
-# scripts against stub `gh` and `cargo`, and the CI commit check against
-# each kind of push. Uncommitted changes are what the test exercises, and a
-# repository with no commits yet works.
+# the refusals, from a 0.x and a 1.x version. Then runs the CI bump
+# script, the publish scripts against stub `gh` and `cargo`, and the CI
+# commit check against each kind of push. Uncommitted changes are what
+# the test exercises, and a repository with no commits yet works.
 set -euo pipefail
 
 for tool in just cog; do
@@ -261,6 +261,52 @@ if [ "$released" = 1 ]; then
     else
         pass "$label"
     fi
+fi
+
+# ci-bump.sh records the tag and tree it cuts. The release workflow bumps
+# twice from the same commit, once in a job that builds and once in the
+# job that pushes, and pushes only when the trees match. So two bumps
+# must give the same tree.
+bump_out="$work/bump-output"
+label="ci-bump"
+reset
+git tag "$seed"
+echo "// change" >>"$packaged_file"
+git commit -q -a -m "fix: bug"
+head=$(git rev-parse HEAD)
+: >"$bump_out"
+if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
+    fail "$label" "exited non-zero" "$work/out.log"
+elif [ "$(cat "$bump_out")" != "$(printf 'tag=%s\ntree=%s' "$next_patch" "$(git rev-parse 'HEAD^{tree}')")" ]; then
+    fail "$label" "output does not name ${next_patch} and its tree" "$bump_out"
+else
+    pass "$label" "$next_patch"
+    first_tree=$(git rev-parse 'HEAD^{tree}')
+    first_commit=$(git rev-parse HEAD)
+    git reset -q --hard "$head"
+    git tag -d "$next_patch" >/dev/null
+    : >"$bump_out"
+    if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
+        fail "$label again" "exited non-zero" "$work/out.log"
+    elif [ "$(git rev-parse 'HEAD^{tree}')" != "$first_tree" ]; then
+        git diff "$first_commit" HEAD >"$work/diff.txt"
+        fail "$label again" "second bump gave another tree:" "$work/diff.txt"
+    else
+        pass "$label again" "same tree"
+    fi
+fi
+
+label="ci-bump, no release due"
+reset
+git tag "$seed"
+head=$(git rev-parse HEAD)
+: >"$bump_out"
+if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
+    fail "$label" "exited non-zero" "$work/out.log"
+elif [ -s "$bump_out" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
+    fail "$label" "cut a release" "$bump_out"
+else
+    pass "$label"
 fi
 
 # The release workflow runs the publish scripts by path, so they must be

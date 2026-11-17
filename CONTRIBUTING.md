@@ -166,13 +166,22 @@ from the Conventional Commits since the last tag:
   subjects, which fail the commit check. Reword them as `revert: …`.
 
 `just release` writes the new version into `Cargo.toml` and `Cargo.lock`,
-prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow then
-runs `just semver-check` and `cargo publish --dry-run`, pushes the commit
-and tag, publishes the crate (`scripts/publish-crate.sh`), and creates the
-GitHub Release (`scripts/publish-release.sh`). `just test-release`
-exercises the version choice, the bump commit, the publish scripts and
-the CI commit check in a scratch repository, and runs as part of
-`just ci`.
+prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow runs
+it through `scripts/ci-bump.sh` in four jobs, so that no job both builds
+code and holds write access:
+
+1. `prepare`, with a read-only token: bumps, then runs `just semver-check`
+   and `cargo publish --dry-run`.
+1. `push`, with write access: bumps again from the same commit without
+   building, checks the result matches what `prepare` checked, and pushes
+   the commit and tag.
+1. `crates-io`: publishes the crate (`scripts/publish-crate.sh`).
+1. `github-release`, with write access: creates the GitHub Release
+   (`scripts/publish-release.sh`) without building.
+
+`just test-release` exercises the version choice, the bump commit, the CI
+bump script, the publish scripts and the CI commit check in a scratch
+repository, and runs as part of `just ci`.
 
 To retry a release that failed after its tag was pushed, run the Release
 workflow by hand with that tag. Each publish step skips what already exists,

@@ -3,7 +3,7 @@ name: Release
 on:
   # Gate on CI: fire only after the CI workflow finishes against
   # `main`, and skip the job body if CI did not conclude with success
-  # (see the `if:` on the release job below). Without this gate, a
+  # (see the `if:` on the prepare job below). Without this gate, a
   # push to `main` would trigger ci.yml and release.yml in parallel
   # and could cut a release even when canonical-gate was red.
   workflow_run:
@@ -21,8 +21,14 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
+# Jobs that build code hold no write access. Building runs code from
+# the crate's dependencies (build scripts, proc macros), and that code
+# can read anything the job holds: the job token (the Nix install writes
+# it to /etc/nix/nix.conf), step environments, and runner memory through
+# sudo. So `prepare` builds with a read-only token, and the jobs that
+# write (`push`, `github-release`) build nothing. `crates-io` builds and
+# holds the crates.io token, as `cargo publish` must.
+permissions: {}
 
 # Prevent two release runs from racing. `cancel-in-progress: false`
 # protects an in-flight release from being killed mid tag-push.
@@ -31,8 +37,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: release
+  prepare:
+    name: prepare
     # The workflow_run trigger fires for every CI run whose head branch
     # is named `main`, whatever its conclusion and wherever it ran. The
     # conditions below are the actual gate:
@@ -47,15 +53,14 @@ jobs:
           && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: release
+    permissions:
+      contents: read
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
+      tree: ${{ steps.bump.outputs.tree }}
     steps:
       # Check out the commit CI passed, not whatever `main` points at
       # now, so a release never contains a commit without a green run.
-      # The token stays out of .git/config: the steps below build the
-      # crate's dependencies, whose build scripts could read it. Only
-      # the push step gets the token.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -81,23 +86,13 @@ jobs:
       - uses: cachix/install-nix-action@v31
         if: steps.tip.outputs.current == 'true'
 
-      # `just release` commits and tags locally, or leaves HEAD alone
-      # when no commit since the last tag needs a release. cocogitto
-      # bumps only on the branch named in cog.toml, so the detached
-      # checkout becomes a local `main`.
+      # Commits and tags locally, or leaves HEAD alone when no commit
+      # since the last tag needs a release. Nothing is built yet, so
+      # the outputs come from the bump alone.
       - name: Bump version
         if: steps.tip.outputs.current == 'true'
         id: bump
-        run: |
-          git checkout -B main
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          before=$(git rev-parse HEAD)
-          nix-shell --run 'just release'
-          if [ "$(git rev-parse HEAD)" != "$before" ]; then
-            tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD)
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          fi
+        run: nix-shell --run ./scripts/ci-bump.sh
 
       # Compares the bumped crate against the newest version on
       # crates.io. A break the bump does not allow stops the release
@@ -113,10 +108,46 @@ jobs:
         if: steps.bump.outputs.tag != ''
         run: nix-shell --run 'cargo publish --dry-run --locked'
 
+  # Cuts the same bump again, without building anything, and pushes it
+  # only if it matches the one `prepare` checked.
+  push:
+    name: push
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Bump version
+        id: bump
+        run: nix-shell --run ./scripts/ci-bump.sh
+
+      - name: Check the bump is the one prepare checked
+        env:
+          WANT_TAG: ${{ needs.prepare.outputs.tag }}
+          WANT_TREE: ${{ needs.prepare.outputs.tree }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          TREE: ${{ steps.bump.outputs.tree }}
+        run: |
+          if [ "$TAG" != "$WANT_TAG" ] || [ "$TREE" != "$WANT_TREE" ]; then
+            echo "::error::bump cut ${TAG:-nothing} (tree ${TREE:-none}); prepare checked ${WANT_TAG} (tree ${WANT_TREE}). Re-run the release workflow."
+            exit 1
+          fi
+
       # The push is not forced, so it fails if main moved after the
-      # check above, and --atomic then leaves the tag unpushed too.
+      # checkout, and --atomic then leaves the tag unpushed too. The
+      # token goes to this command alone, not into .git/config.
       - name: Push the bump commit and tag
-        if: steps.bump.outputs.tag != ''
         env:
           TAG: ${{ steps.bump.outputs.tag }}
           TOKEN: ${{ github.token }}
@@ -126,33 +157,33 @@ jobs:
           git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
             push --atomic origin HEAD:refs/heads/main "$TAG"
 
-  # One job publishes both a fresh release and a tag named by hand, so
-  # the retry path runs on every release, not only after a failure. Each
-  # publish script skips what already exists.
-  publish:
-    name: publish
-    needs: release
-    # The release job is skipped on a dispatch, and `always()` keeps that
-    # skip from skipping this job too.
+  # The publish jobs serve both a fresh release and a tag named by hand,
+  # so the retry path runs on every release, not only after a failure.
+  # Each publish script skips what already exists.
+  crates-io:
+    name: crates-io
+    needs: [prepare, push]
+    # `prepare` and `push` are skipped on a dispatch, and `always()`
+    # keeps that skip from skipping this job too.
     # A dispatch must run from main, so main's copy of this workflow and
     # its tag check apply.
     if: >-
       ${{ always()
           && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-              || (needs.release.result == 'success' && needs.release.outputs.tag != '')) }}
+              || needs.push.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
+    permissions:
+      contents: read
     env:
       # Through the environment, not inlined into the shell: a dispatch
       # input is free text.
-      TAG: ${{ inputs.tag || needs.release.outputs.tag }}
+      TAG: ${{ inputs.tag || needs.prepare.outputs.tag }}
     steps:
       # The scripts and tools come from main, the tag's files from a
       # worktree. A retry after a fix to a publish script on main then
       # runs the fixed script, not the tag's copy.
-      # This job never pushes, so the token stays out of .git/config,
-      # where the build in `cargo publish` could read it.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -175,7 +206,33 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
         run: nix-shell --run "cd \"\$TAG_DIR\" && \"\$GITHUB_WORKSPACE/scripts/publish-crate.sh\" \"\$TAG\""
 
+  # Builds nothing, so it may hold the write token that creating a
+  # release needs.
+  github-release:
+    name: github-release
+    needs: [prepare, crates-io]
+    if: ${{ always() && needs.crates-io.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the tag
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/tag" "$TAG"
+          echo "TAG_DIR=$RUNNER_TEMP/tag" >> "$GITHUB_ENV"
+
+      - uses: cachix/install-nix-action@v31
+
       - name: Publish the GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: nix-shell --run "cd \"\$TAG_DIR\" && \"\$GITHUB_WORKSPACE/scripts/publish-release.sh\" \"\$TAG\""
