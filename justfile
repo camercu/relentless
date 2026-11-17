@@ -161,7 +161,8 @@ check-embassy:
 # A consumer on default features must lock only crates its build uses. Cargo
 # locks the optional dependency behind a weak feature (`dep?/feat`) whether or
 # not the dependency is on, so one in `std` would put crates that never build
-# into every consumer's Cargo.lock.
+# into every consumer's Cargo.lock. Resolving the probe needs the crates.io
+# index, so the check needs network or a warm cargo cache.
 check-consumer-lock:
     #!/usr/bin/env bash
     set -euo pipefail
