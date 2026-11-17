@@ -42,7 +42,8 @@ tree=$(git rev-parse HEAD)
 # A release needs a change to a packaged file, so the cases commit one.
 # `unpackaged` is a tracked file the package leaves out, if there is one.
 packaged_file=src/lib.rs
-unpackaged=$(git ls-files | grep -vxF -f <(cargo package --list --allow-dirty --quiet) | head -n 1 || true)
+package_list=$(cargo package --list --allow-dirty --quiet)
+unpackaged=$(git ls-files | grep -vxF -f <(printf '%s\n' "$package_list") | head -n 1 || true)
 
 failures=0
 
@@ -164,7 +165,7 @@ expect_tag "$next_minor" "fix: ${huge}" "fix!: bug"
 # A releasing commit that leaves the package alone releases nothing.
 label="fix outside the package"
 if [ -z "$unpackaged" ]; then
-    pass "$label" "skipped: every tracked file is packaged"
+    fail "$label" "every tracked file is packaged; add an include list to Cargo.toml"
 else
     reset
     git tag "$seed"
@@ -179,6 +180,30 @@ else
     else
         pass "$label" "$seed"
     fi
+fi
+
+# A failing `cargo package --list` must stop the release, not read as an
+# empty list that every file matches.
+label="cargo package fails"
+mkdir -p "$work/failpkg"
+real_cargo=$(command -v cargo)
+cat >"$work/failpkg/cargo" <<CARGO
+#!/usr/bin/env bash
+if [ "\$1" = package ]; then echo "stub: package failed" >&2; exit 101; fi
+exec "$real_cargo" "\$@"
+CARGO
+chmod +x "$work/failpkg/cargo"
+reset
+git tag "$seed"
+echo "// change" >>"$packaged_file"
+git commit -q -a -m "fix: bug"
+head=$(git rev-parse HEAD)
+if PATH="$work/failpkg:$PATH" just release >"$work/out.log" 2>&1; then
+    fail "$label" "just release succeeded" "$work/out.log"
+elif [ "$(newest_tag)" != "$seed" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
+    fail "$label" "released $(newest_tag)"
+else
+    pass "$label" refused
 fi
 
 # A tag set by hand on a releasing commit, with nothing after it, cuts
@@ -368,6 +393,13 @@ ci_rev() { git -C "$work/ci" rev-parse "$1"; }
 tip=$(ci_rev HEAD)
 ci_case "push to main" 0 refs/heads/main "$(ci_rev HEAD~1)" "$tip"
 ci_case "tag at main tip" 0 refs/tags/v1.0.0 "$zero" "$tip"
+# An annotated tag on the old non-conventional commit: the push names the
+# tag object, which the empty-range check must peel to its commit.
+git -C "$work/ci" tag -a v0.0.1 -m "old tag" "$(ci_rev HEAD~1)"
+ci_case "annotated tag on a main commit" 0 refs/tags/v0.0.1 "$zero" "$(ci_rev v0.0.1)"
+if ! grep -qF "adds no commits to main" "$work/out.log"; then
+    fail "ci-check-commits annotated tag on a main commit" "did not see the tag as adding nothing" "$work/out.log"
+fi
 ci_case "new branch at a main commit" 0 refs/heads/topic "$zero" "$(ci_rev HEAD~1)"
 ci_case "first push of a repository" 1 refs/heads/main "$zero" "$tip"
 git -C "$work/ci" commit -q --allow-empty -m "feat: b"

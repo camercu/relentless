@@ -371,14 +371,18 @@ release:
         echo "release: no commits since ${last_tag}"
         exit 0
     fi
-    # Release only a change to the published crate. A commit that touches
-    # only CI, tooling or files outside the package releases nothing,
-    # whatever its type. Files cargo generates for the package (such as
-    # Cargo.toml.orig) do not exist here and are skipped.
+    # Release only when the published crate changed: a range that touches
+    # no packaged file releases nothing, whatever its commit types. Once a
+    # packaged file changed, every commit type in the range counts toward
+    # the bump. Files cargo generates for the package (such as
+    # Cargo.toml.orig) do not exist here and are skipped. The list goes
+    # into a variable first, so a failing `cargo package` stops the
+    # recipe instead of leaving an empty list that matches every file.
+    list=$(cargo package --list --allow-dirty --quiet)
     packaged=()
     while IFS= read -r f; do
         if [ -e "$f" ]; then packaged+=("$f"); fi
-    done < <(cargo package --list --allow-dirty --quiet)
+    done <<<"$list"
     if git diff --quiet "$last_tag" HEAD -- "${packaged[@]}"; then
         echo "release: no packaged file changed since ${last_tag}"
         exit 0
