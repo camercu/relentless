@@ -7,7 +7,8 @@ use core::time::Duration;
 ///
 /// `now()` reads [`embassy_time::Instant`] and `wait_async` is
 /// [`embassy_time::Timer::after`], both driven by the linked embassy time
-/// driver.
+/// driver. This crate selects no driver: the application links one, as
+/// embassy requires (on a host, enable `embassy-time`'s `std` feature).
 #[derive(Debug, Clone, Copy)]
 pub struct EmbassyClock {
     origin: embassy_time::Instant,

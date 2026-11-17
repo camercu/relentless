@@ -1157,7 +1157,9 @@ each pairing a coherent `now()` source with that runtime's timer:
   `wasm32-unknown-unknown`, where `Instant::now` panics: there the type has
   no constructor and implements no clock trait, so using it fails to compile
 - `clock::EmbassyClock` with `embassy-clock` — `embassy_time::Instant` +
-  `embassy_time::Timer` (requires a linked embassy time driver)
+  `embassy_time::Timer` (requires a linked embassy time driver; no
+  `relentless` feature selects one, so `std` does not enable
+  `embassy-time/std` and adds no embassy crates to a lockfile)
 - `clock::GlooClock` with `gloo-timers-clock` on `wasm32` — `gloo-timers`
   waits paired with a caller-supplied now-source (`GlooClock::with_now`,
   any `Fn() -> Duration` including capturing closures), because wasm has no

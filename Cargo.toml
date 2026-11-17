@@ -40,7 +40,7 @@ default = ["std"]
 
 # std: enables std::thread::sleep for sync execution, Instant for elapsed tracking,
 #      std::error::Error impl on RetryError, and std-gated sleep impls.
-std = ["alloc", "embassy-time?/std"]
+std = ["alloc"]
 
 # alloc: enables heap allocation. Required for Box<dyn Stop>, Box<dyn Wait>,
 #        type-erased policy storage, and clock::Recording.
@@ -49,6 +49,8 @@ alloc = []
 
 # Runtime-specific AsyncClock adapters. Multiple adapters can be enabled
 # together; callers choose explicitly at `.clock(...)`.
+# embassy-clock picks no embassy time driver: the application links one
+# (e.g. by enabling embassy-time's `std` feature on a host).
 tokio-clock = ["dep:tokio", "std"]
 embassy-clock = ["dep:embassy-time"]
 gloo-timers-clock = ["dep:gloo-timers"]

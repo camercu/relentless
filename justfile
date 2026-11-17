@@ -158,6 +158,27 @@ check-wasm:
 check-embassy:
     cargo check --features embassy-clock
 
+# A consumer on default features must lock only crates its build uses. Cargo
+# locks the optional dependency behind a weak feature (`dep?/feat`) whether or
+# not the dependency is on, so one in `std` would put crates that never build
+# into every consumer's Cargo.lock.
+check-consumer-lock:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    probe=$(mktemp -d)
+    trap 'rm -rf "$probe"' EXIT
+    mkdir "$probe/src"
+    : > "$probe/src/lib.rs"
+    printf '[package]\nname = "probe"\nversion = "0.0.0"\nedition = "2021"\n\n[dependencies]\nrelentless = { path = "%s" }\n' "$PWD" > "$probe/Cargo.toml"
+    cargo generate-lockfile --quiet --manifest-path "$probe/Cargo.toml"
+    locked=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$probe/Cargo.lock" | sort -u)
+    built=$(cargo tree --quiet --manifest-path "$probe/Cargo.toml" --target all --edges normal,build --prefix none --format '{p}' | cut -d' ' -f1 | sort -u)
+    if [ "$locked" != "$built" ]; then
+        echo "check-consumer-lock: a default-feature consumer locks crates it never builds:" >&2
+        comm -23 <(echo "$locked") <(echo "$built") >&2
+        exit 1
+    fi
+
 check-alloc:
     cargo check --no-default-features --features alloc
 
@@ -331,7 +352,7 @@ ci:
     just lint
     RUSTFLAGS="{{warnings}}" RUSTDOCFLAGS="{{warnings}}" just \
         test test-all-features test-no-default test-alloc test-doc-no-default doc \
-        check-no-std check-wasm check-embassy check-msrv \
+        check-no-std check-wasm check-embassy check-consumer-lock check-msrv \
         test-readme test-examples test-release \
         test-tokio-clock test-futures-timer-clock test-allocation \
         bench-no-run
