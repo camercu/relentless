@@ -263,10 +263,11 @@ if [ "$released" = 1 ]; then
     fi
 fi
 
-# ci-bump.sh records the tag and tree it cuts. The release workflow bumps
-# twice from the same commit, once in a job that builds and once in the
-# job that pushes, and pushes only when the trees match. So two bumps
-# must give the same tree.
+# The release workflow bumps once, in a job that builds nothing, and hands
+# the bump on as a bundle. ci-bump.sh records the tag, the commit and the
+# tag ref; ci-unbundle.sh checks a later job's bundle against them, since
+# a job that builds code can rewrite the bundle.
+bundle="$work/bump.bundle"
 bump_out="$work/bump-output"
 label="ci-bump"
 reset
@@ -275,25 +276,42 @@ echo "// change" >>"$packaged_file"
 git commit -q -a -m "fix: bug"
 head=$(git rev-parse HEAD)
 : >"$bump_out"
-if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
+rm -f "$bundle"
+if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" "$bundle" >"$work/out.log" 2>&1; then
     fail "$label" "exited non-zero" "$work/out.log"
-elif [ "$(cat "$bump_out")" != "$(printf 'tag=%s\ntree=%s' "$next_patch" "$(git rev-parse 'HEAD^{tree}')")" ]; then
-    fail "$label" "output does not name ${next_patch} and its tree" "$bump_out"
+elif [ "$(cat "$bump_out")" != "$(printf 'tag=%s\ncommit=%s\ntag_id=%s' \
+    "$next_patch" "$(git rev-parse HEAD)" "$(git rev-parse "refs/tags/$next_patch")")" ]; then
+    fail "$label" "output does not name ${next_patch}, its commit and its tag ref" "$bump_out"
+elif [ ! -s "$bundle" ]; then
+    fail "$label" "wrote no bundle"
 else
     pass "$label" "$next_patch"
-    first_tree=$(git rev-parse 'HEAD^{tree}')
-    first_commit=$(git rev-parse HEAD)
-    git reset -q --hard "$head"
-    git tag -d "$next_patch" >/dev/null
-    : >"$bump_out"
-    if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
-        fail "$label again" "exited non-zero" "$work/out.log"
-    elif [ "$(git rev-parse 'HEAD^{tree}')" != "$first_tree" ]; then
-        git diff "$first_commit" HEAD >"$work/diff.txt"
-        fail "$label again" "second bump gave another tree:" "$work/diff.txt"
-    else
-        pass "$label again" "same tree"
-    fi
+    want_commit=$(git rev-parse HEAD)
+    want_tag_id=$(git rev-parse "refs/tags/$next_patch")
+
+    # unbundle_case <label> <want exit> <commit to expect>
+    # Runs ci-unbundle.sh from the pre-bump state.
+    unbundle_case() {
+        local got=0
+        git checkout -q --detach "$head"
+        git tag -d "$next_patch" >/dev/null 2>&1 || true
+        WANT_TAG="$next_patch" WANT_COMMIT="$3" WANT_TAG_ID="$want_tag_id" \
+            "$repo/scripts/ci-unbundle.sh" "$bundle" >"$work/out.log" 2>&1 || got=$?
+        if [ "$got" != "$2" ]; then
+            fail "$1" "want exit $2, got $got" "$work/out.log"
+        elif [ "$2" = 0 ] && [ "$(git rev-parse HEAD)" != "$want_commit" ]; then
+            fail "$1" "HEAD is not the bump commit"
+        elif [ "$2" = 0 ] && [ "$(git symbolic-ref -q --short HEAD)" != main ]; then
+            fail "$1" "HEAD is not on main"
+        elif [ "$2" != 0 ] && [ "$(git rev-parse HEAD)" != "$head" ]; then
+            fail "$1" "HEAD moved"
+        else
+            pass "$1" "exit $got"
+        fi
+    }
+    unbundle_case "ci-unbundle" 0 "$want_commit"
+    unbundle_case "ci-unbundle, bundle not the one bumped" 1 "$head"
+    git checkout -q main
 fi
 
 label="ci-bump, no release due"
@@ -301,9 +319,10 @@ reset
 git tag "$seed"
 head=$(git rev-parse HEAD)
 : >"$bump_out"
-if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" >"$work/out.log" 2>&1; then
+rm -f "$bundle"
+if ! GITHUB_OUTPUT="$bump_out" "$repo/scripts/ci-bump.sh" "$bundle" >"$work/out.log" 2>&1; then
     fail "$label" "exited non-zero" "$work/out.log"
-elif [ -s "$bump_out" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
+elif [ -s "$bump_out" ] || [ -e "$bundle" ] || [ "$(git rev-parse HEAD)" != "$head" ]; then
     fail "$label" "cut a release" "$bump_out"
 else
     pass "$label"

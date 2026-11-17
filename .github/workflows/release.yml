@@ -3,7 +3,7 @@ name: Release
 on:
   # Gate on CI: fire only after the CI workflow finishes against
   # `main`, and skip the job body if CI did not conclude with success
-  # (see the `if:` on the prepare job below). Without this gate, a
+  # (see the `if:` on the bump job below). Without this gate, a
   # push to `main` would trigger ci.yml and release.yml in parallel
   # and could cut a release even when canonical-gate was red.
   workflow_run:
@@ -21,13 +21,17 @@ on:
         required: true
         type: string
 
-# Jobs that build code hold no write access. Building runs code from
-# the crate's dependencies (build scripts, proc macros), and that code
-# can read anything the job holds: the job token (the Nix install writes
-# it to /etc/nix/nix.conf), step environments, and runner memory through
-# sudo. So `prepare` builds with a read-only token, and the jobs that
-# write (`push`, `github-release`) build nothing. `crates-io` builds and
-# holds the crates.io token, as `cargo publish` must.
+# No job both builds code and holds a token that can write. Building
+# runs code from the crate's dependencies (build scripts, proc macros),
+# and that code can read anything its job holds: the job token (the Nix
+# install writes it to /etc/nix/nix.conf), step environments, and runner
+# memory through sudo. So:
+# - `bump` cuts the release commit and tag, builds nothing, and hands
+#   them on as a bundle artifact.
+# - `prepare` builds and checks the bundled commit with a read-only token.
+# - `push` checks the bundle against `bump`'s outputs and pushes it.
+# - `crates-io` uploads the crate without building it.
+# - `github-release` creates the release and builds nothing.
 permissions: {}
 
 # Prevent two release runs from racing. `cancel-in-progress: false`
@@ -37,8 +41,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: prepare
+  bump:
+    name: bump
     # The workflow_run trigger fires for every CI run whose head branch
     # is named `main`, whatever its conclusion and wherever it ran. The
     # conditions below are the actual gate:
@@ -52,12 +56,13 @@ jobs:
           && github.event.workflow_run.event == 'push'
           && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
-      tree: ${{ steps.bump.outputs.tree }}
+      commit: ${{ steps.bump.outputs.commit }}
+      tag_id: ${{ steps.bump.outputs.tag_id }}
     steps:
       # Check out the commit CI passed, not whatever `main` points at
       # now, so a release never contains a commit without a green run.
@@ -78,7 +83,7 @@ jobs:
             echo "::notice::main moved past the commit CI passed; the CI run of a later push releases it. A push without a CI run, such as a Dependabot merge, releases nothing until the next push that runs CI"
           fi
 
-      # Every tool step below (cog, cargo, the publish scripts) runs in
+      # Every tool step (cog, cargo, the publish scripts) runs in
       # shell.nix, on the pinned toolchain and the
       # pinned cocogitto and cargo-semver-checks. cargo-semver-checks parses
       # rustdoc JSON, whose format tracks the compiler, so an unpinned
@@ -87,35 +92,67 @@ jobs:
         if: steps.tip.outputs.current == 'true'
 
       # Commits and tags locally, or leaves HEAD alone when no commit
-      # since the last tag needs a release. Nothing is built yet, so
-      # the outputs come from the bump alone.
+      # since the last tag needs a release.
       - name: Bump version
         if: steps.tip.outputs.current == 'true'
         id: bump
-        run: nix-shell --run ./scripts/ci-bump.sh
+        run: nix-shell --run "./scripts/ci-bump.sh \"\$RUNNER_TEMP/bump.bundle\""
+
+      - uses: actions/upload-artifact@v4
+        if: steps.bump.outputs.tag != ''
+        with:
+          name: bump
+          path: ${{ runner.temp }}/bump.bundle
+          if-no-files-found: error
+
+  prepare:
+    name: prepare
+    needs: bump
+    if: needs.bump.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bump
+          path: ${{ runner.temp }}
+
+      - name: Check out the bump
+        env:
+          WANT_TAG: ${{ needs.bump.outputs.tag }}
+          WANT_COMMIT: ${{ needs.bump.outputs.commit }}
+          WANT_TAG_ID: ${{ needs.bump.outputs.tag_id }}
+        run: ./scripts/ci-unbundle.sh "$RUNNER_TEMP/bump.bundle"
+
+      - uses: cachix/install-nix-action@v31
 
       # Compares the bumped crate against the newest version on
       # crates.io. A break the bump does not allow stops the release
       # here, before anything leaves the runner.
       - name: Check semver
-        if: steps.bump.outputs.tag != ''
         run: nix-shell --run 'just semver-check'
 
       # Builds the crate exactly as it will be uploaded. A file missing
       # from the `include` list fails here, before the tag claims the
-      # version.
+      # version. The upload itself builds nothing.
       - name: Check the package
-        if: steps.bump.outputs.tag != ''
         run: nix-shell --run 'cargo publish --dry-run --locked'
 
-  # Cuts the same bump again, without building anything, and pushes it
-  # only if it matches the one `prepare` checked.
+  # Builds nothing. The bundle passed through `prepare`, which builds, so
+  # ci-unbundle.sh checks it against `bump`'s outputs before the push.
   push:
     name: push
-    needs: prepare
-    if: needs.prepare.outputs.tag != ''
+    needs: [bump, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     environment: release
     permissions:
       contents: write
@@ -126,45 +163,39 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/download-artifact@v4
+        with:
+          name: bump
+          path: ${{ runner.temp }}
 
-      - name: Bump version
-        id: bump
-        run: nix-shell --run ./scripts/ci-bump.sh
-
-      - name: Check the bump is the one prepare checked
+      - name: Check out the bump
         env:
-          WANT_TAG: ${{ needs.prepare.outputs.tag }}
-          WANT_TREE: ${{ needs.prepare.outputs.tree }}
-          TAG: ${{ steps.bump.outputs.tag }}
-          TREE: ${{ steps.bump.outputs.tree }}
-        run: |
-          if [ "$TAG" != "$WANT_TAG" ] || [ "$TREE" != "$WANT_TREE" ]; then
-            echo "::error::bump cut ${TAG:-nothing} (tree ${TREE:-none}); prepare checked ${WANT_TAG} (tree ${WANT_TREE}). Re-run the release workflow."
-            exit 1
-          fi
+          WANT_TAG: ${{ needs.bump.outputs.tag }}
+          WANT_COMMIT: ${{ needs.bump.outputs.commit }}
+          WANT_TAG_ID: ${{ needs.bump.outputs.tag_id }}
+        run: ./scripts/ci-unbundle.sh "$RUNNER_TEMP/bump.bundle"
 
-      # The push is not forced, so it fails if main moved after the
-      # checkout, and --atomic then leaves the tag unpushed too. The
-      # token goes to this command alone, not into .git/config.
+      # The push is not forced, so it fails if main moved after CI
+      # passed, and --atomic then leaves the tag unpushed too. The token
+      # goes to this command alone, not into .git/config.
       - name: Push the bump commit and tag
         env:
-          TAG: ${{ steps.bump.outputs.tag }}
+          TAG: ${{ needs.bump.outputs.tag }}
           TOKEN: ${{ github.token }}
         run: |
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
           echo "::add-mask::${auth}"
           git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
-            push --atomic origin HEAD:refs/heads/main "$TAG"
+            push --atomic origin HEAD:refs/heads/main "refs/tags/${TAG}"
 
   # The publish jobs serve both a fresh release and a tag named by hand,
   # so the retry path runs on every release, not only after a failure.
   # Each publish script skips what already exists.
   crates-io:
     name: crates-io
-    needs: [prepare, push]
-    # `prepare` and `push` are skipped on a dispatch, and `always()`
-    # keeps that skip from skipping this job too.
+    needs: [bump, push]
+    # `bump` and `push` are skipped on a dispatch, and `always()` keeps
+    # that skip from skipping this job too.
     # A dispatch must run from main, so main's copy of this workflow and
     # its tag check apply.
     if: >-
@@ -179,7 +210,7 @@ jobs:
     env:
       # Through the environment, not inlined into the shell: a dispatch
       # input is free text.
-      TAG: ${{ inputs.tag || needs.prepare.outputs.tag }}
+      TAG: ${{ inputs.tag || needs.bump.outputs.tag }}
     steps:
       # The scripts and tools come from main, the tag's files from a
       # worktree. A retry after a fix to a publish script on main then
@@ -206,11 +237,9 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_KEY }}
         run: nix-shell --run "cd \"\$TAG_DIR\" && \"\$GITHUB_WORKSPACE/scripts/publish-crate.sh\" \"\$TAG\""
 
-  # Builds nothing, so it may hold the write token that creating a
-  # release needs.
   github-release:
     name: github-release
-    needs: [prepare, crates-io]
+    needs: [bump, crates-io]
     if: ${{ always() && needs.crates-io.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -218,7 +247,7 @@ jobs:
     permissions:
       contents: write
     env:
-      TAG: ${{ inputs.tag || needs.prepare.outputs.tag }}
+      TAG: ${{ inputs.tag || needs.bump.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:

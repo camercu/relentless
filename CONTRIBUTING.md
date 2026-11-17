@@ -167,22 +167,23 @@ from the Conventional Commits since the last tag:
 
 `just release` writes the new version into `Cargo.toml` and `Cargo.lock`,
 prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow runs
-it through `scripts/ci-bump.sh` in four jobs, so that no job both builds
-code and holds write access:
+it in five jobs, so that no job both builds code and holds a token that
+can write:
 
-1. `prepare`, with a read-only token: bumps, then runs `just semver-check`
-   and `cargo publish --dry-run`.
-1. `push`, with write access: bumps again from the same commit without
-   building, checks the result matches what `prepare` checked, and pushes
-   the commit and tag.
-1. `crates-io`, with the crates.io token: uploads the crate without
-   building it (`scripts/publish-crate.sh`).
-1. `github-release`, with write access: creates the GitHub Release
-   (`scripts/publish-release.sh`) without building.
+1. `bump`, read-only, builds nothing: runs `just release` through
+   `scripts/ci-bump.sh` and hands the commit and tag on as a git bundle.
+1. `prepare`, read-only: builds the bundled commit and runs
+   `just semver-check` and `cargo publish --dry-run`.
+1. `push`, with write access, builds nothing: checks the bundle against
+   what `bump` cut (`scripts/ci-unbundle.sh`) and pushes the commit and tag.
+1. `crates-io`, with the crates.io token: uploads the crate without building
+   it (`scripts/publish-crate.sh`).
+1. `github-release`, with write access, builds nothing: creates the GitHub
+   Release (`scripts/publish-release.sh`).
 
 `just test-release` exercises the version choice, the bump commit, the CI
-bump script, the publish scripts and the CI commit check in a scratch
-repository, and runs as part of `just ci`.
+bump and bundle scripts, the publish scripts and the CI commit check in a
+scratch repository, and runs as part of `just ci`.
 
 To retry a release that failed after its tag was pushed, run the Release
 workflow by hand with that tag. Each publish step skips what already exists,
