@@ -381,8 +381,8 @@ owned outcome types.
 Result<Option<T>, E>>` is a classifier function for `.decide`: `Ok(Some(v))` →
 `Return(v)`, `Ok(None)` → `Retry`, `Err(e)` → `Abort(e)`. It installs through
 `.decide(some_or_abort)` on both op-first and policy-first paths with no
-annotation. On exhaustion the error is `Exhausted { last: Ok(None) }`, and
-`last_error()` is `None`.
+annotation. Its only retried outcome is `Ok(None)`, so exhaustion yields
+`Exhausted { last: Ok(None) }` (4.1.2), whose `last_error()` is `None` (4.1.6).
 
 ### 3.5 Clock
 
