@@ -53,10 +53,14 @@ jobs:
     steps:
       # Check out the commit CI passed, not whatever `main` points at
       # now, so a release never contains a commit without a green run.
+      # The token stays out of .git/config: the steps below build the
+      # crate's dependencies, whose build scripts could read it. Only
+      # the push step gets the token.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
       # A newer push has its own CI run and its own release run, which
       # covers these commits too.
@@ -115,7 +119,12 @@ jobs:
         if: steps.bump.outputs.tag != ''
         env:
           TAG: ${{ steps.bump.outputs.tag }}
-        run: git push --atomic origin HEAD:refs/heads/main "$TAG"
+          TOKEN: ${{ github.token }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
+            push --atomic origin HEAD:refs/heads/main "$TAG"
 
   # One job publishes both a fresh release and a tag named by hand, so
   # the retry path runs on every release, not only after a failure. Each
@@ -142,9 +151,12 @@ jobs:
       # The scripts and tools come from main, the tag's files from a
       # worktree. A retry after a fix to a publish script on main then
       # runs the fixed script, not the tag's copy.
+      # This job never pushes, so the token stays out of .git/config,
+      # where the build in `cargo publish` could read it.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # A dispatch can name any tag. Publish only tags on main, so a
       # release holds only commits that went through main's checks.
