@@ -31,6 +31,10 @@ pub trait Outcome: Sized {
 
 /// Default: `Ok(v)` → `Return(v)`, any `Err` → `Retry`.
 ///
+/// `T = Option<_>`? `Ok(None)` is an `Ok`, so it returns on the first attempt.
+/// To retry on `None` and abort on `Err`, use
+/// [`.decide(some_or_abort)`](crate::some_or_abort).
+///
 /// Every error is retried, so the loop terminates on an error only by
 /// exhausting its stop strategy (`RetryError::Exhausted`), never by aborting on
 /// the default path. `Abort` is typed as `E` (not `Infallible`) so the default and `.when`/`.until` paths
@@ -80,6 +84,13 @@ impl<T> Outcome for Option<T> {
 /// `Option` there is no fatal outcome, so `Abort` is [`Infallible`] and the loop
 /// terminates only by breaking or exhausting its stop strategy
 /// (`RetryError::Exhausted { last: ControlFlow::Continue(..) }`).
+///
+/// An error carried out in `Break(Err(e))` is still a `Return`: `.call()`
+/// yields `Ok(Err(e))`, and
+/// [`call_with_stats`](crate::Retry::call_with_stats) reports
+/// `StopReason::Returned`, not `Aborted`. For a poll that can fail hard,
+/// return `Result<Option<T>, E>` and use
+/// [`.decide(some_or_abort)`](crate::some_or_abort).
 ///
 /// # Type inference
 ///

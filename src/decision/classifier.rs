@@ -145,3 +145,41 @@ where
         }
     }
 }
+
+/// Classifies a `Result<Option<T>, E>` poll: `Ok(Some(v))` returns `v`,
+/// `Ok(None)` retries, and `Err(e)` aborts with `e`.
+///
+/// Pass it to `.decide` for an operation that can be ready, not ready yet, or
+/// fail hard. Without it, the default `Result` classification treats
+/// `Ok(None)` as success and returns it on the first attempt.
+///
+/// When the stop strategy fires first, the error is
+/// `RetryError::Exhausted { last: Ok(None) }` and
+/// [`last_error`](crate::RetryError::last_error) is `None`: running out of
+/// attempts is not an error from the operation.
+///
+/// ```
+/// use relentless::clock::VirtualClock;
+/// use relentless::{RetryError, retry, some_or_abort};
+///
+/// // A poll that is ready on its third attempt.
+/// let result = retry(|state| Ok::<_, &str>((state.attempt >= 3).then_some("ready")))
+///     .decide(some_or_abort)
+///     .clock(VirtualClock::new())
+///     .call();
+/// assert_eq!(result, Ok("ready"));
+///
+/// // A hard error stops the loop at once.
+/// let result = retry(|_| Err::<Option<u32>, _>("disconnected"))
+///     .decide(some_or_abort)
+///     .clock(VirtualClock::new())
+///     .call();
+/// assert_eq!(result, Err(RetryError::Aborted { last: "disconnected" }));
+/// ```
+pub fn some_or_abort<T, E>(outcome: Result<Option<T>, E>) -> Verdict<T, E, Result<Option<T>, E>> {
+    match outcome {
+        Ok(Some(value)) => Verdict::Return(value),
+        Ok(None) => Verdict::Retry(Ok(None)),
+        Err(error) => Verdict::Abort(error),
+    }
+}

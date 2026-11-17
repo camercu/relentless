@@ -6,7 +6,8 @@
 //! semantics. A sought-after `Err`, a non-`Result` poll enum, or a search state
 //! can each drive the loop directly. `.when` (a test on the error) and `.until`
 //! (a test on the `Ok` value) are shortcuts that build a classifier for the
-//! common `Result` cases.
+//! common `Result` cases. [`some_or_abort`] is a ready-made classifier for a
+//! `Result<Option<T>, E>` poll.
 //!
 //! This module is the vocabulary; the engine that consumes it lives in
 //! [`crate::engine`].
@@ -15,7 +16,7 @@ mod classifier;
 mod outcome;
 mod verdict;
 
-pub use classifier::{ClosureClassifier, Decide, DefaultClassifier, Until, When};
+pub use classifier::{ClosureClassifier, Decide, DefaultClassifier, Until, When, some_or_abort};
 pub use outcome::Outcome;
 pub use verdict::{Decision, IntoDecision, Verdict};
 

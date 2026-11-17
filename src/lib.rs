@@ -130,6 +130,8 @@
 //! A probe with no error to carry can return `Option` (`None` retries,
 //! `Some(v)` returns `v`) or `ControlFlow` (`Continue` retries, `Break(b)`
 //! returns `b`) and skip `.until`: both classify themselves. See [`Outcome`].
+//! A probe that can also fail hard returns `Result<Option<T>, E>` and passes
+//! [`some_or_abort`] to `.decide`: `None` retries, `Err` aborts.
 //!
 //! ## Attempt-only loops
 //!
@@ -422,7 +424,9 @@ pub mod stop;
 pub mod wait;
 
 pub use clock::{AsyncClock, Clock, SyncClock};
-pub use decision::{ClosureClassifier, Decision, DefaultClassifier, Outcome, Until, Verdict, When};
+pub use decision::{
+    ClosureClassifier, Decision, DefaultClassifier, Outcome, Until, Verdict, When, some_or_abort,
+};
 // `Decide`/`IntoDecision` are sealed engine-facing classifier traits: users
 // never implement them. `Decide` is documented because code generic over a
 // configured builder names it in bounds (`C: Decide<O>`, `C::R`, `C::A`).

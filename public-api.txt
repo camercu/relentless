@@ -1371,4 +1371,5 @@ pub fn alloc::boxed::Box<W>::jitter(self, max_jitter: core::time::Duration) -> r
 pub fn alloc::boxed::Box<W>::next_wait(&self, state: &relentless::RetryState) -> core::time::Duration
 pub fn relentless::retry<F, O>(op: F) -> relentless::Retry<relentless::Blocking, F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> O
 pub fn relentless::retry_async<F, Fut, O>(op: F) -> relentless::Retry<relentless::Async, F, relentless::DefaultClassifier, relentless::stop::StopAfterAttempts, relentless::wait::WaitExponential, relentless::clock::SystemClock> where F: core::ops::function::FnMut(relentless::RetryState) -> Fut, Fut: core::future::future::Future<Output = O>
+pub fn relentless::some_or_abort<T, E>(outcome: core::result::Result<core::option::Option<T>, E>) -> relentless::Verdict<T, E, core::result::Result<core::option::Option<T>, E>>
 pub type relentless::RetryResult<T, E> = core::result::Result<T, relentless::RetryError<E, core::result::Result<T, E>>>

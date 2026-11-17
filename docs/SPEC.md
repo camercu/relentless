@@ -333,7 +333,10 @@ pub trait Outcome { type Return; type Abort; fn classify(self) -> Verdict<..>; }
   two-state poll: `Some(v)` → `Return(v)`, `None` → `Retry` (`Abort =
   Infallible`, so exhaustion yields `RetryError::Exhausted { last: None }`). A
   blanket `impl<B, C> Outcome for ControlFlow<B, C>` covers loop control:
-  `Break(b)` → `Return(b)`, `Continue(_)` → `Retry` (`Abort = Infallible`). A
+  `Break(b)` → `Return(b)`, `Continue(_)` → `Retry` (`Abort = Infallible`), so
+  an error carried in `Break(Err(e))` is a `Return` with
+  `StopReason::Returned`. Under the `Result` impl, `Result<Option<T>, E>`
+  returns `Ok(None)` on the first attempt; 3.4.15 classifies that shape. A
   type you own may implement `Outcome` to classify itself with no `.decide` at
   the call site. The orphan rule reserves `Result`, `Option`, and `ControlFlow`
   for their blanket impls; use `.decide` or a newtype for custom classification.
@@ -373,6 +376,13 @@ one, as policy-first `.decide` does.
 **3.4.14** The engine-facing `Decide<O>` trait (the installed classifier) is
 sealed — users never implement it; `Outcome` is the user-implementable trait for
 owned outcome types.
+
+**3.4.15** `some_or_abort(o: Result<Option<T>, E>) -> Verdict<T, E,
+Result<Option<T>, E>>` is a classifier function for `.decide`: `Ok(Some(v))` →
+`Return(v)`, `Ok(None)` → `Retry`, `Err(e)` → `Abort(e)`. It installs through
+`.decide(some_or_abort)` on both op-first and policy-first paths with no
+annotation. On exhaustion the error is `Exhausted { last: Ok(None) }`, and
+`last_error()` is `None`.
 
 ### 3.5 Clock
 
@@ -1301,6 +1311,7 @@ Free functions:
 
 - `retry`
 - `retry_async`
+- `some_or_abort` (a classifier for `.decide`, see 3.4.15)
 
 ### 13.2 Module exports
 
@@ -1435,6 +1446,7 @@ appear in test comments as traceability anchors (e.g., `/// 3.1.4`).
 | `tests/policy.rs` | §5, §6.1–6.5, §11 |
 | `tests/builder.rs` | §6.1–6.3, §6.6 |
 | `tests/outcome.rs` | §3.4 |
+| `tests/some_or_abort.rs` | §3.4.15 |
 | `tests/elapsed.rs` | §11.1 |
 | `tests/timeout.rs` | §11.1, §11.4 |
 | `tests/nameable_surface.rs` | §13 |

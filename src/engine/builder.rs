@@ -89,6 +89,10 @@ impl<M, F, C, S, W, Cl> Retry<M, F, C, S, W, Cl> {
     /// op-anchored `F: Operation<M, Output = O>` bound here (not deferred to
     /// `.call()`) lets the closure's parameter infer from the operation's
     /// output, so inline classifiers need no annotations.
+    ///
+    /// A function works too. For a `Result<Option<T>, E>` poll, pass
+    /// [`some_or_abort`](crate::some_or_abort): `Ok(None)` retries and `Err`
+    /// aborts.
     #[must_use]
     pub fn decide<O, D, NewC>(
         self,

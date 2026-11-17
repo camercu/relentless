@@ -142,7 +142,8 @@ impl<S, W, C> RetryPolicy<S, W, C> {
     ///
     /// Policy-first construction has no operation to anchor inference on, so the
     /// closure's parameter needs a type annotation (unlike the op-first
-    /// [`Retry::decide`](crate::Retry::decide)).
+    /// [`Retry::decide`](crate::Retry::decide)). A named function such as
+    /// [`some_or_abort`](crate::some_or_abort) needs none.
     #[must_use]
     pub fn decide<NewC>(self, classifier: NewC) -> RetryPolicy<S, W, ClosureClassifier<NewC>> {
         self.with_classifier(ClosureClassifier(classifier))

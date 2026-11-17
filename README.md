@@ -148,7 +148,8 @@ tested example, with runnable programs in [`examples/`](./examples):
   after N attempts, and bound the whole run with `.timeout`.
 - **[Polling for a condition](https://docs.rs/relentless/latest/relentless/#polling-for-a-condition)** — `.until` retries
   until an `Ok` value is ready; an `Option` or `ControlFlow` probe classifies
-  itself with no `.until` at all.
+  itself with no `.until` at all; a `Result<Option<T>, E>` probe passes
+  `.decide(some_or_abort)`, so `None` retries and `Err` aborts.
   ([`async-polling.rs`](./examples/async-polling.rs))
 - **[Classifying an outcome three ways](https://docs.rs/relentless/latest/relentless/#classifying-an-outcome-three-ways)**
   — `.decide` returns `Verdict::Return`, `Retry` or `Abort` for a poll enum,
