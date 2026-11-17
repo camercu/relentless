@@ -157,18 +157,21 @@ from the Conventional Commits since the last tag:
 - Other types (`docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`)
   release nothing.
 - A release also needs a change to a file the crate ships
-  (`cargo package --list`). Commits that touch only CI, tooling or other
-  unpackaged files release nothing, whatever their type. Prefer `ci:` and
-  `build:` for those anyway, so the changelog stays about the crate.
+  (`cargo package --list`) somewhere in the range since the last tag. A
+  range that touches only CI, tooling or other unpackaged files releases
+  nothing, whatever its commit types. Once a packaged file changed, every
+  commit type counts toward the bump, so keep `fix` and `feat` for the
+  crate and use `ci:` and `build:` for the rest.
 - `git revert` and `jj backout` write `Revert "…"` and `Back out "…"`
   subjects, which fail the commit check. Reword them as `revert: …`.
 
 `just release` writes the new version into `Cargo.toml` and `Cargo.lock`,
 prepends the entry to `CHANGELOG.md`, commits, and tags. The workflow then
-runs `just semver-check`, pushes the commit and tag, publishes the crate
-(`scripts/publish-crate.sh`), and creates the GitHub Release
-(`scripts/publish-release.sh`). `just test-release` exercises the version
-choice and the bump commit in a throwaway clone and runs as part of
+runs `just semver-check` and `cargo publish --dry-run`, pushes the commit
+and tag, publishes the crate (`scripts/publish-crate.sh`), and creates the
+GitHub Release (`scripts/publish-release.sh`). `just test-release`
+exercises the version choice, the bump commit, the publish scripts and
+the CI commit check in a scratch repository, and runs as part of
 `just ci`.
 
 To retry a release that failed after its tag was pushed, run the Release
