@@ -6,8 +6,10 @@
 # retried. Needs CARGO_REGISTRY_TOKEN.
 #
 # Uploads without building (`--no-verify`): building runs dependency code,
-# which could read the token. The release workflow builds this exact
-# package with `cargo publish --dry-run` before the tag is pushed.
+# which could read the token. On a fresh release the workflow builds this
+# exact package with `cargo publish --dry-run` before the tag is pushed. A
+# tag published by hand gets no build check unless whoever cut it ran that
+# dry run.
 set -euo pipefail
 
 tag="${1:?usage: publish-crate.sh <tag>}"
