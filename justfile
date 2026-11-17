@@ -171,8 +171,10 @@ check-consumer-lock:
     : > "$probe/src/lib.rs"
     printf '[package]\nname = "probe"\nversion = "0.0.0"\nedition = "2021"\n\n[dependencies]\nrelentless = { path = "%s" }\n' "$PWD" > "$probe/Cargo.toml"
     cargo generate-lockfile --quiet --manifest-path "$probe/Cargo.toml"
-    locked=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$probe/Cargo.lock" | sort -u)
-    built=$(cargo tree --quiet --manifest-path "$probe/Cargo.toml" --target all --edges normal,build --prefix none --format '{p}' | cut -d' ' -f1 | sort -u)
+    # Compare `name version` pairs: a weak feature can also lock a second
+    # version of a crate the build already uses.
+    locked=$(awk -F'"' '/^name = "/{n=$2} /^version = "/{print n, $2}' "$probe/Cargo.lock" | sort -u)
+    built=$(cargo tree --quiet --manifest-path "$probe/Cargo.toml" --target all --edges normal,build --prefix none --format '{p}' | awk '{sub(/^v/, "", $2); print $1, $2}' | sort -u)
     if [ "$locked" != "$built" ]; then
         echo "check-consumer-lock: a default-feature consumer locks crates it never builds:" >&2
         comm -23 <(echo "$locked") <(echo "$built") >&2
